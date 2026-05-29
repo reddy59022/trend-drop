@@ -14,6 +14,9 @@ connectDB();
 
 const app = express();
 
+// Trust proxy for rate limiting behind reverse proxies (Render, Heroku, etc.)
+app.set('trust proxy', 1);
+
 // ====== Production Security & Rate Limiting ======
 
 // General API rate limit: 100 requests per 15 minutes per IP
