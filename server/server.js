@@ -96,6 +96,12 @@ app.use('/api/listings', require('./routes/listings'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/offers', require('./routes/offers'));
 app.use('/api/transactions', require('./routes/transactions'));
+app.use('/api/ratings', require('./routes/ratings'));
+app.use('/api/messages', require('./routes/messages'));
+app.use('/api/wishlist', require('./routes/wishlist'));
+app.use('/api/reports', require('./routes/reports'));
+app.use('/api/pricehistory', require('./routes/pricehistory'));
+app.use('/api/payouts', require('./routes/payouts'));
 
 // Performance: Set cache headers for API responses
 app.use('/api', (req, res, next) => {

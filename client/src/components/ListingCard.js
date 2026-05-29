@@ -1,3 +1,4 @@
+import { defaultAvatar } from "../utils/helpers";
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FaHeart } from 'react-icons/fa';
@@ -36,7 +37,7 @@ const ListingCard = ({ listing }) => {
     <Link to={`/listing/${listing._id}`} className="listing-card">
       <div className="listing-card-image">
         <img
-          src={listing.images?.[0] || 'https://via.placeholder.com/300'}
+          src={listing.images?.[0] || defaultAvatar}
           alt={listing.title}
         />
         {discount > 0 && (
@@ -64,7 +65,7 @@ const ListingCard = ({ listing }) => {
         </div>
         <div className="listing-card-seller">
           <img
-            src={listing.seller?.avatar || 'https://via.placeholder.com/20'}
+            src={listing.seller?.avatar || defaultAvatar}
             alt=""
             className="seller-avatar-small"
           />

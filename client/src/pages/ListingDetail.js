@@ -1,3 +1,4 @@
+import { defaultAvatar } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaShareAlt, FaArrowLeft } from 'react-icons/fa';
@@ -189,7 +190,7 @@ const ListingDetail = () => {
           <div className="seller-card">
             <Link to={`/profile/${listing.seller?._id}`} className="seller-info">
               <img
-                src={listing.seller?.avatar || 'https://via.placeholder.com/50'}
+                src={listing.seller?.avatar || defaultAvatar}
                 alt=""
                 className="seller-avatar"
               />

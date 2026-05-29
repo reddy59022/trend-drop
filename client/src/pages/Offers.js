@@ -1,3 +1,4 @@
+import { defaultAvatar } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -114,7 +115,7 @@ const Offers = () => {
             receivedOffers.map((offer) => (
               <div key={offer._id} className="offer-card">
                 <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
-                  <img src={offer.listing?.images?.[0] || 'https://via.placeholder.com/80'} alt="" />
+                  <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
                 </Link>
                 <div className="offer-details">
                   <h4>{offer.listing?.title}</h4>
@@ -151,7 +152,7 @@ const Offers = () => {
             sentOffers.map((offer) => (
               <div key={offer._id} className="offer-card">
                 <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
-                  <img src={offer.listing?.images?.[0] || 'https://via.placeholder.com/80'} alt="" />
+                  <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
                 </Link>
                 <div className="offer-details">
                   <h4>{offer.listing?.title}</h4>

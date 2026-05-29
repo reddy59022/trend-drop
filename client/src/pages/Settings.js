@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import { defaultAvatar } from "../utils/helpers";
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -16,10 +17,11 @@ const Settings = () => {
   const [loading, setLoading] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(user?.avatar || null);
 
-  if (!user) {
-    navigate('/login');
-    return null;
-  }
+  useEffect(() => {
+    if (!user) navigate('/login');
+  }, [user, navigate]);
+
+  if (!user) return null;
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -69,7 +71,7 @@ const Settings = () => {
       <div className="settings-container">
         <div className="settings-avatar-section">
           <img
-            src={avatarPreview || 'https://via.placeholder.com/120'}
+            src={avatarPreview || defaultAvatar}
             alt=""
             className="settings-avatar"
           />

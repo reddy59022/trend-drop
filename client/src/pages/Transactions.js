@@ -1,3 +1,4 @@
+import { defaultAvatar } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import moment from 'moment';
@@ -64,7 +65,7 @@ const Transactions = () => {
             return (
               <div key={txn._id} className="transaction-card">
                 <Link to={`/listing/${txn.listing?._id}`} className="txn-image">
-                  <img src={txn.listing?.images?.[0] || 'https://via.placeholder.com/80'} alt="" />
+                  <img src={txn.listing?.images?.[0] || defaultAvatar} alt="" />
                 </Link>
                 <div className="txn-details">
                   <h4>{txn.listing?.title}</h4>

@@ -1,3 +1,4 @@
+import { defaultAvatar } from "../utils/helpers";
 import React, { useState } from 'react';
 import { FaTimes } from 'react-icons/fa';
 import api from '../services/api';
@@ -45,7 +46,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted }) => {
         <div className="modal-body">
           <div className="offer-listing-info">
             <img
-              src={listing.images?.[0] || 'https://via.placeholder.com/80'}
+              src={listing.images?.[0] || defaultAvatar}
               alt={listing.title}
               className="offer-listing-image"
             />

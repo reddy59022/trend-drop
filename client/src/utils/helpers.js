@@ -1,0 +1,4 @@
+// Working SVG default avatar - no external dependencies needed
+export const defaultAvatar = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#ddd"/><circle cx="50" cy="38" r="16" fill="#bbb"/><ellipse cx="50" cy="72" rx="26" ry="20" fill="#bbb"/></svg>');
+
+export const defaultImage = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300"><rect width="300" height="300" fill="#f0f0f0"/><text x="150" y="160" font-size="48" text-anchor="middle" fill="#ccc">📷</text></svg>');

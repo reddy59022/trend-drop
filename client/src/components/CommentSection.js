@@ -1,3 +1,4 @@
+import { defaultAvatar } from "../utils/helpers";
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FaTrash } from 'react-icons/fa';
@@ -47,7 +48,7 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
       {user && (
         <form className="comment-form" onSubmit={handleSubmit}>
           <img
-            src={user.avatar || 'https://via.placeholder.com/32'}
+            src={user.avatar || defaultAvatar}
             alt=""
             className="comment-avatar"
           />
@@ -69,7 +70,7 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
           <div key={comment._id} className="comment">
             <Link to={`/profile/${comment.user?._id}`}>
               <img
-                src={comment.user?.avatar || 'https://via.placeholder.com/32'}
+                src={comment.user?.avatar || defaultAvatar}
                 alt=""
                 className="comment-avatar"
               />

@@ -18,6 +18,11 @@ const Offers = lazy(() => import('./pages/Offers'));
 const Transactions = lazy(() => import('./pages/Transactions'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Notifications = lazy(() => import('./pages/Notifications'));
+const Wishlist = lazy(() => import('./pages/Wishlist'));
+const Messages = lazy(() => import('./pages/Messages'));
+const Reviews = lazy(() => import('./pages/Reviews'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const SellerDashboard = lazy(() => import('./pages/SellerDashboard'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -57,6 +62,11 @@ function App() {
             <Route path="/transactions" element={<Transactions />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/notifications" element={<Notifications />} />
+            <Route path="/wishlist" element={<Wishlist />} />
+            <Route path="/messages" element={<Messages />} />
+            <Route path="/reviews/:sellerId" element={<Reviews />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/seller-dashboard" element={<SellerDashboard />} />
           </Routes>
         </Suspense>
       </main>

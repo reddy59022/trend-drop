@@ -59,4 +59,40 @@ api.interceptors.response.use(
   }
 );
 
+// ====== New Feature APIs ======
+
+// Ratings
+export const createRating = (data) => api.post('/ratings', data);
+export const getRatingsBySeller = (sellerId) => api.get(`/ratings/seller/${sellerId}`);
+export const getRatingsByListing = (listingId) => api.get(`/ratings/listing/${listingId}`);
+export const deleteRating = (id) => api.delete(`/ratings/${id}`);
+
+// Messages
+export const startConversation = (data) => api.post('/messages', data);
+export const getConversations = () => api.get('/messages/conversations');
+export const getConversation = (userId, listingId) => api.get(`/messages/conversation/${userId}/${listingId}`);
+export const sendMessage = (conversationId, data) => api.post(`/messages/${conversationId}`, data);
+export const markAsRead = (conversationId) => api.put(`/messages/read/${conversationId}`);
+
+// Wishlist
+export const getWishlist = () => api.get('/wishlist');
+export const addToWishlist = (listingId) => api.post('/wishlist', { listingId });
+export const removeFromWishlist = (listingId) => api.delete(`/wishlist/${listingId}`);
+export const checkInWishlist = (listingId) => api.get(`/wishlist/check/${listingId}`);
+
+// Reports
+export const reportListing = (data) => api.post('/reports', data);
+export const getReports = () => api.get('/reports');
+export const updateReportStatus = (id, status) => api.patch(`/reports/${id}/status`, { status });
+
+// Price History
+export const trackPrice = (data) => api.post('/pricehistory', data);
+export const getPriceHistory = (listingId) => api.get(`/pricehistory/${listingId}`);
+
+// Payouts
+export const getPayoutDashboard = () => api.get('/payouts/dashboard');
+export const processPayout = (transactionId) => api.post(`/payouts/process/${transactionId}`);
+export const getSellerBalance = () => api.get('/payouts/balance');
+export const getCommissionInfo = () => api.get('/payouts/commission-info');
+
 export default api;

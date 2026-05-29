@@ -86,6 +86,46 @@ const Home = () => {
         </section>
       )}
 
+      {/* Commission Comparison - Attract Sellers */}
+      <section className="section" style={{ background: 'linear-gradient(135deg, #FF4D6D, #FF8FA3)', color: '#fff', padding: '40px 0' }}>
+        <div className="container" style={{ textAlign: 'center' }}>
+          <h2 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Keep 95% of Your Sales</h2>
+          <p style={{ fontSize: 16, marginBottom: 24, opacity: 0.9 }}>TrendDrop has the lowest commission in the market</p>
+          <div style={{
+            display: 'flex', justifyContent: 'center', gap: 16,
+            flexWrap: 'wrap', marginBottom: 24,
+          }}>
+            {[
+              { platform: 'TrendDrop', rate: '5%', highlight: true },
+              { platform: 'Poshmark', rate: '20%', highlight: false },
+              { platform: 'Mercari', rate: '10%', highlight: false },
+              { platform: 'Depop', rate: '10%', highlight: false },
+            ].map(item => (
+              <div key={item.platform} style={{
+                background: item.highlight ? '#fff' : 'rgba(255,255,255,0.15)',
+                color: item.highlight ? '#FF4D6D' : '#fff',
+                borderRadius: 12, padding: '16px 24px',
+                minWidth: 120, textAlign: 'center',
+                border: item.highlight ? '3px solid #fff' : '2px solid rgba(255,255,255,0.3)',
+              }}>
+                <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: 600 }}>
+                  {item.platform}
+                </div>
+                <div style={{ fontSize: 32, fontWeight: 800 }}>{item.rate}</div>
+                <div style={{ fontSize: 11, opacity: 0.8 }}>commission</div>
+              </div>
+            ))}
+          </div>
+          <Link to="/seller-dashboard" style={{
+            display: 'inline-block', padding: '12px 32px', background: '#fff',
+            color: '#FF4D6D', borderRadius: 24, fontWeight: 700, fontSize: 15,
+            textDecoration: 'none',
+          }}>
+            Start Selling — Keep More 💰
+          </Link>
+        </div>
+      </section>
+
       {/* Features */}
       <section className="section">
         <div className="container">

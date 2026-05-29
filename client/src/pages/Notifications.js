@@ -1,3 +1,4 @@
+import { defaultAvatar } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FaHeart, FaComment, FaUserPlus, FaTag, FaShoppingBag, FaShareAlt } from 'react-icons/fa';
@@ -109,7 +110,7 @@ const Notifications = () => {
               <div className="notification-content">
                 <div className="notification-message">
                   <img
-                    src={notification.from?.avatar || 'https://via.placeholder.com/32'}
+                    src={notification.from?.avatar || defaultAvatar}
                     alt=""
                     className="notification-avatar"
                   />

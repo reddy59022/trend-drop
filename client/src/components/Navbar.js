@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FaSearch, FaBars, FaTimes, FaBell } from 'react-icons/fa';
+import { FaSearch, FaBars, FaTimes, FaBell, FaHeart, FaEnvelope } from 'react-icons/fa';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -58,6 +58,12 @@ const Navbar = () => {
               <Link to="/offers" className="nav-link" onClick={() => setMenuOpen(false)}>
                 Offers
               </Link>
+              <Link to="/wishlist" className="nav-icon-link" onClick={() => setMenuOpen(false)} title="Wishlist">
+                <FaHeart />
+              </Link>
+              <Link to="/messages" className="nav-icon-link" onClick={() => setMenuOpen(false)} title="Messages">
+                <FaEnvelope />
+              </Link>
               <Link to="/notifications" className="nav-icon-link" onClick={() => setMenuOpen(false)}>
                 <FaBell />
               </Link>
@@ -68,7 +74,7 @@ const Navbar = () => {
                   onBlur={() => setTimeout(() => setDropdownOpen(false), 200)}
                 >
                   <img
-                    src={user.avatar || 'https://via.placeholder.com/32'}
+                    src={user.avatar || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="%23ddd"/><text x="16" y="22" font-size="18" text-anchor="middle" fill="%23999">👤</text></svg>'}
                     alt={user.name}
                     className="nav-avatar"
                   />
@@ -83,8 +89,17 @@ const Navbar = () => {
                     >
                       My Profile
                     </Link>
+                    <Link to="/seller-dashboard" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                      💰 Seller Dashboard
+                    </Link>
                     <Link to="/settings" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
                       Settings
+                    </Link>
+                    <Link to="/wishlist" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                      Wishlist
+                    </Link>
+                    <Link to="/messages" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                      Messages
                     </Link>
                     <Link to="/transactions" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
                       Transactions
