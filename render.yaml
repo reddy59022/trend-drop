@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: trend-drop
+    env: node
+    buildCommand: cd client && npm install && npm run build && cd ../server && npm install
+    startCommand: node server/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        value: 4QmypzuXr4jWuuQAa6hFuga0Mch4wT19Usj53CRxd14=
+      - key: CLOUDINARY_CLOUD_NAME
+        value: dhw3unh0e
+      - key: CLOUDINARY_API_KEY
+        value: "536891899585567"
+      - key: CLOUDINARY_API_SECRET
+        value: kxa47g-Rl846xNqfWU0kh3uTN0M

@@ -1,0 +1,119 @@
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { FaSearch, FaBars, FaTimes, FaBell } from 'react-icons/fa';
+
+const Navbar = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      setSearchQuery('');
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+    setDropdownOpen(false);
+  };
+
+  return (
+    <nav className="navbar">
+      <div className="navbar-container">
+        <Link to="/" className="navbar-logo">
+          <span className="logo-text">TrendDrop</span>
+        </Link>
+
+        <form className="search-form" onSubmit={handleSearch}>
+          <FaSearch className="search-icon" />
+          <input
+            type="text"
+            placeholder="Search for brands, items..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="search-input"
+          />
+        </form>
+
+        <div className={`navbar-menu ${menuOpen ? 'active' : ''}`}>
+          <Link to="/feed" className="nav-link" onClick={() => setMenuOpen(false)}>
+            Feed
+          </Link>
+          <Link to="/search" className="nav-link" onClick={() => setMenuOpen(false)}>
+            Browse
+          </Link>
+          <Link to="/sell" className="nav-link sell-link" onClick={() => setMenuOpen(false)}>
+            Sell
+          </Link>
+
+          {user ? (
+            <>
+              <Link to="/offers" className="nav-link" onClick={() => setMenuOpen(false)}>
+                Offers
+              </Link>
+              <Link to="/notifications" className="nav-icon-link" onClick={() => setMenuOpen(false)}>
+                <FaBell />
+              </Link>
+              <div className="nav-dropdown">
+                <button
+                  className="nav-dropdown-trigger"
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  onBlur={() => setTimeout(() => setDropdownOpen(false), 200)}
+                >
+                  <img
+                    src={user.avatar || 'https://via.placeholder.com/32'}
+                    alt={user.name}
+                    className="nav-avatar"
+                  />
+                  <span className="nav-username">{user.name?.split(' ')[0]}</span>
+                </button>
+                {dropdownOpen && (
+                  <div className="nav-dropdown-menu">
+                    <Link
+                      to={`/profile/${user.id || user._id}`}
+                      className="dropdown-item"
+                      onClick={() => setDropdownOpen(false)}
+                    >
+                      My Profile
+                    </Link>
+                    <Link to="/settings" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                      Settings
+                    </Link>
+                    <Link to="/transactions" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                      Transactions
+                    </Link>
+                    <button className="dropdown-item logout-btn" onClick={handleLogout}>
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="auth-links">
+              <Link to="/login" className="nav-link" onClick={() => setMenuOpen(false)}>
+                Login
+              </Link>
+              <Link to="/register" className="nav-link register-btn" onClick={() => setMenuOpen(false)}>
+                Join
+              </Link>
+            </div>
+          )}
+        </div>
+
+        <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)}>
+          {menuOpen ? <FaTimes /> : <FaBars />}
+        </button>
+      </div>
+    </nav>
+  );
+};
+
+export default Navbar;

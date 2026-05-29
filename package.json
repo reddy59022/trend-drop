@@ -1,0 +1,18 @@
+{
+  "name": "trend-drop",
+  "version": "1.0.0",
+  "description": "TrendDrop - Social Commerce Marketplace for Fashion",
+  "scripts": {
+    "start": "node server/server.js",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm start",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "install-all": "npm install && cd server && npm install && cd ../client && npm install",
+    "build": "cd client && npm run build",
+    "heroku-postbuild": "npm run build",
+    "start:all": "bash start.sh"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
