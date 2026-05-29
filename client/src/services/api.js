@@ -20,6 +20,7 @@ const getBaseURL = () => {
     }
 
     // Production - point to deployed Render backend
+    // After deploying on Render, this will be your live URL
     return 'https://trend-drop.onrender.com/api';
   }
 
