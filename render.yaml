@@ -16,15 +16,15 @@ services:
       value: production
     - key: MONGO_URI
       # Provide the Atlas connection string as a secret (do not expose in source).
-      # Adding tls and ssl parameters to ensure proper SRV resolution on Render.
-      value: "mongodb+srv://reddy59022_db_user:anNecZCiT3eJQfre@cluster0.mongodb.net/poshmark?retryWrites=true&w=majority&tls=true&ssl=true"
+      # Use the full cluster host as shown in Atlas (e.g., cluster0.vzxzhdy.mongodb.net).
+      value: "mongodb+srv://reddy59022_db_user:anNecZCiT3eJQfre@cluster0.vzxzhdy.mongodb.net/trend-drop?retryWrites=true&w=majority"
       sync: false
     - key: JWT_SECRET
       value: 4QmypzuXr4jWuuQAa6hFuga0Mch4wT19Usj53CRxd14=
     - key: CLOUDINARY_CLOUD_NAME
       value: dhw3unh0e
     - key: CLOUDINARY_API_KEY
-      value: "536891899585567"
+      value: "536891585567"
     - key: CLOUDINARY_API_SECRET
       value: kxa47g-Rl846xNqfWU0kh3uTN0M
     # Stripe configuration – set real keys in Render dashboard.
