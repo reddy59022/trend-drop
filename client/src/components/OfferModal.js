@@ -16,6 +16,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted }) => {
       toast.error('Please enter a valid amount');
       return;
     }
+    // Ensure offer is less than listing price and uses same currency
     if (Number(amount) >= listing.price) {
       toast.error('Offer must be less than the listing price');
       return;
@@ -23,7 +24,12 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted }) => {
 
     setLoading(true);
     try {
-      await api.post('/offers', { listingId: listing._id, amount: Number(amount) });
+      await api.post('/offers', {
+        listingId: listing._id,
+        amount: Number(amount),
+        // Pass currency to backend for validation (backend defaults to listing currency if omitted)
+        currency: listing.currency || 'USD',
+      });
       toast.success('Offer submitted successfully!');
       setAmount('');
       onOfferSubmitted?.();

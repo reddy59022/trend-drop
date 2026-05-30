@@ -9,6 +9,7 @@ import ImageCarousel from '../components/ImageCarousel';
 import CommentSection from '../components/CommentSection';
 import OfferModal from '../components/OfferModal';
 import ListingCard from '../components/ListingCard';
+import { useCart } from '../context/CartContext';
 
 const ListingDetail = () => {
   const { id } = useParams();
@@ -23,6 +24,8 @@ const ListingDetail = () => {
   const [offerModalOpen, setOfferModalOpen] = useState(false);
   const [comments, setComments] = useState([]);
   const [buying, setBuying] = useState(false);
+  const [buyerOffer, setBuyerOffer] = useState(null);
+  const { addToCart } = useCart();
 
   useEffect(() => {
     fetchListing();
@@ -83,25 +86,103 @@ const ListingDetail = () => {
 
   const handleBuyNow = async () => {
     if (!user) return toast.error('Please login');
+
+    // Validate inventory availability
+    if (!listing.quantity || listing.quantity <= 0) {
+      toast.error('Item is out of stock');
+      return;
+    }
+    if (listing.available === false) {
+      toast.error('Item is no longer available');
+      return;
+    }
+
+    // Simple Luhn check for demo card entry
+    const isValidCardNumber = (num) => {
+      if (!/^\d{16}$/.test(num)) return false;
+      let sum = 0;
+      for (let i = 0; i < 16; i++) {
+        let digit = parseInt(num.charAt(15 - i), 10);
+        if (i % 2 === 1) {
+          digit *= 2;
+          if (digit > 9) digit -= 9;
+        }
+        sum += digit;
+      }
+      return sum % 10 === 0;
+    };
+
     const totalDisplay = formatPrice(
       listing.price + (listing.shipping?.shippingCost || 0) + (listing.price * 0.05),
       listing.currency || 'USD'
     );
     if (!window.confirm(`Purchase "${listing.title}" for ${totalDisplay} (incl. shipping & protection)?`)) return;
 
+    const cardNumber = window.prompt('Enter your 16‑digit card number to pay:');
+    if (!cardNumber || !isValidCardNumber(cardNumber)) {
+      toast.error('Invalid card number');
+      return;
+    }
+
     setBuying(true);
     try {
-      await api.post('/transactions', {
+      // 1️⃣ Create payment intent
+      const intentRes = await api.post('/payments/create-intent', {
         listingId: listing._id,
-        shippingAddress: user.shippingAddress,
-        buyerCountry: user.country,
+        shippingAddress: user.shippingAddress || {},
+        buyerCountry: user.country || 'US',
       });
-      toast.success('Purchase successful!');
+      const { paymentIntentId } = intentRes.data;
+
+      // 2️⃣ Confirm payment (creates transaction)
+      const confirmRes = await api.post('/payments/confirm', {
+        paymentIntentId,
+        listingId: listing._id,
+        shippingAddress: user.shippingAddress || {},
+      });
+      if (confirmRes.status !== 200 && confirmRes.status !== 201) {
+        throw new Error('Payment confirmation failed');
+      }
+      const transaction = confirmRes.data.transaction;
+
+      // 3️⃣ Generate shipping label
+      await api.post('/shipping/generate-label', { transactionId: transaction._id });
+
+      toast.success('Purchase successful and shipping label created');
       fetchListing();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Purchase failed');
     }
     setBuying(false);
+  };
+
+  const handleAddToCart = () => {
+    if (!user) return toast.error('Please login');
+    const item = {
+      listingId: listing._id,
+      title: listing.title,
+      price: listing.price,
+      currency: listing.currency || 'USD',
+      quantity: 1,
+      thumbnail: listing.images?.[0] || '',
+      available: listing.quantity || 1, // store available inventory
+    };
+    addToCart(item);
+    toast.success('Added to cart');
+    // Redirect to cart page so the user can see their bag
+    navigate('/cart');
+  };
+
+  // Fetch buyer's own offer (if any) for this listing
+  const fetchBuyerOffer = async () => {
+    if (!user) return;
+    try {
+      const res = await api.get('/offers/sent');
+      const myOffer = res.data.find((o) => o.listing && o.listing._id === id);
+      setBuyerOffer(myOffer || null);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleMarkSold = async () => {
@@ -227,26 +308,55 @@ const ListingDetail = () => {
                 <FaShareAlt /> Share ({listing.shares?.length || 0})
               </button>
             </div>
+            {/* Buyer actions based on offer state */}
             {!isOwner && !listing.sold && user && (
               <div className="listing-detail-action-row">
-                <button className="btn btn-outline" onClick={() => setOfferModalOpen(true)}>
-                  Make Offer
-                </button>
-                <button className="btn btn-primary" onClick={handleBuyNow} disabled={buying}>
-                  {buying ? 'Buying...' : `Buy Now - ${formatPrice(listing.price, listing.currency || 'USD')}`}
-                </button>
+                {buyerOffer && buyerOffer.status === 'countered' ? (
+                  <>
+                    <button className="btn btn-primary" onClick={async () => {
+                      try {
+                        // First accept the counter offer (sets status to accepted)
+                        await api.patch(`/offers/${buyerOffer._id}/accept-counter`);
+                        // Then create a transaction for the agreed price
+                        await api.post(`/transactions/offer/${buyerOffer._id}`);
+                        toast.success('Counter accepted and purchase completed');
+                        fetchListing();
+                        fetchBuyerOffer();
+                      } catch (e) {
+                        toast.error('Failed to complete purchase after counter acceptance');
+                      }
+                    }}>Accept Counter & Purchase</button>
+                    <button className="btn btn-outline" onClick={async () => {
+                      const amount = prompt('Enter new counter amount (must be higher):');
+                      if (!amount || isNaN(amount)) return;
+                      try {
+                        await api.patch(`/offers/${buyerOffer._id}/buyer-counter`, { counterAmount: Number(amount) });
+                        toast.success('Counter sent');
+                        fetchBuyerOffer();
+                      } catch (e) {
+                        toast.error('Failed to send counter');
+                      }
+                    }}>Counter Again</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="btn btn-outline" onClick={() => setOfferModalOpen(true)}>
+                      Make Offer
+                    </button>
+                    <button className="btn btn-primary" onClick={handleAddToCart} disabled={buying}>
+                      Buy Now
+                    </button>
+                  </>
+                )}
               </div>
             )}
             {listing.sold && (
               <div className="sold-banner">This item has been sold</div>
             )}
+            {/* Seller actions – remove manual Mark as Sold. The system will mark sold after successful transaction */}
             {isOwner && (
               <div className="listing-detail-action-row">
-                {!listing.sold && (
-                  <button className="btn btn-primary" onClick={handleMarkSold}>
-                    Mark as Sold
-                  </button>
-                )}
+                {/* No manual sold button – status handled automatically */}
               </div>
             )}
           </div>

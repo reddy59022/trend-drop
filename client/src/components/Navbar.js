@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FaSearch, FaBars, FaTimes, FaBell, FaHeart, FaEnvelope } from 'react-icons/fa';
+import { useCart } from '../context/CartContext';
+import { FaSearch, FaBars, FaTimes, FaBell, FaHeart, FaEnvelope, FaShoppingBag } from 'react-icons/fa';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
+  const { cart } = useCart();
+  const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -64,10 +67,26 @@ const Navbar = () => {
               <Link to="/messages" className="nav-icon-link" onClick={() => setMenuOpen(false)} title="Messages">
                 <FaEnvelope />
               </Link>
-              <Link to="/notifications" className="nav-icon-link" onClick={() => setMenuOpen(false)}>
-                <FaBell />
-              </Link>
-              <div className="nav-dropdown">
+               <Link to="/notifications" className="nav-icon-link" onClick={() => setMenuOpen(false)}>
+                 <FaBell />
+               </Link>
+               {/* Cart / Bag icon - moved before profile dropdown for better alignment */}
+               <Link to="/cart" className="nav-icon-link" onClick={() => setMenuOpen(false)} title="Cart" style={{ position: 'relative', display: 'flex', alignItems: 'center', marginRight: '8px', alignSelf: 'center', marginTop: '-2px' }}>
+                 <FaShoppingBag />
+                 {cartCount > 0 && (
+                   <span style={{
+                     position: 'absolute',
+                     top: '-4px',
+                     right: '-6px',
+                     background: '#ff4136',
+                     color: '#fff',
+                     borderRadius: '50%',
+                     padding: '2px 5px',
+                     fontSize: '10px',
+                   }}>{cartCount}</span>
+                 )}
+               </Link>
+               <div className="nav-dropdown">
                 <button
                   className="nav-dropdown-trigger"
                   onClick={() => setDropdownOpen(!dropdownOpen)}

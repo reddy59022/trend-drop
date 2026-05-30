@@ -3,7 +3,7 @@ const router = express.Router();
 const { auth } = require('../middleware/auth');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
-const { countryCommissions, stripeFees, calculatePaymentBreakdown, createStripePaymentIntent, verifyStripeWebhook, processSellerPayout, revenueCatConfig } = require('../config/payments');
+const { countryCommissions, stripeFees, calculatePaymentBreakdown, createStripePaymentIntent, verifyStripeWebhook, processSellerPayout } = require('../config/payments');
 
 // POST /api/payments/create-intent - Create Stripe Payment Intent
 router.post('/create-intent', auth, async (req, res) => {
@@ -96,10 +96,18 @@ router.post('/confirm', auth, async (req, res) => {
       autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
     });
 
-    // Mark listing sold
-    listing.sold = true;
-    listing.available = false;
-    await listing.save();
+  // Update inventory based on quantity
+  // Decrement available quantity (assume each purchase is quantity 1)
+  if (typeof listing.quantity === 'number') {
+    listing.quantity = Math.max(0, listing.quantity - 1);
+    listing.quantitySold = (listing.quantitySold || 0) + 1;
+    // If no more items left, mark as sold and unavailable
+    if (listing.quantity <= 0) {
+      listing.sold = true;
+      listing.available = false;
+    }
+  }
+  await listing.save();
 
     // Credit seller pending balance
     if (seller) {
@@ -190,26 +198,7 @@ router.post('/payout', auth, async (req, res) => {
 });
 
 // RevenueCat endpoints for mobile
-// POST /api/payments/revenuecat/validate - Validate mobile receipt
-router.post('/revenuecat/validate', auth, async (req, res) => {
-  try {
-    const { receipt, platform, productId } = req.body;
-    // In production: validate with RevenueCat API
-    // const revenueCat = require('revenuecat')(revenueCatConfig.apiKey);
-    // const purchaserInfo = await revenueCat.validateReceipt(receipt);
-
-    res.json({
-      valid: true,
-      entitlement: 'trenddrop_pro',
-      platform,
-      productId,
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error validating receipt' });
-  }
-});
+// NOTE: RevenueCat validation endpoint removed. Payments are now handled solely via Stripe.
 
 // GET /api/payments/platform-fee - Get platform fee info
 router.get('/platform-fee', (req, res) => {

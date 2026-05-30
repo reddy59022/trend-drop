@@ -452,25 +452,10 @@ router.post('/:id/share', auth, async (req, res) => {
 });
 
 // PATCH /api/listings/:id/sold - Mark as sold
+// PATCH /api/listings/:id/sold - Manual mark as sold is now disabled.
 router.patch('/:id/sold', auth, async (req, res) => {
-  try {
-    const listing = await Listing.findById(req.params.id);
-    if (!listing) {
-      return res.status(404).json({ message: 'Listing not found' });
-    }
-    if (listing.seller.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorized' });
-    }
-
-    listing.sold = true;
-    listing.available = false;
-    await listing.save();
-
-    res.json(listing);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
+  // This endpoint is retained for backward compatibility but will always reject the request.
+  return res.status(400).json({ message: 'Manual marking as sold is disabled. Sales are recorded via transaction flow.' });
 });
 
 module.exports = router;

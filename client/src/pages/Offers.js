@@ -49,21 +49,25 @@ const Offers = () => {
       toast.success('Offer declined');
       fetchOffers();
     } catch (error) {
-      toast.error('Failed to decline offer');
+      const msg = error.response?.data?.message || 'Failed to decline offer';
+      toast.error(msg);
     }
   };
 
-  const handleCounter = async (offerId) => {
-    const amount = prompt('Enter counter offer amount:');
-    if (!amount || isNaN(amount)) return;
-    try {
-      await api.patch(`/offers/${offerId}/counter`, { counterAmount: Number(amount) });
-      toast.success('Counter offer sent!');
-      fetchOffers();
-    } catch (error) {
-      toast.error('Failed to send counter offer');
-    }
-  };
+   // Counter action for sellers (when viewing received offers)
+   const handleSellerCounter = async (offer) => {
+     const previous = offer.counterAmount || offer.amount;
+     const amount = prompt(`Enter counter offer amount (must be higher than $${previous}):`);
+     if (!amount || isNaN(amount)) return;
+     try {
+       await api.patch(`/offers/${offer._id}/counter`, { counterAmount: Number(amount) });
+       toast.success('Counter offer sent!');
+       fetchOffers();
+     } catch (error) {
+       const msg = error.response?.data?.message || 'Failed to send counter offer';
+       toast.error(msg);
+     }
+   };
 
   if (!user) {
     return (
@@ -108,63 +112,101 @@ const Offers = () => {
       </div>
 
       <div className="offers-list">
-        {activeTab === 'received' && (
-          receivedOffers.length === 0 ? (
-            <div className="empty-state"><p>No offers received yet</p></div>
-          ) : (
-            receivedOffers.map((offer) => (
-              <div key={offer._id} className="offer-card">
-                <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
-                  <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
-                </Link>
-                <div className="offer-details">
-                  <h4>{offer.listing?.title}</h4>
-                  <p>From: {offer.buyer?.name}</p>
-                  <p>Offered: <strong>${offer.amount}</strong></p>
-                  {offer.counterAmount && <p>Counter: <strong>${offer.counterAmount}</strong></p>}
-                  <span className={`offer-status ${getStatusColor(offer.status)}`}>
-                    {offer.status}
-                  </span>
-                  <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
-                </div>
-                {offer.status === 'pending' && (
-                  <div className="offer-actions">
-                    <button className="btn btn-primary btn-sm" onClick={() => handleAccept(offer._id)}>
-                      Accept
-                    </button>
-                    <button className="btn btn-outline btn-sm" onClick={() => handleCounter(offer._id)}>
+            {activeTab === 'received' && (
+              receivedOffers.length === 0 ? (
+                <div className="empty-state"><p>No offers received yet</p></div>
+              ) : (
+                receivedOffers.map((offer) => (
+                  <div key={offer._id} className="offer-card">
+                    <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
+                      <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
+                    </Link>
+                    <div className="offer-details">
+                      <h4>{offer.listing?.title}</h4>
+                      <p>From: {offer.buyer?.name}</p>
+                      <p>Offered: <strong>${offer.amount}</strong></p>
+                      {offer.counterAmount && <p>Counter: <strong>${offer.counterAmount}</strong></p>}
+                      <span className={`offer-status ${getStatusColor(offer.status)}`}>{offer.status}</span>
+                      <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
+                    </div>
+                    {/* Seller actions for pending offers */}
+                    {offer.status === 'pending' && (
+                      <div className="offer-actions">
+                        <button className="btn btn-primary btn-sm" onClick={() => handleAccept(offer._id)}>
+                          Accept
+                        </button>
+                    <button className="btn btn-outline btn-sm" onClick={() => handleSellerCounter(offer)}>
                       Counter
                     </button>
-                    <button className="btn btn-sm" onClick={() => handleDecline(offer._id)}>
-                      Decline
-                    </button>
+                        <button className="btn btn-sm" onClick={() => handleDecline(offer._id)}>
+                          Decline
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            ))
-          )
-        )}
+                ))
+              )
+            )}
 
         {activeTab === 'sent' && (
           sentOffers.length === 0 ? (
             <div className="empty-state"><p>No offers sent yet</p></div>
           ) : (
             sentOffers.map((offer) => (
-              <div key={offer._id} className="offer-card">
-                <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
-                  <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
-                </Link>
-                <div className="offer-details">
-                  <h4>{offer.listing?.title}</h4>
-                  <p>To: {offer.seller?.name}</p>
-                  <p>Offered: <strong>${offer.amount}</strong></p>
-                  {offer.counterAmount && <p>Counter: <strong>${offer.counterAmount}</strong></p>}
-                  <span className={`offer-status ${getStatusColor(offer.status)}`}>
-                    {offer.status}
-                  </span>
-                  <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
+                <div key={offer._id} className="offer-card">
+                  <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
+                    <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
+                  </Link>
+                  <div className="offer-details">
+                    <h4>{offer.listing?.title}</h4>
+                    <p>To: {offer.seller?.name}</p>
+                    <p>Offered: <strong>${offer.amount}</strong></p>
+                    {offer.counterAmount && <p>Counter: <strong>${offer.counterAmount}</strong></p>}
+                    <span className={`offer-status ${getStatusColor(offer.status)}`}>
+                      {offer.status}
+                    </span>
+                    <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
+                  </div>
+                  {/* Buyer actions when seller has countered */}
+                  {offer.status === 'countered' && (
+                    <div className="offer-actions">
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={async () => {
+                          try {
+                            // Accept the counter (sets status to accepted). Payment will be handled separately.
+                            await api.patch(`/offers/${offer._id}/accept-counter`);
+                            toast.success('Counter accepted. Please proceed to payment.');
+                            fetchOffers();
+                          } catch (e) {
+                            const msg = e.response?.data?.message || 'Failed to accept counter';
+                            toast.error(msg);
+                          }
+                        }}
+                      >
+                        Accept Counter
+                      </button>
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={async () => {
+                          const previous = offer.counterAmount || offer.amount;
+                          const amount = prompt(`Enter new counter amount (must be higher than $${previous}):`);
+                          if (!amount || isNaN(amount)) return;
+                          try {
+                            await api.patch(`/offers/${offer._id}/buyer-counter`, { counterAmount: Number(amount) });
+                            toast.success('Counter sent');
+                            fetchOffers();
+                          } catch (e) {
+                            const msg = e.response?.data?.message || 'Failed to send counter';
+                            toast.error(msg);
+                          }
+                        }}
+                      >
+                        Counter Again
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
             ))
           )
         )}

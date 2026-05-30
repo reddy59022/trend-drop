@@ -150,6 +150,109 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
+// POST /api/transactions/offer/:offerId - Create a transaction based on an accepted offer (buyer has accepted seller's counter)
+router.post('/offer/:offerId', auth, async (req, res) => {
+  try {
+    const { offerId } = req.params;
+    const offer = await Offer.findById(offerId);
+    if (!offer) {
+      return res.status(404).json({ message: 'Offer not found' });
+    }
+    // Ensure the caller is the buyer of the offer
+    if (offer.buyer.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+    // Offer must be in accepted state (meaning buyer has accepted seller's counter)
+    if (offer.status !== 'accepted') {
+      return res.status(400).json({ message: 'Offer not accepted yet' });
+    }
+    // Use the agreed price: counterAmount if present, otherwise original amount
+    const finalPrice = offer.counterAmount || offer.amount;
+
+    const listing = await Listing.findById(offer.listing);
+    if (!listing) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+    if (!listing.available || listing.sold || (listing.quantity !== undefined && listing.quantity <= 0)) {
+      return res.status(400).json({ message: 'Listing not available for purchase' });
+    }
+
+    const seller = await User.findById(listing.seller);
+    const sellerCountry = seller?.country || listing.shipsFrom || 'US';
+    const buyerCountry = req.user.country || 'US';
+    const weightKg = listing.weight || 0.5;
+    const { calculateShipping } = require('../config/shipping');
+    const { calculatePaymentBreakdown } = require('../config/payments');
+    const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKg, listing.price);
+    const shippingCost = listing.shipping?.freeShipping ? 0 : shippingResult.cost;
+    const breakdown = calculatePaymentBreakdown(finalPrice, sellerCountry, buyerCountry, weightKg);
+
+    const transaction = await Transaction.create({
+      listing: listing._id,
+      buyer: req.user._id,
+      seller: listing.seller,
+      itemPrice: finalPrice,
+      currency: listing.currency || 'USD',
+      paymentBreakdown: {
+        subtotal: breakdown.buyer.itemPrice,
+        shippingCost,
+        buyerProtectionFee: breakdown.buyer.buyerProtectionFee,
+        buyerProtectionPercent: breakdown.buyer.buyerProtectionPercent,
+        tax: 0,
+        totalPaid: breakdown.buyer.totalPaid,
+        platformFee: breakdown.seller.platformFee,
+        platformFeePercent: breakdown.seller.platformFeePercent,
+        shippingPayout: breakdown.seller.shippingPayout,
+        sellerEarnings: breakdown.seller.sellerEarnings,
+      },
+      shippingAddress: {
+        fullName: req.user.name,
+        country: buyerCountry,
+      },
+      status: 'paid',
+      payout: { status: 'pending' },
+      autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
+    });
+
+    // Update inventory
+    listing.quantity = Math.max(0, (listing.quantity || 0) - 1);
+    listing.quantitySold = (listing.quantitySold || 0) + 1;
+    if (listing.quantity <= 0) {
+      listing.sold = true;
+      listing.available = false;
+    }
+    await listing.save();
+
+    // Update seller pending balance
+    if (seller) {
+      seller.balance.pending += breakdown.seller.sellerEarnings;
+      await seller.save();
+    }
+
+    // Notify buyer of purchase
+    const buyer = await User.findById(req.user._id);
+    if (buyer) {
+      buyer.notifications.unshift({
+        type: 'sale',
+        from: req.user._id,
+        listing: listing._id,
+        transaction: transaction._id,
+        message: `You purchased "${listing.title}" for $${finalPrice}`,
+      });
+      await buyer.save();
+    }
+
+    // Mark offer as completed (optional)
+    offer.status = 'accepted';
+    await offer.save();
+
+    res.status(201).json({ transaction, offer });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /api/transactions - Get user's transactions
 router.get('/', auth, async (req, res) => {
   try {

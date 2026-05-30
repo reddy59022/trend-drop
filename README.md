@@ -35,6 +35,7 @@ A full-stack social commerce marketplace for buying and selling fashion, built w
 - Transaction history
 - Search with filters (category, brand, size, condition, price range)
 - Sort by newest, price, popularity
+- **Payments**: All payments are now handled via Stripe (global payment processor). RevenueCat integration has been removed. The `.env` file now requires `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. The payment flow creates a Stripe PaymentIntent, calculates platform fees, buyer protection, and shipping costs using the existing `calculatePaymentBreakdown` utility. Transactions are recorded only after successful Stripe payment.
 
 ## Tech Stack
 
