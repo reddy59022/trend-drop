@@ -1,7 +1,7 @@
-import { defaultAvatar } from "../utils/helpers";
+import { defaultAvatar, formatPrice, getConditionColor } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { FaHeart, FaShareAlt, FaArrowLeft } from 'react-icons/fa';
+import { FaHeart, FaShareAlt, FaArrowLeft, FaTruck, FaShieldAlt } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -83,11 +83,19 @@ const ListingDetail = () => {
 
   const handleBuyNow = async () => {
     if (!user) return toast.error('Please login');
-    if (!window.confirm(`Purchase "${listing.title}" for $${listing.price}?`)) return;
+    const totalDisplay = formatPrice(
+      listing.price + (listing.shipping?.shippingCost || 0) + (listing.price * 0.05),
+      listing.currency || 'USD'
+    );
+    if (!window.confirm(`Purchase "${listing.title}" for ${totalDisplay} (incl. shipping & protection)?`)) return;
 
     setBuying(true);
     try {
-      await api.post('/transactions', { listingId: listing._id });
+      await api.post('/transactions', {
+        listingId: listing._id,
+        shippingAddress: user.shippingAddress,
+        buyerCountry: user.country,
+      });
       toast.success('Purchase successful!');
       fetchListing();
     } catch (error) {
@@ -130,10 +138,10 @@ const ListingDetail = () => {
           <div className="listing-detail-header">
             <h1>{listing.title}</h1>
             <div className="listing-detail-price">
-              <span className="current-price">${listing.price}</span>
+              <span className="current-price">{formatPrice(listing.price, listing.currency || 'USD')}</span>
               {listing.originalPrice && (
                 <>
-                  <span className="original-price">${listing.originalPrice}</span>
+                  <span className="original-price">{formatPrice(listing.originalPrice, listing.currency || 'USD')}</span>
                   {discount > 0 && <span className="discount-badge">{discount}% OFF</span>}
                 </>
               )}
@@ -144,9 +152,66 @@ const ListingDetail = () => {
             {listing.brand && <p><strong>Brand:</strong> {listing.brand}</p>}
             {listing.size && <p><strong>Size:</strong> {listing.size}</p>}
             {listing.color && <p><strong>Color:</strong> {listing.color}</p>}
-            <p><strong>Condition:</strong> {listing.condition}</p>
+            <p><strong>Condition:</strong> <span style={{ color: getConditionColor(listing.condition) }}>{listing.condition}</span></p>
             <p><strong>Category:</strong> {listing.category}</p>
+            {listing.shipsFrom && <p><strong>Ships from:</strong> {listing.shipsFrom}</p>}
           </div>
+
+          {/* Shipping Info */}
+          <div style={{ background: '#f8f9fa', padding: 16, borderRadius: 12, marginBottom: 16 }}>
+            <h4 style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 6 }}><FaTruck /> Shipping</h4>
+            {listing.shipping?.freeShipping ? (
+              <p style={{ color: '#10b981', fontWeight: 600, margin: 0 }}>Free Domestic Shipping</p>
+            ) : (
+              <p style={{ margin: 0, fontSize: 14 }}>
+                Shipping cost paid by buyer: ~{formatPrice(listing.shipping?.shippingCost || 3.99, listing.currency || 'USD')}
+              </p>
+            )}
+            {listing.shipping?.estimatedDays && (
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#666' }}>
+                Estimated delivery: {listing.shipping.estimatedDays} business days
+              </p>
+            )}
+          </div>
+
+          {/* Payment Breakdown Preview for buyers */}
+          {!isOwner && !listing.sold && user && (
+            <div style={{ background: '#f8f9fa', padding: 16, borderRadius: 12, marginBottom: 16 }}>
+              <h4 style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 6 }}><FaShieldAlt /> Buyer Protection</h4>
+              <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Item Price</span><span>{formatPrice(listing.price, listing.currency || 'USD')}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Shipping</span><span>{formatPrice(listing.shipping?.freeShipping ? 0 : (listing.shipping?.shippingCost || 3.99), listing.currency || 'USD')}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Buyer Protection (5%)</span><span>{formatPrice(listing.price * 0.05, listing.currency || 'USD')}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, borderTop: '1px solid #ddd', paddingTop: 4, marginTop: 2 }}>
+                  <span>Total</span><span>{formatPrice(listing.price + (listing.shipping?.freeShipping ? 0 : (listing.shipping?.shippingCost || 3.99)) + (listing.price * 0.05), listing.currency || 'USD')}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Seller earnings preview */}
+          {isOwner && (
+            <div style={{ background: '#f0fdf4', padding: 16, borderRadius: 12, marginBottom: 16 }}>
+              <h4 style={{ margin: '0 0 8px', color: '#10b981' }}>Your Earnings</h4>
+              <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Listing Price</span><span>{formatPrice(listing.price, listing.currency || 'USD')}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#ef4444' }}>
+                  <span>Platform Fee (10%)</span><span>-{formatPrice(listing.price * 0.1, listing.currency || 'USD')}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, borderTop: '1px solid #c8e6c9', paddingTop: 4, marginTop: 2, color: '#10b981' }}>
+                  <span>You'll Receive</span><span>{formatPrice(listing.price * 0.9, listing.currency || 'USD')}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="listing-detail-description">
             <h3>Description</h3>
@@ -168,7 +233,7 @@ const ListingDetail = () => {
                   Make Offer
                 </button>
                 <button className="btn btn-primary" onClick={handleBuyNow} disabled={buying}>
-                  {buying ? 'Buying...' : `Buy Now - $${listing.price}`}
+                  {buying ? 'Buying...' : `Buy Now - ${formatPrice(listing.price, listing.currency || 'USD')}`}
                 </button>
               </div>
             )}

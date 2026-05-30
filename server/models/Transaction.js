@@ -16,21 +16,107 @@ const transactionSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
-  amount: {
+  // Pricing
+  itemPrice: {
     type: Number,
     required: true,
   },
+  currency: {
+    type: String,
+    default: 'USD',
+  },
+  // Full payment breakdown - transparent for both buyer and seller
+  paymentBreakdown: {
+    // What the buyer pays
+    subtotal: { type: Number, required: true },
+    shippingCost: { type: Number, default: 0 },
+    buyerProtectionFee: { type: Number, default: 0 },
+    buyerProtectionPercent: { type: Number, default: 5 },
+    tax: { type: Number, default: 0 },
+    totalPaid: { type: Number, required: true },
+
+    // What the seller receives
+    platformFee: { type: Number, default: 0 },
+    platformFeePercent: { type: Number, default: 10 },
+    shippingPayout: { type: Number, default: 0 },
+    sellerEarnings: { type: Number, required: true },
+  },
   status: {
     type: String,
-    enum: ['pending', 'completed', 'cancelled', 'shipped', 'delivered'],
+    enum: ['pending', 'paid', 'processing', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'completed', 'cancelled', 'refunded', 'disputed', 'returned'],
     default: 'pending',
   },
+  // Shipping details
+  shipping: {
+    carrier: { type: String, default: '' },
+    trackingNumber: { type: String, default: '' },
+    trackingUrl: { type: String, default: '' },
+    labelCreated: { type: Boolean, default: false },
+    labelCreatedDate: { type: Date },
+    estimatedDelivery: { type: Date },
+    actualDelivery: { type: Date },
+    weight: { type: Number, default: 0.5 },
+    service: { type: String, default: '' },
+    // Full tracking history
+    trackingHistory: [{
+      status: String,
+      label: String,
+      description: String,
+      timestamp: { type: Date, default: Date.now },
+      location: String,
+    }],
+  },
   shippingAddress: {
-    street: String,
+    fullName: String,
+    street1: String,
+    street2: String,
     city: String,
     state: String,
-    zip: String,
+    postalCode: String,
+    country: String,
+    phone: String,
+  },
+  sellerAddress: {
+    street1: String,
+    street2: String,
+    city: String,
+    state: String,
+    postalCode: String,
+    country: String,
+  },
+  // Payout tracking
+  payout: {
+    status: { type: String, enum: ['pending', 'processing', 'completed', 'failed'], default: 'pending' },
+    method: { type: String, default: '' },
+    processedAt: { type: Date },
+    transactionId: { type: String, default: '' },
+  },
+  // Auto-tracking
+  autoTracking: {
+    enabled: { type: Boolean, default: true },
+    lastChecked: { type: Date },
+    nextCheck: { type: Date },
+    attempts: { type: Number, default: 0 },
+  },
+  // Buyer confirmation
+  buyerConfirmed: {
+    received: { type: Boolean, default: false },
+    confirmedAt: { type: Date },
+  },
+  // Dispute info
+  dispute: {
+    reason: String,
+    filedAt: Date,
+    resolvedAt: Date,
+    resolution: String,
   },
 }, { timestamps: true });
+
+// Indexes
+transactionSchema.index({ buyer: 1, createdAt: -1 });
+transactionSchema.index({ seller: 1, createdAt: -1 });
+transactionSchema.index({ status: 1 });
+transactionSchema.index({ 'shipping.trackingNumber': 1 });
+transactionSchema.index({ 'autoTracking.nextCheck': 1, status: 1 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

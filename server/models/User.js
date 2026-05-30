@@ -29,6 +29,65 @@ const userSchema = new mongoose.Schema({
     default: '',
     maxlength: 500,
   },
+  // Global fields
+  country: {
+    type: String,
+    default: 'US',
+    maxlength: 2,
+  },
+  phone: {
+    type: String,
+    default: '',
+  },
+  phoneCode: {
+    type: String,
+    default: '+1',
+  },
+  currency: {
+    type: String,
+    default: 'USD',
+  },
+  language: {
+    type: String,
+    default: 'en',
+  },
+  // Shipping address
+  shippingAddress: {
+    fullName: { type: String, default: '' },
+    street1: { type: String, default: '' },
+    street2: { type: String, default: '' },
+    city: { type: String, default: '' },
+    state: { type: String, default: '' },
+    postalCode: { type: String, default: '' },
+    country: { type: String, default: 'US' },
+    phone: { type: String, default: '' },
+  },
+  // Seller balance / payout info
+  balance: {
+    available: { type: Number, default: 0 },
+    pending: { type: Number, default: 0 },
+    totalEarned: { type: Number, default: 0 },
+    totalPaidOut: { type: Number, default: 0 },
+    currency: { type: String, default: 'USD' },
+  },
+  payoutMethod: {
+    type: { type: String, enum: ['paypal', 'bank', 'stripe', ''], default: '' },
+    paypalEmail: { type: String, default: '' },
+    bankName: { type: String, default: '' },
+    accountNumber: { type: String, default: '' },
+    routingNumber: { type: String, default: '' },
+    accountHolder: { type: String, default: '' },
+  },
+  // Platform stats
+  stats: {
+    totalSales: { type: Number, default: 0 },
+    totalPurchases: { type: Number, default: 0 },
+    totalListings: { type: Number, default: 0 },
+    avgRating: { type: Number, default: 0 },
+    ratingCount: { type: Number, default: 0 },
+    responseRate: { type: Number, default: 100 },
+    shipTime: { type: Number, default: 3 },
+  },
   followers: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -46,19 +105,21 @@ const userSchema = new mongoose.Schema({
     default: '',
   },
   notifications: [{
-    type: { type: String, enum: ['like', 'follow', 'comment', 'offer', 'sale', 'share'] },
+    type: { type: String, enum: ['like', 'follow', 'comment', 'offer', 'sale', 'share', 'purchase', 'shipping', 'review', 'payout'] },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     listing: { type: mongoose.Schema.Types.ObjectId, ref: 'Listing' },
+    transaction: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
     message: String,
     read: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
   }],
 }, { timestamps: true });
 
-// Performance: Compound indexes for common queries
-userSchema.index({ email: 1 }); 
+// Performance indexes
+userSchema.index({ email: 1 });
 userSchema.index({ name: 'text' });
 userSchema.index({ 'notifications.read': 1, 'notifications.createdAt': -1 });
+userSchema.index({ country: 1 });
 
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();

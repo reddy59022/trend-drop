@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import { FaCamera, FaTimes } from 'react-icons/fa';
+import { countries, formatPrice } from '../utils/helpers';
 
 const Sell = () => {
   const { user } = useAuth();
@@ -22,6 +23,13 @@ const Sell = () => {
     size: '',
     condition: 'Good',
     color: '',
+    weight: '0.5',
+    weightUnit: 'kg',
+    shipsFrom: user?.country || 'US',
+    domesticShipping: true,
+    internationalShipping: false,
+    freeShipping: false,
+    shippingCost: '',
   });
 
   useEffect(() => {
@@ -221,12 +229,55 @@ const Sell = () => {
           </div>
         </div>
 
+        {/* Weight & Shipping */}
+        <div className="form-section">
+          <h2>Weight & Shipping</h2>
+          <p className="form-hint">Shipping is charged to buyers. Domestic shipping is cheaper than international.</p>
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Ships From</label>
+              <select name="shipsFrom" value={formData.shipsFrom} onChange={handleChange} className="form-input">
+                {countries.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Weight</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input type="number" name="weight" value={formData.weight} onChange={handleChange} min="0.1" step="0.1" className="form-input" style={{ flex: 1 }} />
+                <select name="weightUnit" value={formData.weightUnit} onChange={handleChange} className="form-input" style={{ width: 80 }}>
+                  <option value="kg">kg</option>
+                  <option value="lb">lb</option>
+                  <option value="oz">oz</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-group">
+              <label>
+                <input type="checkbox" name="domesticShipping" checked={formData.domesticShipping} onChange={(e) => setFormData(prev => ({ ...prev, domesticShipping: e.target.checked }))} style={{ marginRight: 6 }} />
+                Domestic Shipping
+              </label>
+            </div>
+            <div className="form-group">
+              <label>
+                <input type="checkbox" name="internationalShipping" checked={formData.internationalShipping} onChange={(e) => setFormData(prev => ({ ...prev, internationalShipping: e.target.checked }))} style={{ marginRight: 6 }} />
+                International Shipping
+              </label>
+            </div>
+            <div className="form-group">
+              <label>
+                <input type="checkbox" name="freeShipping" checked={formData.freeShipping} onChange={(e) => setFormData(prev => ({ ...prev, freeShipping: e.target.checked }))} style={{ marginRight: 6 }} />
+                Free Shipping (domestic only)
+              </label>
+            </div>
+          </div>
+        </div>
+
         {/* Pricing */}
         <div className="form-section">
           <h2>Pricing</h2>
           <div className="form-grid">
             <div className="form-group">
-              <label htmlFor="price">Listing Price * ($)</label>
+              <label htmlFor="price">Listing Price * ({user?.currency || 'USD'})</label>
               <input
                 type="number"
                 id="price"
@@ -239,9 +290,14 @@ const Sell = () => {
                 required
                 className="form-input"
               />
+              {formData.price > 0 && (
+                <p style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
+                  You'll earn ~{formatPrice(formData.price * 0.9, user?.currency)} after 10% platform fee
+                </p>
+              )}
             </div>
             <div className="form-group">
-              <label htmlFor="originalPrice">Original Price ($)</label>
+              <label htmlFor="originalPrice">Original Price ({user?.currency || 'USD'})</label>
               <input
                 type="number"
                 id="originalPrice"

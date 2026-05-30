@@ -26,6 +26,10 @@ const listingSchema = new mongoose.Schema({
     type: Number,
     min: 0,
   },
+  currency: {
+    type: String,
+    default: 'USD',
+  },
   images: [{
     type: String,
   }],
@@ -49,6 +53,45 @@ const listingSchema = new mongoose.Schema({
   color: {
     type: String,
   },
+  // Weight and shipping
+  weight: {
+    type: Number,
+    default: 0.5,
+    min: 0.1,
+  },
+  weightUnit: {
+    type: String,
+    enum: ['kg', 'lb', 'oz'],
+    default: 'kg',
+  },
+  dimensions: {
+    length: { type: Number, default: 0 },
+    width: { type: Number, default: 0 },
+    height: { type: Number, default: 0 },
+    unit: { type: String, default: 'cm', enum: ['cm', 'in'] },
+  },
+  // Shipping options
+  shipping: {
+    domestic: { type: Boolean, default: true },
+    international: { type: Boolean, default: false },
+    freeShipping: { type: Boolean, default: false },
+    shippingCost: { type: Number, default: 0 },
+    estimatedDays: { type: String, default: '3-5' },
+    carrier: { type: String, default: '' },
+  },
+  // Origin country (where item ships from)
+  shipsFrom: {
+    type: String,
+    default: 'US',
+  },
+  // Payment breakdown (calculated on purchase)
+  paymentBreakdown: {
+    sellerEarnings: { type: Number, default: 0 },
+    platformFee: { type: Number, default: 0 },
+    platformFeePercent: { type: Number, default: 10 },
+    shippingCost: { type: Number, default: 0 },
+    buyerTotal: { type: Number, default: 0 },
+  },
   likes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -70,15 +113,23 @@ const listingSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  views: {
+    type: Number,
+    default: 0,
+  },
+  featured: {
+    type: Boolean,
+    default: false,
+  },
 }, { timestamps: true });
 
-// Performance: Compound indexes for filtered & sorted queries
+// Performance indexes
 listingSchema.index({ title: 'text', brand: 'text' });
 listingSchema.index({ available: 1, sold: 1, createdAt: -1 });
 listingSchema.index({ available: 1, sold: 1, category: 1, price: 1 });
 listingSchema.index({ seller: 1, sold: 1, createdAt: -1 });
 listingSchema.index({ category: 1, available: 1, sold: 1, price: 1 });
-listingSchema.index({ 'likes.length': -1 });
-listingSchema.index({ _id: 1, createdAt: -1 });
+listingSchema.index({ shipsFrom: 1 });
+listingSchema.index({ currency: 1 });
 
 module.exports = mongoose.model('Listing', listingSchema);

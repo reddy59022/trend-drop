@@ -1,88 +1,342 @@
 const express = require('express');
 const router = express.Router();
-const { carriers, countryCarriers, calculateShipping, generateLabel, getTrackingStatuses } = require('../config/shipping');
-const { currencies } = require('../config/currencies');
 const { auth } = require('../middleware/auth');
+const { carriers, calculateShipping, generateLabel, trackingStatuses, simulateTrackingUpdate, getPreferredCarrier } = require('../config/shipping');
+const { currencies, convertPrice, formatPrice } = require('../config/currencies');
+const { countries, getCountry } = require('../config/countries');
+const Transaction = require('../models/Transaction');
+const User = require('../models/User');
 
-// GET /api/shipping/rates - Calculate shipping rates
-router.post('/rates', async (req, res) => {
-  try {
-    const { fromCountry, toCountry, weightKg, itemPrice } = req.body;
-    if (!fromCountry || !toCountry) {
-      return res.status(400).json({ message: 'fromCountry and toCountry are required' });
-    }
-    const rate = calculateShipping(fromCountry, toCountry, weightKg || 0.5, itemPrice || 0);
-    const availableCarriers = countryCarriers[toCountry] || countryCarriers.default;
-    const carrierDetails = availableCarriers.map(code => ({
-      code,
-      name: carriers[code]?.name || code,
-      ...calculateShipping(fromCountry, toCountry, weightKg || 0.5, itemPrice || 0),
-    }));
-    res.json({ rate, carriers: carrierDetails });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
+// GET /api/shipping/carriers - Get all carriers
+router.get('/carriers', (req, res) => {
+  const { country } = req.query;
+  let result = carriers;
+  if (country) {
+    result = Object.fromEntries(
+      Object.entries(carriers).filter(([k, v]) => v.country === country || v.type === 'private')
+    );
   }
-});
-
-// GET /api/shipping/carriers - Get available carriers for a country
-router.get('/carriers/:country', (req, res) => {
-  const codes = countryCarriers[req.params.country] || countryCarriers.default;
-  const result = codes.map(code => ({
-    code,
-    name: carriers[code]?.name || code,
-    trackingUrl: carriers[code]?.trackingUrl || '',
-  }));
   res.json(result);
 });
 
-// GET /api/shipping/countries - Get all supported countries
+// GET /api/shipping/countries - Get all countries
 router.get('/countries', (req, res) => {
-  const countries = Object.keys(countryCarriers).filter(k => k !== 'default').map(code => ({
-    code,
-    carriers: countryCarriers[code].map(c => carriers[c]?.name || c),
-  }));
   res.json(countries);
 });
 
-// POST /api/shipping/label - Generate shipping label
-router.post('/label', auth, async (req, res) => {
-  try {
-    const { orderId, carrier, shippingAddress, sellerAddress } = req.body;
-    if (!carrier || !shippingAddress) {
-      return res.status(400).json({ message: 'carrier and shippingAddress are required' });
+// GET /api/shipping/currencies - Get all currencies
+router.get('/currencies', (req, res) => {
+  const { country } = req.query;
+  if (country) {
+    const countryInfo = getCountry(country);
+    if (countryInfo) {
+      return res.json({ currency: countryInfo.currency, currencies });
     }
-    const label = generateLabel({ shippingAddress, sellerAddress }, carrier);
-    res.json({ message: 'Label generated', label });
+  }
+  res.json(currencies);
+});
+
+// POST /api/shipping/calculate - Calculate shipping cost
+router.post('/calculate', (req, res) => {
+  try {
+    const { fromCountry, toCountry, weightKg, itemPrice, options, buyerCurrency } = req.body;
+
+    if (!fromCountry || !toCountry) {
+      return res.status(400).json({ message: 'fromCountry and toCountry are required' });
+    }
+
+    const result = calculateShipping(fromCountry, toCountry, weightKg || 0.5, itemPrice || 0, options || {});
+
+    // Convert to buyer's currency if different
+    if (buyerCurrency && buyerCurrency !== 'USD') {
+      const curr = currencies[buyerCurrency];
+      if (curr) {
+        result.costLocal = Math.round(result.cost * curr.rate * 100) / 100;
+        result.buyerCurrency = buyerCurrency;
+        result.buyerCurrencySymbol = curr.symbol;
+        if (result.breakdown) {
+          result.breakdownLocal = {
+            baseRate: Math.round(result.breakdown.baseRate * curr.rate * 100) / 100,
+            weightCharge: Math.round(result.breakdown.weightCharge * curr.rate * 100) / 100,
+            surcharges: Math.round(result.breakdown.surcharges * curr.rate * 100) / 100,
+            total: Math.round(result.breakdown.total * curr.rate * 100) / 100,
+          };
+        }
+      }
+    }
+
+    // Get carrier info
+    const carrierCode = result.carrier;
+    const carrierInfo = carriers[carrierCode];
+    if (carrierInfo) {
+      result.carrierName = carrierInfo.name;
+      result.carrierServices = carrierInfo.services;
+    }
+
+    res.json(result);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error calculating shipping' });
   }
 });
 
-// GET /api/shipping/tracking/:trackingNumber - Get tracking info
-router.get('/tracking/:trackingNumber', async (req, res) => {
+// POST /api/shipping/calculate-breakdown - Full transparent payment breakdown
+router.post('/calculate-breakdown', (req, res) => {
   try {
-    const statuses = getTrackingStatuses();
-    // Simulate tracking - in production, poll carrier APIs
-    const trackingNumber = req.params.trackingNumber;
-    const currentStatus = statuses[0]; // label_created as default
+    const { itemPrice, fromCountry, toCountry, weightKg, currency, platformFeePercent, buyerProtectionPercent } = req.body;
+
+    const sellerCountry = fromCountry || 'US';
+    const buyerCountry = toCountry || 'US';
+    const price = itemPrice || 0;
+
+    // Calculate shipping
+    const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKg || 0.5, price);
+    const shippingCost = shippingResult.cost;
+
+    // Platform fee (paid by seller)
+    const feePercent = platformFeePercent || 10;
+    const platformFee = Math.round(price * (feePercent / 100) * 100) / 100;
+
+    // Buyer protection fee (paid by buyer)
+    const bpPercent = buyerProtectionPercent || 5;
+    const buyerProtectionFee = Math.round(price * (bpPercent / 100) * 100) / 100;
+
+    // Buyer total
+    const totalPaid = Math.round((price + shippingCost + buyerProtectionFee) * 100) / 100;
+
+    // Seller earnings
+    const sellerEarnings = Math.round((price - platformFee + shippingCost) * 100) / 100;
+
+    // Convert to local currency if needed
+    let localBreakdown = null;
+    if (currency && currency !== 'USD') {
+      const curr = currencies[currency];
+      if (curr) {
+        localBreakdown = {
+          currency,
+          symbol: curr.symbol,
+          itemPrice: Math.round(price * curr.rate * 100) / 100,
+          shippingCost: Math.round(shippingCost * curr.rate * 100) / 100,
+          buyerProtectionFee: Math.round(buyerProtectionFee * curr.rate * 100) / 100,
+          totalPaid: Math.round(totalPaid * curr.rate * 100) / 100,
+          platformFee: Math.round(platformFee * curr.rate * 100) / 100,
+          sellerEarnings: Math.round(sellerEarnings * curr.rate * 100) / 100,
+        };
+      }
+    }
+
     res.json({
-      trackingNumber,
-      status: currentStatus,
-      history: [{ ...currentStatus, timestamp: new Date().toISOString(), location: 'Origin Facility' }],
-      estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      // What the buyer pays (USD)
+      buyer: {
+        itemPrice: price,
+        shippingCost,
+        buyerProtectionFee,
+        buyerProtectionPercent: bpPercent,
+        totalPaid,
+      },
+      // What the seller receives (USD)
+      seller: {
+        itemPrice: price,
+        platformFee,
+        platformFeePercent: feePercent,
+        shippingPayout: shippingCost,
+        sellerEarnings,
+      },
+      // Shipping details
+      shipping: {
+        carrier: shippingResult.carrier,
+        carrierName: carriers[shippingResult.carrier]?.name || shippingResult.carrier,
+        estimatedDays: shippingResult.estimatedDays,
+        isDomestic: shippingResult.isDomestic,
+        freeShipping: shippingResult.freeShipping,
+        zone: shippingResult.zone,
+        breakdown: shippingResult.breakdown,
+      },
+      // Local currency conversion
+      local: localBreakdown,
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error calculating breakdown' });
   }
 });
 
-// GET /api/shipping/currencies - Get all supported currencies
-router.get('/currencies', (req, res) => {
-  const list = Object.entries(currencies).map(([code, info]) => ({ code, ...info }));
-  res.json(list);
+// POST /api/shipping/generate-label - Generate shipping label for a transaction
+router.post('/generate-label', auth, async (req, res) => {
+  try {
+    const { transactionId, carrier } = req.body;
+
+    const transaction = await Transaction.findById(transactionId);
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+    if (transaction.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const carrierCode = carrier || getPreferredCarrier(
+      transaction.shippingAddress?.country || 'US',
+      true
+    );
+
+    const label = generateLabel({
+      shippingAddress: transaction.shippingAddress,
+      sellerAddress: transaction.sellerAddress,
+      weight: transaction.shipping?.weight || 0.5,
+    }, carrierCode);
+
+    // Update transaction with label info
+    transaction.shipping = {
+      ...transaction.shipping,
+      carrier: label.carrier,
+      trackingNumber: label.trackingNumber,
+      trackingUrl: label.trackingUrl,
+      labelCreated: true,
+      labelCreatedDate: new Date(),
+      estimatedDelivery: new Date(label.estimatedDelivery),
+      service: label.service,
+      trackingHistory: label.statusHistory,
+    };
+    transaction.status = 'shipped';
+    await transaction.save();
+
+    res.json(label);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error generating label' });
+  }
+});
+
+// GET /api/shipping/tracking/:transactionId - Get tracking info
+router.get('/tracking/:transactionId', auth, async (req, res) => {
+  try {
+    const transaction = await Transaction.findById(req.params.transactionId)
+      .populate('buyer', 'name avatar')
+      .populate('seller', 'name avatar')
+      .populate('listing', 'title images');
+
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+
+    // Check if user is buyer or seller
+    const userId = req.user._id.toString();
+    if (transaction.buyer._id.toString() !== userId && transaction.seller._id.toString() !== userId) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    res.json({
+      trackingNumber: transaction.shipping?.trackingNumber,
+      carrier: transaction.shipping?.carrier,
+      trackingUrl: transaction.shipping?.trackingUrl,
+      status: transaction.status,
+      estimatedDelivery: transaction.shipping?.estimatedDelivery,
+      actualDelivery: transaction.shipping?.actualDelivery,
+      trackingHistory: transaction.shipping?.trackingHistory || [],
+      service: transaction.shipping?.service,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error getting tracking info' });
+  }
+});
+
+// GET /api/shipping/tracking-statuses - Get all possible tracking statuses
+router.get('/tracking-statuses', (req, res) => {
+  res.json(trackingStatuses);
+});
+
+// POST /api/shipping/auto-track - Simulate daily auto-tracking update (admin/cron)
+router.post('/auto-track', async (req, res) => {
+  try {
+    // In production, this would be called by a cron job daily
+    const activeTransactions = await Transaction.find({
+      status: { $in: ['shipped', 'in_transit', 'out_for_delivery'] },
+      'shipping.trackingNumber': { $ne: '' },
+      'autoTracking.enabled': true,
+    });
+
+    let updated = 0;
+    for (const txn of activeTransactions) {
+      const labelDate = txn.shipping?.labelCreatedDate || txn.createdAt;
+      const daysSince = Math.floor((Date.now() - new Date(labelDate)) / (1000 * 60 * 60 * 24));
+      const currentStatus = txn.status === 'shipped' ? 'picked_up' : txn.status;
+      const newStatus = simulateTrackingUpdate(currentStatus, daysSince);
+
+      if (newStatus !== currentStatus) {
+        txn.status = newStatus === 'delivered' ? 'delivered' : newStatus;
+        if (newStatus === 'delivered') {
+          txn.shipping.actualDelivery = new Date();
+          // Auto-complete after 3 days of delivery
+          const deliveryDate = new Date();
+          deliveryDate.setDate(deliveryDate.getDate() + 3);
+          txn.autoTracking.nextCheck = deliveryDate;
+        }
+        txn.shipping.trackingHistory.push({
+          status: newStatus,
+          label: trackingStatuses.find(s => s.code === newStatus)?.label || newStatus,
+          description: trackingStatuses.find(s => s.code === newStatus)?.description || '',
+          timestamp: new Date(),
+          location: 'Auto-updated',
+        });
+        txn.autoTracking.lastChecked = new Date();
+        txn.autoTracking.nextCheck = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        txn.autoTracking.attempts += 1;
+        await txn.save();
+        updated++;
+      }
+    }
+
+    res.json({ message: `Auto-tracking completed. ${updated} transactions updated.`, updated });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error running auto-tracking' });
+  }
+});
+
+// POST /api/shipping/confirm-received - Buyer confirms receipt
+router.post('/confirm-received', auth, async (req, res) => {
+  try {
+    const { transactionId } = req.body;
+
+    const transaction = await Transaction.findById(transactionId);
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+    if (transaction.buyer.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    transaction.buyerConfirmed.received = true;
+    transaction.buyerConfirmed.confirmedAt = new Date();
+    transaction.status = 'completed';
+
+    // Release funds to seller
+    const seller = await User.findById(transaction.seller);
+    if (seller) {
+      seller.balance.available += transaction.paymentBreakdown.sellerEarnings;
+      seller.balance.pending -= transaction.paymentBreakdown.sellerEarnings;
+      seller.stats.totalSales += 1;
+      await seller.save();
+    }
+
+    // Update buyer stats
+    const buyer = await User.findById(transaction.buyer);
+    if (buyer) {
+      buyer.stats.totalPurchases += 1;
+      await buyer.save();
+    }
+
+    await transaction.save();
+
+    res.json({
+      message: 'Receipt confirmed. Payment released to seller.',
+      transaction,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error confirming receipt' });
+  }
 });
 
 module.exports = router;
