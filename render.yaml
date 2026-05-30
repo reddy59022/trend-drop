@@ -35,6 +35,10 @@ services:
       value: kxa47g-Rl846xNqfWU0kh3uTN0M
     # Google OAuth credentials – keep secret; not synced from .env.
     - key: GOOGLE_CLIENT_ID
+      # Google OAuth client ID for Sign‑In With Google. Replace with your actual client ID.
+      value: "<GOOGLE_CLIENT_ID>"
       sync: false
     - key: GOOGLE_CLIENT_SECRET
+      # Corresponding client secret (keep secret, not synced from source).
+      value: "<GOOGLE_CLIENT_SECRET>"
       sync: false
