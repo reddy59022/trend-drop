@@ -4,6 +4,7 @@ const Listing = require('../models/Listing');
 const User = require('../models/User');
 const { auth, optionalAuth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const { paginate } = require('../utils/pagination');
 
 // Performance: Select only needed fields for list queries
 const LISTING_LIST_FIELDS = 'title price originalPrice images seller category brand size condition likes sold createdAt';
@@ -47,21 +48,20 @@ router.get('/', optionalAuth, async (req, res) => {
     else if (sort === 'popular') sortOption = { 'likes.length': -1 };
 
     // Performance: lean() returns plain JS objects (faster, less memory)
-    const listings = await Listing.find(query, LISTING_LIST_FIELDS)
-      .populate('seller', USER_PUBLIC_FIELDS)
-      .sort(sortOption)
-      .lean()
-      .limit(limitNum)
-      .skip((pageNum - 1) * limitNum);
-
-    // Performance: estimatedDocumentCount is faster when possible
-    const total = await Listing.countDocuments(query);
+    const result = await paginate(Listing, {
+      page: pageNum,
+      limit: limitNum,
+      maxLimit: 50,
+      sort: sortOption,
+      filter: query,
+      select: LISTING_LIST_FIELDS,
+      populate: { path: 'seller', select: USER_PUBLIC_FIELDS },
+      lean: true,
+    });
 
     res.json({
-      listings,
-      totalPages: Math.ceil(total / limitNum),
-      currentPage: pageNum,
-      total,
+      listings: result.docs,
+      ...result.pagination,
     });
   } catch (error) {
     console.error(error);

@@ -1,46 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
+import Pagination from '../components/Pagination';
 import { FaRss } from 'react-icons/fa';
 
 const Feed = () => {
   const { user } = useAuth();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [pagination, setPagination] = useState(null);
 
-  useEffect(() => {
-    fetchFeed();
-    // eslint-disable-next-line
-  }, [user]);
-
-  const fetchFeed = async (pageNum = 1) => {
+  const fetchFeed = useCallback(async (pageNum = 1) => {
+    setLoading(true);
     try {
-      const url = user ? `/users/feed?page=${pageNum}&limit=20` : `/listings?limit=20&sort=popular`;
+      const url = user ? `/users/feed?page=${pageNum}&limit=20` : `/listings?page=${pageNum}&limit=20&sort=popular`;
       const res = await api.get(url);
-      const items = res.data.listings || [];
-      if (pageNum === 1) {
-        setListings(items);
-      } else {
-        setListings((prev) => [...prev, ...items]);
-      }
-      setHasMore(pageNum < (res.data.totalPages || 1));
+      setListings(res.data.listings || res.data.docs || []);
+      setPagination(res.data.pagination || {
+        total: res.data.total,
+        totalPages: res.data.totalPages,
+        currentPage: res.data.currentPage || pageNum,
+        hasNextPage: pageNum < (res.data.totalPages || 1),
+        hasPrevPage: pageNum > 1,
+      });
     } catch (error) {
       console.error(error);
     }
     setLoading(false);
-  };
+  }, [user]);
 
-  const loadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchFeed(nextPage);
-  };
+  useEffect(() => {
+    fetchFeed(1);
+  }, [fetchFeed]);
 
-  if (loading) {
+  if (loading && listings.length === 0) {
     return <div className="page-container"><div className="spinner"></div></div>;
   }
 
@@ -68,13 +63,7 @@ const Feed = () => {
               <ListingCard key={listing._id} listing={listing} />
             ))}
           </div>
-          {hasMore && (
-            <div className="load-more">
-              <button className="btn btn-outline" onClick={loadMore}>
-                Load More
-              </button>
-            </div>
-          )}
+          <Pagination pagination={pagination} onPageChange={fetchFeed} />
         </>
       )}
     </div>

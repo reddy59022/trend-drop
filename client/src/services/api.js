@@ -95,4 +95,13 @@ export const processPayout = (transactionId) => api.post(`/payouts/process/${tra
 export const getSellerBalance = () => api.get('/payouts/balance');
 export const getCommissionInfo = () => api.get('/payouts/commission-info');
 
+// Payments (Stripe + RevenueCat)
+export const createPaymentIntent = (data) => api.post('/payments/create-intent', data);
+export const confirmPayment = (data) => api.post('/payments/confirm', data);
+export const getPaymentBreakdown = (data) => api.post('/payments/breakdown', data);
+export const getCommissions = () => api.get('/payments/commissions');
+export const requestPayout = () => api.post('/payments/payout');
+export const getPlatformFee = (country) => api.get(`/payments/platform-fee?country=${country}`);
+export const validateReceipt = (data) => api.post('/payments/revenuecat/validate', data);
+
 export default api;

@@ -3,14 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { FaFilter } from 'react-icons/fa';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
+import Pagination from '../components/Pagination';
 
 const Search = () => {
   const [searchParams] = useSearchParams();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState(0);
+  const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
 
   const [filters, setFilters] = useState({
@@ -42,9 +42,14 @@ const Search = () => {
       params.set('limit', 20);
 
       const res = await api.get(`/listings?${params.toString()}`);
-      setListings(res.data.listings);
-      setTotal(res.data.total);
-      setTotalPages(res.data.totalPages);
+      setListings(res.data.listings || res.data.docs || []);
+      setPagination(res.data.pagination || {
+        total: res.data.total,
+        totalPages: res.data.totalPages,
+        currentPage: Number(page),
+        hasNextPage: Number(page) < (res.data.totalPages || 1),
+        hasPrevPage: Number(page) > 1,
+      });
     } catch (error) {
       console.error(error);
     }
@@ -54,6 +59,11 @@ const Search = () => {
   const handleFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
     setPage(1);
+  };
+
+  const handlePageChange = (newPage) => {
+    setPage(newPage);
+    window.scrollTo(0, 0);
   };
 
   const clearFilters = () => {
@@ -72,9 +82,9 @@ const Search = () => {
     <div className="page-container">
       <div className="search-header">
         <h1>
-          {query ? `Results for "${query}"` : 'Browse All'}
-          {total > 0 && <span className="result-count"> ({total} items)</span>}
-        </h1>
+           {query ? `Results for "${query}"` : 'Browse All'}
+           {pagination?.total > 0 && <span className="result-count"> ({pagination.total} items)</span>}
+         </h1>
         <div className="search-controls">
           <select
             value={filters.sort}
@@ -197,17 +207,7 @@ const Search = () => {
                   <ListingCard key={listing._id} listing={listing} />
                 ))}
               </div>
-              {totalPages > 1 && (
-                <div className="pagination">
-                  <button className="btn btn-sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
-                    Previous
-                  </button>
-                  <span>Page {page} of {totalPages}</span>
-                  <button className="btn btn-sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>
-                    Next
-                  </button>
-                </div>
-              )}
+              <Pagination pagination={pagination} onPageChange={handlePageChange} />
             </>
           )}
         </div>
