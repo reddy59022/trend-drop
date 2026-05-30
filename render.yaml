@@ -15,7 +15,8 @@ services:
     - key: NODE_ENV
       value: production
     - key: MONGO_URI
-      # Do not sync from .env; the value should be provided as a secret in the Render dashboard.
+      # Provide the Atlas connection string as a secret (do not expose in source).
+      value: mongodb+srv://reddy59022_db_user:anNecZCiT3eJQfre@cluster0.mongodb.net/poshmark?retryWrites=true&w=majority
       sync: false
     - key: JWT_SECRET
       value: 4QmypzuXr4jWuuQAa6hFuga0Mch4wT19Usj53CRxd14=

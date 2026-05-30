@@ -135,7 +135,14 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/health/mongo', async (req, res) => {
+  // Ensure Mongoose is connected before trying to ping.
+  if (mongoose.connection.readyState !== 1) {
+    const msg = 'MongoDB not connected';
+    console.warn('MongoDB health check warning:', msg);
+    return res.status(500).json({ status: 'error', message: msg });
+  }
   try {
+    // `db` is defined when the connection is open.
     await mongoose.connection.db.admin().ping();
     res.json({ status: 'ok', mongo: 'connected' });
   } catch (e) {

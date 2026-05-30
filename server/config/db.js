@@ -8,13 +8,20 @@ if (process.env.NODE_ENV === 'production') {
   console.log('MongoDB URI used:', process.env.MONGO_URI ? '[REDACTED]' : 'undefined');
 }
 // Use the provided MONGO_URI if set; otherwise fall back to a local MongoDB instance.
-const mongoUri = process.env.MONGO_URI && process.env.MONGO_URI.trim().length > 0
-  ? process.env.MONGO_URI.trim()
-  : "mongodb://localhost:27017/trend-drop";
+// Remove any surrounding quotes that might be present in the env var (e.g., "mongodb+srv://...")
+const rawUri = process.env.MONGO_URI && typeof process.env.MONGO_URI === 'string'
+  ? process.env.MONGO_URI.trim().replace(/^"+|"+$/g, '')
+  : '';
+const mongoUri = rawUri.length > 0 ? rawUri : "mongodb://localhost:27017/trend-drop";
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(mongoUri);
+    const conn = await mongoose.connect(mongoUri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      // Enable DNS seedlist (SRV) resolution for Atlas clusters
+      dnsSeedlistEnabled: true,
+    });
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     // If the connection string uses the SRV scheme and DNS resolution fails,
