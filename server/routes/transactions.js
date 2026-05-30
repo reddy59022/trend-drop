@@ -23,6 +23,9 @@ router.post('/', auth, async (req, res) => {
     if (!listing.available || listing.sold) {
       return res.status(400).json({ message: 'Listing is no longer available' });
     }
+    if (listing.quantity <= 0) {
+      return res.status(400).json({ message: 'Out of stock' });
+    }
 
     // Get seller info for country
     const seller = await User.findById(listing.seller);
@@ -98,9 +101,13 @@ router.post('/', auth, async (req, res) => {
       status: 'paid',
     });
 
-    // Mark listing as sold
-    listing.sold = true;
-    listing.available = false;
+    // Update inventory
+    listing.quantity = Math.max(0, listing.quantity - 1);
+    listing.quantitySold = (listing.quantitySold || 0) + 1;
+    if (listing.quantity <= 0) {
+      listing.sold = true;
+      listing.available = false;
+    }
     listing.paymentBreakdown = {
       sellerEarnings,
       platformFee,

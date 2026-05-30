@@ -23,7 +23,7 @@ router.get('/', optionalAuth, async (req, res) => {
     const pageNum = Math.max(1, Math.min(Number(page) || 1, 100));
     const limitNum = Math.max(1, Math.min(Number(limit) || 20, 50));
 
-    let query = { available: true, sold: false };
+    let query = { available: true, sold: false, quantity: { $gt: 0 } };
 
     if (category) query.category = category;
     if (brand) query.brand = { $regex: brand, $options: 'i' };
@@ -220,7 +220,7 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
   }
 });
 
-// DELETE /api/listings/:id
+// DELETE /api/listings/:id - Delete listing + cleanup Cloudinary images
 router.delete('/:id', auth, async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id);
@@ -230,8 +230,103 @@ router.delete('/:id', auth, async (req, res) => {
     if (listing.seller.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
+
+    // Auto-delete images from Cloudinary
+    if (listing.images && listing.images.length > 0) {
+      try {
+        const { cloudinary } = require('../config/cloudinary');
+        for (const imageUrl of listing.images) {
+          // Extract public_id from Cloudinary URL
+          const parts = imageUrl.split('/');
+          const folderIdx = parts.findIndex(p => p === 'trend-drop');
+          if (folderIdx > -1) {
+            const publicId = parts.slice(folderIdx).join('/').replace(/\.[^.]+$/, '');
+            await cloudinary.uploader.destroy(publicId);
+          }
+        }
+      } catch (imgErr) {
+        console.error('Image cleanup error:', imgErr);
+        // Don't fail the deletion if image cleanup fails
+      }
+    }
+
     await listing.deleteOne();
-    res.json({ message: 'Listing removed' });
+    res.json({ message: 'Listing and images removed' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/listings/:id/boost - Boost a listing
+router.post('/:id/boost', auth, async (req, res) => {
+  try {
+    const { tier, durationDays } = req.body;
+    const listing = await Listing.findById(req.params.id);
+    if (!listing) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+    if (listing.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+    if (listing.boost?.active) {
+      return res.status(400).json({ message: 'Listing is already boosted' });
+    }
+
+    const { calculateBoostFee } = require('../config/boost');
+    const boostInfo = calculateBoostFee(listing.price, tier || 'standard', durationDays || 14);
+
+    // Deduct boost fee from seller balance
+    const seller = await User.findById(req.user._id);
+    if (!seller.balance || seller.balance.available < boostInfo.fee) {
+      return res.status(400).json({
+        message: `Insufficient balance for boost. Need ${boostInfo.fee}, have ${seller.balance?.available || 0}`,
+      });
+    }
+
+    seller.balance.available -= boostInfo.fee;
+    seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - boostInfo.fee);
+    await seller.save();
+
+    // Activate boost
+    listing.boost = {
+      active: true,
+      tier: tier || 'standard',
+      startDate: new Date(),
+      endDate: new Date(Date.now() + (durationDays || 14) * 24 * 60 * 60 * 1000),
+      durationDays: durationDays || 14,
+      fee: boostInfo.fee,
+      priorityScore: boostInfo.priorityScore,
+    };
+    await listing.save();
+
+    res.json({
+      message: `Listing boosted with ${boostInfo.tier}!`,
+      boost: listing.boost,
+      fee: boostInfo.fee,
+      features: boostInfo.features,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/listings/:id/deactivate-boost - Deactivate boost
+router.post('/:id/deactivate-boost', auth, async (req, res) => {
+  try {
+    const listing = await Listing.findById(req.params.id);
+    if (!listing) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+    if (listing.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    listing.boost = { active: false, tier: '', durationDays: 14, fee: 0, priorityScore: 0 };
+    await listing.save();
+
+    res.json({ message: 'Boost deactivated' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

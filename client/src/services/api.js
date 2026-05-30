@@ -115,4 +115,8 @@ export const confirmReturnReceived = (transactionId, data) => api.post(`/orders/
 export const fileDispute = (transactionId, data) => api.post(`/orders/${transactionId}/dispute`, data);
 export const getOrderLifecycle = (transactionId) => api.get(`/orders/${transactionId}/lifecycle`);
 
+// Inventory & Boost
+export const boostListing = (listingId, data) => api.post(`/listings/${listingId}/boost`, data);
+export const deactivateBoost = (listingId) => api.post(`/listings/${listingId}/deactivate-boost`);
+
 export default api;

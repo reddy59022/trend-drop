@@ -113,6 +113,26 @@ const listingSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  // Inventory management
+  quantity: {
+    type: Number,
+    default: 1,
+    min: 0,
+  },
+  quantitySold: {
+    type: Number,
+    default: 0,
+  },
+  // Boost/promotion system
+  boost: {
+    active: { type: Boolean, default: false },
+    tier: { type: String, enum: ['standard', 'premium', 'elite', ''], default: '' },
+    startDate: { type: Date },
+    endDate: { type: Date },
+    durationDays: { type: Number, default: 14 },
+    fee: { type: Number, default: 0 },
+    priorityScore: { type: Number, default: 0 },
+  },
   views: {
     type: Number,
     default: 0,
@@ -131,5 +151,8 @@ listingSchema.index({ seller: 1, sold: 1, createdAt: -1 });
 listingSchema.index({ category: 1, available: 1, sold: 1, price: 1 });
 listingSchema.index({ shipsFrom: 1 });
 listingSchema.index({ currency: 1 });
+listingSchema.index({ quantity: 1, available: 1 });
+listingSchema.index({ 'boost.active': 1, 'boost.endDate': 1 });
+listingSchema.index({ 'boost.priorityScore': -1 });
 
 module.exports = mongoose.model('Listing', listingSchema);

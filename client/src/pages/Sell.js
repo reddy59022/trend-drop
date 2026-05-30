@@ -30,6 +30,7 @@ const Sell = () => {
     internationalShipping: false,
     freeShipping: false,
     shippingCost: '',
+    quantity: '1',
   });
 
   useEffect(() => {
@@ -225,6 +226,22 @@ const Sell = () => {
                 placeholder="e.g. Black"
                 className="form-input"
               />
+            </div>
+            <div className="form-group">
+              <label htmlFor="quantity">Quantity</label>
+              <input
+                type="number"
+                id="quantity"
+                name="quantity"
+                value={formData.quantity}
+                onChange={handleChange}
+                min="1"
+                max="999"
+                className="form-input"
+              />
+              <p style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
+                How many of this item do you have? Auto-decrements on each sale.
+              </p>
             </div>
           </div>
         </div>
