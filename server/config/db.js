@@ -17,15 +17,15 @@ const connectDB = async () => {
     const conn = await mongoose.connect(mongoUri);
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
-    // If a MONGO_URI was explicitly provided, treat connection failures as critical.
-    if (process.env.MONGO_URI && process.env.MONGO_URI.trim().length > 0) {
-      console.error('Critical MongoDB connection error:', error.message);
-      // Exit to surface the problem in Render logs.
-      process.exit(1);
+    // If the connection string uses the SRV scheme and DNS resolution fails,
+    // we log a warning and allow the server to continue. This prevents the
+    // entire Render deployment from crashing while still surfacing the issue.
+    if (error.message && error.message.includes('ENOTFOUND')) {
+      console.warn('MongoDB connection warning (ENOTFOUND):', error.message);
     } else {
-      // No URI supplied – fallback to local MongoDB (already the default).
-      console.warn('MongoDB connection warning: Unable to connect to local MongoDB.');
+      console.warn('MongoDB connection warning:', error.message);
     }
+    // Do not exit – continue without a DB connection.
   }
 };
 
