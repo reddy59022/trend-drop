@@ -5,7 +5,11 @@ const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-require('dotenv').config();
+// Load environment variables from .env only in non‑production environments.
+// This prevents the local development NODE_ENV=development setting from overriding the production value set by Render.
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 const connectDB = require('./config/db');
 

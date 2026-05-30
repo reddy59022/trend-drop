@@ -6,7 +6,15 @@
 // 3. Only on capture success: update inventory + seller stats
 
 // Don't pin apiVersion - let the SDK use the compatible default
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+// Initialise Stripe only if a secret key is provided. In environments where
+// Stripe is not needed (e.g., during deployment testing), we allow the module to
+// load without throwing an error.
+let stripe = null;
+if (process.env.STRIPE_SECRET_KEY) {
+  stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+} else {
+  console.warn('STRIPE_SECRET_KEY not set – Stripe functionality will be disabled.');
+}
 
 const countryCommissions = {
   US: { platformFee: 10, buyerProtection: 5, minFee: 0.50, maxFee: 50, currency: 'USD' },
