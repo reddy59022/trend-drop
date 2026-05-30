@@ -125,13 +125,11 @@ app.use('/api', (req, res, next) => {
     // Cache read-only endpoints for 5 minutes
     if (req.method === 'GET') {
       res.set('Cache-Control', 'public, max-age=300');
-    }
-  }
-  // Enable ETag for conditional requests
-  res.set('ETag', '');
-  next();
-});
-
+} else {
+  app.get('/', (req, res) => {
+    res.json({ message: 'TrendDrop API is running' });
+  });
+}
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
   // SPA fallback with cache
@@ -144,6 +142,26 @@ if (process.env.NODE_ENV === 'production') {
     res.json({ message: 'TrendDrop API is running' });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Health check endpoints
+// ---------------------------------------------------------------------------
+// Simple endpoint to verify the server is alive.
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// MongoDB health check – attempts a ping to the database.
+app.get('/health/mongo', async (req, res) => {
+  try {
+    // Ensure a connection exists; if not, mongoose will attempt to connect.
+    await mongoose.connection.db.admin().ping();
+    res.json({ status: 'ok', mongo: 'connected' });
+  } catch (e) {
+    console.error('MongoDB health check failed:', e.message);
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {

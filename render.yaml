@@ -31,3 +31,8 @@ services:
     - key: STRIPE_WEBHOOK_SECRET
       sync: false
       value: kxa47g-Rl846xNqfWU0kh3uTN0M
+    # Google OAuth credentials – keep secret; not synced from .env.
+    - key: GOOGLE_CLIENT_ID
+      sync: false
+    - key: GOOGLE_CLIENT_SECRET
+      sync: false

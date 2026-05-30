@@ -7,21 +7,25 @@ const mongoose = require('mongoose');
 if (process.env.NODE_ENV === 'production') {
   console.log('MongoDB URI used:', process.env.MONGO_URI ? '[REDACTED]' : 'undefined');
 }
-const mongoUri = process.env.MONGO_URI || "mongodb://localhost:27017/trend-drop";
+// Use the provided MONGO_URI if set; otherwise fall back to a local MongoDB instance.
+const mongoUri = process.env.MONGO_URI && process.env.MONGO_URI.trim().length > 0
+  ? process.env.MONGO_URI.trim()
+  : "mongodb://localhost:27017/trend-drop";
 
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(mongoUri);
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
-    // If the connection fails (e.g., missing MONGO_URI on Render) we log a concise warning.
-    // For DNS resolution errors (ENOTFOUND) we suppress the stack trace to avoid noisy logs.
-    if (error.message && error.message.includes('ENOTFOUND')) {
-      console.warn('MongoDB connection warning: Unable to resolve the provided URI – falling back to local MongoDB.');
+    // If a MONGO_URI was explicitly provided, treat connection failures as critical.
+    if (process.env.MONGO_URI && process.env.MONGO_URI.trim().length > 0) {
+      console.error('Critical MongoDB connection error:', error.message);
+      // Exit to surface the problem in Render logs.
+      process.exit(1);
     } else {
-      console.warn(`MongoDB connection warning: ${error.message}`);
+      // No URI supplied – fallback to local MongoDB (already the default).
+      console.warn('MongoDB connection warning: Unable to connect to local MongoDB.');
     }
-    // Do not exit; the server will continue running without a DB connection.
   }
 };
 
