@@ -68,7 +68,7 @@ const SellerDashboard = () => {
             gap: 12, background: 'rgba(255,255,255,0.15)',
             borderRadius: 12, padding: 16,
           }}>
-            {Object.entries(commissionInfo.comparedTo).map(([platform, rate]) => (
+              {Object.entries(commissionInfo.comparedTo || {}).map(([platform, rate]) => (
               <div key={platform} style={{ textAlign: 'center' }}>
                 <div style={{
                   fontSize: 11, textTransform: 'uppercase', opacity: 0.8,
