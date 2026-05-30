@@ -276,17 +276,8 @@ router.post('/:id/boost', auth, async (req, res) => {
     const { calculateBoostFee } = require('../config/boost');
     const boostInfo = calculateBoostFee(listing.price, tier || 'standard', durationDays || 14);
 
-    // Deduct boost fee from seller balance
-    const seller = await User.findById(req.user._id);
-    if (!seller.balance || seller.balance.available < boostInfo.fee) {
-      return res.status(400).json({
-        message: `Insufficient balance for boost. Need ${boostInfo.fee}, have ${seller.balance?.available || 0}`,
-      });
-    }
-
-    seller.balance.available -= boostInfo.fee;
-    seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - boostInfo.fee);
-    await seller.save();
+    // No upfront fee - boost fee is deducted from the product sale
+    // Only charged when the boosted item is sold. If cancelled/returned, no fee.
 
     // Activate boost
     listing.boost = {

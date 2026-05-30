@@ -43,7 +43,11 @@ router.post('/', auth, async (req, res) => {
     const platformFee = Math.round(listing.price * (platformFeePercent / 100) * 100) / 100;
     const buyerProtectionFee = Math.round(listing.price * (buyerProtectionPercent / 100) * 100) / 100;
     const totalPaid = Math.round((listing.price + shippingCost + buyerProtectionFee) * 100) / 100;
-    const sellerEarnings = Math.round((listing.price - platformFee) * 100) / 100;
+
+    // Boost fee: only deducted if item is boosted AND sale completes
+    // If order is cancelled/returned, no boost fee is charged
+    const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? listing.boost.fee : 0;
+    const sellerEarnings = Math.round((listing.price - platformFee - boostFee) * 100) / 100;
 
     // Get seller's address
     const sellerAddress = seller?.shippingAddress ? {
@@ -69,9 +73,11 @@ router.post('/', auth, async (req, res) => {
         tax: 0,
         totalPaid,
         platformFee,
-        platformFeePercent,
-        shippingPayout: shippingCost,
-        sellerEarnings,
+      platformFeePercent,
+      shippingPayout: shippingCost,
+      sellerEarnings,
+      boostFee,
+      boostTier: listing.boost?.tier || '',
       },
       shippingAddress: {
         fullName: shippingAddress?.fullName || req.user.name,
