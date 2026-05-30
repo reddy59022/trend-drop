@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
 import Pagination from '../components/Pagination';
@@ -11,6 +13,8 @@ const Feed = () => {
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState(null);
+
+  const navigate = useNavigate();
 
   const fetchFeed = useCallback(async (pageNum = 1) => {
     setLoading(true);
@@ -35,6 +39,23 @@ const Feed = () => {
       }
     } catch (error) {
       console.error(error);
+      // If user's feed fails (e.g., expired token), fall back to public listings
+      if (user && error?.response?.status === 401) {
+        try {
+          const res = await api.get(`/listings?page=${pageNum}&limit=20&sort=popular`);
+          const listingsData = res.data.listings || res.data.docs || [];
+          setListings(listingsData);
+          setPagination({
+            total: res.data.total || 0,
+            totalPages: res.data.totalPages || 1,
+            currentPage: res.data.currentPage || pageNum,
+            hasNextPage: pageNum < (res.data.totalPages || 1),
+            hasPrevPage: pageNum > 1,
+          });
+        } catch (fallbackError) {
+          toast.error('Failed to load feed');
+        }
+      }
     }
     setLoading(false);
   }, [user]);

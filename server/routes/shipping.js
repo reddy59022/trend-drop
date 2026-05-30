@@ -422,26 +422,25 @@ router.post('/confirm-received', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
+    // NOTE: Use order lifecycle endpoint (/api/orders/:id/confirm-received) instead.
+    // This endpoint is kept for backward compatibility but delegates properly.
     transaction.buyerConfirmed.received = true;
     transaction.buyerConfirmed.confirmedAt = new Date();
-    transaction.status = 'completed';
+    transaction.status = 'buyer_confirmed';
 
-    // Release funds to seller
+    // Notify seller
     const seller = await User.findById(transaction.seller);
     if (seller) {
-      seller.balance.available += transaction.paymentBreakdown.sellerEarnings;
-      seller.balance.pending -= transaction.paymentBreakdown.sellerEarnings;
-      seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
+      seller.notifications.unshift({
+        type: 'sale',
+        listing: transaction.listing,
+        transaction: transaction._id,
+        message: 'Buyer confirmed receipt! Payment will be released in 3 days.',
+      });
       await seller.save();
     }
 
-    // Update buyer stats
-    const buyer = await User.findById(transaction.buyer);
-    if (buyer) {
-      buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
-      await buyer.save();
-    }
-
+    // NOTE: totalSales/totalPurchases and balance changes happen in orderLifecycle auto-complete
     await transaction.save();
 
     // BUG 5: Auto-create Payout record on completion

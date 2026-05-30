@@ -39,9 +39,9 @@ export const AuthProvider = ({ children }) => {
       headers: { 'Content-Type': 'multipart/form-data' },
     };
     const res = await api.post('/auth/register', formData, config);
-    localStorage.setItem('token', res.data.token);
-    setToken(res.data.token);
-    setUser(res.data.user);
+    // Registration returns { message, emailSent, userId } - no token yet.
+    // Token is obtained after email verification and login.
+    // Do NOT store undefined token in localStorage or state.
     return res.data;
   };
 

@@ -76,6 +76,9 @@ const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg =
 // capture_method: 'manual' means Stripe authorizes the card
 // but does NOT capture (charge) the funds
 const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
+  if (!stripe) {
+    throw new Error('Stripe not initialized. Please check STRIPE_SECRET_KEY.');
+  }
   return stripe.paymentIntents.create({
     amount: Math.round(amount * 100),
     currency: currency.toLowerCase(),
@@ -88,11 +91,17 @@ const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
 // STEP 2: Capture the authorized payment (only after fulfillment)
 // This moves the money from authorization to captured
 const capturePaymentIntent = async (paymentIntentId) => {
+  if (!stripe) {
+    throw new Error('Stripe not initialized. Please check STRIPE_SECRET_KEY.');
+  }
   return stripe.paymentIntents.capture(paymentIntentId);
 };
 
 // Retrieve a PaymentIntent
 const retrievePaymentIntent = async (paymentIntentId) => {
+  if (!stripe) {
+    throw new Error('Stripe not initialized. Please check STRIPE_SECRET_KEY.');
+  }
   return stripe.paymentIntents.retrieve(paymentIntentId);
 };
 
@@ -101,12 +110,10 @@ const releaseAuthorization = async (paymentIntentId) => {
   try {
     const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
     if (pi.status === 'requires_capture') {
-      // Auth exists but not captured - cancel it
+      // Auth exists but not captured - cancel it to release the hold
       return stripe.paymentIntents.cancel(paymentIntentId);
     }
-    if (pi.status === 'succeeded' || pi.status === 'requires_capture') {
-      return stripe.paymentIntents.cancel(paymentIntentId);
-    }
+    // Already succeeded, canceled, or in another state - nothing to release
     return pi;
   } catch (e) {
     console.error('Release auth error:', e.message);
@@ -116,11 +123,17 @@ const releaseAuthorization = async (paymentIntentId) => {
 
 // Verify Stripe webhook
 const verifyStripeWebhook = (payload, signature) => {
+  if (!stripe) {
+    throw new Error('Stripe not initialized. Please check STRIPE_SECRET_KEY.');
+  }
   return stripe.webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET);
 };
 
 // Issue a refund (for orders that were already captured)
 const issueRefund = async (paymentIntentId, amount) => {
+  if (!stripe) {
+    throw new Error('Stripe not initialized. Please check STRIPE_SECRET_KEY.');
+  }
   const refundParams = { payment_intent: paymentIntentId };
   if (amount) refundParams.amount = Math.round(amount * 100);
   return stripe.refunds.create(refundParams);

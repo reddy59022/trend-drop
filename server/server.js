@@ -102,6 +102,20 @@ if (process.env.NODE_ENV === 'production') {
   }));
 }
 
+// Performance: Set cache headers for API responses (must be BEFORE routes)
+app.use('/api', (req, res, next) => {
+  // Don't cache auth/transaction/payment endpoints
+  if (req.path.includes('/auth') || req.path.includes('/transactions') || req.path.includes('/payments') || req.path.includes('/orders') || req.path.includes('/payouts')) {
+    res.set('Cache-Control', 'no-store');
+  } else if (req.method === 'GET') {
+    // Cache read-only endpoints for 5 minutes
+    res.set('Cache-Control', 'public, max-age=300');
+  }
+  // Enable ETag for conditional requests
+  res.set('ETag', '');
+  next();
+});
+
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/listings', require('./routes/listings'));
@@ -113,19 +127,10 @@ app.use('/api/messages', require('./routes/messages'));
 app.use('/api/wishlist', require('./routes/wishlist'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/pricehistory', require('./routes/pricehistory'));
-// Performance: Set cache headers for API responses
-app.use('/api', (req, res, next) => {
-  // Don't cache auth/transaction endpoints
-  if (req.path.includes('/auth') || req.path.includes('/transactions')) {
-    res.set('Cache-Control', 'no-store');
-  } else if (req.method === 'GET') {
-    // Cache read‑only endpoints for 5 minutes
-    res.set('Cache-Control', 'public, max-age=300');
-  }
-  // Enable ETag for conditional requests
-  res.set('ETag', '');
-  next();
-});
+app.use('/api/payments', require('./routes/payments'));
+app.use('/api/orders', require('./routes/orderLifecycle'));
+app.use('/api/payouts', require('./routes/payouts'));
+app.use('/api/shipping', require('./routes/shipping'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)
@@ -231,7 +236,7 @@ app.use((err, req, res, next) => {
 });
 
 // Use a non‑default port to avoid clashes during development
-const DEFAULT_PORT = 5001;
+const DEFAULT_PORT = 5000;
 const PORT = process.env.PORT || DEFAULT_PORT;
 
 app.listen(PORT, () => {

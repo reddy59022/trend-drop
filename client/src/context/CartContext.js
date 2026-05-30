@@ -7,7 +7,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 //   price: number,
 //   currency: string,
 //   quantity: number,
-//   thumbnail: string
+//   thumbnail: string,
+//   available: number  // max stock available
 // }
 
 const CartContext = createContext();
@@ -63,7 +64,7 @@ export const CartProvider = ({ children }) => {
   const clearCart = () => setCart([]);
 
   // Compute the total amount for the current cart
-  const totalAmount = () => cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const totalAmount = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
   return (
     <CartContext.Provider

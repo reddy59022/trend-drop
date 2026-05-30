@@ -135,6 +135,8 @@ const ListingDetail = () => {
         available: currentListing.quantity,
         negotiatedPrice: negotiatedFlag,
         offerId: latestOffer ? latestOffer._id : null,
+        sellerCountry: listing.shipsFrom || currentListing.shipsFrom || 'US',
+        weight: listing.weight || currentListing.weight || 0.5,
       };
       addToCart(item);
       toast.success(`Added to cart at ${formatPrice(finalPrice, listing.currency || 'USD')}!`);

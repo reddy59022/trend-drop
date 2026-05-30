@@ -244,10 +244,10 @@ router.post('/confirm', auth, async (req, res) => {
       return res.status(400).json({ message: 'Item sold out between authorization and capture. Full refund issued.' });
     }
 
-    // ---------- UPDATE SELLER BALANCE + STATS ----------
+    // ---------- UPDATE SELLER BALANCE (pending until order completes) ----------
     if (seller) {
       seller.balance.pending = (seller.balance.pending || 0) + breakdown.seller.sellerEarnings;
-      seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
+      // NOTE: totalSales is incremented in orderLifecycle.js when order auto-completes
       seller.notifications.unshift({
         type: 'sale',
         from: req.user._id,
@@ -258,26 +258,23 @@ router.post('/confirm', auth, async (req, res) => {
       await seller.save();
     }
 
-    // ---------- UPDATE BUYER STATS ----------
-    const buyer = await User.findById(req.user._id);
-    if (buyer) {
-      buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
-      await buyer.save();
-    }
+    // NOTE: totalPurchases is incremented in orderLifecycle.js when order auto-completes
 
     // ---------- AUTO-CREATE PAYOUT RECORD ----------
+    // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
+    // salePrice = item price only (shipping + buyer protection are pass-through fees)
     try {
       const existingPayout = await Payout.findOne({ transaction: createdTransaction._id });
       if (!existingPayout) {
-        const salePrice = createdTransaction.paymentBreakdown?.totalPaid || createdTransaction.itemPrice || 0;
-        const commissionAmount = Math.round(salePrice * 0.10 * 100) / 100;
-        const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+        const itemPrice = breakdown.buyer.itemPrice || listing.price || 0;
+        const commissionAmount = breakdown.seller.platformFee;
+        const payoutAmount = breakdown.seller.sellerEarnings;
         await Payout.create({
           seller: listing.seller,
           transaction: createdTransaction._id,
           listing: listingId,
-          salePrice,
-          commissionRate: 0.10,
+          salePrice: itemPrice,
+          commissionRate: breakdown.seller.platformFeePercent / 100,
           commissionAmount,
           payoutAmount,
           status: 'pending',

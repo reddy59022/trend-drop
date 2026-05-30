@@ -6,6 +6,7 @@ const User = require('../models/User');
 const Offer = require('../models/Offer'); // BUG 1: Added missing import
 const { auth } = require('../middleware/auth');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
+const { calculatePaymentBreakdown } = require('../config/payments');
 
 // POST /api/transactions - Create transaction (purchase) with full payment breakdown
 router.post('/', auth, async (req, res) => {
@@ -33,22 +34,14 @@ router.post('/', auth, async (req, res) => {
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
     const buyerShipCountry = shippingAddress?.country || buyerCountry || 'US';
 
-    // Calculate shipping
+    // Calculate weight
     const weightKg = listing.weight || 0.5;
-    const shippingResult = calculateShipping(sellerCountry, buyerShipCountry, weightKg, listing.price);
-    const shippingCost = listing.shipping?.freeShipping ? 0 : shippingResult.cost;
 
-    // Payment breakdown
-    const platformFeePercent = 10;
-    const buyerProtectionPercent = 5;
-    const platformFee = Math.round(listing.price * (platformFeePercent / 100) * 100) / 100;
-    const buyerProtectionFee = Math.round(listing.price * (buyerProtectionPercent / 100) * 100) / 100;
-    const totalPaid = Math.round((listing.price + shippingCost + buyerProtectionFee) * 100) / 100;
+    // Use the same calculation engine as the payment flow for consistency
+    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, buyerShipCountry, weightKg);
 
     // Boost fee: only deducted if item is boosted AND sale completes
-    // If order is cancelled/returned, no boost fee is charged
     const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? listing.boost.fee : 0;
-    const sellerEarnings = Math.round((listing.price - platformFee - boostFee) * 100) / 100;
 
     // Get seller's address
     const sellerAddress = seller?.shippingAddress ? {
@@ -67,16 +60,16 @@ router.post('/', auth, async (req, res) => {
       itemPrice: listing.price,
       currency: listing.currency || 'USD',
       paymentBreakdown: {
-        subtotal: listing.price,
-        shippingCost,
-        buyerProtectionFee,
-        buyerProtectionPercent,
+        subtotal: breakdown.buyer.itemPrice,
+        shippingCost: breakdown.buyer.shippingCost,
+        buyerProtectionFee: breakdown.buyer.buyerProtectionFee,
+        buyerProtectionPercent: breakdown.buyer.buyerProtectionPercent,
         tax: 0,
-        totalPaid,
-        platformFee,
-        platformFeePercent,
-        shippingPayout: shippingCost,
-        sellerEarnings,
+        totalPaid: breakdown.buyer.totalPaid,
+        platformFee: breakdown.seller.platformFee,
+        platformFeePercent: breakdown.seller.platformFeePercent,
+        shippingPayout: breakdown.seller.shippingPayout,
+        sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
         boostFee,
         boostTier: listing.boost?.tier || '',
       },
@@ -94,7 +87,7 @@ router.post('/', auth, async (req, res) => {
       shipping: {
         weight: weightKg,
         carrier: getPreferredCarrier(buyerShipCountry, sellerCountry === buyerShipCountry),
-        estimatedDelivery: new Date(Date.now() + (shippingResult.estimatedDays?.max || 7) * 24 * 60 * 60 * 1000),
+        estimatedDelivery: new Date(Date.now() + (breakdown.shipping?.estimatedDays?.max || 7) * 24 * 60 * 60 * 1000),
       },
       payout: {
         status: 'pending',
@@ -129,27 +122,16 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Sorry, this item just went out of stock' });
     }
 
-    // Update payment breakdown separately
-    await Listing.findByIdAndUpdate(listingId, {
-      paymentBreakdown: {
-        sellerEarnings,
-        platformFee,
-        platformFeePercent,
-        shippingCost,
-        buyerTotal: totalPaid,
-      },
-    });
-
-    // Update seller's pending balance and notification in one save
+    // Update seller's pending balance and notification
+    const finalSellerEarnings = breakdown.seller.sellerEarnings - boostFee;
     if (seller) {
-      seller.balance.pending = (seller.balance.pending || 0) + sellerEarnings;
-      seller.stats.totalListings = Math.max(0, (seller.stats.totalListings || 0));
+      seller.balance.pending = (seller.balance.pending || 0) + finalSellerEarnings;
       seller.notifications.unshift({
         type: 'sale',
         from: req.user._id,
         listing: listing._id,
         transaction: transaction._id,
-        message: `Your item "${listing.title}" has been purchased for $${listing.price}! You'll earn $${sellerEarnings} after platform fees.`,
+        message: `Your item "${listing.title}" has been purchased for $${listing.price}! You'll earn $${finalSellerEarnings} after platform fees.`,
       });
       await seller.save();
     }
@@ -271,8 +253,8 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       await buyer.save();
     }
 
-    // Mark offer as completed
-    offer.status = 'accepted';
+    // Mark offer as completed (transaction has been created)
+    offer.status = 'completed';
     await offer.save();
 
     res.status(201).json({ transaction, offer });

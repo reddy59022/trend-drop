@@ -8,6 +8,13 @@ const { verifyStripeWebhook } = require('../config/payments');
 // Stripe webhook - uses raw body for signature verification
 // This router is mounted BEFORE express.json() in server.js
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
+  // Guard: if Stripe is not configured, return early
+  const { stripe } = require('../config/payments');
+  if (!stripe) {
+    console.warn('Stripe webhook received but STRIPE_SECRET_KEY not configured. Skipping.');
+    return res.json({ received: true, skipped: true });
+  }
+
   const sig = req.headers['stripe-signature'];
 
   let event;

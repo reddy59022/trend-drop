@@ -22,8 +22,8 @@ const SellerDashboard = () => {
   const fetchData = async () => {
     try {
       const [dashRes, commRes] = await Promise.all([
-        getPayoutDashboard().catch(() => ({ data: { commissionRate: 0.05, commissionPercent: 5, totalSales: 0, totalCommission: 0, totalEarnings: 0, pendingAmount: 0, pendingCount: 0, payoutHistory: [], recentTransactions: [] } })),
-        getCommissionInfo().catch(() => ({ data: { commissionRate: 0.05, commissionPercent: 5, sellerKeeps: '95%', comparedTo: { trenddrop: '5%', poshmark: '20%', mercari: '10%', depop: '10%' }, features: [] } })),
+        getPayoutDashboard().catch(() => ({ data: { commissionRate: 0.10, commissionPercent: 10, totalSales: 0, totalCommission: 0, totalEarnings: 0, pendingAmount: 0, pendingCount: 0, payoutHistory: [], recentTransactions: [] } })),
+        getCommissionInfo().catch(() => ({ data: { commissionRate: 0.10, commissionPercent: 10, sellerKeeps: '90%', comparedTo: { trenddrop: '10%', poshmark: '20%', mercari: '10%', depop: '10%' }, features: [] } })),
       ]);
       setDashboard(dashRes.data);
       setCommissionInfo(commRes.data);
@@ -182,7 +182,7 @@ const SellerDashboard = () => {
           <div>2️⃣ <strong>Buyer purchases</strong> — Payment is held securely</div>
           <div>3️⃣ <strong>Ship within 7 days</strong> — Use prepaid shipping label</div>
           <div>4️⃣ <strong>Buyer confirms delivery</strong> — Funds are released</div>
-          <div>5️⃣ <strong>Get paid</strong> — Only {commissionInfo?.commissionPercent || 5}% commission deducted</div>
+          <div>5️⃣ <strong>Get paid</strong> — Only {commissionInfo?.commissionPercent || 10}% commission deducted</div>
         </div>
       </div>
     </div>

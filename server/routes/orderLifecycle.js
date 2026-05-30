@@ -105,30 +105,35 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
     // Calculate refund: buyer gets back everything including shipping
     const paymentIntentId = txn.payout?.transactionId;
     let stripeRefundResult = null;
+    const refundAmount = txn.paymentBreakdown.totalPaid || 0;
+    const { releaseAuthorization, issueRefund } = require('../config/payments');
 
-    // Release Stripe authorization (no charge was made yet)
+    // Issue proper Stripe refund/release
     if (paymentIntentId) {
       try {
-        const { releaseAuthorization } = require('../config/payments');
-        stripeRefundResult = await releaseAuthorization(paymentIntentId);
+        // Check if payment was captured (succeeded) or just authorized
+        const { retrievePaymentIntent } = require('../config/payments');
+        const pi = await retrievePaymentIntent(paymentIntentId);
+        if (pi.status === 'succeeded') {
+          // Payment was captured - issue a full refund
+          stripeRefundResult = await issueRefund(paymentIntentId);
+        } else if (pi.status === 'requires_capture') {
+          // Payment only authorized - release the authorization
+          stripeRefundResult = await releaseAuthorization(paymentIntentId);
+        }
       } catch (stripeErr) {
-        console.error('Stripe auth release error:', stripeErr.message);
-        // Continue - the auth will expire naturally
+        console.error('Stripe refund/release error:', stripeErr.message);
       }
     }
 
-    // Correct refund: BUYER gets money back. Use += to add to available balance.
-    const refundAmount = txn.paymentBreakdown.totalPaid || 0;
-
-    // Refund to buyer - ADD the refund to buyer's balance
+    // Notify buyer of refund
     const buyer = await User.findById(txn.buyer);
     if (buyer) {
-      buyer.balance.available = (buyer.balance.available || 0) + refundAmount;
       buyer.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
         transaction: txn._id,
-        message: `Order cancelled. Refund of ${refundAmount} ${txn.currency} will be processed.`,
+        message: `Order cancelled. Refund of ${refundAmount} ${txn.currency} has been processed to your original payment method.`,
       });
       await buyer.save();
     }
@@ -284,18 +289,19 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
     await txn.save();
 
     // Auto-create payout record
+    // CRITICAL: Use actual breakdown values from the transaction, NOT recalculated
     try {
       const existingPayout = await Payout.findOne({ transaction: txn._id });
       if (!existingPayout) {
-        const salePrice = txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
-        const commissionAmount = txn.paymentBreakdown?.platformFee || Math.round(salePrice * 0.10 * 100) / 100;
-        const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+        const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
+        const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
+        const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
         await Payout.create({
           seller: txn.seller,
           transaction: txn._id,
           listing: txn.listing,
-          salePrice,
-          commissionRate: 0.10,
+          salePrice: itemPrice,
+          commissionRate: (txn.paymentBreakdown?.platformFeePercent || 10) / 100,
           commissionAmount,
           payoutAmount,
           status: 'completed',
@@ -500,15 +506,31 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
     const refundAmount = txn.paymentBreakdown.totalPaid || 0;
     const sellerEarnings = txn.paymentBreakdown.sellerEarnings || 0;
 
-    // CRITICAL: ADD refund to buyer's balance
+    // Issue proper Stripe refund
+    const paymentIntentId = txn.payout?.transactionId;
+    let stripeRefundResult = null;
+    if (paymentIntentId) {
+      try {
+        const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
+        const pi = await retrievePaymentIntent(paymentIntentId);
+        if (pi.status === 'succeeded') {
+          stripeRefundResult = await issueRefund(paymentIntentId);
+        } else if (pi.status === 'requires_capture') {
+          stripeRefundResult = await releaseAuthorization(paymentIntentId);
+        }
+      } catch (stripeErr) {
+        console.error('Stripe refund on return:', stripeErr.message);
+      }
+    }
+
+    // Notify buyer of refund
     const buyer = await User.findById(txn.buyer);
     if (buyer) {
-      buyer.balance.available = (buyer.balance.available || 0) + refundAmount;
       buyer.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
         transaction: txn._id,
-        message: `Return received. Refund of ${refundAmount} ${txn.currency} issued.`,
+        message: `Return received. Refund of ${refundAmount} ${txn.currency} has been processed to your original payment method.`,
       });
       await buyer.save();
     }
@@ -535,22 +557,13 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
     };
     txn.payout = { status: 'refunded', processedAt: new Date() };
 
-    // Release Stripe authorization if payment wasn't captured yet
-    if (txn.payout?.transactionId) {
-      try {
-        const { releaseAuthorization } = require('../config/payments');
-        await releaseAuthorization(txn.payout.transactionId);
-      } catch (stripeErr) {
-        console.error('Stripe release on return:', stripeErr.message);
-      }
-    }
-
     await txn.save();
 
     res.json({
-      message: 'Return confirmed. Full refund issued to buyer.',
+      message: 'Return confirmed. Full refund issued to buyer via original payment method.',
       transaction: txn,
       refundAmount,
+      stripeRefund: stripeRefundResult,
     });
   } catch (error) {
     console.error(error);
@@ -621,8 +634,10 @@ router.post('/auto-process', async (req, res) => {
     let delivered = 0;
 
     // 1. Auto-advance delivered → buyer_confirmed after 3 days of no action
+    // CRITICAL: Skip refunded/cancelled transactions
     const deliveredOrders = await Transaction.find({
       status: orderStates.DELIVERED,
+      'payout.status': { $ne: 'refunded' },
     });
 
     for (const txn of deliveredOrders) {
@@ -640,8 +655,10 @@ router.post('/auto-process', async (req, res) => {
     }
 
     // 2. Auto-advance buyer_confirmed → completed (release funds)
+    // CRITICAL: Skip refunded/cancelled transactions to prevent releasing funds after refund
     const confirmedOrders = await Transaction.find({
       status: orderStates.BUYER_CONFIRMED,
+      'payout.status': { $ne: 'refunded' },
     });
 
     for (const txn of confirmedOrders) {
@@ -670,18 +687,19 @@ router.post('/auto-process', async (req, res) => {
         await txn.save();
 
         // Auto-create payout
+        // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
         try {
           const existingPayout = await Payout.findOne({ transaction: txn._id });
           if (!existingPayout) {
-            const salePrice = txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
-            const commissionAmount = txn.paymentBreakdown?.platformFee || Math.round(salePrice * 0.10 * 100) / 100;
-            const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+            const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
+            const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
+            const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
             await Payout.create({
               seller: txn.seller,
               transaction: txn._id,
               listing: txn.listing,
-              salePrice,
-              commissionRate: 0.10,
+              salePrice: itemPrice,
+              commissionRate: (txn.paymentBreakdown?.platformFeePercent || 10) / 100,
               commissionAmount,
               payoutAmount,
               status: 'completed',

@@ -88,9 +88,11 @@ router.post('/process/:transactionId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Payout already processed for this transaction' });
     }
 
-    const salePrice = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
-    const commissionAmount = Math.round(salePrice * COMMISSION_RATE * 100) / 100;
-    const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+    // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
+    // commission is on item price only, NOT on shipping + buyer protection
+    const salePrice = transaction.paymentBreakdown?.subtotal || transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
+    const commissionAmount = transaction.paymentBreakdown?.platformFee || Math.round(salePrice * COMMISSION_RATE * 100) / 100;
+    const payoutAmount = transaction.paymentBreakdown?.sellerEarnings || Math.round((salePrice - commissionAmount) * 100) / 100;
 
     const payout = await Payout.create({
       seller: transaction.seller,
@@ -144,9 +146,10 @@ router.post('/auto-create', auth, async (req, res) => {
       return res.json({ message: 'Payout already exists', payout: existingPayout });
     }
 
-    const salePrice = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
-    const commissionAmount = Math.round(salePrice * COMMISSION_RATE * 100) / 100;
-    const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+    // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
+    const salePrice = transaction.paymentBreakdown?.subtotal || transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
+    const commissionAmount = transaction.paymentBreakdown?.platformFee || Math.round(salePrice * COMMISSION_RATE * 100) / 100;
+    const payoutAmount = transaction.paymentBreakdown?.sellerEarnings || Math.round((salePrice - commissionAmount) * 100) / 100;
 
     const payout = await Payout.create({
       seller: transaction.seller,

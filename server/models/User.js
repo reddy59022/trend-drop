@@ -135,7 +135,12 @@ const userSchema = new mongoose.Schema({
     read: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
   }],
-}, { timestamps: true });
+}, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
+
+// Virtual 'id' field for client compatibility
+userSchema.virtual('id').get(function () {
+  return this._id.toHexString();
+});
 
 // Performance indexes
 userSchema.index({ email: 1 });

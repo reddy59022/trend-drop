@@ -24,7 +24,7 @@ const offerSchema = new mongoose.Schema({
   status: {
     type: String,
     // Added "buyer_countered" to represent a counter-offer made by the buyer after the seller's counter.
-    enum: ['pending', 'accepted', 'declined', 'countered', 'buyer_countered'],
+    enum: ['pending', 'accepted', 'declined', 'countered', 'buyer_countered', 'completed'],
     default: 'pending',
   },
   counterAmount: {

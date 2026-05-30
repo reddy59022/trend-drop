@@ -78,9 +78,9 @@ const Cart = () => {
         try {
           const res = await api.post('/payments/breakdown', {
             itemPrice: item.price,
-            fromCountry: 'US',
+            fromCountry: item.sellerCountry || 'US',
             toCountry: shippingInfo.country || 'US',
-            weightKg: 0.5,
+            weightKg: item.weight || 0.5,
           });
           breakdowns[item.listingId] = res.data;
         } catch (e) {

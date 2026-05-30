@@ -46,7 +46,16 @@ const transactionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'paid', 'processing', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'completed', 'cancelled', 'refunded', 'disputed', 'returned'],
+    enum: [
+      'pending', 'paid', 'processing',
+      'shipped', 'in_transit', 'out_for_delivery', 'delivered',
+      'completed',
+      'cancelled', 'cancelled_by_buyer', 'cancelled_by_seller',
+      'refunded', 'disputed', 'dispute_resolved',
+      'returned', 'buyer_confirmed',
+      'return_requested', 'return_accepted', 'return_rejected',
+      'return_in_transit', 'return_delivered',
+    ],
     default: 'pending',
   },
   // Shipping details

@@ -136,7 +136,10 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
   try {
     const {
       title, description, price, originalPrice,
-      category, brand, size, condition, color
+      category, brand, size, condition, color,
+      weight, weightUnit, shipsFrom,
+      domesticShipping, internationalShipping, freeShipping, shippingCost,
+      quantity,
     } = req.body;
 
     let imageUrls = [];
@@ -166,6 +169,16 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       size,
       condition,
       color,
+      weight: weight ? Number(weight) : 0.5,
+      weightUnit: weightUnit || 'kg',
+      shipsFrom: shipsFrom || 'US',
+      shipping: {
+        domestic: domesticShipping !== 'false' && domesticShipping !== false,
+        international: internationalShipping === 'true' || internationalShipping === true,
+        freeShipping: freeShipping === 'true' || freeShipping === true,
+        shippingCost: shippingCost ? Number(shippingCost) : 0,
+      },
+      quantity: quantity ? Number(quantity) : 1,
     });
 
     await listing.populate('seller', 'name avatar');
