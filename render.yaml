@@ -15,6 +15,7 @@ services:
     - key: NODE_ENV
       value: production
     - key: MONGO_URI
+      # Do not sync from .env; the value should be provided as a secret in the Render dashboard.
       sync: false
     - key: JWT_SECRET
       value: 4QmypzuXr4jWuuQAa6hFuga0Mch4wT19Usj53CRxd14=
