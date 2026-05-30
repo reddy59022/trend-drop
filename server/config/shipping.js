@@ -10,7 +10,7 @@ const carriers = {
 
   // Global
   DHL: { name: 'DHL Express', country: 'DE', type: 'private', trackingUrl: 'https://www.dhl.com/en/express/tracking.html?AWB=', services: ['Express Worldwide', 'Express 12:00', 'Express 9:00', 'Economy Select'] },
-  DHL eCommerce: { name: 'DHL eCommerce', country: 'DE', type: 'postal', trackingUrl: 'https://www.dhl.com/en/express/tracking.html?AWB=', services: ['Packet', 'Parcel Direct', 'Parcel Standard'] },
+  'DHL eCommerce': { name: 'DHL eCommerce', country: 'DE', type: 'postal', trackingUrl: 'https://www.dhl.com/en/express/tracking.html?AWB=', services: ['Packet', 'Parcel Direct', 'Parcel Standard'] },
 
   // United Kingdom
   RoyalMail: { name: 'Royal Mail', country: 'GB', type: 'postal', trackingUrl: 'https://www.royalmail.com/track-your-item#/tracking-results/', services: ['1st Class', '2nd Class', 'Special Delivery', 'Tracked 24', 'Tracked 48'] },
