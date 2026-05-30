@@ -153,6 +153,58 @@ app.get('/health/mongo', async (req, res) => {
 
 // Serve static files in production (SPA fallback)
 if (process.env.NODE_ENV === 'production') {
+  // ============================================================
+  // GET /verify-email - Handle email verification via link click
+  // This endpoint is hit directly from the verification email URL.
+  // It verifies the token (pending user or existing user) and then
+  // redirects to the frontend with a success indicator.
+  // ============================================================
+  app.get('/verify-email', async (req, res) => {
+    const token = req.query.token;
+    console.log('Received email verification request for token:', token);
+    if (!token) {
+      return res.status(400).send('Verification token is required');
+    }
+    const PendingUser = require('./models/PendingUser');
+    const User = require('./models/User');
+    const { sendVerificationSuccess } = require('./config/email');
+
+    // Try pending user first
+    let pending = await PendingUser.findOne({
+      verificationToken: token,
+      verificationTokenExpires: { $gt: new Date() },
+    });
+    console.log('Pending user lookup result:', pending);
+    if (pending) {
+      const user = await User.create({
+        name: pending.name,
+        email: pending.email,
+        password: pending.password,
+        avatar: pending.avatar,
+        emailVerified: true,
+        authProvider: 'email',
+      });
+      await PendingUser.deleteOne({ _id: pending._id });
+      await sendVerificationSuccess(user.email, user.name);
+      return res.redirect(`${process.env.FRONTEND_URL}/login?verified=1`);
+    }
+    // Fallback to existing users
+    const user = await User.findOne({
+      verificationToken: token,
+      verificationTokenExpires: { $gt: new Date() },
+    });
+    console.log('User fallback lookup result:', user);
+    if (!user) {
+      return res.status(400).send('Invalid or expired verification token');
+    }
+    user.emailVerified = true;
+    user.verificationToken = null;
+    user.verificationTokenExpires = null;
+    await user.save();
+    return res.redirect(`${process.env.FRONTEND_URL}/login?verified=1`);
+  });
+
+  // Serve static files in production (SPA fallback)
   app.get('*', (req, res) => {
     res.set('Cache-Control', 'no-cache');
     res.sendFile(path.join(__dirname, '../client/build', 'index.html'));

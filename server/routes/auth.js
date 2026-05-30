@@ -111,70 +111,79 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
 });
 
 // ============================================================
-// POST /api/auth/verify-email - Verify email with token
+// POST /api/auth/verify-email - Verify email with token (API use)
 // ============================================================
 router.post('/verify-email', async (req, res) => {
   try {
     const { token } = req.body;
-
     if (!token) {
       return res.status(400).json({ message: 'Verification token is required' });
     }
-
-    // First, try to find a pending user (created during registration but not yet persisted to User collection)
-    let pending = await PendingUser.findOne({
-      verificationToken: token,
-      verificationTokenExpires: { $gt: new Date() },
-    });
-
-    if (pending) {
-      // Create the final User document from pending data
-      const user = await User.create({
-        name: pending.name,
-        email: pending.email,
-        password: pending.password,
-        avatar: pending.avatar,
-        emailVerified: true,
-        authProvider: 'email',
-      });
-      // Remove pending entry
-      await PendingUser.deleteOne({ _id: pending._id });
-
-      // Send confirmation email after successful verification
-      await sendVerificationSuccess(user.email, user.name);
-
-      const jwtToken = generateToken(user);
-      return res.json({
-        message: 'Email verified successfully! You can now login.',
-        ...userResponse(user, jwtToken),
-      });
-    }
-
-    // Fallback: check existing users (e.g., legacy flow)
-    const user = await User.findOne({
-      verificationToken: token,
-      verificationTokenExpires: { $gt: new Date() },
-    });
-
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid or expired verification token' });
-    }
-
-    user.emailVerified = true;
-    user.verificationToken = null;
-    user.verificationTokenExpires = null;
-    await user.save();
-
-    const jwtToken = generateToken(user);
-    res.json({
-      message: 'Email verified successfully! You can now login.',
-      ...userResponse(user, jwtToken),
-    });
+    return await handleVerification(token, res);
   } catch (error) {
-    console.error('Verify email error:', error);
+    console.error('Verify email POST error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+// ============================================================
+// GET /api/auth/verify-email - Verify email with token via query param (browser link)
+// ============================================================
+router.get('/verify-email', async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token) {
+      return res.status(400).json({ message: 'Verification token is required' });
+    }
+    return await handleVerification(token, res);
+  } catch (error) {
+    console.error('Verify email GET error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Shared verification logic used by both POST and GET routes
+async function handleVerification(token, res) {
+  // Try pending user first
+  const pending = await PendingUser.findOne({
+    verificationToken: token,
+    verificationTokenExpires: { $gt: new Date() },
+  });
+  if (pending) {
+    const user = await User.create({
+      name: pending.name,
+      email: pending.email,
+      password: pending.password,
+      avatar: pending.avatar,
+      emailVerified: true,
+      authProvider: 'email',
+    });
+    await PendingUser.deleteOne({ _id: pending._id });
+    await sendVerificationSuccess(user.email, user.name);
+    const jwtToken = generateToken(user);
+    return res.json({
+      message: 'Email verified successfully! You can now login.',
+      ...userResponse(user, jwtToken),
+    });
+  }
+  // Fallback to existing users
+  const user = await User.findOne({
+    verificationToken: token,
+    verificationTokenExpires: { $gt: new Date() },
+  });
+  if (!user) {
+    return res.status(400).json({ message: 'Invalid or expired verification token' });
+  }
+  user.emailVerified = true;
+  user.verificationToken = null;
+  user.verificationTokenExpires = null;
+  await user.save();
+  const jwtToken = generateToken(user);
+  return res.json({
+    message: 'Email verified successfully! You can now login.',
+    ...userResponse(user, jwtToken),
+  });
+}
 
 // ============================================================
 // POST /api/auth/resend-verification - Resend verification email
