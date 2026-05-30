@@ -66,34 +66,6 @@ const sendVerificationEmail = async (email, name, token) => {
   }
 };
 
-// Send a confirmation email after successful verification
-const sendVerificationSuccess = async (email, name) => {
-  const successUrl = `${BASE_URL}/login`;
-  try {
-    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-    sendSmtpEmail.subject = 'Your TrendDrop email is verified';
-    sendSmtpEmail.htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <body style="font-family: Arial, sans-serif; background:#f5f5f5; padding:20px;">
-        <div style="max-width:600px; margin:0 auto; background:#fff; padding:30px; border-radius:12px;">
-          <h2>Hello ${name},</h2>
-          <p>Your email has been successfully verified. You can now log in to TrendDrop.</p>
-          <p><a href="${successUrl}" style="background:#FF4D6D; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px;">Log In</a></p>
-        </div>
-      </body>
-      </html>
-    `;
-    sendSmtpEmail.to = [{ email, name }];
-    sendSmtpEmail.sender = { email: SENDER_EMAIL, name: SENDER_NAME };
-    await apiInstance.sendTransacEmail(sendSmtpEmail);
-    console.log('Verification success email sent to:', email);
-    return true;
-  } catch (error) {
-    console.error('Verification success email error:', error.message);
-    return false;
-  }
-};
 
 // Send password reset email
 const sendPasswordResetEmail = async (email, name, token) => {
@@ -135,4 +107,4 @@ const sendPasswordResetEmail = async (email, name, token) => {
   }
 };
 
-module.exports = { sendVerificationEmail, sendPasswordResetEmail, sendVerificationSuccess };
+module.exports = { sendVerificationEmail, sendPasswordResetEmail };

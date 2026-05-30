@@ -6,7 +6,7 @@ const User = require('../models/User');
 const PendingUser = require('../models/PendingUser');
 const upload = require('../middleware/upload');
 const { auth } = require('../middleware/auth');
-const { sendVerificationEmail, sendPasswordResetEmail, sendVerificationSuccess } = require('../config/email');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../config/email');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 
@@ -159,7 +159,6 @@ async function handleVerification(token, res) {
       authProvider: 'email',
     });
     await PendingUser.deleteOne({ _id: pending._id });
-    await sendVerificationSuccess(user.email, user.name);
     const jwtToken = generateToken(user);
     return res.json({
       message: 'Email verified successfully! You can now login.',

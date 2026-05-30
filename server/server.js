@@ -167,7 +167,6 @@ if (process.env.NODE_ENV === 'production') {
     }
     const PendingUser = require('./models/PendingUser');
     const User = require('./models/User');
-    const { sendVerificationSuccess } = require('./config/email');
 
     // Try pending user first
     let pending = await PendingUser.findOne({
@@ -185,7 +184,6 @@ if (process.env.NODE_ENV === 'production') {
         authProvider: 'email',
       });
       await PendingUser.deleteOne({ _id: pending._id });
-      await sendVerificationSuccess(user.email, user.name);
       return res.redirect(`${process.env.FRONTEND_URL}/login?verified=1`);
     }
     // Fallback to existing users
