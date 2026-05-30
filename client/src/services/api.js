@@ -104,4 +104,15 @@ export const requestPayout = () => api.post('/payments/payout');
 export const getPlatformFee = (country) => api.get(`/payments/platform-fee?country=${country}`);
 export const validateReceipt = (data) => api.post('/payments/revenuecat/validate', data);
 
+// Order Lifecycle
+export const getOrderStatus = (transactionId) => api.get(`/orders/${transactionId}/status`);
+export const cancelOrder = (transactionId, data) => api.post(`/orders/${transactionId}/cancel`, data);
+export const confirmReceived = (transactionId, data) => api.post(`/orders/${transactionId}/confirm-received`, data);
+export const requestReturn = (transactionId, data) => api.post(`/orders/${transactionId}/request-return`, data);
+export const acceptReturn = (transactionId, data) => api.post(`/orders/${transactionId}/accept-return`, data);
+export const rejectReturn = (transactionId, data) => api.post(`/orders/${transactionId}/reject-return`, data);
+export const confirmReturnReceived = (transactionId, data) => api.post(`/orders/${transactionId}/confirm-return-received`, data);
+export const fileDispute = (transactionId, data) => api.post(`/orders/${transactionId}/dispute`, data);
+export const getOrderLifecycle = (transactionId) => api.get(`/orders/${transactionId}/lifecycle`);
+
 export default api;

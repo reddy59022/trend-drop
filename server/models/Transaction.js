@@ -103,12 +103,36 @@ const transactionSchema = new mongoose.Schema({
     received: { type: Boolean, default: false },
     confirmedAt: { type: Date },
   },
+  // Return details
+  returnDetails: {
+    requestedAt: Date,
+    deadline: Date,
+    acceptedAt: Date,
+    returnShipDeadline: Date,
+    receivedAt: Date,
+    reason: String,
+    condition: String,
+    buyerPackingProof: [String],
+    sellerInspectionProof: [String],
+    inspectionNotes: String,
+    trackingNumber: String,
+  },
   // Dispute info
   dispute: {
     reason: String,
+    filedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     filedAt: Date,
     resolvedAt: Date,
     resolution: String,
+    evidence: [String],
+    responseDeadline: Date,
+  },
+  // Cancellation info
+  cancellation: {
+    cancelledBy: String,
+    reason: String,
+    cancelledAt: Date,
+    refundAmount: Number,
   },
 }, { timestamps: true });
 

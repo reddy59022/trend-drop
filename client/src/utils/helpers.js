@@ -50,7 +50,11 @@ export const getStatusColor = (status) => {
     pending: '#f59e0b', paid: '#3b82f6', processing: '#8b5cf6',
     shipped: '#3b82f6', in_transit: '#6366f1', out_for_delivery: '#f97316',
     delivered: '#10b981', completed: '#10b981',
-    cancelled: '#ef4444', refunded: '#ef4444', disputed: '#ef4444', returned: '#6b7280',
+    cancelled: '#ef4444', cancelled_by_buyer: '#ef4444', cancelled_by_seller: '#ef4444',
+    refunded: '#ef4444', disputed: '#f97316', dispute_resolved: '#6b7280',
+    buyer_confirmed: '#10b981',
+    return_requested: '#f59e0b', return_accepted: '#3b82f6', return_rejected: '#ef4444',
+    return_in_transit: '#6366f1', return_delivered: '#10b981',
   };
   return colors[status] || '#6b7280';
 };
@@ -61,7 +65,12 @@ export const getStatusLabel = (status) => {
     pending: 'Pending', paid: 'Paid', processing: 'Processing',
     shipped: 'Shipped', in_transit: 'In Transit', out_for_delivery: 'Out for Delivery',
     delivered: 'Delivered', completed: 'Completed',
-    cancelled: 'Cancelled', refunded: 'Refunded', disputed: 'Disputed', returned: 'Returned',
+    cancelled: 'Cancelled', cancelled_by_buyer: 'Cancelled by Buyer', cancelled_by_seller: 'Cancelled by Seller',
+    refunded: 'Refunded', disputed: 'Dispute Open', dispute_resolved: 'Dispute Resolved',
+    buyer_confirmed: 'Confirmed Received',
+    return_requested: 'Return Requested', return_accepted: 'Return Accepted',
+    return_rejected: 'Return Rejected', return_in_transit: 'Return Shipped',
+    return_delivered: 'Return Received',
   };
   return labels[status] || status;
 };
