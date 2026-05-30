@@ -3,9 +3,10 @@ const router = express.Router();
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const PendingUser = require('../models/PendingUser');
 const upload = require('../middleware/upload');
 const { auth } = require('../middleware/auth');
-const { sendVerificationEmail, sendPasswordResetEmail } = require('../config/email');
+const { sendVerificationEmail, sendPasswordResetEmail, sendVerificationSuccess } = require('../config/email');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 
@@ -82,25 +83,23 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
       }
     }
 
-    // Create user (NOT verified yet)
-    const user = await User.create({
+    // Create a pending user (not yet persisted to main User collection)
+    const pending = await PendingUser.create({
       name,
       email: email.toLowerCase(),
       password,
       avatar,
-      emailVerified: false,
       verificationToken,
       verificationTokenExpires,
-      authProvider: 'email',
     });
 
     // Send verification email (don't block on failure)
-    const emailSent = await sendVerificationEmail(user.email, user.name, verificationToken);
+    const emailSent = await sendVerificationEmail(pending.email, pending.name, verificationToken);
 
     res.status(201).json({
       message: 'Registration successful! Please check your email to verify your account.',
       emailSent,
-      userId: user._id,
+      userId: pending._id,
     });
   } catch (error) {
     console.error('Register error:', error);
@@ -122,6 +121,36 @@ router.post('/verify-email', async (req, res) => {
       return res.status(400).json({ message: 'Verification token is required' });
     }
 
+    // First, try to find a pending user (created during registration but not yet persisted to User collection)
+    let pending = await PendingUser.findOne({
+      verificationToken: token,
+      verificationTokenExpires: { $gt: new Date() },
+    });
+
+    if (pending) {
+      // Create the final User document from pending data
+      const user = await User.create({
+        name: pending.name,
+        email: pending.email,
+        password: pending.password,
+        avatar: pending.avatar,
+        emailVerified: true,
+        authProvider: 'email',
+      });
+      // Remove pending entry
+      await PendingUser.deleteOne({ _id: pending._id });
+
+      // Send confirmation email after successful verification
+      await sendVerificationSuccess(user.email, user.name);
+
+      const jwtToken = generateToken(user);
+      return res.json({
+        message: 'Email verified successfully! You can now login.',
+        ...userResponse(user, jwtToken),
+      });
+    }
+
+    // Fallback: check existing users (e.g., legacy flow)
     const user = await User.findOne({
       verificationToken: token,
       verificationTokenExpires: { $gt: new Date() },
@@ -137,7 +166,6 @@ router.post('/verify-email', async (req, res) => {
     await user.save();
 
     const jwtToken = generateToken(user);
-
     res.json({
       message: 'Email verified successfully! You can now login.',
       ...userResponse(user, jwtToken),
