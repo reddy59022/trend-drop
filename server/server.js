@@ -105,6 +105,7 @@ app.use('/api/wishlist', require('./routes/wishlist'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/pricehistory', require('./routes/pricehistory'));
 app.use('/api/payouts', require('./routes/payouts'));
+app.use('/api/shipping', require('./routes/shipping'));
 
 // Performance: Set cache headers for API responses
 app.use('/api', (req, res, next) => {
