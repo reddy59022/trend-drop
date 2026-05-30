@@ -2,6 +2,11 @@ services:
   - type: web
     name: trend-drop
     env: node
+    # Use a stable LTS Node version compatible with react-scripts (v5.x)
+    nodeVersion: 20
+    # Install client dependencies with Yarn (as the project uses Yarn) then build.
+    # Afterwards, install server dependencies with npm.
+    # Install client dependencies using npm (avoids missing Yarn) and build the React app.
     buildCommand: cd client && npm install && npm run build && cd ../server && npm install
     startCommand: node server/server.js
     envVars:
