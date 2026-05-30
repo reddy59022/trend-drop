@@ -105,31 +105,32 @@ const Login = () => {
   };
 
   return (
-    <div className="page-container">
-      <div className="auth-form">
-        <h1>Welcome Back</h1>
-        <p className="auth-subtitle">Sign in to continue buying and selling</p>
+    <div className="auth-page">
+      <div className="login-card">
+        <div className="auth-form">
+          <h1>Welcome Back</h1>
+          <p className="auth-subtitle">Sign in to continue buying and selling</p>
 
-        {needsVerification && (
-          <div style={{
-            background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8,
-            padding: 16, marginBottom: 20, fontSize: 14, textAlign: 'center',
-          }}>
-            <strong>Email not verified!</strong>
-            <p style={{ margin: '8px 0', color: '#92400e' }}>
-              Please check your inbox for the verification email.
-            </p>
-            <button
-              className="btn btn-sm"
-              onClick={resendVerification}
-              style={{ background: '#f59e0b', color: '#fff', border: 'none', padding: '8px 16', borderRadius: 6, cursor: 'pointer' }}
-            >
-              Resend Verification Email
-            </button>
-          </div>
-        )}
+          {needsVerification && (
+            <div style={{
+              background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8,
+              padding: 16, marginBottom: 20, fontSize: 14, textAlign: 'center',
+            }}>
+              <strong>Email not verified!</strong>
+              <p style={{ margin: '8px 0', color: '#92400e' }}>
+                Please check your inbox for the verification email.
+              </p>
+              <button
+                className="btn btn-sm"
+                onClick={resendVerification}
+                style={{ background: '#f59e0b', color: '#fff', border: 'none', padding: '8px 16', borderRadius: 6, cursor: 'pointer' }}
+              >
+                Resend Verification Email
+              </button>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Email</label>
             <input
@@ -139,6 +140,7 @@ const Login = () => {
               onChange={handleChange}
               placeholder="your@email.com"
               required
+              className="form-input"
             />
           </div>
           <div className="form-group">
@@ -150,26 +152,29 @@ const Login = () => {
               onChange={handleChange}
               placeholder="••••••••"
               required
+              className="form-input"
             />
           </div>
-          <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+          {/* Centered Sign‑In button placed below the password field */}
+          <button type="submit" className="btn btn-primary btn-lg btn-center" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
-        </form>
+          </form>
 
-        <div className="auth-divider">
-          <span>or continue with</span>
+          <div className="auth-divider">
+            <span>or continue with</span>
+          </div>
+
+          {/* Google Sign-In Button */}
+          <div ref={googleBtnRef} style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}></div>
+
+          <p className="auth-link">
+            Don't have an account? <Link to="/register">Sign up</Link>
+          </p>
+          <p className="auth-link">
+            <Link to="/forgot-password">Forgot password?</Link>
+          </p>
         </div>
-
-        {/* Google Sign-In Button */}
-        <div ref={googleBtnRef} style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}></div>
-
-        <p className="auth-link">
-          Don't have an account? <Link to="/register">Sign up</Link>
-        </p>
-        <p className="auth-link">
-          <Link to="/forgot-password">Forgot password?</Link>
-        </p>
       </div>
     </div>
   );

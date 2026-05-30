@@ -97,9 +97,10 @@ html {
 .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
 .btn-danger { background: var(--error); color: #fff; }
 .btn-danger:hover { background: #c82333; }
-.btn-sm { padding: 6px 14px; font-size: 12px; }
+.btn-sm { padding: 10px 24px; font-size: 14px; }
 .btn-lg { padding: 14px 32px; font-size: 16px; }
 .btn-block { width: 100%; justify-content: center; }
+.btn-center { display: block; margin: 12px auto; text-align: center; }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ===== Navbar ===== */
@@ -184,8 +185,11 @@ html {
 .listing-card-likes svg { color: var(--primary); }
 
 /* ===== Auth Pages ===== */
-.auth-page { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - var(--nav-height) - 200px); padding: 40px 20px; }
-.auth-container { width: 100%; max-width: 420px; background: #fff; padding: 40px; border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.auth-page { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - var(--nav-height) - 200px); padding: 0; }
+.auth-container { width: 100%; max-width: 1000px; background: #fff; padding: 100px; border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+/* Custom login card for larger display */
+/* Custom login card for larger display */
+.login-card { width: 100%; max-width: 900px; background: #fff; padding: 80px; border-radius: var(--radius-lg); box-shadow: var(--shadow); margin: auto; }
 .auth-container h1 { font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 8px; }
 .auth-subtitle { text-align: center; color: var(--text-light); margin-bottom: 24px; }
 .auth-form { display: flex; flex-direction: column; gap: 16px; }
