@@ -52,17 +52,20 @@ echo ""
 # Start Backend Server (port 5000)
 # ===========================
 echo "${YELLOW}Step 2: Starting backend server on port 5000...${NC}"
+# Ensure any existing process on the backend port is terminated
+if lsof -ti:5000 >/dev/null 2>&1; then
+  echo "${RED}Killing existing process on port 5000...${NC}"
+  kill $(lsof -ti:5000) || true
+fi
 cd "$SCRIPT_DIR/server"
 node server.js &
 SERVER_PID=$!
 cd "$SCRIPT_DIR"
 echo "${GREEN}✓ Backend server started (PID: $SERVER_PID)${NC}"
 echo ""
-
-# Wait for server to be ready
+# Wait briefly for the server to become ready
 sleep 2
-
-# Check if server is running
+# Verify the backend is still running
 if ! kill -0 $SERVER_PID 2>/dev/null; then
   echo "${RED}Error: Backend server failed to start.${NC}"
   echo "Make sure MongoDB is running locally or MONGO_URI is configured in server/.env"
@@ -73,6 +76,11 @@ fi
 # Start React Dev Server (port 3000)
 # ===========================
 echo "${YELLOW}Step 3: Starting React web dev server on port 3000...${NC}"
+# Ensure any existing process on the frontend port is terminated
+if lsof -ti:3000 >/dev/null 2>&1; then
+  echo "${RED}Killing existing process on port 3000...${NC}"
+  kill $(lsof -ti:3000) || true
+fi
 cd "$SCRIPT_DIR/client"
 BROWSER=none PORT=3000 npx react-scripts start &
 WEB_PID=$!
