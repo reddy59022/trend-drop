@@ -7,6 +7,7 @@ const { currencies, convertPrice, formatPrice } = require('../config/currencies'
 const { countries, getCountry } = require('../config/countries');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
+const { generateLabelBuffer } = require('../config/labelGenerator');
 
 // GET /api/shipping/carriers - Get all carriers
 router.get('/carriers', (req, res) => {
@@ -162,6 +163,102 @@ router.post('/calculate-breakdown', (req, res) => {
   }
 });
 
+// GET /api/shipping/label/:transactionId - Download shipping label as PDF
+router.get('/label/:transactionId', auth, async (req, res) => {
+  try {
+    const transaction = await Transaction.findById(req.params.transactionId)
+      .populate('buyer', 'name email shippingAddress')
+      .populate('seller', 'name email shippingAddress')
+      .populate('listing', 'title weight');
+
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+
+    // Check authorization (seller or buyer)
+    const isAuthorized = 
+      (typeof transaction.buyer === 'object' ? transaction.buyer._id.toString() : transaction.buyer.toString()) === req.user._id.toString() ||
+      (typeof transaction.seller === 'object' ? transaction.seller._id.toString() : transaction.seller.toString()) === req.user._id.toString();
+
+    if (!isAuthorized) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // If no real label data, generate it
+    if (!transaction.shipping?.trackingNumber) {
+      const { getPreferredCarrier: gpc } = require('../config/shipping');
+      const sellerCountry = transaction.shippingAddress?.country || 'US';
+      const toCountry = transaction.shippingAddress?.country || 'US';
+      const carrierCode = gpc(toCountry, sellerCountry === toCountry);
+      const label = require('../config/shipping').generateLabel({
+        shippingAddress: transaction.shippingAddress,
+        sellerAddress: transaction.sellerAddress,
+        weight: transaction.shipping?.weight || 0.5,
+      }, carrierCode);
+
+      transaction.shipping = {
+        ...transaction.shipping,
+        ...label,
+        labelCreated: true,
+        labelCreatedDate: new Date(),
+      };
+      await transaction.save();
+    }
+
+    // Build order data for label generation
+    const buyer = transaction.buyer || {};
+    const seller = transaction.seller || {};
+    const fromAddr = transaction.sellerAddress || seller.shippingAddress || {};
+    const toAddr = transaction.shippingAddress || {};
+    const trackingNum = transaction.shipping?.trackingNumber || '';
+
+    const orderData = {
+      transactionId: transaction._id.toString(),
+      trackingNumber: trackingNum,
+      carrier: transaction.shipping?.carrier || 'USPS',
+      carrierService: transaction.shipping?.service || 'Priority Mail',
+      trackingUrl: transaction.shipping?.trackingUrl || '',
+      fromAddress: {
+        name: seller.name || 'Seller',
+        fullName: fromAddr.fullName || seller.name || 'Seller',
+        street1: fromAddr.street1 || '',
+        street2: fromAddr.street2 || '',
+        city: fromAddr.city || '',
+        state: fromAddr.state || '',
+        postalCode: fromAddr.postalCode || '',
+        country: fromAddr.country || 'US',
+        phone: fromAddr.phone || '',
+      },
+      toAddress: {
+        name: buyer.name || 'Buyer',
+        fullName: toAddr.fullName || buyer.name || 'Buyer',
+        street1: toAddr.street1 || '',
+        street2: toAddr.street2 || '',
+        city: toAddr.city || '',
+        state: toAddr.state || '',
+        postalCode: toAddr.postalCode || '',
+        country: toAddr.country || 'US',
+        phone: toAddr.phone || '',
+      },
+      weight: transaction.shipping?.weight || 0.5,
+      service: transaction.shipping?.service || 'Priority Mail',
+    };
+
+    // Generate PDF label
+    const pdfBuffer = await generateLabelBuffer(orderData);
+
+    // Send PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="trenddrop-label-${trackingNum}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error('Label download error:', error);
+    res.status(500).json({ message: 'Error generating label PDF' });
+  }
+});
+
 // POST /api/shipping/generate-label - Generate shipping label for a transaction
 router.post('/generate-label', auth, async (req, res) => {
   try {
@@ -210,7 +307,15 @@ router.post('/generate-label', auth, async (req, res) => {
     transaction.status = 'shipped';
     await transaction.save();
 
-    res.json(label);
+    // Generate label URL for response
+    const labelUrl = `${req.protocol}://${req.get('host')}/api/shipping/label/${transactionId}`;
+
+    res.json({
+      ...label,
+      labelPdfUrl: labelUrl,
+      message: 'Shipping label generated. Download from:', 
+      downloadUrl: labelUrl,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error generating label' });

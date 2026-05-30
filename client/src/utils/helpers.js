@@ -49,6 +49,7 @@ export const getStatusColor = (status) => {
   const colors = {
     pending: '#f59e0b', paid: '#3b82f6', processing: '#8b5cf6',
     shipped: '#3b82f6', in_transit: '#6366f1', out_for_delivery: '#f97316',
+    to_ship: '#3b82f6', to_deliver: '#6366f1',
     delivered: '#10b981', completed: '#10b981',
     cancelled: '#ef4444', cancelled_by_buyer: '#ef4444', cancelled_by_seller: '#ef4444',
     refunded: '#ef4444', disputed: '#f97316', dispute_resolved: '#6b7280',
@@ -62,9 +63,9 @@ export const getStatusColor = (status) => {
 // Status labels
 export const getStatusLabel = (status) => {
   const labels = {
-    pending: 'Pending', paid: 'Paid', processing: 'Processing',
-    shipped: 'Shipped', in_transit: 'In Transit', out_for_delivery: 'Out for Delivery',
-    delivered: 'Delivered', completed: 'Completed',
+    pending: 'Pending', paid: 'Payment Confirmed', processing: 'Processing',
+    to_ship: 'To Ship', shipped: 'Shipped', in_transit: 'In Transit', out_for_delivery: 'Out for Delivery',
+    to_deliver: 'To Deliver', delivered: 'Delivered', completed: 'Completed',
     cancelled: 'Cancelled', cancelled_by_buyer: 'Cancelled by Buyer', cancelled_by_seller: 'Cancelled by Seller',
     refunded: 'Refunded', disputed: 'Dispute Open', dispute_resolved: 'Dispute Resolved',
     buyer_confirmed: 'Confirmed Received',

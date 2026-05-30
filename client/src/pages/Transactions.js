@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'react-toastify';
 import { formatPrice, getStatusColor, getStatusLabel, formatDate } from '../utils/helpers';
 import { FaTruck, FaCheckCircle, FaClock, FaBox } from 'react-icons/fa';
 
@@ -97,6 +98,43 @@ function Transactions() {
                 {/* Expanded breakdown */}
                 {isExpanded && (
                   <div style={{ padding: '0 16px 16px', borderTop: '1px solid #f0f0f0' }}>
+                    {/* Download Label Button - only for sellers */}
+                    {!isBuyer && (txn.shipping?.trackingNumber || txn.shipping?.labelCreated) && (
+                      <div style={{ marginTop: 12, marginBottom: 12 }}>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              // Fetch PDF with auth token via axios, then create blob download
+                              const res = await api.get(`/shipping/label/${txn._id}`, {
+                                responseType: 'blob',
+                              });
+                              const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                              const link = document.createElement('a');
+                              link.href = url;
+                              link.setAttribute('download', `trenddrop-label-${txn._id}.pdf`);
+                              document.body.appendChild(link);
+                              link.click();
+                              link.remove();
+                              window.URL.revokeObjectURL(url);
+                            } catch (err) {
+                              console.error('Label download failed:', err);
+                              toast.error('Failed to download label. Make sure you are authorized.');
+                            }
+                          }}
+                          className="btn btn-primary btn-sm"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '8px 16px',
+                            background: '#FF4D6D', color: '#fff', border: 'none',
+                            borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                          }}
+                        >
+                          📦 Download Shipping Label
+                        </button>
+                      </div>
+                    )}
+
                     {/* Tracking info */}
                     {txn.shipping?.trackingNumber && (
                       <div style={{ background: '#f8f9fa', padding: 12, borderRadius: 8, marginTop: 12, marginBottom: 12 }}>
@@ -134,6 +172,7 @@ function Transactions() {
                       {isBuyer ? 'What You Paid' : 'What You Earned'}
                     </div>
 
+                    <>
                     {isBuyer ? (
                       <div style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -173,14 +212,14 @@ function Transactions() {
                       </div>
                     )}
 
-                    {/* Address info */}
-                    {isBuyer && txn.shippingAddress && (
-                      <div style={{ marginTop: 12, fontSize: 13, color: '#666' }}>
-                        <strong>Shipping to:</strong> {txn.shippingAddress.fullName}, {txn.shippingAddress.street1}, {txn.shippingAddress.city}, {txn.shippingAddress.state} {txn.shippingAddress.postalCode}, {txn.shippingAddress.country}
-                      </div>
-                    )}
-                  </div>
-                )}
+                  {/* Address info */}
+                  {txn.shippingAddress && (
+                    <div style={{ marginTop: 12, fontSize: 13, color: '#666' }}>
+                      <strong>Shipping to:</strong> {txn.shippingAddress.fullName}, {txn.shippingAddress.street1}, {txn.shippingAddress.city}, {txn.shippingAddress.state} {txn.shippingAddress.postalCode}, {txn.shippingAddress.country}
+                    </div>
+                  )}
+                  </>
+                </div>)}
               </div>
             );
           })}
