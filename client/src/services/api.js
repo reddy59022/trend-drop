@@ -102,7 +102,7 @@ export const getPaymentBreakdown = (data) => api.post('/payments/breakdown', dat
 export const getCommissions = () => api.get('/payments/commissions');
 export const requestPayout = () => api.post('/payments/payout');
 export const getPlatformFee = (country) => api.get(`/payments/platform-fee?country=${country}`);
-export const validateReceipt = (data) => api.post('/payments/revenuecat/validate', data);
+// RevenueCat endpoint removed - payments handled via Stripe only
 
 // Order Lifecycle
 export const getOrderStatus = (transactionId) => api.get(`/orders/${transactionId}/status`);

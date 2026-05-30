@@ -2,23 +2,30 @@ const express = require('express');
 const router = express.Router();
 const Payout = require('../models/Payout');
 const Transaction = require('../models/Transaction');
+const Listing = require('../models/Listing');
 const { auth } = require('../middleware/auth');
 
-// Platform commission rate - 5% (much lower than Poshmark's 20%)
-const COMMISSION_RATE = 0.05;
+// BUG 4: Changed from 5% to 10% to match the actual platform fee in transactions.js
+const COMMISSION_RATE = 0.10;
 
 // GET /api/payouts/dashboard - Get seller payout dashboard
 router.get('/dashboard', auth, async (req, res) => {
   try {
     const sellerId = req.user._id;
 
-    // Get all completed payouts for this seller
+    // Get all payouts for this seller
     const payouts = await Payout.find({ seller: sellerId })
       .populate('listing', 'title images price')
       .populate('transaction', 'status createdAt')
       .sort({ createdAt: -1 });
 
-    // Calculate totals
+    // Also get completed transactions that may not have Payout records yet
+    const completedTransactions = await Transaction.find({
+      seller: sellerId,
+      status: 'completed',
+    }).populate('listing', 'title images price');
+
+    // Calculate totals from payouts
     const totalEarnings = payouts
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + p.payoutAmount, 0);
@@ -34,6 +41,11 @@ router.get('/dashboard', auth, async (req, res) => {
     const pendingPayouts = payouts.filter(p => p.status === 'pending');
     const pendingAmount = pendingPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
 
+    // Include completed transactions not yet in payouts for accurate pending amount
+    const pendingFromTransactions = completedTransactions
+      .filter(t => !payouts.some(p => p.transaction?.toString() === t._id.toString()))
+      .reduce((sum, t) => sum + (t.paymentBreakdown?.sellerEarnings || 0), 0);
+
     const completedPayouts = payouts.filter(p => p.status === 'completed');
 
     res.json({
@@ -42,8 +54,10 @@ router.get('/dashboard', auth, async (req, res) => {
       totalSales,
       totalCommission,
       totalEarnings,
-      pendingAmount,
-      pendingCount: pendingPayouts.length,
+      pendingAmount: pendingAmount + pendingFromTransactions,
+      pendingCount: pendingPayouts.length + completedTransactions.filter(
+        t => !payouts.some(p => p.transaction?.toString() === t._id.toString())
+      ).length,
       payoutHistory: completedPayouts.slice(0, 20),
       recentTransactions: payouts.slice(0, 10),
     });
@@ -74,7 +88,7 @@ router.post('/process/:transactionId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Payout already processed for this transaction' });
     }
 
-    const salePrice = transaction.totalPrice || transaction.price || transaction.listing?.price || 0;
+    const salePrice = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
     const commissionAmount = Math.round(salePrice * COMMISSION_RATE * 100) / 100;
     const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
 
@@ -86,7 +100,7 @@ router.post('/process/:transactionId', auth, async (req, res) => {
       commissionRate: COMMISSION_RATE,
       commissionAmount,
       payoutAmount,
-      status: 'completed', // Auto-complete for demo (in production, would be 'pending' then 'processing')
+      status: 'completed',
       paidAt: new Date(),
     });
 
@@ -102,6 +116,51 @@ router.post('/process/:transactionId', auth, async (req, res) => {
         payoutAmount,
       },
     });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/payouts/auto-create - Auto-create payout for completed transaction (called by shipping confirm or order lifecycle)
+router.post('/auto-create', auth, async (req, res) => {
+  try {
+    const { transactionId } = req.body;
+    const transaction = await Transaction.findById(transactionId)
+      .populate('listing')
+      .populate('seller');
+
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+
+    if (transaction.status !== 'completed') {
+      return res.status(400).json({ message: 'Transaction must be completed' });
+    }
+
+    // Check if payout already exists
+    const existingPayout = await Payout.findOne({ transaction: transaction._id });
+    if (existingPayout) {
+      return res.json({ message: 'Payout already exists', payout: existingPayout });
+    }
+
+    const salePrice = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
+    const commissionAmount = Math.round(salePrice * COMMISSION_RATE * 100) / 100;
+    const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+
+    const payout = await Payout.create({
+      seller: transaction.seller,
+      transaction: transaction._id,
+      listing: transaction.listing._id,
+      salePrice,
+      commissionRate: COMMISSION_RATE,
+      commissionAmount,
+      payoutAmount,
+      status: 'pending',
+    });
+
+    await payout.populate(['listing', 'transaction']);
+    res.status(201).json({ message: 'Payout record created', payout });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -144,7 +203,7 @@ router.get('/commission-info', (req, res) => {
       trenddrop: `${COMMISSION_RATE * 100}%`,
     },
     features: [
-      'Keep 95% of your sales',
+      `Keep ${(100 - COMMISSION_RATE * 100)}% of your sales`,
       'No listing fees',
       'No monthly subscription',
       'Free image uploads',

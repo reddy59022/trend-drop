@@ -2,28 +2,79 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const User = require('../models/User');
+const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
-const { countryCommissions, stripeFees, calculatePaymentBreakdown, createStripePaymentIntent, verifyStripeWebhook, processSellerPayout } = require('../config/payments');
+const Payout = require('../models/Payout');
+const {
+  stripe,
+  countryCommissions,
+  calculatePaymentBreakdown,
+  authorizePaymentIntent,   // Auth only - no charge
+  capturePaymentIntent,     // Capture after fulfillment
+  retrievePaymentIntent,
+  releaseAuthorization,     // Release auth if fulfillment fails
+  verifyStripeWebhook,
+  processSellerPayout,
+  issueRefund,
+} = require('../config/payments');
 
-// POST /api/payments/create-intent - Create Stripe Payment Intent
+// ===================== PUBLIC ENDPOINTS =====================
+
+router.get('/publishable-key', (req, res) => {
+  res.json({ publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder' });
+});
+
+router.get('/commissions', (req, res) => res.json(countryCommissions));
+
+router.get('/platform-fee', (req, res) => {
+  const { country } = req.query;
+  const fee = countryCommissions[country] || countryCommissions.default;
+  res.json({
+    country: country || 'default',
+    platformFeePercent: fee.platformFee,
+    buyerProtectionPercent: fee.buyerProtection,
+    minFee: fee.minFee,
+    maxFee: fee.maxFee,
+    currency: fee.currency,
+  });
+});
+
+router.post('/breakdown', (req, res) => {
+  try {
+    const { itemPrice, fromCountry, toCountry, weightKg } = req.body;
+    const breakdown = calculatePaymentBreakdown(itemPrice || 0, fromCountry || 'US', toCountry || 'US', weightKg || 0.5);
+    res.json(breakdown);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error calculating breakdown' });
+  }
+});
+
+// ===================== AUTHENTICATED ENDPOINTS =====================
+
+// STEP 1: Authorize payment only (NO CHARGE)
+// capture_method: manual means Stripe holds authorization but doesn't capture funds
 router.post('/create-intent', auth, async (req, res) => {
   try {
     const { listingId, shippingAddress, buyerCountry } = req.body;
 
-    const Listing = require('../models/Listing');
     const listing = await Listing.findById(listingId);
     if (!listing) return res.status(404).json({ message: 'Listing not found' });
-    if (listing.sold) return res.status(400).json({ message: 'Item already sold' });
+    if (listing.seller.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: 'Cannot purchase your own listing' });
+    }
+    if (!listing.available || listing.sold || listing.quantity <= 0) {
+      return res.status(400).json({ message: 'Item is no longer available' });
+    }
 
     const seller = await User.findById(listing.seller);
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
     const toCountry = buyerCountry || req.user.country || 'US';
 
-    // Calculate full breakdown with country-specific fees
     const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
 
-    // Create Stripe payment intent
-    const paymentIntent = await createStripePaymentIntent(
+    // Authorize ONLY - no money moves yet
+    const paymentIntent = await authorizePaymentIntent(
       breakdown.buyer.totalPaid,
       breakdown.buyerCurrency,
       {
@@ -32,6 +83,8 @@ router.post('/create-intent', auth, async (req, res) => {
         sellerId: listing.seller.toString(),
         sellerCountry,
         buyerCountry: toCountry,
+        platformFee: breakdown.seller.platformFee.toString(),
+        sellerEarnings: breakdown.seller.sellerEarnings.toString(),
       }
     );
 
@@ -41,29 +94,81 @@ router.post('/create-intent', auth, async (req, res) => {
       amount: breakdown.buyer.totalPaid,
       currency: breakdown.buyerCurrency,
       breakdown,
+      status: paymentIntent.status, // 'requires_payment_method' → 'requires_capture'
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error creating payment intent' });
+    console.error('Create intent error:', error);
+    res.status(500).json({ message: error.message || 'Error creating payment intent' });
   }
 });
 
-// POST /api/payments/confirm - Confirm payment after Stripe success
+// STEP 2: Fulfill order then capture payment
+// 1. Verify authorization succeeded
+// 2. Generate shipping label
+// 3. Create transaction record
+// 4. Capture the payment (money moves now)
+// 5. Update inventory + seller stats
 router.post('/confirm', auth, async (req, res) => {
+  let createdTransaction = null;
+  let captured = false;
+
   try {
     const { paymentIntentId, listingId, shippingAddress } = req.body;
 
-    const Listing = require('../models/Listing');
+    if (!paymentIntentId) return res.status(400).json({ message: 'Missing paymentIntentId' });
+
+    // Verify authorization status from Stripe
+    const paymentIntent = await retrievePaymentIntent(paymentIntentId);
+    if (paymentIntent.status !== 'requires_capture') {
+      return res.status(400).json({
+        message: `Payment not authorized. Status: ${paymentIntent.status}. Expected: requires_capture`,
+      });
+    }
+
+    // Deduplicate - check if already processed
+    const existingTxn = await Transaction.findOne({ 'payout.transactionId': paymentIntentId });
+    if (existingTxn) {
+      return res.json({ message: 'Order already exists for this payment', transaction: existingTxn });
+    }
+
     const listing = await Listing.findById(listingId);
-    if (!listing) return res.status(404).json({ message: 'Listing not found' });
+    if (!listing) {
+      await releaseAuthorization(paymentIntentId);
+      return res.status(404).json({ message: 'Listing not found. Authorization released.' });
+    }
+    if (!listing.available || listing.sold || listing.quantity <= 0) {
+      await releaseAuthorization(paymentIntentId);
+      return res.status(400).json({ message: 'Item sold out. Authorization released.' });
+    }
 
     const seller = await User.findById(listing.seller);
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
     const toCountry = shippingAddress?.country || req.user.country || 'US';
     const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
 
-    // Create transaction with full breakdown
-    const transaction = await Transaction.create({
+    // ---------- FULFILLMENT (Label Generation) ----------
+    // Generate shipping label BEFORE capturing payment
+    const { generateLabel, getPreferredCarrier } = require('../config/shipping');
+    const sellerAddress = seller?.shippingAddress ? {
+      street1: seller.shippingAddress.street1,
+      city: seller.shippingAddress.city,
+      state: seller.shippingAddress.state,
+      postalCode: seller.shippingAddress.postalCode,
+      country: seller.shippingAddress.country || sellerCountry,
+    } : { country: sellerCountry };
+
+    const carrierCode = getPreferredCarrier(toCountry, sellerCountry === toCountry);
+    const label = generateLabel({
+      shippingAddress: {
+        fullName: shippingAddress?.fullName || req.user.name,
+        ...shippingAddress,
+      },
+      sellerAddress,
+      weight: listing.weight || 0.5,
+    }, carrierCode);
+
+    // ---------- CREATE TRANSACTION ----------
+    createdTransaction = await Transaction.create({
       listing: listingId,
       buyer: req.user._id,
       seller: listing.seller,
@@ -91,85 +196,141 @@ router.post('/confirm', auth, async (req, res) => {
         country: toCountry,
         phone: shippingAddress?.phone,
       },
-      status: 'paid',
-      payout: { status: 'pending' },
-      autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
+      shipping: {
+        carrier: label.carrier,
+        trackingNumber: label.trackingNumber,
+        trackingUrl: label.trackingUrl,
+        labelCreated: true,
+        labelCreatedDate: new Date(),
+        estimatedDelivery: new Date(label.estimatedDelivery),
+        service: label.service,
+        trackingHistory: label.statusHistory,
+      },
+      status: 'shipped',
+      payout: {
+        status: 'pending',
+        transactionId: paymentIntentId,
+      },
+      autoTracking: {
+        enabled: true,
+        lastChecked: new Date(),
+        nextCheck: new Date(Date.now() + 86400000),
+        attempts: 0,
+      },
     });
 
-  // Update inventory based on quantity
-  // Decrement available quantity (assume each purchase is quantity 1)
-  if (typeof listing.quantity === 'number') {
-    listing.quantity = Math.max(0, listing.quantity - 1);
-    listing.quantitySold = (listing.quantitySold || 0) + 1;
-    // If no more items left, mark as sold and unavailable
-    if (listing.quantity <= 0) {
-      listing.sold = true;
-      listing.available = false;
-    }
-  }
-  await listing.save();
+    // ---------- NOW CAPTURE PAYMENT (money moves) ----------
+    const captureResult = await capturePaymentIntent(paymentIntentId);
+    captured = true;
 
-    // Credit seller pending balance
+    // ---------- UPDATE INVENTORY (only after capture success) ----------
+    const wasLastOne = listing.quantity === 1;
+    const inventoryUpdate = await Listing.findOneAndUpdate(
+      { _id: listingId, quantity: { $gt: 0 } },
+      {
+        $inc: { quantity: -1, quantitySold: 1 },
+        $set: wasLastOne ? { sold: true, available: false } : {},
+      },
+      { new: true }
+    );
+
+    if (!inventoryUpdate) {
+      // Extremely rare: someone bought between our check and capture
+      // Money is captured - issue refund
+      await issueRefund(paymentIntentId);
+      createdTransaction.status = 'refunded';
+      createdTransaction.payout.status = 'refunded';
+      await createdTransaction.save();
+      return res.status(400).json({ message: 'Item sold out between authorization and capture. Full refund issued.' });
+    }
+
+    // ---------- UPDATE SELLER BALANCE + STATS ----------
     if (seller) {
-      seller.balance.pending += breakdown.seller.sellerEarnings;
+      seller.balance.pending = (seller.balance.pending || 0) + breakdown.seller.sellerEarnings;
+      seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
       seller.notifications.unshift({
         type: 'sale',
         from: req.user._id,
         listing: listing._id,
-        transaction: transaction._id,
-        message: `Item sold! You'll earn ${breakdown.seller.sellerEarnings} ${breakdown.sellerCurrency}.`,
+        transaction: createdTransaction._id,
+        message: `Item sold! You'll earn ${breakdown.seller.sellerEarnings} ${breakdown.sellerCurrency}. Shipping label ready.`,
       });
       await seller.save();
     }
 
-    await transaction.populate(['buyer', 'seller', 'listing']);
-    res.json({ transaction, breakdown });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error confirming payment' });
-  }
-});
-
-// POST /api/payments/webhook - Stripe webhook handler
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  try {
-    const sig = req.headers['stripe-signature'];
-    const event = verifyStripeWebhook(req.body, sig);
-
-    switch (event.type) {
-      case 'payment_intent.succeeded':
-        // Payment succeeded - confirm transaction
-        break;
-      case 'payment_intent.payment_failed':
-        // Payment failed - notify buyer
-        break;
-      case 'charge.refunded':
-        // Refund processed
-        break;
+    // ---------- UPDATE BUYER STATS ----------
+    const buyer = await User.findById(req.user._id);
+    if (buyer) {
+      buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
+      await buyer.save();
     }
 
-    res.json({ received: true });
+    // ---------- AUTO-CREATE PAYOUT RECORD ----------
+    try {
+      const existingPayout = await Payout.findOne({ transaction: createdTransaction._id });
+      if (!existingPayout) {
+        const salePrice = createdTransaction.paymentBreakdown?.totalPaid || createdTransaction.itemPrice || 0;
+        const commissionAmount = Math.round(salePrice * 0.10 * 100) / 100;
+        const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+        await Payout.create({
+          seller: listing.seller,
+          transaction: createdTransaction._id,
+          listing: listingId,
+          salePrice,
+          commissionRate: 0.10,
+          commissionAmount,
+          payoutAmount,
+          status: 'pending',
+        });
+      }
+    } catch (pErr) {
+      console.error('Auto-payout creation error:', pErr.message);
+    }
+
+    await createdTransaction.populate(['buyer', 'seller', 'listing']);
+    res.json({
+      transaction: createdTransaction,
+      breakdown,
+      captureResult: { id: captureResult.id, status: captureResult.status },
+      shipping: {
+        trackingNumber: label.trackingNumber,
+        trackingUrl: label.trackingUrl,
+        carrier: label.carrier,
+      },
+    });
+
   } catch (error) {
-    console.error('Webhook error:', error);
-    res.status(400).json({ message: 'Webhook error' });
+    console.error('Confirm payment error:', error);
+
+    // Rollback: Release authorization if we never captured
+    if (!captured && req.body.paymentIntentId) {
+      try { await releaseAuthorization(req.body.paymentIntentId); } catch (e) {}
+    }
+
+    // Rollback: If we captured but something else failed, issue refund
+    if (captured && req.body.paymentIntentId) {
+      try { await issueRefund(req.body.paymentIntentId); } catch (e) {}
+    }
+
+    // Rollback: Delete partial transaction if created
+    if (createdTransaction && !captured) {
+      try { await Transaction.findByIdAndDelete(createdTransaction._id); } catch (e) {}
+    }
+
+    res.status(500).json({ message: error.message || 'Error confirming payment' });
   }
 });
 
-// GET /api/payments/breakdown - Calculate payment breakdown
-router.post('/breakdown', (req, res) => {
+// POST /api/payments/cancel-payment - Release authorization if order not completed
+router.post('/cancel-payment', auth, async (req, res) => {
   try {
-    const { itemPrice, fromCountry, toCountry, weightKg } = req.body;
-    const breakdown = calculatePaymentBreakdown(itemPrice || 0, fromCountry || 'US', toCountry || 'US', weightKg || 0.5);
-    res.json(breakdown);
+    const { paymentIntentId } = req.body;
+    const result = await releaseAuthorization(paymentIntentId);
+    res.json({ message: 'Authorization released. No charge was made.', result });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Error calculating breakdown' });
+    res.status(500).json({ message: error.message || 'Error cancelling payment' });
   }
-});
-
-// GET /api/payments/commissions - Get all country commissions
-router.get('/commissions', (req, res) => {
-  res.json(countryCommissions);
 });
 
 // POST /api/payments/payout - Process seller payout
@@ -182,36 +343,16 @@ router.post('/payout', auth, async (req, res) => {
     if (!user.payoutMethod || !user.payoutMethod.type) {
       return res.status(400).json({ message: 'Please set up a payout method first' });
     }
-
     const amount = user.balance.available;
     const payout = await processSellerPayout(user._id, amount, user.balance.currency || 'USD', user.payoutMethod.type);
-
-    user.balance.totalPaidOut += amount;
+    user.balance.totalPaidOut = (user.balance.totalPaidOut || 0) + amount;
     user.balance.available = 0;
     await user.save();
-
     res.json({ payout, message: `Payout of ${amount} ${user.balance.currency} processed` });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Error processing payout' });
+    res.status(500).json({ message: error.message || 'Error processing payout' });
   }
-});
-
-// RevenueCat endpoints for mobile
-// NOTE: RevenueCat validation endpoint removed. Payments are now handled solely via Stripe.
-
-// GET /api/payments/platform-fee - Get platform fee info
-router.get('/platform-fee', (req, res) => {
-  const { country } = req.query;
-  const fee = countryCommissions[country] || countryCommissions.default;
-  res.json({
-    country: country || 'default',
-    platformFeePercent: fee.platformFee,
-    buyerProtectionPercent: fee.buyerProtection,
-    minFee: fee.minFee,
-    maxFee: fee.maxFee,
-    currency: fee.currency,
-  });
 });
 
 module.exports = router;

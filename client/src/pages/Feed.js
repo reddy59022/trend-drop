@@ -17,14 +17,22 @@ const Feed = () => {
     try {
       const url = user ? `/users/feed?page=${pageNum}&limit=20` : `/listings?page=${pageNum}&limit=20&sort=popular`;
       const res = await api.get(url);
-      setListings(res.data.listings || res.data.docs || []);
-      setPagination(res.data.pagination || {
-        total: res.data.total,
-        totalPages: res.data.totalPages,
-        currentPage: res.data.currentPage || pageNum,
-        hasNextPage: pageNum < (res.data.totalPages || 1),
-        hasPrevPage: pageNum > 1,
-      });
+      // For /listings route, data comes as { listings, totalPages, currentPage, total }
+      // For /users/feed route, data comes as { listings, totalPages, currentPage, total }
+      // For paginated helper { docs, pagination }
+      const listingsData = res.data.listings || res.data.docs || [];
+      setListings(listingsData);
+      if (res.data.pagination) {
+        setPagination(res.data.pagination);
+      } else {
+        setPagination({
+          total: res.data.total || 0,
+          totalPages: res.data.totalPages || 1,
+          currentPage: res.data.currentPage || pageNum,
+          hasNextPage: pageNum < (res.data.totalPages || 1),
+          hasPrevPage: pageNum > 1,
+        });
+      }
     } catch (error) {
       console.error(error);
     }

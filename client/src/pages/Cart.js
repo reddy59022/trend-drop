@@ -1,90 +1,67 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { Elements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
 import { useCart } from '../context/CartContext';
 import { toast } from 'react-toastify';
 import api from '../services/api';
 import { formatPrice } from '../utils/helpers';
+import StripeCheckoutForm from '../components/StripeCheckoutForm';
 
 const Cart = () => {
   const { cart, removeFromCart, updateQuantity, clearCart, totalAmount } = useCart();
-
-  // Simple Luhn algorithm to validate a 16‑digit card number
-  const isValidCardNumber = (num) => {
-    if (!/^\d{16}$/.test(num)) return false;
-    let sum = 0;
-    for (let i = 0; i < 16; i++) {
-      let digit = parseInt(num.charAt(15 - i), 10);
-      if (i % 2 === 1) {
-        digit *= 2;
-        if (digit > 9) digit -= 9;
-      }
-      sum += digit;
-    }
-    return sum % 10 === 0;
-  };
-
-  // UI state for showing checkout form
+  const [stripePromise, setStripePromise] = React.useState(null);
   const [showForm, setShowForm] = React.useState(false);
-  const [cardNumber, setCardNumber] = React.useState('');
   const [shippingInfo, setShippingInfo] = React.useState({
     fullName: '', street1: '', city: '', state: '', postalCode: '', country: 'US', phone: ''
   });
 
+  // Load Stripe publishable key once
+  React.useEffect(() => {
+    const initStripe = async () => {
+      try {
+        const res = await api.get('/payments/publishable-key');
+        if (res.data.publishableKey && res.data.publishableKey !== 'pk_test_placeholder') {
+          setStripePromise(loadStripe(res.data.publishableKey));
+        }
+      } catch (e) {
+        console.warn('Stripe init warning:', e);
+      }
+    };
+    initStripe();
+  }, []);
+
   const handleCheckout = async () => {
     if (cart.length === 0) return toast.error('Cart is empty');
 
-    // Validate inventory before proceeding
-    const outOfStockItem = cart.find((item) => {
-      const available = item.available ?? Infinity;
-      return item.quantity > available;
-    });
-    if (outOfStockItem) {
-      toast.error(`Only ${outOfStockItem.available} left of "${outOfStockItem.title}"`);
+    // Validate inventory against live server data
+    try {
+      for (const item of cart) {
+        const res = await api.get(`/listings/${item.listingId}`);
+        const listing = res.data.listing;
+        if (!listing.available || listing.sold) {
+          toast.error(`"${listing.title}" is no longer available`);
+          return;
+        }
+        if (listing.quantity < item.quantity) {
+          toast.error(`Only ${listing.quantity} left of "${listing.title}"`);
+          return;
+        }
+      }
+    } catch (error) {
+      toast.error('Failed to verify item availability');
       return;
     }
 
-    // Show the checkout form UI
     setShowForm(true);
   };
 
-  const submitCheckout = async (e) => {
-    e.preventDefault();
-    if (!isValidCardNumber(cardNumber)) {
-      toast.error('Invalid card number. Please enter a valid 16‑digit number.');
-      return;
-    }
-    // Basic shipping validation
-    if (!shippingInfo.fullName) {
-      toast.error('Please fill in shipping details');
-      return;
-    }
-    try {
-      for (const item of cart) {
-        const intentRes = await api.post('/payments/create-intent', {
-          listingId: item.listingId,
-          shippingAddress: shippingInfo,
-          buyerCountry: shippingInfo.country || 'US',
-        });
-        const { paymentIntentId } = intentRes.data;
-        const confirmRes = await api.post('/payments/confirm', {
-          paymentIntentId,
-          listingId: item.listingId,
-          shippingAddress: shippingInfo,
-        });
-        if (confirmRes.status !== 200 && confirmRes.status !== 201) {
-          throw new Error('Payment confirmation failed');
-        }
-        const transaction = confirmRes.data.transaction;
-        await api.post('/shipping/generate-label', { transactionId: transaction._id });
-      }
-      toast.success('Purchase completed and shipping labels generated');
-      clearCart();
-      setShowForm(false);
-    } catch (err) {
-      console.error(err);
-      toast.error('Checkout failed');
-    }
+  const handleSuccess = () => {
+    clearCart();
+    setShowForm(false);
   };
+
+  const grandTotal = totalAmount();
 
   return (
     <div className="page-container" style={{ padding: '20px' }}>
@@ -116,27 +93,19 @@ const Cart = () => {
                   <td style={{ padding: '10px' }}>{item.title}</td>
                   <td style={{ padding: '10px' }}>{formatPrice(item.price, item.currency)}</td>
                   <td style={{ padding: '10px' }}>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
-                    >-</button>
+                    <button className="btn btn-sm" onClick={() => updateQuantity(item.listingId, item.quantity - 1)}>-</button>
                     <span style={{ margin: '0 8px' }}>{item.quantity}</span>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => {
-                        if (item.quantity < (item.available || Infinity)) {
-                          updateQuantity(item.listingId, item.quantity + 1);
-                        } else {
-                          toast.error(`Only ${item.available} available`);
-                        }
-                      }}
-                    >+</button>
+                    <button className="btn btn-sm" onClick={() => {
+                      if (item.quantity < (item.available || Infinity)) {
+                        updateQuantity(item.listingId, item.quantity + 1);
+                      } else {
+                        toast.error(`Only ${item.available} available`);
+                      }
+                    }}>+</button>
                   </td>
                   <td style={{ padding: '10px' }}>{formatPrice(item.price * item.quantity, item.currency)}</td>
                   <td style={{ padding: '10px' }}>
-                    <button className="btn btn-outline" onClick={() => removeFromCart(item.listingId)}>
-                      Remove
-                    </button>
+                    <button className="btn btn-outline" onClick={() => removeFromCart(item.listingId)}>Remove</button>
                   </td>
                 </tr>
               ))}
@@ -144,44 +113,72 @@ const Cart = () => {
             <tfoot>
               <tr>
                 <td colSpan="3" style={{ textAlign: 'right', fontWeight: 'bold', padding: '10px' }}>Grand Total:</td>
-                <td style={{ padding: '10px' }}>{formatPrice(totalAmount(), 'USD')}</td>
+                <td style={{ padding: '10px' }}>{formatPrice(grandTotal, 'USD')}</td>
                 <td></td>
               </tr>
             </tfoot>
           </table>
-      <div style={{ textAlign: 'right', marginTop: '20px' }}>
-        {/* Show checkout button when form is not visible */}
-        {!showForm && (
-          <button className="btn btn-primary" onClick={handleCheckout} disabled={cart.length === 0}>
-            Checkout
-          </button>
-        )}
-      </div>
 
-      {/* Checkout form overlay */}
-      {showForm && (
-        <div className="checkout-form" style={{ marginTop: '30px', padding: '20px', border: '1px solid #ddd', borderRadius: '8px' }}>
-          <h3 style={{ marginBottom: '15px' }}>Enter Payment & Shipping Details</h3>
-          <form onSubmit={submitCheckout} style={{ display: 'grid', gap: '10px' }}>
-            <input type="text" placeholder="Card Number (16 digits)" value={cardNumber} onChange={e => setCardNumber(e.target.value)} required style={{ padding: '8px' }} />
-            <input type="text" placeholder="Full Name" value={shippingInfo.fullName} onChange={e => setShippingInfo({ ...shippingInfo, fullName: e.target.value })} required style={{ padding: '8px' }} />
-            <input type="text" placeholder="Street Address" value={shippingInfo.street1} onChange={e => setShippingInfo({ ...shippingInfo, street1: e.target.value })} required style={{ padding: '8px' }} />
-            <input type="text" placeholder="City" value={shippingInfo.city} onChange={e => setShippingInfo({ ...shippingInfo, city: e.target.value })} required style={{ padding: '8px' }} />
-            <input type="text" placeholder="State / Province" value={shippingInfo.state} onChange={e => setShippingInfo({ ...shippingInfo, state: e.target.value })} required style={{ padding: '8px' }} />
-            <input type="text" placeholder="Postal Code" value={shippingInfo.postalCode} onChange={e => setShippingInfo({ ...shippingInfo, postalCode: e.target.value })} required style={{ padding: '8px' }} />
-            <input type="text" placeholder="Country (ISO code)" value={shippingInfo.country} onChange={e => setShippingInfo({ ...shippingInfo, country: e.target.value })} required style={{ padding: '8px' }} />
-            <input type="text" placeholder="Phone Number" value={shippingInfo.phone} onChange={e => setShippingInfo({ ...shippingInfo, phone: e.target.value })} style={{ padding: '8px' }} />
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button type="submit" className="btn btn-primary">Pay & Order</button>
-              <button type="button" className="btn btn-outline" onClick={() => setShowForm(false)}>Cancel</button>
+          <div style={{ textAlign: 'right', marginTop: '20px' }}>
+            {!showForm && (
+              <button className="btn btn-primary" onClick={handleCheckout} disabled={cart.length === 0}>
+                Proceed to Checkout
+              </button>
+            )}
+          </div>
+
+          {showForm && (
+            <div className="checkout-form" style={{ marginTop: '30px', padding: '20px', border: '1px solid #ddd', borderRadius: '8px' }}>
+              <h3 style={{ marginBottom: '15px' }}>Shipping & Payment Details</h3>
+
+              {/* Shipping Info Form */}
+              <div style={{ display: 'grid', gap: '10px', marginBottom: '20px' }}>
+                <input type="text" placeholder="Full Name" value={shippingInfo.fullName}
+                  onChange={e => setShippingInfo({ ...shippingInfo, fullName: e.target.value })} required style={{ padding: '8px' }} />
+                <input type="text" placeholder="Street Address" value={shippingInfo.street1}
+                  onChange={e => setShippingInfo({ ...shippingInfo, street1: e.target.value })} required style={{ padding: '8px' }} />
+                <input type="text" placeholder="City" value={shippingInfo.city}
+                  onChange={e => setShippingInfo({ ...shippingInfo, city: e.target.value })} required style={{ padding: '8px' }} />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <input type="text" placeholder="State" value={shippingInfo.state}
+                    onChange={e => setShippingInfo({ ...shippingInfo, state: e.target.value })} required style={{ padding: '8px', flex: 1 }} />
+                  <input type="text" placeholder="Postal Code" value={shippingInfo.postalCode}
+                    onChange={e => setShippingInfo({ ...shippingInfo, postalCode: e.target.value })} required style={{ padding: '8px', flex: 1 }} />
+                </div>
+                <input type="text" placeholder="Country (ISO code, e.g. US)" value={shippingInfo.country}
+                  onChange={e => setShippingInfo({ ...shippingInfo, country: e.target.value })} required style={{ padding: '8px' }} />
+                <input type="text" placeholder="Phone" value={shippingInfo.phone}
+                  onChange={e => setShippingInfo({ ...shippingInfo, phone: e.target.value })} style={{ padding: '8px' }} />
+              </div>
+
+              {/* Stripe Card Element */}
+              {stripePromise ? (
+                <Elements stripe={stripePromise}>
+                  <StripeCheckoutForm
+                    items={cart}
+                    shippingInfo={shippingInfo}
+                    totalAmount={formatPrice(grandTotal, 'USD')}
+                    onSuccess={handleSuccess}
+                    onCancel={() => setShowForm(false)}
+                  />
+                </Elements>
+              ) : (
+                <div style={{ textAlign: 'center', padding: 20 }}>
+                  <p>Loading payment system...</p>
+                  <p style={{ fontSize: 12, color: '#888' }}>
+                    Make sure STRIPE_PUBLISHABLE_KEY is set in your .env file
+                  </p>
+                  <button className="btn btn-outline" onClick={() => setShowForm(false)} style={{ marginTop: 12 }}>
+                    Back
+                  </button>
+                </div>
+              )}
             </div>
-          </form>
+          )}
         </div>
       )}
     </div>
-  )}
-</div>
-);
+  );
 };
 
 export default Cart;

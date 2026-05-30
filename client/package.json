@@ -8,6 +8,8 @@
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/ios": "^8.3.4",
+    "@stripe/react-stripe-js": "^6.5.0",
+    "@stripe/stripe-js": "^9.7.0",
     "axios": "^1.4.0",
     "moment": "^2.29.4",
     "react": "^18.2.0",

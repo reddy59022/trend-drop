@@ -3,6 +3,7 @@ const router = express.Router();
 const Transaction = require('../models/Transaction');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
+const Offer = require('../models/Offer'); // BUG 1: Added missing import
 const { auth } = require('../middleware/auth');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
 
@@ -73,11 +74,11 @@ router.post('/', auth, async (req, res) => {
         tax: 0,
         totalPaid,
         platformFee,
-      platformFeePercent,
-      shippingPayout: shippingCost,
-      sellerEarnings,
-      boostFee,
-      boostTier: listing.boost?.tier || '',
+        platformFeePercent,
+        shippingPayout: shippingCost,
+        sellerEarnings,
+        boostFee,
+        boostTier: listing.boost?.tier || '',
       },
       shippingAddress: {
         fullName: shippingAddress?.fullName || req.user.name,
@@ -107,31 +108,42 @@ router.post('/', auth, async (req, res) => {
       status: 'paid',
     });
 
-    // Update inventory
-    listing.quantity = Math.max(0, listing.quantity - 1);
-    listing.quantitySold = (listing.quantitySold || 0) + 1;
-    if (listing.quantity <= 0) {
-      listing.sold = true;
-      listing.available = false;
-    }
-    listing.paymentBreakdown = {
-      sellerEarnings,
-      platformFee,
-      platformFeePercent,
-      shippingCost,
-      buyerTotal: totalPaid,
-    };
-    await listing.save();
+    // BUG 2: Atomic inventory update with oversell protection
+    // Check if this will be the last item to mark sold
+    const wasLastOne = listing.quantity === 1;
+    const inventoryUpdate = await Listing.findOneAndUpdate(
+      {
+        _id: listingId,
+        quantity: { $gt: 0 },
+      },
+      {
+        $inc: { quantity: -1, quantitySold: 1 },
+        $set: wasLastOne ? { sold: true, available: false } : {},
+      },
+      { new: true }
+    );
 
-    // Move seller's pending balance
+    // If null, someone else bought the last one concurrently
+    if (!inventoryUpdate) {
+      await Transaction.findByIdAndDelete(transaction._id);
+      return res.status(400).json({ message: 'Sorry, this item just went out of stock' });
+    }
+
+    // Update payment breakdown separately
+    await Listing.findByIdAndUpdate(listingId, {
+      paymentBreakdown: {
+        sellerEarnings,
+        platformFee,
+        platformFeePercent,
+        shippingCost,
+        buyerTotal: totalPaid,
+      },
+    });
+
+    // Update seller's pending balance and notification in one save
     if (seller) {
-      seller.balance.pending += sellerEarnings;
+      seller.balance.pending = (seller.balance.pending || 0) + sellerEarnings;
       seller.stats.totalListings = Math.max(0, (seller.stats.totalListings || 0));
-      await seller.save();
-    }
-
-    // Notify seller
-    if (seller) {
       seller.notifications.unshift({
         type: 'sale',
         from: req.user._id,
@@ -183,7 +195,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     const weightKg = listing.weight || 0.5;
     const { calculateShipping } = require('../config/shipping');
     const { calculatePaymentBreakdown } = require('../config/payments');
-    const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKg, listing.price);
+    const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKg, finalPrice);
     const shippingCost = listing.shipping?.freeShipping ? 0 : shippingResult.cost;
     const breakdown = calculatePaymentBreakdown(finalPrice, sellerCountry, buyerCountry, weightKg);
 
@@ -214,18 +226,35 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
     });
 
-    // Update inventory
-    listing.quantity = Math.max(0, (listing.quantity || 0) - 1);
-    listing.quantitySold = (listing.quantitySold || 0) + 1;
-    if (listing.quantity <= 0) {
-      listing.sold = true;
-      listing.available = false;
-    }
-    await listing.save();
+    // BUG 2: Atomic inventory update with oversell protection
+    const wasLastOne = listing.quantity === 1;
+    const inventoryUpdate = await Listing.findOneAndUpdate(
+      {
+        _id: offer.listing,
+        quantity: { $gt: 0 },
+      },
+      {
+        $inc: { quantity: -1, quantitySold: 1 },
+        $set: wasLastOne ? { sold: true, available: false } : {},
+      },
+      { new: true }
+    );
 
-    // Update seller pending balance
+    if (!inventoryUpdate) {
+      await Transaction.findByIdAndDelete(transaction._id);
+      return res.status(400).json({ message: 'Sorry, this item just went out of stock' });
+    }
+
+    // Update seller pending balance and notify in one save
     if (seller) {
-      seller.balance.pending += breakdown.seller.sellerEarnings;
+      seller.balance.pending = (seller.balance.pending || 0) + breakdown.seller.sellerEarnings;
+      seller.notifications.unshift({
+        type: 'sale',
+        from: req.user._id,
+        listing: listing._id,
+        transaction: transaction._id,
+        message: `"${listing.title}" sold via offer for $${finalPrice}`,
+      });
       await seller.save();
     }
 
@@ -242,7 +271,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       await buyer.save();
     }
 
-    // Mark offer as completed (optional)
+    // Mark offer as completed
     offer.status = 'accepted';
     await offer.save();
 

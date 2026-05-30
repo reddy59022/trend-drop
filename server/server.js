@@ -79,6 +79,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
+// Stripe webhook MUST use raw body - mount before express.json()
+app.use('/api/payments/webhook', require('./routes/stripeWebhook'));
+
 // Body parsing with optimized limits
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));

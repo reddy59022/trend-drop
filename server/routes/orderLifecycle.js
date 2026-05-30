@@ -4,6 +4,7 @@ const { auth } = require('../middleware/auth');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
+const Payout = require('../models/Payout');
 const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundRules, returnEligibility, evidenceRequirements, disputeProcess, isValidTransition, getAllowedActions } = require('../config/orderLifecycle');
 const { calculatePaymentBreakdown } = require('../config/payments');
 
@@ -138,8 +139,11 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
       await seller.save();
     }
 
-    // Restore listing
-    await Listing.findByIdAndUpdate(txn.listing, { sold: false, available: true });
+    // Restore listing - BUG 3: also restore quantity that was decremented
+    await Listing.findByIdAndUpdate(txn.listing, { 
+      $inc: { quantity: 1, quantitySold: -1 },
+      $set: { sold: false, available: true },
+    });
 
     await txn.save();
 
@@ -192,7 +196,36 @@ router.post('/:transactionId/confirm-received', auth, validateOrderAccess, async
       await seller.save();
     }
 
+    // BUG 6: Update buyer stats on confirmation
+    const buyers = await User.findById(txn.buyer);
+    if (buyers) {
+      buyers.stats.totalPurchases = (buyers.stats.totalPurchases || 0) + 1;
+      await buyers.save();
+    }
+
     await txn.save();
+
+    // BUG 5: Auto-create Payout record when buyer confirms
+    try {
+      const existingPayout = await Payout.findOne({ transaction: txn._id });
+      if (!existingPayout) {
+        const salePrice = txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
+        const commissionAmount = Math.round(salePrice * 0.10 * 100) / 100;
+        const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+        await Payout.create({
+          seller: txn.seller,
+          transaction: txn._id,
+          listing: txn.listing,
+          salePrice,
+          commissionRate: 0.10,
+          commissionAmount,
+          payoutAmount,
+          status: 'pending',
+        });
+      }
+    } catch (payoutErr) {
+      console.error('Failed to auto-create payout:', payoutErr.message);
+    }
 
     res.json({
       message: 'Receipt confirmed. Payment will be released in 3 days.',
@@ -405,7 +438,12 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
       sellerInspectionProof: sellerPackingProof || [],
     };
 
-    await txn.save();
+    // BUG 14: Save txn before changing status again - also restore listing quantity
+    // First restore the listing inventory
+    await Listing.findByIdAndUpdate(txn.listing, { 
+      $inc: { quantity: 1, quantitySold: -1 },
+      $set: { sold: false, available: true },
+    });
 
     // Auto-refund after seller confirms receipt
     // Refund full amount to buyer
@@ -440,9 +478,6 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
       status: 'refunded',
       processedAt: new Date(),
     };
-
-    // Restore listing
-    await Listing.findByIdAndUpdate(txn.listing, { sold: false, available: true });
 
     await txn.save();
 

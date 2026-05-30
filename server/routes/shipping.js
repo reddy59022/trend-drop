@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
+const Payout = require('../models/Payout');
 const { carriers, calculateShipping, generateLabel, trackingStatuses, simulateTrackingUpdate, getPreferredCarrier } = require('../config/shipping');
 const { currencies, convertPrice, formatPrice } = require('../config/currencies');
 const { countries, getCountry } = require('../config/countries');
@@ -325,18 +326,40 @@ router.post('/confirm-received', auth, async (req, res) => {
     if (seller) {
       seller.balance.available += transaction.paymentBreakdown.sellerEarnings;
       seller.balance.pending -= transaction.paymentBreakdown.sellerEarnings;
-      seller.stats.totalSales += 1;
+      seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
       await seller.save();
     }
 
     // Update buyer stats
     const buyer = await User.findById(transaction.buyer);
     if (buyer) {
-      buyer.stats.totalPurchases += 1;
+      buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
       await buyer.save();
     }
 
     await transaction.save();
+
+    // BUG 5: Auto-create Payout record on completion
+    try {
+      const existingPayout = await Payout.findOne({ transaction: transaction._id });
+      if (!existingPayout) {
+        const salePrice = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0;
+        const commissionAmount = Math.round(salePrice * 0.10 * 100) / 100;
+        const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+        await Payout.create({
+          seller: transaction.seller,
+          transaction: transaction._id,
+          listing: transaction.listing,
+          salePrice,
+          commissionRate: 0.10,
+          commissionAmount,
+          payoutAmount,
+          status: 'pending',
+        });
+      }
+    } catch (payoutErr) {
+      console.error('Failed to auto-create payout:', payoutErr.message);
+    }
 
     res.json({
       message: 'Receipt confirmed. Payment released to seller.',

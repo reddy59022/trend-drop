@@ -10,6 +10,8 @@ import CommentSection from '../components/CommentSection';
 import OfferModal from '../components/OfferModal';
 import ListingCard from '../components/ListingCard';
 import { useCart } from '../context/CartContext';
+import { Elements } from '@stripe/react-stripe-js';
+import StripeCheckoutForm from '../components/StripeCheckoutForm';
 
 const ListingDetail = () => {
   const { id } = useParams();
@@ -84,10 +86,28 @@ const ListingDetail = () => {
     }
   };
 
+  const [showStripePayment, setShowStripePayment] = React.useState(false);
+  const [stripePromise, setStripePromise] = React.useState(null);
+
+  // Load Stripe on mount
+  React.useEffect(() => {
+    const initStripe = async () => {
+      try {
+        const res = await api.get('/payments/publishable-key');
+        if (res.data.publishableKey && res.data.publishableKey !== 'pk_test_placeholder') {
+          const { loadStripe } = require('@stripe/stripe-js');
+          setStripePromise(loadStripe(res.data.publishableKey));
+        }
+      } catch (e) {
+        console.warn('Stripe init:', e);
+      }
+    };
+    initStripe();
+  }, []);
+
   const handleBuyNow = async () => {
     if (!user) return toast.error('Please login');
 
-    // Validate inventory availability
     if (!listing.quantity || listing.quantity <= 0) {
       toast.error('Item is out of stock');
       return;
@@ -97,80 +117,42 @@ const ListingDetail = () => {
       return;
     }
 
-    // Simple Luhn check for demo card entry
-    const isValidCardNumber = (num) => {
-      if (!/^\d{16}$/.test(num)) return false;
-      let sum = 0;
-      for (let i = 0; i < 16; i++) {
-        let digit = parseInt(num.charAt(15 - i), 10);
-        if (i % 2 === 1) {
-          digit *= 2;
-          if (digit > 9) digit -= 9;
-        }
-        sum += digit;
-      }
-      return sum % 10 === 0;
-    };
-
-    const totalDisplay = formatPrice(
-      listing.price + (listing.shipping?.shippingCost || 0) + (listing.price * 0.05),
-      listing.currency || 'USD'
-    );
-    if (!window.confirm(`Purchase "${listing.title}" for ${totalDisplay} (incl. shipping & protection)?`)) return;
-
-    const cardNumber = window.prompt('Enter your 16‑digit card number to pay:');
-    if (!cardNumber || !isValidCardNumber(cardNumber)) {
-      toast.error('Invalid card number');
+    // Check if Stripe is available
+    if (!stripePromise) {
+      toast.error('Payment system not ready. Please try again.');
       return;
     }
 
-    setBuying(true);
-    try {
-      // 1️⃣ Create payment intent
-      const intentRes = await api.post('/payments/create-intent', {
-        listingId: listing._id,
-        shippingAddress: user.shippingAddress || {},
-        buyerCountry: user.country || 'US',
-      });
-      const { paymentIntentId } = intentRes.data;
-
-      // 2️⃣ Confirm payment (creates transaction)
-      const confirmRes = await api.post('/payments/confirm', {
-        paymentIntentId,
-        listingId: listing._id,
-        shippingAddress: user.shippingAddress || {},
-      });
-      if (confirmRes.status !== 200 && confirmRes.status !== 201) {
-        throw new Error('Payment confirmation failed');
-      }
-      const transaction = confirmRes.data.transaction;
-
-      // 3️⃣ Generate shipping label
-      await api.post('/shipping/generate-label', { transactionId: transaction._id });
-
-      toast.success('Purchase successful and shipping label created');
-      fetchListing();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Purchase failed');
-    }
-    setBuying(false);
+    setShowStripePayment(true);
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (!user) return toast.error('Please login');
-    const item = {
-      listingId: listing._id,
-      title: listing.title,
-      price: listing.price,
-      currency: listing.currency || 'USD',
-      quantity: 1,
-      thumbnail: listing.images?.[0] || '',
-      available: listing.quantity || 1, // store available inventory
-    };
-    addToCart(item);
-    toast.success('Added to cart');
-    // Redirect to cart page so the user can see their bag
-    navigate('/cart');
+    
+    // Check live inventory before adding to cart
+    try {
+      const res = await api.get(`/listings/${id}`);
+      const currentListing = res.data.listing;
+      if (!currentListing.available || currentListing.sold || currentListing.quantity <= 0) {
+        toast.error('This item is no longer available');
+        return;
+      }
+      
+      const item = {
+        listingId: listing._id,
+        title: listing.title,
+        price: listing.price,
+        currency: listing.currency || 'USD',
+        quantity: 1,
+        thumbnail: listing.images?.[0] || '',
+        available: currentListing.quantity,
+      };
+      addToCart(item);
+      toast.success('Added to cart');
+      navigate('/cart');
+    } catch (error) {
+      toast.error('Failed to verify item availability');
+    }
   };
 
   // Fetch buyer's own offer (if any) for this listing
@@ -343,9 +325,62 @@ const ListingDetail = () => {
                     <button className="btn btn-outline" onClick={() => setOfferModalOpen(true)}>
                       Make Offer
                     </button>
-                    <button className="btn btn-primary" onClick={handleAddToCart} disabled={buying}>
-                      Buy Now
+                    <button className="btn btn-primary" onClick={handleBuyNow} disabled={buying}>
+                      {buying ? 'Processing...' : 'Buy Now'}
                     </button>
+                    {/* Stripe Payment Overlay */}
+                    {showStripePayment && (
+                      <div className="stripe-payment-overlay" style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        padding: 20,
+                      }}>
+                        <div style={{
+                          background: '#fff', borderRadius: 16, padding: 32,
+                          maxWidth: 500, width: '100%', maxHeight: '90vh', overflow: 'auto',
+                        }}>
+                          <h3 style={{ marginBottom: 16 }}>Complete Purchase</h3>
+                          <div style={{ marginBottom: 16 }}>
+                            <strong>{listing.title}</strong>
+                            <div style={{ fontSize: 24, fontWeight: 700, color: '#FF4D6D', marginTop: 8 }}>
+                              {formatPrice(listing.price, listing.currency || 'USD')}
+                            </div>
+                          </div>
+
+                          {/* Simple shipping address form */}
+                          <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+                            <input type="text" placeholder="Full Name" id="stripe-name"
+                              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }} />
+                            <input type="text" placeholder="Street Address" id="stripe-address"
+                              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }} />
+                            <input type="text" placeholder="City" id="stripe-city"
+                              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }} />
+                            <input type="text" placeholder="ZIP Code" id="stripe-zip"
+                              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }} />
+                          </div>
+
+                          <Elements stripe={stripePromise}>
+                            <StripeCheckoutForm
+                              items={[{
+                                listingId: listing._id,
+                              }]}
+                              shippingInfo={{}}
+                              totalAmount={formatPrice(
+                                listing.price + (listing.shipping?.shippingCost || 0) + (listing.price * 0.05),
+                                listing.currency || 'USD'
+                              )}
+                              onSuccess={() => {
+                                setShowStripePayment(false);
+                                toast.success('Purchase successful!');
+                                fetchListing();
+                              }}
+                              onCancel={() => setShowStripePayment(false)}
+                            />
+                          </Elements>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

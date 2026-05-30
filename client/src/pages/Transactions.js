@@ -63,7 +63,7 @@ function Transactions() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {transactions.map(txn => {
-            const isBuyer = txn.buyer?._id === user?.id;
+            const isBuyer = (txn.buyer?._id?.toString() || txn.buyer?.toString()) === (user?.id || user?._id)?.toString();
             const isExpanded = expandedId === txn._id;
             const breakdown = txn.paymentBreakdown || {};
 
