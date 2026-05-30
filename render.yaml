@@ -39,10 +39,10 @@ services:
       value: kxa47g-Rl846xNqfWU0kh3uTN0M
     # Google OAuth credentials – keep secret; not synced from .env.
       - key: GOOGLE_CLIENT_ID
-        # Google OAuth client ID (real value)
+        # Google OAuth client ID placeholder – set the actual secret in Render's dashboard.
         value: "<GOOGLE_CLIENT_ID>"
         sync: false
       - key: GOOGLE_CLIENT_SECRET
-        # Google OAuth client secret (real value)
+        # Google OAuth client secret placeholder – set the actual secret in Render's dashboard.
         value: "<GOOGLE_CLIENT_SECRET>"
         sync: false
