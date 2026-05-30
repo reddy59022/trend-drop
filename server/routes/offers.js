@@ -176,9 +176,9 @@ router.patch('/:id/buyer-counter', auth, async (req, res) => {
 });
 
 // PATCH /api/offers/:id/accept-counter
-// Buyer accepts the seller's counter offer. This **does not** create a transaction immediately.
-// The offer status is set to "accepted" and the buyer must complete payment via the
-// dedicated transaction endpoint (`POST /api/transactions/offer/:offerId`).
+// Buyer accepts the seller's counter offer (status: 'countered')
+// OR buyer accepts after seller accepts their counter (status: 'buyer_countered')
+// The negotiated price = counterAmount (if set) or offer.amount
 router.patch('/:id/accept-counter', auth, async (req, res) => {
   try {
     const offer = await Offer.findById(req.params.id);
@@ -188,13 +188,69 @@ router.patch('/:id/accept-counter', auth, async (req, res) => {
     if (offer.buyer.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
-    if (offer.status !== 'countered') {
-      return res.status(400).json({ message: 'Offer is not in countered state' });
+    // Allow acceptance from 'countered' (seller countered → buyer accepts) 
+    // OR 'buyer_countered' (seller accepted buyer's counter)
+    if (offer.status !== 'countered' && offer.status !== 'buyer_countered') {
+      return res.status(400).json({ message: 'Offer is not in a negotiable state' });
     }
     // Mark as accepted – payment will be handled separately
     offer.status = 'accepted';
+    // The final price is the counterAmount (what they negotiated to)
+    // offer.counterAmount holds the final agreed price
     await offer.save();
-    res.json({ offer, message: 'Counter accepted. Complete payment via transaction endpoint.' });
+
+    // Notify seller
+    const seller = await User.findById(offer.seller);
+    if (seller) {
+      const finalPrice = offer.counterAmount || offer.amount;
+      seller.notifications.unshift({
+        type: 'offer',
+        from: req.user._id,
+        listing: offer.listing,
+        message: `Buyer accepted the offer of $${finalPrice}. Ready for purchase.`,
+      });
+      await seller.save();
+    }
+
+    res.json({ offer, message: 'Counter accepted. Complete payment via transaction endpoint.', finalPrice: offer.counterAmount || offer.amount });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PATCH /api/offers/:id/seller-accept-buyer-counter
+// Seller accepts the buyer's counter (status: 'buyer_countered' → 'accepted')
+router.patch('/:id/seller-accept-buyer-counter', auth, async (req, res) => {
+  try {
+    const offer = await Offer.findById(req.params.id);
+    if (!offer) {
+      return res.status(404).json({ message: 'Offer not found' });
+    }
+    if (offer.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+    if (offer.status !== 'buyer_countered') {
+      return res.status(400).json({ message: 'Offer is not in buyer_countered state' });
+    }
+    // Accept the buyer's counter amount as the final negotiated price
+    offer.status = 'accepted';
+    await offer.save();
+
+    // Notify buyer - they now need to proceed to payment at the negotiated price
+    const buyer = await User.findById(offer.buyer);
+    if (buyer) {
+      const finalPrice = offer.counterAmount || offer.amount;
+      buyer.notifications.unshift({
+        type: 'offer',
+        from: req.user._id,
+        listing: offer.listing,
+        message: `Your counter of $${finalPrice} has been accepted! Proceed to purchase.`,
+      });
+      await buyer.save();
+    }
+
+    res.json({ offer, message: 'Buyer counter accepted.', finalPrice: offer.counterAmount || offer.amount });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -235,7 +291,44 @@ router.patch('/:id/decline', auth, async (req, res) => {
   }
 });
 
+// PATCH /api/offers/:id/seller-accept
+// Seller accepts a pending offer (original offer price)
+router.patch('/:id/seller-accept', auth, async (req, res) => {
+  try {
+    const offer = await Offer.findById(req.params.id);
+    if (!offer) {
+      return res.status(404).json({ message: 'Offer not found' });
+    }
+    if (offer.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+    if (offer.status !== 'pending') {
+      return res.status(400).json({ message: 'Only pending offers can be accepted' });
+    }
+    offer.status = 'accepted';
+    await offer.save();
+
+    // Notify buyer
+    const buyer = await User.findById(offer.buyer);
+    if (buyer) {
+      buyer.notifications.unshift({
+        type: 'offer',
+        from: req.user._id,
+        listing: offer.listing,
+        message: `Your offer of $${offer.amount} has been accepted! Proceed to purchase.`,
+      });
+      await buyer.save();
+    }
+
+    res.json({ offer, message: 'Offer accepted.', finalPrice: offer.amount });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // PATCH /api/offers/:id/counter
+// Seller counters with a new price
 router.patch('/:id/counter', auth, async (req, res) => {
   try {
     const { counterAmount } = req.body;

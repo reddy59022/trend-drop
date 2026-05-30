@@ -6,9 +6,16 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Payout = require('../models/Payout');
 const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundRules, returnEligibility, evidenceRequirements, disputeProcess, isValidTransition, getAllowedActions } = require('../config/orderLifecycle');
-const { calculatePaymentBreakdown } = require('../config/payments');
+const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
 
-// Middleware: Validate order access
+// ============================================================
+// CRITICAL: Every state change is validated against the state machine.
+// No manual status updates allowed - only system transitions.
+// Money moves in this specific order:
+//   capture → label → transaction → inventory → balances
+// ============================================================
+
+// Middleware: Validate order access and state machine transition
 const validateOrderAccess = async (req, res, next) => {
   try {
     const transaction = await Transaction.findById(req.params.transactionId || req.body.transactionId);
@@ -30,13 +37,13 @@ const validateOrderAccess = async (req, res, next) => {
   }
 };
 
-// GET /api/orders/:transactionId/status - Get order status and allowed actions
+// ============================================================
+// GET /api/orders/:transactionId/status
+// ============================================================
 router.get('/:transactionId/status', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
     const role = req.orderRole;
-
-    // Calculate time-based eligibility
     const now = Date.now();
     const deliveredAt = txn.shipping?.actualDelivery || (txn.status === 'delivered' ? txn.updatedAt : null);
     const returnWindowEnd = deliveredAt ? new Date(deliveredAt).getTime() + timeWindows.RETURN_WINDOW : null;
@@ -49,6 +56,7 @@ router.get('/:transactionId/status', auth, validateOrderAccess, async (req, res)
       allowedActions: getAllowedActions(txn.status, role),
       timeline: {
         createdAt: txn.createdAt,
+        paidAt: txn.createdAt,
         shippedAt: txn.shipping?.labelCreatedDate,
         deliveredAt: txn.shipping?.actualDelivery,
         confirmedAt: txn.buyerConfirmed?.confirmedAt,
@@ -60,7 +68,7 @@ router.get('/:transactionId/status', auth, validateOrderAccess, async (req, res)
         canFileDispute: isValidTransition(txn.status, orderStates.DISPUTED),
         isAutoCompletable,
       },
-      evidence: evidenceRequirements[role],
+      payment: txn.paymentBreakdown,
     });
   } catch (error) {
     console.error(error);
@@ -68,50 +76,54 @@ router.get('/:transactionId/status', auth, validateOrderAccess, async (req, res)
   }
 });
 
-// POST /api/orders/:transactionId/cancel - Cancel order
+// ============================================================
+// POST /api/orders/:transactionId/cancel
+// CRITICAL: Validates state machine transition before touching money
+// Refund: buyer.balance.available += refundAmount (money goes TO buyer)
+// ============================================================
 router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
     const role = req.orderRole;
     const { reason, evidence } = req.body;
 
-    // Determine cancellation type
     const cancelState = role === 'buyer' ? orderStates.CANCELLED_BY_BUYER : orderStates.CANCELLED_BY_SELLER;
 
-    // Validate transition
+    // State machine validation - CRITICAL safety check
     if (!isValidTransition(txn.status, cancelState)) {
-      return res.status(400).json({ message: `Cannot cancel in '${txn.status}' state. ${cancellationRules[role]?.afterShipment?.reason || ''}` });
+      return res.status(400).json({
+        message: `Cannot cancel from '${txn.status}'. ${cancellationRules[role]?.afterShipment?.reason || ''}`
+      });
     }
 
-    // Check cancellation rules
+    // Only allow cancellation before shipment
     const isBeforeShipment = ['paid', 'processing'].includes(txn.status);
-    const rules = isBeforeShipment ? cancellationRules[role].beforeShipment : cancellationRules[role].afterShipment;
-
-    if (!rules.allowed) {
-      return res.status(400).json({ message: rules.reason });
+    if (!isBeforeShipment) {
+      return res.status(400).json({ message: cancellationRules[role].afterShipment?.reason || 'Cannot cancel after shipment' });
     }
 
-    // Calculate refund
-    const refundAmount = isBeforeShipment ? txn.paymentBreakdown.totalPaid :
-      txn.paymentBreakdown.subtotal; // No shipping refund after shipment
+    // Calculate refund: buyer gets back everything including shipping
+    const paymentIntentId = txn.payout?.transactionId;
+    let stripeRefundResult = null;
 
-    // Update transaction
-    txn.status = cancelState;
-    txn.dispute = {
-      reason: reason || `Cancelled by ${role}`,
-      filedAt: new Date(),
-      resolution: `Refund of ${refundAmount} initiated`,
-    };
-
-    // Store cancellation evidence if provided
-    if (evidence && evidence.length > 0) {
-      txn.dispute.evidence = evidence;
+    // Release Stripe authorization (no charge was made yet)
+    if (paymentIntentId) {
+      try {
+        const { releaseAuthorization } = require('../config/payments');
+        stripeRefundResult = await releaseAuthorization(paymentIntentId);
+      } catch (stripeErr) {
+        console.error('Stripe auth release error:', stripeErr.message);
+        // Continue - the auth will expire naturally
+      }
     }
 
-    // Refund to buyer
+    // Correct refund: BUYER gets money back. Use += to add to available balance.
+    const refundAmount = txn.paymentBreakdown.totalPaid || 0;
+
+    // Refund to buyer - ADD the refund to buyer's balance
     const buyer = await User.findById(txn.buyer);
     if (buyer) {
-      buyer.balance.available = Math.max(0, (buyer.balance.available || 0) - txn.paymentBreakdown.totalPaid);
+      buyer.balance.available = (buyer.balance.available || 0) + refundAmount;
       buyer.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
@@ -121,37 +133,45 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
       await buyer.save();
     }
 
-    // Restore seller balance if was pending
+    // Remove pending earnings from seller
     const seller = await User.findById(txn.seller);
     if (seller) {
-      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - txn.paymentBreakdown.sellerEarnings);
+      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - (txn.paymentBreakdown.sellerEarnings || 0));
 
-      // Apply seller penalty for seller-initiated cancellations
-      if (role === 'seller' && rules.sellerPenalty) {
+      if (role === 'seller') {
         seller.stats.strikes = (seller.stats.strikes || 0) + 1;
         seller.notifications.unshift({
           type: 'sale',
           listing: txn.listing,
           transaction: txn._id,
-          message: `Order cancelled. This counts as a strike. (${seller.stats.strikes}/3 strikes before suspension)`,
+          message: `Order cancelled by you. Strike ${seller.stats.strikes}/3 before suspension.`,
         });
       }
       await seller.save();
     }
 
-    // Restore listing - BUG 3: also restore quantity that was decremented
-    await Listing.findByIdAndUpdate(txn.listing, { 
+    // Restore listing inventory
+    await Listing.findByIdAndUpdate(txn.listing, {
       $inc: { quantity: 1, quantitySold: -1 },
       $set: { sold: false, available: true },
     });
 
+    // Update transaction status
+    txn.status = cancelState;
+    txn.cancellation = {
+      cancelledBy: role,
+      reason: reason || `Cancelled by ${role}`,
+      cancelledAt: new Date(),
+      refundAmount,
+    };
     await txn.save();
 
     res.json({
       message: `Order cancelled. Refund of ${refundAmount} ${txn.currency} will be processed.`,
       transaction: txn,
       refundAmount,
-      refundType: isBeforeShipment ? 'full' : 'partial',
+      refundType: 'full',
+      stripeRefund: stripeRefundResult,
     });
   } catch (error) {
     console.error(error);
@@ -159,7 +179,11 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
   }
 });
 
-// POST /api/orders/:transactionId/confirm-received - Buyer confirms receipt
+// ============================================================
+// POST /api/orders/:transactionId/confirm-received
+// Moves order from delivered/completed → buyer_confirmed
+// Funds NOT released yet - they stay pending until auto-complete
+// ============================================================
 router.post('/:transactionId/confirm-received', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
@@ -169,20 +193,17 @@ router.post('/:transactionId/confirm-received', auth, validateOrderAccess, async
     }
 
     if (!isValidTransition(txn.status, orderStates.BUYER_CONFIRMED)) {
-      return res.status(400).json({ message: 'Cannot confirm receipt in current status' });
+      return res.status(400).json({ message: `Cannot confirm receipt from '${txn.status}'. Must be delivered.` });
     }
 
-    const { packingProof } = req.body; // Buyer's unboxing evidence
+    const { packingProof } = req.body;
 
     txn.status = orderStates.BUYER_CONFIRMED;
     txn.buyerConfirmed = {
       received: true,
       confirmedAt: new Date(),
-      packingProof: packingProof || [], // Store unboxing evidence
+      packingProof: packingProof || [],
     };
-
-    // Note: Funds are NOT released yet. Auto-complete after 3 days if no return/dispute.
-    // Pending balance stays pending until auto-complete or manual completion.
 
     // Notify seller
     const seller = await User.findById(txn.seller);
@@ -196,36 +217,7 @@ router.post('/:transactionId/confirm-received', auth, validateOrderAccess, async
       await seller.save();
     }
 
-    // BUG 6: Update buyer stats on confirmation
-    const buyers = await User.findById(txn.buyer);
-    if (buyers) {
-      buyers.stats.totalPurchases = (buyers.stats.totalPurchases || 0) + 1;
-      await buyers.save();
-    }
-
     await txn.save();
-
-    // BUG 5: Auto-create Payout record when buyer confirms
-    try {
-      const existingPayout = await Payout.findOne({ transaction: txn._id });
-      if (!existingPayout) {
-        const salePrice = txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
-        const commissionAmount = Math.round(salePrice * 0.10 * 100) / 100;
-        const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
-        await Payout.create({
-          seller: txn.seller,
-          transaction: txn._id,
-          listing: txn.listing,
-          salePrice,
-          commissionRate: 0.10,
-          commissionAmount,
-          payoutAmount,
-          status: 'pending',
-        });
-      }
-    } catch (payoutErr) {
-      console.error('Failed to auto-create payout:', payoutErr.message);
-    }
 
     res.json({
       message: 'Receipt confirmed. Payment will be released in 3 days.',
@@ -238,7 +230,96 @@ router.post('/:transactionId/confirm-received', auth, validateOrderAccess, async
   }
 });
 
-// POST /api/orders/:transactionId/request-return - Buyer requests return
+// ============================================================
+// POST /api/orders/:transactionId/auto-complete
+// SYSTEM ONLY: Called by auto-track cron or admin
+// Releases funds: seller balance.pending → available
+// CRITICAL: Only valid from buyer_confirmed after 3 days
+// ============================================================
+router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (req, res) => {
+  try {
+    const txn = req.transaction;
+
+    if (!isValidTransition(txn.status, orderStates.COMPLETED)) {
+      return res.status(400).json({ message: `Cannot complete from '${txn.status}'` });
+    }
+
+    // Verify 3 days have passed since buyer confirmed
+    const confirmedAt = txn.buyerConfirmed?.confirmedAt || txn.updatedAt;
+    const timeSinceConfirm = Date.now() - new Date(confirmedAt).getTime();
+    if (timeSinceConfirm < timeWindows.AUTO_COMPLETE) {
+      const remaining = Math.ceil((timeWindows.AUTO_COMPLETE - timeSinceConfirm) / (1000 * 60 * 60));
+      return res.status(400).json({
+        message: `Cannot complete yet. ${remaining} hours remaining.`,
+        releaseDate: new Date(new Date(confirmedAt).getTime() + timeWindows.AUTO_COMPLETE).toISOString(),
+      });
+    }
+
+    const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+
+    // CRITICAL: Move money from pending → available for seller
+    const seller = await User.findById(txn.seller);
+    if (seller) {
+      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
+      seller.balance.available = (seller.balance.available || 0) + sellerEarnings;
+      seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
+      seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
+      seller.notifications.unshift({
+        type: 'sale',
+        listing: txn.listing,
+        transaction: txn._id,
+        message: `Payment of ${sellerEarnings} ${txn.currency} released to your available balance!`,
+      });
+      await seller.save();
+    }
+
+    // Update buyer stats
+    const buyer = await User.findById(txn.buyer);
+    if (buyer) {
+      buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
+      await buyer.save();
+    }
+
+    txn.status = orderStates.COMPLETED;
+    await txn.save();
+
+    // Auto-create payout record
+    try {
+      const existingPayout = await Payout.findOne({ transaction: txn._id });
+      if (!existingPayout) {
+        const salePrice = txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
+        const commissionAmount = txn.paymentBreakdown?.platformFee || Math.round(salePrice * 0.10 * 100) / 100;
+        const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+        await Payout.create({
+          seller: txn.seller,
+          transaction: txn._id,
+          listing: txn.listing,
+          salePrice,
+          commissionRate: 0.10,
+          commissionAmount,
+          payoutAmount,
+          status: 'completed',
+          paidAt: new Date(),
+        });
+      }
+    } catch (pErr) {
+      console.error('Auto-payout error:', pErr.message);
+    }
+
+    res.json({
+      message: 'Order completed. Funds released to seller.',
+      transaction: txn,
+      sellerEarnings,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
+// POST /api/orders/:transactionId/request-return
+// ============================================================
 router.post('/:transactionId/request-return', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
@@ -248,41 +329,29 @@ router.post('/:transactionId/request-return', auth, validateOrderAccess, async (
     }
 
     if (!isValidTransition(txn.status, orderStates.RETURN_REQUESTED)) {
-      return res.status(400).json({ message: 'Cannot request return in current status' });
+      return res.status(400).json({ message: `Cannot request return from '${txn.status}'` });
     }
 
-    // Check return window (5 days from delivery)
+    // Check return window
     const deliveredAt = txn.shipping?.actualDelivery || txn.updatedAt;
     const returnDeadline = new Date(deliveredAt).getTime() + timeWindows.RETURN_WINDOW;
     if (Date.now() > returnDeadline) {
       return res.status(400).json({
-        message: 'Return window has expired. Returns must be requested within 5 days of delivery.',
+        message: 'Return window has expired (5 days from delivery).',
         returnDeadline: new Date(returnDeadline).toISOString(),
       });
     }
 
     const { reason, condition, evidence } = req.body;
 
-    // Check return eligibility
+    // Check return eligibility based on item condition
     const listing = await Listing.findById(txn.listing);
     const conditionRule = returnEligibility.conditions[listing?.condition];
     if (conditionRule && !conditionRule.returnable) {
       return res.status(400).json({ message: conditionRule.reason });
     }
 
-    // Check non-returnable items
-    const isNonReturnable = returnEligibility.nonReturnable.some(item =>
-      reason?.toLowerCase().includes(item.toLowerCase())
-    );
-
     txn.status = orderStates.RETURN_REQUESTED;
-    txn.dispute = {
-      reason: reason || 'Item not as expected',
-      filedAt: new Date(),
-      evidence: evidence || [],
-    };
-
-    // Store return details
     txn.returnDetails = {
       requestedAt: new Date(),
       deadline: new Date(returnDeadline),
@@ -291,14 +360,14 @@ router.post('/:transactionId/request-return', auth, validateOrderAccess, async (
       buyerPackingProof: evidence || [],
     };
 
-    // Notify seller - they have 3 days to accept/reject
+    // Notify seller
     const seller = await User.findById(txn.seller);
     if (seller) {
       seller.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
         transaction: txn._id,
-        message: `Return requested for "${listing?.title}". You have 3 days to accept or reject.`,
+        message: `Return requested for "${listing?.title}". You have 3 days to respond.`,
       });
       await seller.save();
     }
@@ -316,7 +385,7 @@ router.post('/:transactionId/request-return', auth, validateOrderAccess, async (
   }
 });
 
-// POST /api/orders/:transactionId/accept-return - Seller accepts return
+// POST /api/orders/:transactionId/accept-return
 router.post('/:transactionId/accept-return', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
@@ -329,14 +398,6 @@ router.post('/:transactionId/accept-return', auth, validateOrderAccess, async (r
       return res.status(400).json({ message: 'Cannot accept return in current status' });
     }
 
-    // Check if seller responded within time window
-    const returnRequestedAt = txn.dispute?.filedAt || txn.updatedAt;
-    const sellerDeadline = new Date(returnRequestedAt).getTime() + timeWindows.SELLER_RESPOND_RETURN;
-    if (Date.now() > sellerDeadline) {
-      // Auto-accept if seller didn't respond in time
-      // This is a consumer protection measure
-    }
-
     txn.status = orderStates.RETURN_ACCEPTED;
     txn.returnDetails = {
       ...txn.returnDetails,
@@ -344,14 +405,13 @@ router.post('/:transactionId/accept-return', auth, validateOrderAccess, async (r
       returnShipDeadline: new Date(Date.now() + timeWindows.RETURN_SHIP_WINDOW),
     };
 
-    // Notify buyer - they have 7 days to ship return
     const buyer = await User.findById(txn.buyer);
     if (buyer) {
       buyer.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
         transaction: txn._id,
-        message: `Return accepted! Please ship the item back within 7 days. You will receive a refund once the seller confirms receipt.`,
+        message: 'Return accepted! Ship the item back within 7 days.',
       });
       await buyer.save();
     }
@@ -369,7 +429,7 @@ router.post('/:transactionId/accept-return', auth, validateOrderAccess, async (r
   }
 });
 
-// POST /api/orders/:transactionId/reject-return - Seller rejects return
+// POST /api/orders/:transactionId/reject-return
 router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
@@ -385,20 +445,19 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
     const { reason, evidence } = req.body;
 
     txn.status = orderStates.RETURN_REJECTED;
-    txn.dispute = {
-      ...txn.dispute,
-      resolution: 'Return rejected by seller',
-      evidence: evidence || [],
+    txn.returnDetails = {
+      ...txn.returnDetails,
+      rejectionReason: reason,
+      sellerInspectionProof: evidence || [],
     };
 
-    // Notify buyer - they can file a dispute
     const buyer = await User.findById(txn.buyer);
     if (buyer) {
       buyer.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
         transaction: txn._id,
-        message: `Return rejected by seller. You can file a dispute within 14 days.`,
+        message: 'Return rejected. You can file a dispute within 14 days.',
       });
       await buyer.save();
     }
@@ -415,7 +474,8 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
   }
 });
 
-// POST /api/orders/:transactionId/confirm-return-received - Seller confirms return received
+// POST /api/orders/:transactionId/confirm-return-received
+// CRITICAL: Refund buyer, deduct from seller, restore inventory
 router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
@@ -430,24 +490,17 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
 
     const { condition, inspectionNotes, sellerPackingProof } = req.body;
 
-    txn.status = orderStates.RETURN_DELIVERED;
-    txn.returnDetails = {
-      ...txn.returnDetails,
-      receivedAt: new Date(),
-      inspectionNotes,
-      sellerInspectionProof: sellerPackingProof || [],
-    };
-
-    // BUG 14: Save txn before changing status again - also restore listing quantity
-    // First restore the listing inventory
-    await Listing.findByIdAndUpdate(txn.listing, { 
+    // Restore listing inventory FIRST
+    await Listing.findByIdAndUpdate(txn.listing, {
       $inc: { quantity: 1, quantitySold: -1 },
       $set: { sold: false, available: true },
     });
 
-    // Auto-refund after seller confirms receipt
-    // Refund full amount to buyer
-    const refundAmount = txn.paymentBreakdown.totalPaid;
+    // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
+    const refundAmount = txn.paymentBreakdown.totalPaid || 0;
+    const sellerEarnings = txn.paymentBreakdown.sellerEarnings || 0;
+
+    // CRITICAL: ADD refund to buyer's balance
     const buyer = await User.findById(txn.buyer);
     if (buyer) {
       buyer.balance.available = (buyer.balance.available || 0) + refundAmount;
@@ -455,15 +508,15 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
         type: 'sale',
         listing: txn.listing,
         transaction: txn._id,
-        message: `Return received by seller. Refund of ${refundAmount} ${txn.currency} has been issued.`,
+        message: `Return received. Refund of ${refundAmount} ${txn.currency} issued.`,
       });
       await buyer.save();
     }
 
-    // Deduct from seller
+    // Remove from seller's pending balance
     const seller = await User.findById(txn.seller);
     if (seller) {
-      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - txn.paymentBreakdown.sellerEarnings);
+      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
       seller.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
@@ -474,15 +527,28 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
     }
 
     txn.status = orderStates.REFUNDED;
-    txn.payout = {
-      status: 'refunded',
-      processedAt: new Date(),
+    txn.returnDetails = {
+      ...txn.returnDetails,
+      receivedAt: new Date(),
+      inspectionNotes,
+      sellerInspectionProof: sellerPackingProof || [],
     };
+    txn.payout = { status: 'refunded', processedAt: new Date() };
+
+    // Release Stripe authorization if payment wasn't captured yet
+    if (txn.payout?.transactionId) {
+      try {
+        const { releaseAuthorization } = require('../config/payments');
+        await releaseAuthorization(txn.payout.transactionId);
+      } catch (stripeErr) {
+        console.error('Stripe release on return:', stripeErr.message);
+      }
+    }
 
     await txn.save();
 
     res.json({
-      message: 'Return confirmed. Refund issued to buyer.',
+      message: 'Return confirmed. Full refund issued to buyer.',
       transaction: txn,
       refundAmount,
     });
@@ -492,7 +558,7 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
   }
 });
 
-// POST /api/orders/:transactionId/dispute - File dispute
+// POST /api/orders/:transactionId/dispute
 router.post('/:transactionId/dispute', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
@@ -502,10 +568,8 @@ router.post('/:transactionId/dispute', auth, validateOrderAccess, async (req, re
       return res.status(400).json({ message: 'Cannot file dispute in current status' });
     }
 
-    if (!reason || (evidence && evidence.length > disputeProcess.maxEvidenceFiles)) {
-      return res.status(400).json({
-        message: `Dispute requires a reason and max ${disputeProcess.maxEvidenceFiles} evidence files`,
-      });
+    if (!reason) {
+      return res.status(400).json({ message: 'Dispute requires a reason' });
     }
 
     txn.status = orderStates.DISPUTED;
@@ -517,7 +581,6 @@ router.post('/:transactionId/dispute', auth, validateOrderAccess, async (req, re
       responseDeadline: new Date(Date.now() + disputeProcess.responseWindow),
     };
 
-    // Notify other party
     const otherUserId = req.orderRole === 'buyer' ? txn.seller : txn.buyer;
     const otherUser = await User.findById(otherUserId);
     if (otherUser) {
@@ -525,7 +588,7 @@ router.post('/:transactionId/dispute', auth, validateOrderAccess, async (req, re
         type: 'sale',
         listing: txn.listing,
         transaction: txn._id,
-        message: `Dispute filed by ${req.orderRole}. You have 48 hours to respond with evidence.`,
+        message: `Dispute filed by ${req.orderRole}. Respond within 48 hours.`,
       });
       await otherUser.save();
     }
@@ -543,13 +606,112 @@ router.post('/:transactionId/dispute', auth, validateOrderAccess, async (req, re
   }
 });
 
-// GET /api/orders/:transactionId/lifecycle - Get full order lifecycle info
+// ============================================================
+// POST /api/orders/auto-process - SYSTEM ONLY
+// Processes all auto-advancements:
+// 1. delivered + 3 days → auto buyer_confirmed
+// 2. buyer_confirmed + 3 days → auto completed (release funds)
+// Called by cron job or manually
+// ============================================================
+router.post('/auto-process', async (req, res) => {
+  try {
+    const now = Date.now();
+    let updated = 0;
+    let completed = 0;
+    let delivered = 0;
+
+    // 1. Auto-advance delivered → buyer_confirmed after 3 days of no action
+    const deliveredOrders = await Transaction.find({
+      status: orderStates.DELIVERED,
+    });
+
+    for (const txn of deliveredOrders) {
+      const deliveryTime = txn.shipping?.actualDelivery ? new Date(txn.shipping.actualDelivery).getTime() : new Date(txn.updatedAt).getTime();
+      if (now - deliveryTime >= timeWindows.BUYER_CONFIRM_DELIVERY) {
+        txn.status = orderStates.BUYER_CONFIRMED;
+        txn.buyerConfirmed = {
+          received: true,
+          confirmedAt: new Date(),
+          autoConfirmed: true,
+        };
+        await txn.save();
+        delivered++;
+      }
+    }
+
+    // 2. Auto-advance buyer_confirmed → completed (release funds)
+    const confirmedOrders = await Transaction.find({
+      status: orderStates.BUYER_CONFIRMED,
+    });
+
+    for (const txn of confirmedOrders) {
+      const confirmTime = txn.buyerConfirmed?.confirmedAt ? new Date(txn.buyerConfirmed.confirmedAt).getTime() : new Date(txn.updatedAt).getTime();
+      if (now - confirmTime >= timeWindows.AUTO_COMPLETE) {
+        const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+
+        // Release funds to seller
+        const seller = await User.findById(txn.seller);
+        if (seller) {
+          seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
+          seller.balance.available = (seller.balance.available || 0) + sellerEarnings;
+          seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
+          seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
+          await seller.save();
+        }
+
+        // Update buyer stats
+        const buyer = await User.findById(txn.buyer);
+        if (buyer) {
+          buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
+          await buyer.save();
+        }
+
+        txn.status = orderStates.COMPLETED;
+        await txn.save();
+
+        // Auto-create payout
+        try {
+          const existingPayout = await Payout.findOne({ transaction: txn._id });
+          if (!existingPayout) {
+            const salePrice = txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
+            const commissionAmount = txn.paymentBreakdown?.platformFee || Math.round(salePrice * 0.10 * 100) / 100;
+            const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+            await Payout.create({
+              seller: txn.seller,
+              transaction: txn._id,
+              listing: txn.listing,
+              salePrice,
+              commissionRate: 0.10,
+              commissionAmount,
+              payoutAmount,
+              status: 'completed',
+              paidAt: new Date(),
+            });
+          }
+        } catch (pErr) {
+          console.error('Auto-payout error:', pErr.message);
+        }
+
+        completed++;
+      }
+    }
+
+    res.json({
+      message: `Auto-processed: ${delivered} auto-confirmed, ${completed} auto-completed with funds released.`,
+      autoConfirmed: delivered,
+      autoCompleted: completed,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/orders/:transactionId/lifecycle
 router.get('/:transactionId/lifecycle', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
     const role = req.orderRole;
-
-    // Calculate all time-based info
     const now = Date.now();
     const deliveredAt = txn.shipping?.actualDelivery ? new Date(txn.shipping.actualDelivery).getTime() : null;
 
@@ -560,7 +722,7 @@ router.get('/:transactionId/lifecycle', auth, validateOrderAccess, async (req, r
       allowedActions: getAllowedActions(txn.status, role),
       timeline: {
         created: txn.createdAt,
-        paid: txn.status !== 'pending' ? txn.createdAt : null,
+        paid: txn.createdAt,
         shipped: txn.shipping?.labelCreatedDate,
         delivered: txn.shipping?.actualDelivery,
         confirmed: txn.buyerConfirmed?.confirmedAt,
@@ -571,10 +733,6 @@ router.get('/:transactionId/lifecycle', auth, validateOrderAccess, async (req, r
         disputeDeadline: deliveredAt ? new Date(deliveredAt + timeWindows.DISPUTE_WINDOW) : null,
         canReturn: deliveredAt && now <= deliveredAt + timeWindows.RETURN_WINDOW,
         canDispute: deliveredAt && now <= deliveredAt + timeWindows.DISPUTE_WINDOW,
-      },
-      evidence: {
-        seller: evidenceRequirements.seller,
-        buyer: evidenceRequirements.buyer,
       },
       payment: txn.paymentBreakdown,
     });

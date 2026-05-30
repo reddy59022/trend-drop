@@ -53,6 +53,12 @@ const Cart = () => {
       return;
     }
 
+    // Verify Stripe is loaded before showing checkout
+    if (!stripePromise) {
+      toast.error('Payment system not loaded. Please refresh the page.');
+      return;
+    }
+
     setShowForm(true);
   };
 
@@ -61,7 +67,63 @@ const Cart = () => {
     setShowForm(false);
   };
 
-  const grandTotal = totalAmount();
+  // Calculate full breakdown with shipping and buyer protection for display
+  const [itemBreakdowns, setItemBreakdowns] = React.useState({});
+
+  React.useEffect(() => {
+    // Fetch breakdown for each item when cart changes
+    const fetchBreakdowns = async () => {
+      const breakdowns = {};
+      for (const item of cart) {
+        try {
+          const res = await api.post('/payments/breakdown', {
+            itemPrice: item.price,
+            fromCountry: 'US',
+            toCountry: shippingInfo.country || 'US',
+            weightKg: 0.5,
+          });
+          breakdowns[item.listingId] = res.data;
+        } catch (e) {
+          // Fallback: calculate locally
+          const shippingFee = 3.99;
+          const protectionFee = Math.round(item.price * 0.05 * 100) / 100;
+          breakdowns[item.listingId] = {
+            buyer: {
+              itemPrice: item.price,
+              shippingCost: shippingFee,
+              buyerProtectionFee: protectionFee,
+              totalPaid: Math.round((item.price + shippingFee + protectionFee) * 100) / 100,
+            },
+          };
+        }
+      }
+      setItemBreakdowns(breakdowns);
+    };
+
+    if (cart.length > 0) {
+      fetchBreakdowns();
+    }
+  }, [cart, shippingInfo.country]);
+
+  // Calculate totals with fees
+  let subtotalItems = 0;
+  let totalShipping = 0;
+  let totalProtection = 0;
+  let grandTotal = 0;
+
+  cart.forEach(item => {
+    const bd = itemBreakdowns[item.listingId];
+    if (bd && bd.buyer) {
+      subtotalItems += bd.buyer.itemPrice * item.quantity;
+      totalShipping += bd.buyer.shippingCost * item.quantity;
+      totalProtection += bd.buyer.buyerProtectionFee * item.quantity;
+      grandTotal += bd.buyer.totalPaid * item.quantity;
+    } else {
+      // Fallback before breakdown loads
+      subtotalItems += item.price * item.quantity;
+      grandTotal += item.price * item.quantity;
+    }
+  });
 
   return (
     <div className="page-container" style={{ padding: '20px' }}>
@@ -83,39 +145,66 @@ const Cart = () => {
                 <th style={{ padding: '10px' }}>Item</th>
                 <th style={{ padding: '10px' }}>Price</th>
                 <th style={{ padding: '10px' }}>Qty</th>
-                <th style={{ padding: '10px' }}>Total</th>
+                <th style={{ padding: '10px' }}>Subtotal</th>
                 <th style={{ padding: '10px' }}></th>
               </tr>
             </thead>
             <tbody>
-              {cart.map((item) => (
-                <tr key={item.listingId} style={{ borderBottom: '1px solid #eaeaea' }}>
-                  <td style={{ padding: '10px' }}>{item.title}</td>
-                  <td style={{ padding: '10px' }}>{formatPrice(item.price, item.currency)}</td>
-                  <td style={{ padding: '10px' }}>
-                    <button className="btn btn-sm" onClick={() => updateQuantity(item.listingId, item.quantity - 1)}>-</button>
-                    <span style={{ margin: '0 8px' }}>{item.quantity}</span>
-                    <button className="btn btn-sm" onClick={() => {
-                      if (item.quantity < (item.available || Infinity)) {
-                        updateQuantity(item.listingId, item.quantity + 1);
-                      } else {
-                        toast.error(`Only ${item.available} available`);
-                      }
-                    }}>+</button>
-                  </td>
-                  <td style={{ padding: '10px' }}>{formatPrice(item.price * item.quantity, item.currency)}</td>
-                  <td style={{ padding: '10px' }}>
-                    <button className="btn btn-outline" onClick={() => removeFromCart(item.listingId)}>Remove</button>
-                  </td>
-                </tr>
-              ))}
+              {cart.map((item) => {
+                const bd = itemBreakdowns[item.listingId];
+                return (
+                  <tr key={item.listingId} style={{ borderBottom: '1px solid #eaeaea' }}>
+                    <td style={{ padding: '10px' }}>
+                      {item.title}
+                      {item.negotiatedPrice && (
+                        <div style={{ fontSize: 11, color: '#10b981' }}>Negotiated price</div>
+                      )}
+                    </td>
+                    <td style={{ padding: '10px' }}>{formatPrice(item.price, item.currency)}</td>
+                    <td style={{ padding: '10px' }}>
+                      <button className="btn btn-sm" onClick={() => updateQuantity(item.listingId, item.quantity - 1)}>-</button>
+                      <span style={{ margin: '0 8px' }}>{item.quantity}</span>
+                      <button className="btn btn-sm" onClick={() => {
+                        if (item.quantity < (item.available || Infinity)) {
+                          updateQuantity(item.listingId, item.quantity + 1);
+                        } else {
+                          toast.error(`Only ${item.available} available`);
+                        }
+                      }}>+</button>
+                    </td>
+                    <td style={{ padding: '10px' }}>{formatPrice(item.price * item.quantity, item.currency)}</td>
+                    <td style={{ padding: '10px' }}>
+                      <button className="btn btn-outline" onClick={() => removeFromCart(item.listingId)}>Remove</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot>
-              <tr>
-                <td colSpan="3" style={{ textAlign: 'right', fontWeight: 'bold', padding: '10px' }}>Grand Total:</td>
-                <td style={{ padding: '10px' }}>{formatPrice(grandTotal, 'USD')}</td>
-                <td></td>
-              </tr>
+              {cart.length > 0 && Object.keys(itemBreakdowns).length > 0 && (
+                <>
+                  <tr style={{ background: '#f9f9f9' }}>
+                    <td colSpan="3" style={{ textAlign: 'right', padding: '8px 10px', fontSize: 14 }}>Items Subtotal:</td>
+                    <td style={{ padding: '8px 10px', fontSize: 14 }}>{formatPrice(subtotalItems, 'USD')}</td>
+                    <td></td>
+                  </tr>
+                  <tr style={{ background: '#f9f9f9' }}>
+                    <td colSpan="3" style={{ textAlign: 'right', padding: '8px 10px', fontSize: 14 }}>Shipping:</td>
+                    <td style={{ padding: '8px 10px', fontSize: 14 }}>{formatPrice(totalShipping, 'USD')}</td>
+                    <td></td>
+                  </tr>
+                  <tr style={{ background: '#f9f9f9' }}>
+                    <td colSpan="3" style={{ textAlign: 'right', padding: '8px 10px', fontSize: 14 }}>Buyer Protection (5%):</td>
+                    <td style={{ padding: '8px 10px', fontSize: 14 }}>{formatPrice(totalProtection, 'USD')}</td>
+                    <td></td>
+                  </tr>
+                  <tr style={{ borderTop: '2px solid #333' }}>
+                    <td colSpan="3" style={{ textAlign: 'right', fontWeight: 'bold', padding: '12px 10px', fontSize: 16 }}>Grand Total:</td>
+                    <td style={{ padding: '12px 10px', fontWeight: 'bold', fontSize: 18, color: '#FF4D6D' }}>{formatPrice(grandTotal, 'USD')}</td>
+                    <td></td>
+                  </tr>
+                </>
+              )}
             </tfoot>
           </table>
 
@@ -149,6 +238,26 @@ const Cart = () => {
                   onChange={e => setShippingInfo({ ...shippingInfo, country: e.target.value })} required style={{ padding: '8px' }} />
                 <input type="text" placeholder="Phone" value={shippingInfo.phone}
                   onChange={e => setShippingInfo({ ...shippingInfo, phone: e.target.value })} style={{ padding: '8px' }} />
+              </div>
+
+              {/* Full Order Summary Before Payment */}
+              <div style={{ background: '#f8f9fa', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                <h4 style={{ margin: '0 0 8px', fontSize: 14 }}>Order Summary</h4>
+                {cart.map(item => {
+                  const bd = itemBreakdowns[item.listingId];
+                  return (
+                    <div key={item.listingId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0' }}>
+                      <span>{item.title} × {item.quantity}</span>
+                      <span>{formatPrice(bd?.buyer?.totalPaid || item.price, 'USD')}</span>
+                    </div>
+                  );
+                })}
+                <div style={{ borderTop: '1px solid #ddd', marginTop: 8, paddingTop: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span>Items</span><span>{formatPrice(subtotalItems, 'USD')}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span>Shipping</span><span>{formatPrice(totalShipping, 'USD')}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span>Protection</span><span>{formatPrice(totalProtection, 'USD')}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 16, marginTop: 8 }}><span>Total</span><span style={{ color: '#FF4D6D' }}>{formatPrice(grandTotal, 'USD')}</span></div>
+                </div>
               </div>
 
               {/* Stripe Card Element */}

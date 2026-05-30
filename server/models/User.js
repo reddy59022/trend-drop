@@ -17,8 +17,30 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true,
     minlength: 6,
+  },
+  // Email verification
+  emailVerified: {
+    type: Boolean,
+    default: false,
+  },
+  verificationToken: {
+    type: String,
+    default: null,
+  },
+  verificationTokenExpires: {
+    type: Date,
+    default: null,
+  },
+  // Google OAuth
+  googleId: {
+    type: String,
+    default: null,
+  },
+  authProvider: {
+    type: String,
+    enum: ['email', 'google'],
+    default: 'email',
   },
   avatar: {
     type: String,
@@ -122,7 +144,7 @@ userSchema.index({ 'notifications.read': 1, 'notifications.createdAt': -1 });
 userSchema.index({ country: 1 });
 
 userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password') || !this.password) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();

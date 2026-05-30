@@ -5,9 +5,8 @@
 // 2. After fulfillment (label created), capture the payment
 // 3. Only on capture success: update inventory + seller stats
 
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2025-02-24.acacia',
-});
+// Don't pin apiVersion - let the SDK use the compatible default
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const countryCommissions = {
   US: { platformFee: 10, buyerProtection: 5, minFee: 0.50, maxFee: 50, currency: 'USD' },

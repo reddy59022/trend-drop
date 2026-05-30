@@ -10,8 +10,6 @@ import CommentSection from '../components/CommentSection';
 import OfferModal from '../components/OfferModal';
 import ListingCard from '../components/ListingCard';
 import { useCart } from '../context/CartContext';
-import { Elements } from '@stripe/react-stripe-js';
-import StripeCheckoutForm from '../components/StripeCheckoutForm';
 
 const ListingDetail = () => {
   const { id } = useParams();
@@ -25,14 +23,14 @@ const ListingDetail = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [offerModalOpen, setOfferModalOpen] = useState(false);
   const [comments, setComments] = useState([]);
-  const [buying, setBuying] = useState(false);
   const [buyerOffer, setBuyerOffer] = useState(null);
   const { addToCart } = useCart();
 
   useEffect(() => {
     fetchListing();
+    if (user) fetchBuyerOffer();
     // eslint-disable-next-line
-  }, [id]);
+  }, [id, user]);
 
   const fetchListing = async () => {
     try {
@@ -86,26 +84,8 @@ const ListingDetail = () => {
     }
   };
 
-  const [showStripePayment, setShowStripePayment] = React.useState(false);
-  const [stripePromise, setStripePromise] = React.useState(null);
-
-  // Load Stripe on mount
-  React.useEffect(() => {
-    const initStripe = async () => {
-      try {
-        const res = await api.get('/payments/publishable-key');
-        if (res.data.publishableKey && res.data.publishableKey !== 'pk_test_placeholder') {
-          const { loadStripe } = require('@stripe/stripe-js');
-          setStripePromise(loadStripe(res.data.publishableKey));
-        }
-      } catch (e) {
-        console.warn('Stripe init:', e);
-      }
-    };
-    initStripe();
-  }, []);
-
-  const handleBuyNow = async () => {
+  // Add to Cart — uses negotiated price if buyer has an accepted offer
+  const handleAddToBag = async () => {
     if (!user) return toast.error('Please login');
 
     if (!listing.quantity || listing.quantity <= 0) {
@@ -117,19 +97,18 @@ const ListingDetail = () => {
       return;
     }
 
-    // Check if Stripe is available
-    if (!stripePromise) {
-      toast.error('Payment system not ready. Please try again.');
-      return;
+    // Re-fetch offer to get latest state
+    let latestOffer = buyerOffer;
+    if (!latestOffer) {
+      try {
+        const offerRes = await api.get('/offers/sent');
+        latestOffer = offerRes.data.find((o) => o.listing && o.listing._id === id) || null;
+        if (latestOffer) setBuyerOffer(latestOffer);
+      } catch (e) {
+        // ignore
+      }
     }
 
-    setShowStripePayment(true);
-  };
-
-  const handleAddToCart = async () => {
-    if (!user) return toast.error('Please login');
-    
-    // Check live inventory before adding to cart
     try {
       const res = await api.get(`/listings/${id}`);
       const currentListing = res.data.listing;
@@ -137,18 +116,28 @@ const ListingDetail = () => {
         toast.error('This item is no longer available');
         return;
       }
-      
+
+      // Calculate the correct price: negotiated price OR listing price
+      let finalPrice = listing.price;
+      let negotiatedFlag = null;
+      if (latestOffer && (latestOffer.status === 'accepted' || latestOffer.status === 'countered' || latestOffer.status === 'buyer_countered')) {
+        finalPrice = latestOffer.counterAmount || latestOffer.amount;
+        negotiatedFlag = finalPrice;
+      }
+
       const item = {
         listingId: listing._id,
         title: listing.title,
-        price: listing.price,
+        price: finalPrice,
         currency: listing.currency || 'USD',
         quantity: 1,
         thumbnail: listing.images?.[0] || '',
         available: currentListing.quantity,
+        negotiatedPrice: negotiatedFlag,
+        offerId: latestOffer ? latestOffer._id : null,
       };
       addToCart(item);
-      toast.success('Added to cart');
+      toast.success(`Added to cart at ${formatPrice(finalPrice, listing.currency || 'USD')}!`);
       navigate('/cart');
     } catch (error) {
       toast.error('Failed to verify item availability');
@@ -167,15 +156,10 @@ const ListingDetail = () => {
     }
   };
 
-  const handleMarkSold = async () => {
-    if (!window.confirm('Mark this item as sold?')) return;
-    try {
-      await api.patch(`/listings/${id}/sold`);
-      toast.success('Item marked as sold');
-      fetchListing();
-    } catch (error) {
-      toast.error('Failed to mark as sold');
-    }
+  // Get the final negotiated price for this offer
+  const getOfferPrice = () => {
+    if (!buyerOffer) return listing.price;
+    return buyerOffer.counterAmount || buyerOffer.amount;
   };
 
   if (loading) return <div className="page-container"><div className="spinner"></div></div>;
@@ -237,26 +221,37 @@ const ListingDetail = () => {
             )}
           </div>
 
-          {/* Payment Breakdown Preview for buyers */}
-          {!isOwner && !listing.sold && user && (
-            <div style={{ background: '#f8f9fa', padding: 16, borderRadius: 12, marginBottom: 16 }}>
-              <h4 style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 6 }}><FaShieldAlt /> Buyer Protection</h4>
-              <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Item Price</span><span>{formatPrice(listing.price, listing.currency || 'USD')}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Shipping</span><span>{formatPrice(listing.shipping?.freeShipping ? 0 : (listing.shipping?.shippingCost || 3.99), listing.currency || 'USD')}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Buyer Protection (5%)</span><span>{formatPrice(listing.price * 0.05, listing.currency || 'USD')}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, borderTop: '1px solid #ddd', paddingTop: 4, marginTop: 2 }}>
-                  <span>Total</span><span>{formatPrice(listing.price + (listing.shipping?.freeShipping ? 0 : (listing.shipping?.shippingCost || 3.99)) + (listing.price * 0.05), listing.currency || 'USD')}</span>
+          {/* Payment Breakdown Preview for buyers — uses negotiated price if buyer has accepted offer */}
+          {!isOwner && !listing.sold && user && (() => {
+            const displayPrice = getOfferPrice();
+            const shippingFee = listing.shipping?.freeShipping ? 0 : (listing.shipping?.shippingCost || 3.99);
+            const protectionFee = displayPrice * 0.05;
+            const totalCost = displayPrice + shippingFee + protectionFee;
+            return (
+              <div style={{ background: '#f8f9fa', padding: 16, borderRadius: 12, marginBottom: 16 }}>
+                <h4 style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FaShieldAlt /> Buyer Protection
+                  {buyerOffer && (buyerOffer.status === 'accepted' || buyerOffer.status === 'countered' || buyerOffer.status === 'buyer_countered') && (
+                    <span style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>(Negotiated Price)</span>
+                  )}
+                </h4>
+                <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Item Price</span><span>{formatPrice(displayPrice, listing.currency || 'USD')}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Shipping</span><span>{formatPrice(shippingFee, listing.currency || 'USD')}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Buyer Protection (5%)</span><span>{formatPrice(protectionFee, listing.currency || 'USD')}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, borderTop: '1px solid #ddd', paddingTop: 4, marginTop: 2 }}>
+                    <span>Total</span><span>{formatPrice(totalCost, listing.currency || 'USD')}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Seller earnings preview */}
           {isOwner && (
@@ -293,94 +288,52 @@ const ListingDetail = () => {
             {/* Buyer actions based on offer state */}
             {!isOwner && !listing.sold && user && (
               <div className="listing-detail-action-row">
-                {buyerOffer && buyerOffer.status === 'countered' ? (
-                  <>
-                    <button className="btn btn-primary" onClick={async () => {
-                      try {
-                        // First accept the counter offer (sets status to accepted)
+            {buyerOffer && (buyerOffer.status === 'countered' || buyerOffer.status === 'accepted' || buyerOffer.status === 'buyer_countered') ? (
+              <>
+                {/* 
+                  Status: countered → seller offered a price → buyer accepts or counters
+                  Status: buyer_countered → seller accepted buyer's counter → buyer can proceed
+                  Status: accepted → either side accepted → ready to purchase at negotiated price
+                */}
+                {buyerOffer.status === 'countered' && (
+                  <button className="btn btn-outline" onClick={async () => {
+                    const amount = prompt('Enter your counter amount (must be higher than ' + getOfferPrice() + '):');
+                    if (!amount || isNaN(amount)) return;
+                    try {
+                      await api.patch(`/offers/${buyerOffer._id}/buyer-counter`, { counterAmount: Number(amount) });
+                      toast.success('Counter sent');
+                      fetchBuyerOffer();
+                    } catch (e) {
+                      toast.error('Failed to send counter');
+                    }
+                  }}>Counter Offer</button>
+                )}
+                                <button className="btn btn-primary" onClick={async () => {
+                    try {
+                      // Accept the counter if in 'countered' state
+                      if (buyerOffer.status === 'countered') {
                         await api.patch(`/offers/${buyerOffer._id}/accept-counter`);
-                        // Then create a transaction for the agreed price
-                        await api.post(`/transactions/offer/${buyerOffer._id}`);
-                        toast.success('Counter accepted and purchase completed');
-                        fetchListing();
+                        // Re-fetch to get updated status
                         fetchBuyerOffer();
-                      } catch (e) {
-                        toast.error('Failed to complete purchase after counter acceptance');
                       }
-                    }}>Accept Counter & Purchase</button>
-                    <button className="btn btn-outline" onClick={async () => {
-                      const amount = prompt('Enter new counter amount (must be higher):');
-                      if (!amount || isNaN(amount)) return;
-                      try {
-                        await api.patch(`/offers/${buyerOffer._id}/buyer-counter`, { counterAmount: Number(amount) });
-                        toast.success('Counter sent');
-                        fetchBuyerOffer();
-                      } catch (e) {
-                        toast.error('Failed to send counter');
-                      }
-                    }}>Counter Again</button>
-                  </>
-                ) : (
+                      // Add to cart at negotiated price then navigate to cart
+                      handleAddToBag();
+                    } catch (e) {
+                      toast.error('Failed to accept offer');
+                    }
+                  }}>
+                    Add to Bag at {formatPrice(getOfferPrice(), listing.currency || 'USD')}
+                  </button>
+                )}
+              </>
+            ) : (
                   <>
                     <button className="btn btn-outline" onClick={() => setOfferModalOpen(true)}>
                       Make Offer
                     </button>
-                    <button className="btn btn-primary" onClick={handleBuyNow} disabled={buying}>
-                      {buying ? 'Processing...' : 'Buy Now'}
+                    <button className="btn btn-primary" onClick={handleAddToBag}>
+                      Add to Bag
                     </button>
-                    {/* Stripe Payment Overlay */}
-                    {showStripePayment && (
-                      <div className="stripe-payment-overlay" style={{
-                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                        background: 'rgba(0,0,0,0.5)', zIndex: 1000,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        padding: 20,
-                      }}>
-                        <div style={{
-                          background: '#fff', borderRadius: 16, padding: 32,
-                          maxWidth: 500, width: '100%', maxHeight: '90vh', overflow: 'auto',
-                        }}>
-                          <h3 style={{ marginBottom: 16 }}>Complete Purchase</h3>
-                          <div style={{ marginBottom: 16 }}>
-                            <strong>{listing.title}</strong>
-                            <div style={{ fontSize: 24, fontWeight: 700, color: '#FF4D6D', marginTop: 8 }}>
-                              {formatPrice(listing.price, listing.currency || 'USD')}
-                            </div>
-                          </div>
-
-                          {/* Simple shipping address form */}
-                          <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-                            <input type="text" placeholder="Full Name" id="stripe-name"
-                              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }} />
-                            <input type="text" placeholder="Street Address" id="stripe-address"
-                              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }} />
-                            <input type="text" placeholder="City" id="stripe-city"
-                              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }} />
-                            <input type="text" placeholder="ZIP Code" id="stripe-zip"
-                              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }} />
-                          </div>
-
-                          <Elements stripe={stripePromise}>
-                            <StripeCheckoutForm
-                              items={[{
-                                listingId: listing._id,
-                              }]}
-                              shippingInfo={{}}
-                              totalAmount={formatPrice(
-                                listing.price + (listing.shipping?.shippingCost || 0) + (listing.price * 0.05),
-                                listing.currency || 'USD'
-                              )}
-                              onSuccess={() => {
-                                setShowStripePayment(false);
-                                toast.success('Purchase successful!');
-                                fetchListing();
-                              }}
-                              onCancel={() => setShowStripePayment(false)}
-                            />
-                          </Elements>
-                        </div>
-                      </div>
-                    )}
                   </>
                 )}
               </div>
@@ -388,7 +341,6 @@ const ListingDetail = () => {
             {listing.sold && (
               <div className="sold-banner">This item has been sold</div>
             )}
-            {/* Seller actions – remove manual Mark as Sold. The system will mark sold after successful transaction */}
             {isOwner && (
               <div className="listing-detail-action-row">
                 {/* No manual sold button – status handled automatically */}

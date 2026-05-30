@@ -52,8 +52,13 @@ const StripeCheckoutForm = ({ items, shippingInfo, onSuccess, onCancel, totalAmo
 
         const { clientSecret, paymentIntentId } = intentRes.data;
 
+        if (!clientSecret) {
+          throw new Error('Failed to get payment authorization. Please try again.');
+        }
+
         // Step 2: Confirm the payment with Stripe.js (real card tokenization)
-        const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        // The clientSecret contains the PI id + secret, Stripe.js handles the rest
+        const result = await stripe.confirmCardPayment(clientSecret, {
           payment_method: {
             card: elements.getElement(CardElement),
             billing_details: {
@@ -70,9 +75,19 @@ const StripeCheckoutForm = ({ items, shippingInfo, onSuccess, onCancel, totalAmo
           },
         });
 
-        if (stripeError) {
-          throw new Error(stripeError.message);
+        if (result.error) {
+          // Show specific Stripe error messages
+          const stripeMsg = result.error.message || 'Card declined';
+          const code = result.error.code || '';
+          let userMsg = stripeMsg;
+          if (code === 'card_declined') userMsg = 'Your card was declined. Please try another card.';
+          else if (code === 'incorrect_cvc') userMsg = 'Incorrect CVC. Please check your card.';
+          else if (code === 'expired_card') userMsg = 'Card expired. Please use a different card.';
+          else if (code === 'processing_error') userMsg = 'Processing error. Please try again.';
+          throw new Error(userMsg);
         }
+
+        const paymentIntent = result.paymentIntent;
 
         // With auth-only flow, status will be 'requires_capture' (not 'succeeded')
         // This means the card was authorized but NOT charged yet
