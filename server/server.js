@@ -5,6 +5,8 @@ const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+// Mongoose is needed for the health‑check endpoint.
+const mongoose = require('mongoose');
 // Load environment variables from .env only in non‑production environments.
 // This prevents the local development NODE_ENV=development setting from overriding the production value set by Render.
 if (process.env.NODE_ENV !== 'production') {
@@ -111,33 +113,28 @@ app.use('/api/messages', require('./routes/messages'));
 app.use('/api/wishlist', require('./routes/wishlist'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/pricehistory', require('./routes/pricehistory'));
-app.use('/api/payouts', require('./routes/payouts'));
-app.use('/api/shipping', require('./routes/shipping'));
-app.use('/api/payments', require('./routes/payments'));
-app.use('/api/orders', require('./routes/orderLifecycle'));
-
 // Performance: Set cache headers for API responses
 app.use('/api', (req, res, next) => {
   // Don't cache auth/transaction endpoints
   if (req.path.includes('/auth') || req.path.includes('/transactions')) {
     res.set('Cache-Control', 'no-store');
-  } else {
-    // Cache read-only endpoints for 5 minutes
-    if (req.method === 'GET') {
-      res.set('Cache-Control', 'public, max-age=300');
-} else {
-  app.get('/', (req, res) => {
-    res.json({ message: 'TrendDrop API is running' });
-  });
-}
-// Serve static files in production
+  } else if (req.method === 'GET') {
+    // Cache read‑only endpoints for 5 minutes
+    res.set('Cache-Control', 'public, max-age=300');
+  }
+  // Enable ETag for conditional requests
+  res.set('ETag', '');
+  next();
+});
+
+// Serve static files in production (SPA fallback)
 if (process.env.NODE_ENV === 'production') {
-  // SPA fallback with cache
   app.get('*', (req, res) => {
     res.set('Cache-Control', 'no-cache');
     res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
   });
 } else {
+  // Development root endpoint
   app.get('/', (req, res) => {
     res.json({ message: 'TrendDrop API is running' });
   });
