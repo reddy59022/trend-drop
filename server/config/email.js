@@ -6,7 +6,8 @@ apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, process.
 
 const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'reddy59021@gmail.com';
 const SENDER_NAME = 'TrendDrop';
-const BASE_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+// Use the FRONTEND_URL environment variable for email links. It must be set in the deployment environment.
+const BASE_URL = process.env.FRONTEND_URL;
 
 // Send email verification
 const sendVerificationEmail = async (email, name, token) => {
