@@ -34,8 +34,14 @@ router.post('/', auth, async (req, res) => {
 // GET /api/ratings/seller/:sellerId
 router.get('/seller/:sellerId', async (req, res) => {
   try {
+    let sellerObjId;
+    try {
+      sellerObjId = new (require('mongoose').Types.ObjectId)(req.params.sellerId);
+    } catch (e) {
+      return res.json({ averageRating: 0, count: 0, ratings: [] });
+    }
     const stats = await Rating.aggregate([
-      { $match: { seller: require('mongoose').Types.ObjectId(req.params.sellerId) } },
+      { $match: { seller: sellerObjId } },
       { $group: { _id: null, averageRating: { $avg: '$rating' }, count: { $sum: 1 } } },
     ]);
     const ratings = await Rating.find({ seller: req.params.sellerId })

@@ -21,14 +21,19 @@ const SellerDashboard = () => {
 
   const fetchData = async () => {
     try {
-      const [dashRes, commRes, revRes] = await Promise.all([
-        getPayoutDashboard(),
-        getCommissionInfo(),
-        getRatingsBySeller(user._id),
+      const [dashRes, commRes] = await Promise.all([
+        getPayoutDashboard().catch(() => ({ data: { commissionRate: 0.05, commissionPercent: 5, totalSales: 0, totalCommission: 0, totalEarnings: 0, pendingAmount: 0, pendingCount: 0, payoutHistory: [], recentTransactions: [] } })),
+        getCommissionInfo().catch(() => ({ data: { commissionRate: 0.05, commissionPercent: 5, sellerKeeps: '95%', comparedTo: { trenddrop: '5%', poshmark: '20%', mercari: '10%', depop: '10%' }, features: [] } })),
       ]);
       setDashboard(dashRes.data);
       setCommissionInfo(commRes.data);
-      setReviews(revRes.data);
+      // Reviews are optional - don't block on failure
+      try {
+        const revRes = await getRatingsBySeller(user._id);
+        setReviews(revRes.data);
+      } catch {
+        setReviews({ averageRating: 0, count: 0, ratings: [] });
+      }
     } catch (error) {
       console.error('Failed to load dashboard', error);
     } finally {

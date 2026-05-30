@@ -120,7 +120,7 @@ const Reviews = () => {
             padding: 16, marginBottom: 12,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-              <img src={r.reviewer?.avatar || '/default-avatar.png'} alt=""
+              <img src={r.reviewer?.avatar || 'defaultAvatar'} alt=""
                 style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
               <div>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{r.reviewer?.name}</div>

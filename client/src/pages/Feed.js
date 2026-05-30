@@ -13,23 +13,21 @@ const Feed = () => {
   const [hasMore, setHasMore] = useState(true);
 
   useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
     fetchFeed();
     // eslint-disable-next-line
   }, [user]);
 
   const fetchFeed = async (pageNum = 1) => {
     try {
-      const res = await api.get(`/users/feed?page=${pageNum}&limit=20`);
+      const url = user ? `/users/feed?page=${pageNum}&limit=20` : `/listings?limit=20&sort=popular`;
+      const res = await api.get(url);
+      const items = res.data.listings || [];
       if (pageNum === 1) {
-        setListings(res.data.listings);
+        setListings(items);
       } else {
-        setListings((prev) => [...prev, ...res.data.listings]);
+        setListings((prev) => [...prev, ...items]);
       }
-      setHasMore(pageNum < res.data.totalPages);
+      setHasMore(pageNum < (res.data.totalPages || 1));
     } catch (error) {
       console.error(error);
     }
@@ -42,32 +40,26 @@ const Feed = () => {
     fetchFeed(nextPage);
   };
 
-  if (!user) {
-    return (
-      <div className="page-container">
-        <div className="empty-state">
-          <FaRss size={48} />
-          <h2>Feed</h2>
-          <p>Sign in to see items from people you follow</p>
-          <Link to="/login" className="btn btn-primary">Sign In</Link>
-        </div>
-      </div>
-    );
-  }
-
   if (loading) {
     return <div className="page-container"><div className="spinner"></div></div>;
   }
 
   return (
     <div className="page-container">
-      <h1 className="page-title">Your Feed</h1>
+      <h1 className="page-title">{user ? 'Your Feed' : 'Trending Items'}</h1>
+      {!user && (
+        <p style={{ textAlign: 'center', color: '#888', marginBottom: 20 }}>
+          <Link to="/login" style={{ color: '#FF4D6D' }}>Sign in</Link> to follow sellers and get a personalized feed
+        </p>
+      )}
       {listings.length === 0 ? (
         <div className="empty-state">
           <FaRss size={48} />
-          <h2>Your feed is empty</h2>
-          <p>Follow sellers to see their latest items here</p>
-          <Link to="/search" className="btn btn-primary">Browse Listings</Link>
+          <h2>{user ? 'Your feed is empty' : 'No listings yet'}</h2>
+          <p>{user ? 'Follow sellers to see their latest items here' : 'Be the first to list an item!'}</p>
+          <Link to={user ? '/search' : '/register'} className="btn btn-primary">
+            {user ? 'Browse Listings' : 'Get Started'}
+          </Link>
         </div>
       ) : (
         <>

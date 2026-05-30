@@ -1,3 +1,4 @@
+import { defaultAvatar } from "../utils/helpers";
 import React, { useState, useEffect, useRef } from 'react';
 import { startConversation, sendMessage, getConversation, markAsRead } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -74,7 +75,7 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src={seller?.avatar || '/default-avatar.png'} alt=""
+            <img src={seller?.avatar || 'defaultAvatar'} alt=""
               style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
             <div>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{seller?.name}</div>

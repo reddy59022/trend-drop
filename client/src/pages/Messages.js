@@ -46,7 +46,7 @@ const Messages = () => {
           }}
             onClick={() => navigate(`/listing/${conv.listing?._id}`)}
           >
-            <img src={conv.otherUser?.avatar || '/default-avatar.png'} alt=""
+            <img src={conv.otherUser?.avatar || 'defaultAvatar'} alt=""
               style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
