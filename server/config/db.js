@@ -14,25 +14,50 @@ const rawUri = process.env.MONGO_URI && typeof process.env.MONGO_URI === 'string
   : '';
 const mongoUri = rawUri.length > 0 ? rawUri : "mongodb://localhost:27017/trend-drop";
 
+const dns = require('dns').promises;
+// Use public DNS resolvers to improve SRV lookup reliability in constrained environments.
+dns.setServers(['8.8.8.8', '1.1.1.1']);
+
 const connectDB = async () => {
+  // Primary attempt: use the provided URI (SRV or standard).
   try {
     const conn = await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      // Enable DNS seedlist (SRV) resolution for Atlas clusters
-      dnsSeedlistEnabled: true,
     });
     console.log(`MongoDB Connected: ${conn.connection.host}`);
+    return;
   } catch (error) {
-    // If the connection string uses the SRV scheme and DNS resolution fails,
-    // we log a warning and allow the server to continue. This prevents the
-    // entire Render deployment from crashing while still surfacing the issue.
+    // If the error indicates SRV resolution failure, attempt manual SRV lookup.
     if (error.message && error.message.includes('ENOTFOUND')) {
-      console.warn('MongoDB connection warning (ENOTFOUND):', error.message);
-    } else {
-      console.warn('MongoDB connection warning:', error.message);
+      console.warn('SRV lookup failed, attempting DNS‑over‑HTTPS fallback');
+      try {
+      // Fallback: construct a standard (non‑SRV) MongoDB URI using the three shard hosts.
+      // Example rawUri: mongodb+srv://user:pass@cluster0.mongodb.net/poshmark?retryWrites=true&w=majority
+      const uriMatch = rawUri.match(/^mongodb\+srv:\/\/(.+?)@([^/]+)\/(.+)$/);
+      if (!uriMatch) throw new Error('Unable to parse SRV URI components');
+      const credentials = uriMatch[1]; // "user:pass"
+      const srvHost = uriMatch[2]; // e.g., "cluster0.mongodb.net"
+      const afterSlash = uriMatch[3]; // "poshmark?retryWrites=..."
+      // Derive the base cluster name (e.g., "cluster0")
+      const baseCluster = srvHost.split('.')[0];
+      // Build the host list for the three shard members.
+      const hostList = `${baseCluster}-shard-00-00.mongodb.net:27017,${baseCluster}-shard-00-01.mongodb.net:27017,${baseCluster}-shard-00-02.mongodb.net:27017`;
+      // Preserve existing query parameters and ensure TLS is enabled for Atlas.
+      const separator = afterSlash.includes('?') ? '&' : '?';
+      const manualUri = `mongodb://${credentials}@${hostList}/${afterSlash}${separator}tls=true`;
+      const conn = await mongoose.connect(manualUri, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+      });
+      console.log(`MongoDB Connected via manual non‑SRV fallback: ${conn.connection.host}`);
+      return;
+      } catch (fallbackErr) {
+        console.warn('DoH fallback failed:', fallbackErr.message);
+      }
     }
-    // Do not exit – continue without a DB connection.
+    // Generic warning for any other connection issue.
+    console.warn('MongoDB connection warning:', error.message);
   }
 };
 
