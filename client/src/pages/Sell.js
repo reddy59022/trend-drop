@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+// Add lightweight client‑side image compression library
+import imageCompression from 'browser-image-compression';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -35,15 +37,38 @@ const Sell = () => {
 
   const handleChange = (e) => { setFormData({ ...formData, [e.target.name]: e.target.value }); };
 
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const files = Array.from(e.target.files);
     if (images.length + files.length > 10) { toast.error('Max 10 images'); return; }
-    setImages(prev => [...prev, ...files]);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => setPreviews(prev => [...prev, reader.result]);
-      reader.readAsDataURL(file);
-    });
+    const compressedFiles = [];
+    const newPreviews = [];
+    for (const file of files) {
+      try {
+        // Compress to max width/height 800px, keep good quality, convert to WebP when possible
+        const options = {
+          maxSizeMB: 0.5, // target ~0.5 MB per image (after compression)
+          maxWidthOrHeight: 800,
+          useWebWorker: true,
+          fileType: 'image/webp',
+        };
+        const compressed = await imageCompression(file, options);
+        compressedFiles.push(compressed);
+        const previewDataUrl = await imageCompression.getDataUrlFromFile(compressed);
+        newPreviews.push(previewDataUrl);
+      } catch (err) {
+        console.error('Compression error', err);
+        // Fallback to original file if compression fails
+        compressedFiles.push(file);
+        const reader = new FileReader();
+        const dataUrlPromise = new Promise(res => {
+          reader.onloadend = () => res(reader.result);
+          reader.readAsDataURL(file);
+        });
+        newPreviews.push(await dataUrlPromise);
+      }
+    }
+    setImages(prev => [...prev, ...compressedFiles]);
+    setPreviews(prev => [...prev, ...newPreviews]);
   };
 
   const removeImage = (index) => {

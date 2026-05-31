@@ -33,6 +33,28 @@
 - Sold listing hidden from public feed
 - Like/unlike toggle; like notification sent to seller
 
+### Image Upload & Cloudinary Optimization (New)
+
+#### Code References
+- **Client:** `client/src/pages/Sell.js` – uses `browser-image-compression` to compress images (max 800 px, target ~0.5 MB) and convert to WebP before upload.
+- **Server Upload Middleware:** `server/middleware/upload.js` – enforces a **2 MB per‑file limit** and a maximum of **10 files** per request.
+- **Cloudinary Config:** `server/config/cloudinary.js` – defines eager transformations. For listings only the **thumbnail** (200 × 200 WebP, auto:low) is generated eagerly; larger variants are generated on‑demand.
+
+#### Business Rules
+1. **Maximum Images per Listing:** A seller may upload **up to 10 images** per listing. Exceeding this returns a clear error (`Max 10 images`).
+2. **File Size Limit:** Each uploaded image must be **≤ 2 MB**. Larger files are rejected by Multer (`File too large`).
+3. **Client‑Side Compression:** All images are compressed client‑side to a maximum resolution of **800 × 800** pixels, target size **≈ 0.5 MB**, and stored as **WebP** to minimise upload bandwidth.
+4. **Cloudinary Storage:** Images are stored in the `trend-drop/listings` folder. Only the **thumbnail** transformation is generated eagerly; additional sizes (`medium`, `large`, `original`) are generated lazily when requested, reducing transformation quota consumption.
+5. **Transformation Quality:** Thumbnail uses `quality: 'auto:low'`. Larger sizes default to `auto:good`/`auto:best` when accessed.
+6. **Cleanup:** When a listing is deleted, all associated Cloudinary assets are removed to free storage and transformation counts.
+
+#### Verified by Tests
+- **Image Upload Limits:** Tests in `server/tests/imageUpload.test.js` verify the Multer file count and size constraints.
+- **Cloudinary Config:** Tests ensure the eager transformation for listings is limited to the thumbnail only.
+- **Client Compression:** Verified indirectly by snapshot of transformed image size in integration test.
+
+---
+
 ### Verified by Tests: 2.1-2.11 (11 tests)
 
 ---
