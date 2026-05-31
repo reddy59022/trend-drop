@@ -91,7 +91,7 @@ const StripeCheckoutForm = ({ items, shippingInfo, onSuccess, onCancel, totalAmo
 
         // With auth-only flow, status will be 'requires_capture' (not 'succeeded')
         // This means the card was authorized but NOT charged yet
-        if (paymentIntent.status !== 'requires_capture') {
+        if (paymentIntent.status !== 'requires_capture' && paymentIntent.status !== 'succeeded') {
           throw new Error(`Payment authorization failed. Status: ${paymentIntent.status}`);
         }
 

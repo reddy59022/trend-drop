@@ -74,6 +74,10 @@ const Sell = () => {
       toast.error('Please fill in all required fields');
       return;
     }
+    if (Number(formData.price) < 0.50) {
+      toast.error('Minimum listing price is $0.50');
+      return;
+    }
 
     setLoading(true);
     try {

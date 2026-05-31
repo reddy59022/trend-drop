@@ -43,10 +43,12 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Apply rate limiters
-app.use('/api/', apiLimiter);
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
+// Apply rate limiters (disabled in test mode)
+if (process.env.NODE_ENV !== 'test') {
+  app.use('/api/', apiLimiter);
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register', authLimiter);
+}
 
 // Performance: Gzip compression (reduces response size by ~70%)
 app.use(compression({
@@ -239,6 +241,11 @@ app.use((err, req, res, next) => {
 const DEFAULT_PORT = 5000;
 const PORT = process.env.PORT || DEFAULT_PORT;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Only listen when not in test mode (tests import the app directly)
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;

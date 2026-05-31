@@ -86,8 +86,10 @@ const Offers = () => {
   const getStatusColor = (status) => {
     switch (status) {
       case 'accepted': return 'status-success';
+      case 'completed': return 'status-success';
       case 'declined': return 'status-error';
       case 'countered': return 'status-warning';
+      case 'buyer_countered': return 'status-warning';
       default: return 'status-pending';
     }
   };

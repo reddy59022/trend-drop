@@ -157,6 +157,11 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       }
     }
 
+    // Minimum price: $5 to prevent low-value orders losing money after Stripe fees
+    if (Number(price) < 5) {
+      return res.status(400).json({ message: 'Minimum listing price is $5.00' });
+    }
+
     const listing = await Listing.create({
       seller: req.user._id,
       title,

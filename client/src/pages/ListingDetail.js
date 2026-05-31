@@ -120,7 +120,7 @@ const ListingDetail = () => {
       // Calculate the correct price: negotiated price OR listing price
       let finalPrice = listing.price;
       let negotiatedFlag = null;
-      if (latestOffer && (latestOffer.status === 'accepted' || latestOffer.status === 'countered' || latestOffer.status === 'buyer_countered')) {
+      if (latestOffer && latestOffer.status !== 'completed' && latestOffer.status !== 'declined' && (latestOffer.status === 'accepted' || latestOffer.status === 'countered' || latestOffer.status === 'buyer_countered')) {
         finalPrice = latestOffer.counterAmount || latestOffer.amount;
         negotiatedFlag = finalPrice;
       }

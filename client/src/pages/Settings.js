@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { countries, formatPrice } from '../utils/helpers';
+import api from '../services/api';
 
 const currenciesList = [
   'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'INR', 'MXN', 'BRL', 'KRW', 'CNY', 'CHF',
@@ -234,7 +235,18 @@ function Settings() {
             <button type="button" onClick={() => { logout(); navigate('/'); }} style={{ padding: 12, borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
               Log Out
             </button>
-            <button type="button" style={{ padding: 12, borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>
+            <button type="button" onClick={async () => {
+              if (window.confirm('Are you sure you want to delete your account? This cannot be undone.')) {
+                try {
+                  await api.delete('/auth/account');
+                  logout();
+                  toast.success('Account deleted');
+                  navigate('/');
+                } catch (err) {
+                  toast.error('Failed to delete account');
+                }
+              }
+            }} style={{ padding: 12, borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>
               Delete Account
             </button>
           </div>

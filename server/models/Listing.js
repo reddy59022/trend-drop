@@ -123,6 +123,31 @@ const listingSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  // Reserved inventory (items in active checkout carts)
+  // Prevents overselling when multiple buyers are checking out simultaneously
+  reserved: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  // Actual shipping cost (set after label purchase by seller)
+  // If actual > estimated, seller pays the difference
+  actualShippingCost: {
+    type: Number,
+    default: 0,
+  },
+  actualShippingCarrier: {
+    type: String,
+    default: '',
+  },
+  shippingCostPaidBy: {
+    type: String,
+    enum: ['seller', 'buyer', 'platform'],
+    default: 'seller',
+    // 'seller' = seller pays difference if actual > estimated
+    // 'buyer' = buyer pays actual cost at checkout
+    // 'platform' = platform covers the difference
+  },
   // Boost/promotion system
   boost: {
     active: { type: Boolean, default: false },

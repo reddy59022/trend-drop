@@ -40,7 +40,7 @@ const stripeFees = {
   default: { percent: 2.9, fixed: 0.30 },
 };
 
-const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg = 0.5) => {
+const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg = 0.5, exchangeRate = 1) => {
   const { calculateShipping } = require('./shipping');
   const sellerCommission = countryCommissions[fromCountry] || countryCommissions.default;
   const buyerCommission = countryCommissions[toCountry] || countryCommissions.default;
@@ -60,9 +60,14 @@ const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg =
     ['JP'].includes(toCountry) ? 'JP' : 'default';
   const sf = stripeFees[buyerCountry] || stripeFees.default;
   const stripeFee = Math.round((totalPaid * sf.percent / 100 + sf.fixed) * 100) / 100;
+  
+  // Currency exchange rate locking: store the rate used at calculation time
+  const buyerChargeAmount = Math.round(totalPaid * exchangeRate * 100) / 100;
+  const sellerSettlementAmount = Math.round(sellerEarnings * exchangeRate * 100) / 100;
+  
   return {
-    buyer: { itemPrice, shippingCost, buyerProtectionFee, buyerProtectionPercent, totalPaid },
-    seller: { itemPrice, platformFee: clampedPlatformFee, platformFeePercent, shippingPayout: shippingCost, sellerEarnings },
+    buyer: { itemPrice, shippingCost, buyerProtectionFee, buyerProtectionPercent, totalPaid, buyerChargeAmount, exchangeRate },
+    seller: { itemPrice, platformFee: clampedPlatformFee, platformFeePercent, shippingPayout: shippingCost, sellerEarnings, sellerSettlementAmount },
     platform: { commission: clampedPlatformFee, stripeFee, buyerProtectionFee, netRevenue: Math.round((clampedPlatformFee + buyerProtectionFee - stripeFee) * 100) / 100 },
     fromCountry, toCountry,
     sellerCurrency: sellerCommission.currency,
@@ -72,9 +77,10 @@ const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg =
   };
 };
 
-// STEP 1: Authorize only (no money charged)
-// capture_method: 'manual' means Stripe authorizes the card
-// but does NOT capture (charge) the funds
+// STEP 1: Capture immediately (funds held by Stripe, not authorization-only)
+// capture_method: 'automatic' means Stripe captures the payment immediately
+// Money is held in Stripe and released when seller fulfills
+// This avoids 7-day authorization expiration issues
 const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
   if (!stripe) {
     throw new Error('Stripe not initialized. Please check STRIPE_SECRET_KEY.');
@@ -83,7 +89,7 @@ const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
     amount: Math.round(amount * 100),
     currency: currency.toLowerCase(),
     metadata,
-    capture_method: 'manual', // <-- AUTH ONLY, NO CAPTURE
+    capture_method: 'automatic',
     automatic_payment_methods: { enabled: true },
   });
 };

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
@@ -13,8 +12,6 @@ const Feed = () => {
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState(null);
-
-  const navigate = useNavigate();
 
   const fetchFeed = useCallback(async (pageNum = 1) => {
     setLoading(true);

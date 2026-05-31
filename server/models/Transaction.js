@@ -50,11 +50,12 @@ const transactionSchema = new mongoose.Schema({
       'pending', 'paid', 'processing',
       'shipped', 'in_transit', 'out_for_delivery', 'delivered',
       'completed',
-      'cancelled', 'cancelled_by_buyer', 'cancelled_by_seller',
+      'cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled',
       'refunded', 'disputed', 'dispute_resolved',
       'returned', 'buyer_confirmed',
       'return_requested', 'return_accepted', 'return_rejected',
       'return_in_transit', 'return_delivered',
+      'chargeback_open', 'chargeback_won', 'chargeback_lost',
     ],
     default: 'pending',
   },
@@ -98,7 +99,7 @@ const transactionSchema = new mongoose.Schema({
   },
   // Payout tracking
   payout: {
-    status: { type: String, enum: ['pending', 'processing', 'completed', 'failed'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'processing', 'completed', 'failed', 'refunded'], default: 'pending' },
     method: { type: String, default: '' },
     processedAt: { type: Date },
     transactionId: { type: String, default: '' },

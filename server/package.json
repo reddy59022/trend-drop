@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "seed": "node seed.js"
+    "seed": "node seed.js",
+    "test": "jest --forceExit --detectOpenHandles --verbose",
+    "test:coverage": "jest --forceExit --detectOpenHandles --coverage"
   },
   "dependencies": {
     "@sendinblue/client": "^3.3.1",
@@ -31,7 +33,17 @@
     "qrcode": "^1.5.4",
     "stripe": "^22.2.0"
   },
+  "jest": {
+    "testEnvironment": "node",
+    "testTimeout": 30000,
+    "setupFilesAfterSetup": []
+  },
   "devDependencies": {
-    "nodemon": "^2.0.22"
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@babel/register": "^7.29.7",
+    "jest": "^30.4.2",
+    "nodemon": "^2.0.22",
+    "supertest": "^7.2.2"
   }
 }

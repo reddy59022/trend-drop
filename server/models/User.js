@@ -109,6 +109,7 @@ const userSchema = new mongoose.Schema({
     ratingCount: { type: Number, default: 0 },
     responseRate: { type: Number, default: 100 },
     shipTime: { type: Number, default: 3 },
+    strikes: { type: Number, default: 0 },
   },
   followers: [{
     type: mongoose.Schema.Types.ObjectId,
