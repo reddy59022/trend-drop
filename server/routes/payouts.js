@@ -5,8 +5,8 @@ const Transaction = require('../models/Transaction');
 const Listing = require('../models/Listing');
 const { auth } = require('../middleware/auth');
 
-// Platform commission is 5% of item price (matching payments.js countryCommissions)
-const COMMISSION_RATE = 0.05;
+// Platform commission is 8% of item price (matching payments.js countryCommissions)
+const COMMISSION_RATE = 0.08;
 
 // GET /api/payouts/dashboard - Get seller payout dashboard
 router.get('/dashboard', auth, async (req, res) => {
