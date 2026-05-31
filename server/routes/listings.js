@@ -77,6 +77,40 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
+// GET /api/listings/search - Search listings with legacy `q` parameter
+router.get('/search', optionalAuth, async (req, res) => {
+  try {
+    const { q, limit = 20, page = 1 } = req.query;
+    const search = q; // map legacy `q` to internal `search`
+    const pageNum = Math.max(1, Math.min(Number(page) || 1, 100));
+    const limitNum = Math.max(1, Math.min(Number(limit) || 20, 50));
+
+    let query = { available: true, sold: false, quantity: { $gt: 0 } };
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { brand: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const result = await paginate(Listing, {
+      page: pageNum,
+      limit: limitNum,
+      maxLimit: 50,
+      sort: { createdAt: -1 },
+      filter: query,
+      select: LISTING_LIST_FIELDS,
+      populate: { path: 'seller', select: USER_PUBLIC_FIELDS },
+      lean: true,
+    });
+    res.json({ listings: result.docs, ...result.pagination });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /api/listings/user/:userId - Get listings by user
 router.get('/user/:userId', async (req, res) => {
   try {

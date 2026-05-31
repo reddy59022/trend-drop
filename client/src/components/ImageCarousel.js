@@ -28,7 +28,7 @@ const ImageCarousel = ({ images = [] }) => {
     return (
       <div className="carousel">
         <div className="carousel-main" style={{ background: 'var(--td-surface-tertiary)' }}>
-          <img src={defaultAvatar} alt="No images" className="carousel-image" />
+          <img src={defaultAvatar} alt="No visual" className="carousel-image" />
         </div>
       </div>
     );

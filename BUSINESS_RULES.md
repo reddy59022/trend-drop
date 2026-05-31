@@ -302,12 +302,30 @@ The following are identified risks with planned mitigations:
 
 ## 15. Search & Feed
 
-- Filters: category, brand, size, condition, price range, search
+- Filters: category, brand, size, condition, price range, **legacy `q` search term**
 - Sorts: newest (default), price_low, price_high, popular
-- Pagination: page + limit
-- Feed shows active, unsold items with quantity > 0
+- Pagination: `page` + `limit`
+- Feed shows active, unsold items with `quantity > 0`
 
-### Tests: 6 tests (15.1-15.6)
+### API Usage
+The `/api/listings/search` endpoint is the public search API. It accepts the legacy query parameter `q` (mapped internally to `search`) and supports all filter and sort options listed above. The endpoint returns a paginated response containing:
+```json
+{
+  "listings": [/* array of matching listing objects */],
+  "totalPages": Number,
+  "currentPage": Number,
+  "total": Number
+}
+```
+The route uses the same validation and enum constraints as the regular listings endpoint (e.g., `category` must be one of the allowed values, `condition` must match its enum). The search performs a case‑insensitive match against both `title` and `description` fields.
+
+### Tested Behaviour
+Added **`server/tests/searchRoute.test.js`** verifies that:
+1. A listing with a known title containing the search term (`"Alpha Search Item"`) is returned when querying `q=Alpha`.
+2. The response status is `200` and includes a `listings` array and pagination metadata.
+3. The returned listings array contains the expected title, proving the search endpoint correctly indexes and retrieves matching documents.
+
+### Tests: 7 tests (15.1-15.7)
 
 ---
 
