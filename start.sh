@@ -2,7 +2,7 @@
 
 # TrendDrop - Local Development Script
 # Starts all platforms: Backend, Web, iOS Simulator, Android Emulator
-# All platforms point to local backend server at http://localhost:5000
+# All platforms point to local backend server at http://localhost:5001
 
 set -e
 
@@ -49,15 +49,21 @@ echo "${GREEN}✓ Dependencies ready${NC}"
 echo ""
 
 # ===========================
-# Start Backend Server (port 5000)
+# Start Backend Server (port 5001)
 # ===========================
-echo "${YELLOW}Step 2: Starting backend server on port 5000...${NC}"
-# Ensure any existing process on the backend port is terminated
+echo "${YELLOW}Step 2: Starting backend server on port 5001...${NC}"
+# Ensure any existing process on the backend ports is terminated (both old and new defaults)
 if lsof -ti:5000 >/dev/null 2>&1; then
-  echo "${RED}Killing existing process on port 5000...${NC}"
+  echo "${RED}Killing existing process on legacy port 5000...${NC}"
   kill $(lsof -ti:5000) || true
 fi
+if lsof -ti:5001 >/dev/null 2>&1; then
+  echo "${RED}Killing existing process on port 5001...${NC}"
+  kill $(lsof -ti:5001) || true
+fi
 cd "$SCRIPT_DIR/server"
+# Ensure the backend uses the correct port environment variable
+export PORT=5001
 node server.js &
 SERVER_PID=$!
 cd "$SCRIPT_DIR"
@@ -158,7 +164,7 @@ echo "${CYAN}╔═════════════════════�
 echo "${CYAN}║              All Platforms Running!                  ║${NC}"
 echo "${CYAN}╠══════════════════════════════════════════════════════╣${NC}"
 echo "${CYAN}║                                                      ║${NC}"
-echo "${GREEN}║  Backend API:  http://localhost:5000                  ║${NC}"
+echo "${GREEN}║  Backend API:  http://localhost:5001                  ║${NC}"
 echo "${GREEN}║  Web App:      http://localhost:3000                  ║${NC}"
 if [ -n "$ANDROID_PID" ] || command -v adb &> /dev/null; then
 echo "${GREEN}║  Android:      Running on emulator (port 8100)       ║${NC}"
@@ -167,7 +173,7 @@ if [[ "$OSTYPE" == "darwin"* ]] && command -v xcrun &> /dev/null; then
 echo "${GREEN}║  iOS:          Running on simulator (port 8100)      ║${NC}"
 fi
 echo "${CYAN}║                                                      ║${NC}"
-echo "${CYAN}║  All platforms → http://localhost:5000 (backend)     ║${NC}"
+echo "${CYAN}║  All platforms → http://localhost:5001 (backend)     ║${NC}"
 echo "${CYAN}║                                                      ║${NC}"
 echo "${CYAN}║  Press Ctrl+C to stop all servers                    ║${NC}"
 echo "${CYAN}║                                                      ║${NC}"

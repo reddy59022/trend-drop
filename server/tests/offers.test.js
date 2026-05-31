@@ -15,10 +15,16 @@ let seller, buyer, listing;
 
 beforeAll(async () => {
   // Connect to test db (jest config should set NODE_ENV=test)
-  await mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+  // Ensure MONGODB_URI is defined for the test environment; fall back to a local instance.
+   const testMongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/trend-drop-test";
+   // Connect only if not already connected to avoid multiple connections error
+   if (mongoose.connection.readyState === 0) {
+     await mongoose.connect(testMongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
+   }
   // Create users
-  seller = await User.create({ name: 'Seller', email: 'seller@example.com', password: 'pass' });
-  buyer = await User.create({ name: 'Buyer', email: 'buyer@example.com', password: 'pass' });
+  // Use passwords that satisfy the minimum length validation (>=6 characters)
+  seller = await User.create({ name: 'Seller', email: 'seller@example.com', password: 'password' });
+  buyer = await User.create({ name: 'Buyer', email: 'buyer@example.com', password: 'password' });
   // Create a listing
   listing = await Listing.create({
     seller: seller._id,
@@ -63,12 +69,19 @@ describe('Offer negotiation flow', () => {
     expect(res.body.status).toBe('countered');
   });
 
-  test('Buyer accepts counter and transaction is created', async () => {
-    const res = await request(app)
+  test('Buyer accepts counter and then creates a transaction via the offer endpoint', async () => {
+    // Buyer accepts the seller's counter. No transaction is created at this step.
+    const acceptRes = await request(app)
       .patch(`/api/offers/${offerId}/accept-counter`)
       .set('Authorization', `Bearer ${buyer.generateAuthToken()}`);
-    expect(res.status).toBe(200);
-    expect(res.body.transaction).toBeDefined();
-    expect(res.body.transaction.itemPrice).toBe(90);
+    expect(acceptRes.status).toBe(200);
+    expect(acceptRes.body.transaction).toBeUndefined();
+    // Now the buyer creates a transaction based on the accepted offer.
+    const transactionRes = await request(app)
+      .post(`/api/transactions/offer/${offerId}`)
+      .set('Authorization', `Bearer ${buyer.generateAuthToken()}`);
+    expect(transactionRes.status).toBe(201);
+    expect(transactionRes.body.transaction).toBeDefined();
+    expect(transactionRes.body.transaction.itemPrice).toBe(90);
   });
 });

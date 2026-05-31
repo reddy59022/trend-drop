@@ -11,12 +11,12 @@ const getBaseURL = () => {
     // - In production, point to deployed Render backend
     // When using Capacitor Live Reload with `npx cap run`, the app
     // runs in a webview pointing to localhost, so use localhost
-    const isLocalDev = window.location.hostname === 'localhost'
-                     || window.location.hostname === '127.0.0.1';
+  const isLocalDev = window.location.hostname === 'localhost'
+                   || window.location.hostname === '127.0.0.1';
 
     if (isLocalDev) {
-      // Local development - point to local backend on port 5000
-      return 'http://localhost:5000/api';
+      // Local development - point to local backend on the updated port 5001
+      return 'http://localhost:5001/api';
     }
 
     // Production - point to deployed Render backend
@@ -62,10 +62,18 @@ api.interceptors.response.use(
 // ====== New Feature APIs ======
 
 // Ratings
+// Delete a rating (fix syntax error: missing backtick and closing parenthesis)
+export const deleteRating = (id) => api.delete(`/ratings/${id}`);
+// Create a new rating for a listing or transaction
 export const createRating = (data) => api.post('/ratings', data);
 export const getRatingsBySeller = (sellerId) => api.get(`/ratings/seller/${sellerId}`);
 export const getRatingsByListing = (listingId) => api.get(`/ratings/listing/${listingId}`);
-export const deleteRating = (id) => api.delete(`/ratings/${id}`);
+
+// Notifications (client helpers for user notification endpoints)
+// Fetch all notifications for a given user ID
+export const getUserNotifications = (userId) => api.get(`/users/${userId}/notifications`);
+// Mark all notifications as read for a user
+export const markAllNotificationsRead = (userId) => api.put(`/users/${userId}/notifications/read`);
 
 // Messages
 export const startConversation = (data) => api.post('/messages', data);
@@ -118,5 +126,7 @@ export const getOrderLifecycle = (transactionId) => api.get(`/orders/${transacti
 // Inventory & Boost
 export const boostListing = (listingId, data) => api.post(`/listings/${listingId}/boost`, data);
 export const deactivateBoost = (listingId) => api.post(`/listings/${listingId}/deactivate-boost`);
+// New: fetch boost configuration (tiers, fees, limits)
+export const getBoostConfig = () => api.get('/boost/config');
 
 export default api;

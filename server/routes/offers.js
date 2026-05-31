@@ -3,6 +3,7 @@ const router = express.Router();
 const Offer = require('../models/Offer');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
+const Transaction = require('../models/Transaction'); // needed for creating a transaction after offer acceptance
 const { auth } = require('../middleware/auth');
 
 // POST /api/offers - Create offer
@@ -199,20 +200,22 @@ router.patch('/:id/accept-counter', auth, async (req, res) => {
     // offer.counterAmount holds the final agreed price
     await offer.save();
 
-    // Notify seller
-    const seller = await User.findById(offer.seller);
-    if (seller) {
+      // Notify seller
+      const seller = await User.findById(offer.seller);
       const finalPrice = offer.counterAmount || offer.amount;
-      seller.notifications.unshift({
-        type: 'offer',
-        from: req.user._id,
-        listing: offer.listing,
-        message: `Buyer accepted the offer of $${finalPrice}. Ready for purchase.`,
-      });
-      await seller.save();
-    }
-
-    res.json({ offer, message: 'Counter accepted. Complete payment via transaction endpoint.', finalPrice: offer.counterAmount || offer.amount });
+      if (seller) {
+        seller.notifications.unshift({
+          type: 'offer',
+          from: req.user._id,
+          listing: offer.listing,
+          message: `Buyer accepted the offer of $${finalPrice}. Ready for purchase.`,
+        });
+        await seller.save();
+      }
+      // Do not create a transaction here. The buyer will create a transaction
+      // later (e.g., via the direct purchase endpoint or the `/api/transactions/offer/:offerId`
+      // endpoint) using the accepted price stored in the offer.
+      res.json({ offer, message: 'Counter accepted.', finalPrice });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

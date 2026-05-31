@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
@@ -12,6 +12,29 @@ const Navbar = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  // Ref to skip effect on initial render
+  const isFirstRender = useRef(true);
+
+  // Debounced navigation effect: trigger on each keystroke after 300ms
+  useEffect(() => {
+    // Skip running on component mount
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    const handler = setTimeout(() => {
+      const trimmed = searchQuery.trim();
+      if (trimmed) {
+        navigate(`/search?q=${encodeURIComponent(trimmed)}`);
+      } else {
+        // Navigate to base search page without query when input is empty
+        navigate('/search');
+      }
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(handler);
+  }, [searchQuery, navigate]);
 
   const handleSearch = (e) => {
     e.preventDefault();
