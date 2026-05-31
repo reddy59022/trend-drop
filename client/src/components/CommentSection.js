@@ -1,43 +1,50 @@
-import { defaultAvatar } from "../utils/helpers";
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { FaTrash } from 'react-icons/fa';
-import moment from 'moment';
+import { FaPaperPlane, FaTrash, FaSpinner, FaUserCircle } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
+import { defaultAvatar, timeAgo } from '../utils/helpers';
 
 const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
   const { user } = useAuth();
-  const [text, setText] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
     if (!user) {
       toast.error('Please login to comment');
       return;
     }
+    if (!newComment.trim()) return;
 
-    setLoading(true);
+    setSubmitting(true);
     try {
-      const res = await api.post(`/listings/${listingId}/comment`, { text });
-      onCommentsUpdate(res.data);
-      setText('');
+      const res = await api.post(`/listings/${listingId}/comments`, {
+        text: newComment.trim(),
+      });
+      onCommentsUpdate(res.data.comments || []);
+      setNewComment('');
+      toast.success('Comment added!');
     } catch (error) {
-      toast.error('Failed to add comment');
+      toast.error(error.response?.data?.message || 'Failed to add comment');
+    } finally {
+      setSubmitting(false);
     }
-    setLoading(false);
   };
 
   const handleDelete = async (commentId) => {
+    if (!window.confirm('Delete this comment?')) return;
+    setDeleting(commentId);
     try {
       const res = await api.delete(`/listings/${listingId}/comments/${commentId}`);
-      onCommentsUpdate(res.data);
+      onCommentsUpdate(res.data.comments || []);
       toast.success('Comment deleted');
     } catch (error) {
       toast.error('Failed to delete comment');
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -45,61 +52,82 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
     <div className="comment-section">
       <h3>Comments ({comments?.length || 0})</h3>
 
-      {user && (
+      {/* Comment Form */}
+      {user ? (
         <form className="comment-form" onSubmit={handleSubmit}>
           <img
             src={user.avatar || defaultAvatar}
             alt=""
             className="comment-avatar"
           />
-          <input
-            type="text"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Add a comment..."
-            className="comment-input"
-          />
-          <button type="submit" className="btn btn-sm" disabled={loading || !text.trim()}>
-            Post
-          </button>
+          <div className="comment-input-wrap">
+            <input
+              type="text"
+              className="comment-input"
+              placeholder="Add a comment..."
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              maxLength={500}
+            />
+            <button
+              type="submit"
+              className="btn btn-primary btn-icon"
+              disabled={submitting || !newComment.trim()}
+              style={{ flexShrink: 0 }}
+            >
+              {submitting ? <FaSpinner className="spinner-sm" /> : <FaPaperPlane />}
+            </button>
+          </div>
         </form>
+      ) : (
+        <div style={{ 
+          textAlign: 'center', 
+          padding: 'var(--td-space-md)', 
+          color: 'var(--td-text-tertiary)', 
+          fontSize: 14,
+          marginBottom: 16,
+        }}>
+          <FaUserCircle size={24} style={{ marginRight: 8, opacity: 0.5 }} />
+          <a href="/login" style={{ color: 'var(--td-primary)', fontWeight: 600 }}>Login</a> to leave a comment
+        </div>
       )}
 
-      <div className="comments-list">
-        {comments?.map((comment) => (
-          <div key={comment._id} className="comment">
-            <Link to={`/profile/${comment.user?._id}`}>
+      {/* Comments List */}
+      {comments?.length > 0 ? (
+        <div className="comments-list">
+          {comments.map((comment) => (
+            <div key={comment._id} className="comment">
               <img
                 src={comment.user?.avatar || defaultAvatar}
                 alt=""
                 className="comment-avatar"
               />
-            </Link>
-            <div className="comment-content">
-              <div className="comment-header">
-                <Link to={`/profile/${comment.user?._id}`} className="comment-author">
-                  {comment.user?.name}
-                </Link>
-                <span className="comment-time">
-                  {moment(comment.createdAt).fromNow()}
-                </span>
+              <div className="comment-content">
+                <div className="comment-header">
+                  <span className="comment-author">{comment.user?.name || 'Anonymous'}</span>
+                  <span className="comment-time">{timeAgo(comment.createdAt)}</span>
+                </div>
+                <p className="comment-text">{comment.text}</p>
               </div>
-              <p className="comment-text">{comment.text}</p>
+              {user && (user.id || user._id) === (comment.user?._id || comment.user?.id) && (
+                <button
+                  className="comment-delete"
+                  onClick={() => handleDelete(comment._id)}
+                  disabled={deleting === comment._id}
+                  title="Delete"
+                >
+                  {deleting === comment._id ? <FaSpinner className="spinner-sm" /> : <FaTrash size={12} />}
+                </button>
+              )}
             </div>
-            {user && comment.user?._id === user.id && (
-              <button
-                className="comment-delete"
-                onClick={() => handleDelete(comment._id)}
-              >
-                <FaTrash />
-              </button>
-            )}
-          </div>
-        ))}
-        {(!comments || comments.length === 0) && (
-          <p className="no-comments">No comments yet. Be the first to comment!</p>
-        )}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="no-comments">
+          <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.3 }}>💬</div>
+          <p>No comments yet. Be the first to share your thoughts!</p>
+        </div>
+      )}
     </div>
   );
 };

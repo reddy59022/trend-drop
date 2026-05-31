@@ -1,142 +1,201 @@
-import { defaultAvatar } from "../utils/helpers";
 import React, { useState, useEffect, useRef } from 'react';
+import { FaTimes, FaPaperPlane, FaSpinner, FaUserCircle, FaStore } from 'react-icons/fa';
 import { startConversation, sendMessage, getConversation, markAsRead } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { defaultAvatar, timeAgo, formatPrice } from '../utils/helpers';
+import { toast } from 'react-toastify';
 
 const ChatModal = ({ isOpen, onClose, listing, seller }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState(null);
-  const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const pollIntervalRef = useRef(null);
 
   useEffect(() => {
-    if (isOpen && listing && seller && user) {
+    if (isOpen && user) {
       loadConversation();
+      // Poll for new messages every 5 seconds
+      pollIntervalRef.current = setInterval(loadConversation, 5000);
     }
-  }, [isOpen, listing, seller, user]);
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+    // eslint-disable-next-line
+  }, [isOpen, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const loadConversation = async () => {
+    if (!user || !listing) return;
     try {
-      setLoading(true);
-      const res = await getConversation(seller._id, listing._id);
-      setConversationId(res.data._id);
-      setMessages(res.data.messages || []);
-      await markAsRead(res.data._id);
-    } catch {
-      // Conversation doesn't exist yet
-    } finally {
-      setLoading(false);
+      const res = await getConversation(seller._id || seller.id, listing._id);
+      if (res.data && res.data.messages) {
+        setMessages(res.data.messages);
+        if (res.data._id) setConversationId(res.data._id);
+        // Mark as read
+        if (res.data._id) {
+          try { await markAsRead(res.data._id); } catch (e) {}
+        }
+      } else {
+        setMessages(res.data ? [res.data] : []);
+      }
+    } catch (error) {
+      // No conversation yet - that's fine
+      setMessages([]);
     }
+    setLoading(false);
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || sending) return;
+
+    setSending(true);
     try {
+      let msg;
       if (conversationId) {
-        const res = await sendMessage(conversationId, { text: newMessage });
-        setMessages(res.data);
+        msg = await sendMessage(conversationId, { text: newMessage.trim() });
       } else {
-        const res = await startConversation({
+        msg = await startConversation({
           listingId: listing._id,
-          sellerId: seller._id,
-          text: newMessage,
+          recipientId: seller._id || seller.id,
+          text: newMessage.trim(),
         });
-        setConversationId(res.data._id);
-        setMessages(res.data.messages);
+        if (msg.data && msg.data._id) setConversationId(msg.data._id);
       }
       setNewMessage('');
+      loadConversation();
     } catch (error) {
-      alert(error.response?.data?.message || 'Failed to send message');
+      toast.error('Failed to send message');
+    } finally {
+      setSending(false);
     }
   };
 
   if (!isOpen) return null;
 
+  const sellerName = seller?.name || seller?.username || 'Seller';
+
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', zIndex: 9999,
-    }} onClick={onClose}>
-      <div style={{
-        background: '#fff', borderRadius: 12, width: '90%', maxWidth: 420,
-        height: '70vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      }} onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose}>
+      <div 
+        className="modal" 
+        onClick={(e) => e.stopPropagation()} 
+        style={{ maxWidth: 500, height: '80vh', display: 'flex', flexDirection: 'column' }}
+      >
         {/* Header */}
-        <div style={{
-          padding: '12px 16px', borderBottom: '1px solid #eee',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        }}>
+        <div className="modal-header" style={{ flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src={seller?.avatar || 'defaultAvatar'} alt=""
-              style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+            <img
+              src={seller?.avatar || defaultAvatar}
+              alt={sellerName}
+              style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }}
+            />
             <div>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{seller?.name}</div>
-              <div style={{ fontSize: 12, color: '#888' }}>{listing?.title}</div>
+              <h2 style={{ fontSize: 16, marginBottom: 0 }}>{sellerName}</h2>
+              {listing && (
+                <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <FaStore size={10} /> {listing.title?.substring(0, 30)}...
+                </div>
+              )}
             </div>
           </div>
-          <button onClick={onClose} style={{
-            background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#888',
-          }}>×</button>
+          <button className="modal-close" onClick={onClose}><FaTimes /></button>
         </div>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--td-space-md)', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {loading ? (
-            <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>Loading...</div>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}>
+              <FaSpinner className="spinner" />
+            </div>
           ) : messages.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#888', padding: 20 }}>
-              Start a conversation about this item
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}>
+              <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>💬</div>
+              <p>Start a conversation with {sellerName}</p>
+              <p style={{ fontSize: 12, marginTop: 4 }}>Ask about the item, negotiate a price, or say hello!</p>
             </div>
           ) : (
-            messages.map((msg, i) => (
-              <div key={i} style={{
-                marginBottom: 12,
-                textAlign: msg.sender?._id === user?._id || msg.sender === user?._id ? 'right' : 'left',
-              }}>
-                <div style={{
-                  display: 'inline-block', padding: '8px 14px', borderRadius: 16,
-                  maxWidth: '75%', fontSize: 14,
-                  background: (msg.sender?._id === user?._id || msg.sender === user?._id) ? '#FF4D6D' : '#f0f0f0',
-                  color: (msg.sender?._id === user?._id || msg.sender === user?._id) ? '#fff' : '#333',
-                }}>
-                  {msg.text}
+            messages.map((msg, i) => {
+              const isOwn = msg.sender?._id === (user?.id || user?._id) || msg.sender === (user?.id || user?._id);
+              const showAvatar = i === 0 || messages[i-1]?.sender?._id !== msg.sender?._id;
+              
+              return (
+                <div
+                  key={msg._id || i}
+                  style={{
+                    display: 'flex',
+                    justifyContent: isOwn ? 'flex-end' : 'flex-start',
+                    marginBottom: 4,
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: '75%',
+                      padding: '10px 14px',
+                      borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                      background: isOwn 
+                        ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))'
+                        : 'var(--td-surface-secondary)',
+                      color: isOwn ? '#fff' : 'var(--td-text)',
+                      boxShadow: isOwn 
+                        ? '0 2px 8px var(--td-primary-glow)'
+                        : 'var(--td-shadow-sm)',
+                      position: 'relative',
+                    }}
+                  >
+                    <div style={{ fontSize: 14, lineHeight: 1.4 }}>{msg.text}</div>
+                    <div style={{ 
+                      fontSize: 10, 
+                      marginTop: 4, 
+                      opacity: 0.7,
+                      textAlign: isOwn ? 'right' : 'left',
+                    }}>
+                      {timeAgo(msg.createdAt)}
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
-                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
-        <form onSubmit={handleSend} style={{
-          padding: 12, borderTop: '1px solid #eee',
-          display: 'flex', gap: 8,
-        }}>
+        <form 
+          onSubmit={handleSend}
+          style={{
+            flexShrink: 0,
+            padding: 'var(--td-space-sm) var(--td-space-md)',
+            borderTop: '1px solid var(--td-border)',
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+          }}
+        >
           <input
-            value={newMessage}
-            onChange={e => setNewMessage(e.target.value)}
+            type="text"
+            className="form-input"
             placeholder="Type a message..."
-            style={{
-              flex: 1, padding: '10px 14px', border: '1px solid #ddd',
-              borderRadius: 20, fontSize: 14, outline: 'none',
-            }}
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            maxLength={1000}
+            style={{ borderRadius: '24px !important' }}
           />
-          <button type="submit" style={{
-            background: '#FF4D6D', color: '#fff', border: 'none',
-            borderRadius: 20, padding: '10px 20px', fontWeight: 600,
-            cursor: 'pointer',
-          }}>Send</button>
+          <button
+            type="submit"
+            className="btn btn-primary btn-icon"
+            disabled={sending || !newMessage.trim()}
+            style={{ flexShrink: 0, width: 44, height: 44 }}
+          >
+            {sending ? <FaSpinner className="spinner-sm" /> : <FaPaperPlane />}
+          </button>
         </form>
       </div>
     </div>

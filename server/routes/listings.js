@@ -64,7 +64,15 @@ router.get('/', optionalAuth, async (req, res) => {
       ...result.pagination,
     });
   } catch (error) {
+    // Distinguish validation errors from unexpected server errors.
+    // Mongoose throws a ValidationError when required fields are missing
+    // (e.g., title). The previous implementation always returned a generic
+    // 500 which masks client‑side mistakes. Returning 400 provides the caller
+    // with a clear indication that the request payload is invalid.
     console.error(error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -98,7 +106,12 @@ router.get('/user/:userId', async (req, res) => {
       total,
     });
   } catch (error) {
+    // Handle Mongoose validation errors (e.g., missing required fields like title)
+    // so the client receives a 400 Bad Request instead of a generic 500.
     console.error(error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -126,7 +139,11 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
     res.json({ listing, similar });
   } catch (error) {
+    // Return a clear 400 response for validation failures (e.g., missing required fields).
     console.error(error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -189,7 +206,11 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
     await listing.populate('seller', 'name avatar');
     res.status(201).json(listing);
   } catch (error) {
+    // Return a clear 400 response when Mongoose validation fails (e.g., missing title).
     console.error(error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Server error' });
   }
 });

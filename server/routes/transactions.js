@@ -9,36 +9,45 @@ const { calculateShipping, getPreferredCarrier } = require('../config/shipping')
 const { calculatePaymentBreakdown } = require('../config/payments');
 
 // POST /api/transactions - Create transaction (purchase) with full payment breakdown
-router.post('/', auth, async (req, res) => {
-  try {
-    const { listingId, shippingAddress, buyerCountry } = req.body;
+  router.post('/', auth, async (req, res) => {
+    try {
+      const { listingId, shippingAddress, buyerCountry } = req.body;
 
-    const listing = await Listing.findById(listingId);
-    if (!listing) {
-      return res.status(404).json({ message: 'Listing not found' });
-    }
+      const listing = await Listing.findById(listingId);
+      if (!listing) {
+        return res.status(404).json({ message: 'Listing not found' });
+      }
 
-    if (listing.seller.toString() === req.user._id.toString()) {
-      return res.status(400).json({ message: 'Cannot purchase your own listing' });
-    }
+      if (listing.seller.toString() === req.user._id.toString()) {
+        return res.status(400).json({ message: 'Cannot purchase your own listing' });
+      }
 
-    if (!listing.available || listing.sold) {
-      return res.status(400).json({ message: 'Listing is no longer available' });
-    }
-    if (listing.quantity <= 0) {
-      return res.status(400).json({ message: 'Out of stock' });
-    }
+      if (!listing.available || listing.sold) {
+        return res.status(400).json({ message: 'Listing is no longer available' });
+      }
+      if (listing.quantity <= 0) {
+        return res.status(400).json({ message: 'Out of stock' });
+      }
 
-    // Get seller info for country
-    const seller = await User.findById(listing.seller);
-    const sellerCountry = seller?.country || listing.shipsFrom || 'US';
-    const buyerShipCountry = shippingAddress?.country || buyerCountry || 'US';
+      // Determine if there is an accepted offer for this buyer and listing.
+      // If present, use its negotiated price instead of the listing's default price.
+      const existingOffer = await Offer.findOne({
+        listing: listingId,
+        buyer: req.user._id,
+        status: 'accepted',
+      });
+      const finalPrice = existingOffer ? existingOffer.counterAmount || existingOffer.amount : listing.price;
 
-    // Calculate weight
-    const weightKg = listing.weight || 0.5;
+      // Get seller info for country
+      const seller = await User.findById(listing.seller);
+      const sellerCountry = seller?.country || listing.shipsFrom || 'US';
+      const buyerShipCountry = shippingAddress?.country || buyerCountry || 'US';
 
-    // Use the same calculation engine as the payment flow for consistency
-    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, buyerShipCountry, weightKg);
+      // Calculate weight
+      const weightKg = listing.weight || 0.5;
+
+      // Use the same calculation engine as the payment flow for consistency
+      const breakdown = calculatePaymentBreakdown(finalPrice, sellerCountry, buyerShipCountry, weightKg);
 
     // Boost fee: only deducted if item is boosted AND sale completes
     const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? listing.boost.fee : 0;
@@ -53,11 +62,11 @@ router.post('/', auth, async (req, res) => {
       country: seller.shippingAddress.country || sellerCountry,
     } : { country: sellerCountry };
 
-    const transaction = await Transaction.create({
-      listing: listingId,
-      buyer: req.user._id,
-      seller: listing.seller,
-      itemPrice: listing.price,
+      const transaction = await Transaction.create({
+        listing: listingId,
+        buyer: req.user._id,
+        seller: listing.seller,
+        itemPrice: finalPrice,
       currency: listing.currency || 'USD',
       paymentBreakdown: {
         subtotal: breakdown.buyer.itemPrice,

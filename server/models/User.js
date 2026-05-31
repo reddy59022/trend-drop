@@ -160,4 +160,12 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
+// Generate JWT token for the user (used in tests and elsewhere)
+userSchema.methods.generateAuthToken = function () {
+  const jwt = require('jsonwebtoken');
+  const secret = process.env.JWT_SECRET || 'fallback_secret_change_me';
+  // Token expiry consistent with other auth routes (30 days)
+  return jwt.sign({ id: this._id }, secret, { expiresIn: '30d' });
+};
+
 module.exports = mongoose.model('User', userSchema);

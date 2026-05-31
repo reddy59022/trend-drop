@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getWishlist, removeFromWishlist } from '../services/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { FaHeart, FaSearch } from 'react-icons/fa';
+import { formatPrice, defaultAvatar } from '../utils/helpers';
+import { toast } from 'react-toastify';
 
 const Wishlist = () => {
   const { user } = useAuth();
@@ -12,70 +15,73 @@ const Wishlist = () => {
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
     fetchWishlist();
-  }, [user, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, navigate]); // eslint-disable-line
 
   const fetchWishlist = async () => {
     try {
       const res = await getWishlist();
       setItems(res.data);
-    } catch (error) {
-      console.error('Failed to load wishlist', error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { console.error(error); }
+    finally { setLoading(false); }
   };
 
   const handleRemove = async (listingId) => {
     try {
       await removeFromWishlist(listingId);
       setItems(items.filter(item => item.listing?._id !== listingId));
-    } catch (error) {
-      console.error('Failed to remove', error);
-    }
+      toast.success('Removed from wishlist');
+    } catch (error) { toast.error('Failed to remove'); }
   };
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading wishlist...</div>;
+  if (loading) return (
+    <div className="page-container">
+      <h1 className="page-title"><FaHeart /> Wishlist</h1>
+      <div className="listings-grid">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="skeleton skeleton-card"><div className="skeleton skeleton-image" /><div style={{ padding: 16 }}><div className="skeleton skeleton-text-lg" /><div className="skeleton skeleton-text" style={{ width: '40%' }} /></div></div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const validItems = items.filter(item => item.listing);
 
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 800, margin: '0 auto' }}>
-      <h2 style={{ marginBottom: 20, fontSize: 24, fontWeight: 700 }}>
-        My Wishlist {items.length > 0 && <span style={{ fontSize: 16, color: '#888', fontWeight: 400 }}>({items.length})</span>}
-      </h2>
+    <div className="page-container">
+      <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <FaHeart color="var(--td-primary)" /> Wishlist {validItems.length > 0 && <span style={{ fontSize: 16, color: 'var(--td-text-tertiary)', fontWeight: 400 }}>({validItems.length})</span>}
+      </h1>
 
-      {items.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: '#888' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>♡</div>
-          <p style={{ fontSize: 18, marginBottom: 8 }}>Your wishlist is empty</p>
-          <p style={{ fontSize: 14 }}>Save items you love by tapping the heart icon</p>
+      {validItems.length === 0 ? (
+        <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
+          <div className="empty-state-icon">💝</div>
+          <h2>Your wishlist is empty</h2>
+          <p>Save items you love by tapping the heart icon on any listing.</p>
+          <Link to="/search" className="btn btn-primary btn-lg"><FaSearch /> Browse Items</Link>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16 }}>
-          {items.filter(item => item.listing).map(item => (
-            <div key={item.listing._id} style={{
-              border: '1px solid #eee', borderRadius: 12, overflow: 'hidden',
-              background: '#fff', cursor: 'pointer', position: 'relative',
-            }}>
-              <div onClick={() => navigate(`/listing/${item.listing._id}`)}>
-                <img src={item.listing.images?.[0] || '/placeholder.png'} alt=""
-                  style={{ width: '100%', height: 200, objectFit: 'cover' }} />
-                <div style={{ padding: 10 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
-                    {item.listing.title}
-                  </div>
-                  <div style={{ color: '#FF4D6D', fontWeight: 700, fontSize: 16 }}>
-                    ${item.listing.price}
-                  </div>
+        <div className="listings-grid" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
+          {validItems.map((item, i) => (
+            <div key={item.listing._id} className="listing-card" 
+              style={{ animation: `fadeInUp 0.3s ease-out ${i * 0.03}s both`, cursor: 'pointer' }}
+              onClick={() => navigate(`/listing/${item.listing._id}`)}>
+              <div className="listing-card-image">
+                <img src={item.listing.images?.[0] || defaultAvatar} alt={item.listing.title} />
+                <button
+                  className="like-btn liked"
+                  onClick={(e) => { e.stopPropagation(); handleRemove(item.listing._id); }}
+                  title="Remove from wishlist"
+                  style={{ animation: 'bounce 0.3s ease-out' }}
+                >
+                  <FaHeart />
+                </button>
+              </div>
+              <div className="listing-card-info">
+                <h3 className="listing-card-title">{item.listing.title}</h3>
+                <div className="listing-card-price">
+                  <span className="current-price">{formatPrice(item.listing.price, item.listing.currency)}</span>
                 </div>
               </div>
-              <button onClick={(e) => { e.stopPropagation(); handleRemove(item.listing._id); }}
-                style={{
-                  position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.5)',
-                  color: '#fff', border: 'none', borderRadius: '50%', width: 30, height: 30,
-                  cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-                title="Remove from wishlist"
-              >×</button>
             </div>
           ))}
         </div>

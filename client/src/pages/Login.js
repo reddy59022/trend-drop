@@ -1,70 +1,33 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { FaGoogle, FaEnvelope, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa';
 
 const Login = () => {
   const { user, login } = useAuth();
   const navigate = useNavigate();
-  const googleBtnRef = useRef(null);
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
   const [verificationEmail, setVerificationEmail] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    if (user) navigate('/feed');
+    if (user) navigate('/');
   }, [user, navigate]);
 
-  // Google Sign-In (works on all platforms via Google Identity Services)
-  useEffect(() => {
-    // Load Google Identity Services script
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    document.body.appendChild(script);
-
-    script.onload = () => {
-      if (window.google && googleBtnRef.current) {
-        window.google.accounts.id.initialize({
-          client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID || '487607537714-b2tnckkbnbkona6he8eju37al9k8j8vb.apps.googleusercontent.com',
-          callback: handleGoogleSignIn,
-          ux_mode: 'popup',
-        });
-        window.google.accounts.id.renderButton(
-          googleBtnRef.current,
-          { theme: 'outline', size: 'large', text: 'continue_with', width: 350 }
-        );
-      }
-    };
-
-    return () => {
-      document.body.removeChild(script);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleGoogleSignIn = async (response) => {
+  const handleGoogleLogin = async () => {
     try {
-      const res = await api.post('/auth/google', {
-        idToken: response.credential,
-        email: '', // Will be extracted from token on server
-        name: '',
-      });
-      const { token, user: userData } = res.data;
-      localStorage.setItem('token', token);
-      toast.success(`Welcome ${userData.name}!`);
-      navigate('/feed');
-      window.location.reload();
+      const res = await api.post('/auth/google');
+      if (res.data.token) {
+        localStorage.setItem('token', res.data.token);
+        window.location.href = '/';
+      }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Google sign-in failed');
+      toast.error('Google login failed');
     }
-  };
-
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async (e) => {
@@ -73,108 +36,128 @@ const Login = () => {
       toast.error('Please fill in all fields');
       return;
     }
-
     setLoading(true);
     try {
-      const res = await api.post('/auth/login', formData);
-      const { token, user: userData } = res.data;
-      localStorage.setItem('token', token);
-      toast.success(`Welcome back, ${userData.name}!`);
-      navigate('/feed');
-      window.location.reload();
-    } catch (error) {
-      const data = error.response?.data;
-      if (data?.needsVerification) {
+      const data = await login(formData.email, formData.password);
+      if (data.needsVerification) {
         setNeedsVerification(true);
-        setVerificationEmail(data.email);
-        toast.error('Please verify your email before logging in.');
-      } else {
-        toast.error(data?.message || 'Login failed');
+        setVerificationEmail(formData.email);
+        toast.info('Please verify your email before logging in');
+      } else if (data.token) {
+        toast.success('Welcome back!');
+        navigate('/');
       }
+    } catch (error) {
+      const msg = error.response?.data?.message || 'Login failed';
+      toast.error(msg);
+      if (msg.toLowerCase().includes('verify') || error.response?.status === 403) {
+        setNeedsVerification(true);
+        setVerificationEmail(formData.email);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const resendVerification = async () => {
+  const handleResendVerification = async () => {
     try {
       await api.post('/auth/resend-verification', { email: verificationEmail });
-      toast.success('Verification email resent! Check your inbox.');
+      toast.success('Verification email resent!');
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to resend');
+      toast.error('Failed to resend verification email');
     }
   };
 
   return (
     <div className="auth-page">
-      <div className="login-card">
-        <div className="auth-form">
-          <h1>Welcome Back</h1>
-          <p className="auth-subtitle">Sign in to continue buying and selling</p>
-
-          {needsVerification && (
-            <div style={{
-              background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8,
-              padding: 16, marginBottom: 20, fontSize: 14, textAlign: 'center',
-            }}>
-              <strong>Email not verified!</strong>
-              <p style={{ margin: '8px 0', color: '#92400e' }}>
-                Please check your inbox for the verification email.
+      <div className="auth-container" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
+        {needsVerification ? (
+          <>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <div className="empty-state-icon" style={{ fontSize: 48 }}>📧</div>
+              <h1>Verify Your Email</h1>
+              <p className="auth-subtitle">
+                We sent a verification email to <strong>{verificationEmail}</strong>
               </p>
-              <button
-                className="btn btn-sm"
-                onClick={resendVerification}
-                style={{ background: '#f59e0b', color: '#fff', border: 'none', padding: '8px 16', borderRadius: 6, cursor: 'pointer' }}
-              >
-                Resend Verification Email
+            </div>
+            <button className="btn btn-primary btn-block" onClick={handleResendVerification}>
+              Resend Verification Email
+            </button>
+            <button className="btn btn-ghost btn-block" style={{ marginTop: 12 }} onClick={() => setNeedsVerification(false)}>
+              Back to Login
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style={{ margin: '0 auto 12px' }}>
+                <circle cx="16" cy="16" r="16" fill="#FF385C"/>
+                <path d="M10 22V12l6-4 6 4v10H10z" fill="white" opacity="0.9"/>
+                <path d="M12 18h8v4h-8z" fill="white"/>
+              </svg>
+              <h1>Welcome Back</h1>
+              <p className="auth-subtitle">Sign in to continue shopping</p>
+            </div>
+
+            <form className="auth-form" onSubmit={handleSubmit}>
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <div style={{ position: 'relative' }}>
+                  <FaEnvelope style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
+                  <input
+                    type="email"
+                    className="form-input"
+                    placeholder="you@example.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    style={{ paddingLeft: 36 }}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <div style={{ position: 'relative' }}>
+                  <FaLock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="form-input"
+                    placeholder="Enter your password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    style={{ paddingLeft: 36, paddingRight: 36 }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', background: 'none', border: 'none' }}
+                  >
+                    {showPassword ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
+                  </button>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <Link to="/forgot-password" style={{ fontSize: 13, color: 'var(--td-primary)', fontWeight: 600 }}>Forgot password?</Link>
+              </div>
+              <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading}>
+                {loading ? <><span className="spinner spinner-sm" /> Signing in...</> : 'Sign In'}
+              </button>
+            </form>
+
+            <div className="auth-divider">or continue with</div>
+
+            <div className="social-auth-buttons">
+              <button className="btn-social" onClick={handleGoogleLogin}>
+                <FaGoogle /> Sign in with Google
               </button>
             </div>
-          )}
 
-          <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Email</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="your@email.com"
-              required
-              className="form-input"
-            />
-          </div>
-          <div className="form-group">
-            <label>Password</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="••••••••"
-              required
-              className="form-input"
-            />
-          </div>
-          {/* Centered Sign‑In button placed below the password field */}
-          <button type="submit" className="btn btn-primary btn-lg btn-center" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-          </form>
-
-          <div className="auth-divider">
-            <span>or continue with</span>
-          </div>
-
-          {/* Google Sign-In Button */}
-          <div ref={googleBtnRef} style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}></div>
-
-          <p className="auth-link">
-            Don't have an account? <Link to="/register">Sign up</Link>
-          </p>
-          <p className="auth-link">
-            <Link to="/forgot-password">Forgot password?</Link>
-          </p>
-        </div>
+            <div className="auth-footer">
+              Don't have an account? <Link to="/register">Create one</Link>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

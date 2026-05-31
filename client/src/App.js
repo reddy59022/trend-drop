@@ -2,8 +2,10 @@ import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
+import { ThemeProvider } from './context/ThemeContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
+import MobileTabBar from './components/MobileTabBar';
 
 // Performance: Lazy load pages - they only load when navigated to
 const Home = lazy(() => import('./pages/Home'));
@@ -46,37 +48,40 @@ function App() {
   }
 
   return (
-    <CartProvider>
-      <div className="app">
-        <Navbar />
-        <main className="main-content">
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/feed" element={<Feed />} />
-              <Route path="/sell" element={<Sell />} />
-              <Route path="/listing/:id" element={<ListingDetail />} />
-              <Route path="/profile/:id" element={<Profile />} />
-              <Route path="/closet/:id" element={<Closet />} />
-              <Route path="/search" element={<Search />} />
-              <Route path="/offers" element={<Offers />} />
-              <Route path="/transactions" element={<Transactions />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/notifications" element={<Notifications />} />
-              <Route path="/wishlist" element={<Wishlist />} />
-              <Route path="/messages" element={<Messages />} />
-              <Route path="/reviews/:sellerId" element={<Reviews />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/seller-dashboard" element={<SellerDashboard />} />
-              <Route path="/cart" element={<CartPage />} />
-            </Routes>
-          </Suspense>
-        </main>
-        <Footer />
-      </div>
-    </CartProvider>
+    <ThemeProvider>
+      <CartProvider>
+        <div className="app">
+          <Navbar />
+          <main className="main-content">
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/feed" element={<Feed />} />
+                <Route path="/sell" element={<Sell />} />
+                <Route path="/listing/:id" element={<ListingDetail />} />
+                <Route path="/profile/:id" element={<Profile />} />
+                <Route path="/closet/:id" element={<Closet />} />
+                <Route path="/search" element={<Search />} />
+                <Route path="/offers" element={<Offers />} />
+                <Route path="/transactions" element={<Transactions />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/notifications" element={<Notifications />} />
+                <Route path="/wishlist" element={<Wishlist />} />
+                <Route path="/messages" element={<Messages />} />
+                <Route path="/reviews/:sellerId" element={<Reviews />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/seller-dashboard" element={<SellerDashboard />} />
+                <Route path="/cart" element={<CartPage />} />
+              </Routes>
+            </Suspense>
+          </main>
+          <MobileTabBar />
+          <Footer />
+        </div>
+      </CartProvider>
+    </ThemeProvider>
   );
 }
 

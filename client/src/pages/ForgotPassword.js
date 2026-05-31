@@ -1,67 +1,74 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { toast } from 'react-toastify';
+import api from '../services/api';
+import { FaEnvelope, FaPaperPlane, FaArrowLeft } from 'react-icons/fa';
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // In a real app, this would call an API endpoint
-    setSubmitted(true);
+    if (!email) return toast.error('Please enter your email');
+    setLoading(true);
+    try {
+      await api.post('/auth/forgot-password', { email });
+      setSent(true);
+    } catch (error) {
+      toast.error('Failed to send reset email');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: '#f8f8f8', padding: 20,
-    }}>
-      <div style={{
-        background: '#fff', borderRadius: 16, padding: 32,
-        width: '100%', maxWidth: 400, boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-      }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, textAlign: 'center' }}>
-          Forgot Password
-        </h1>
-        <p style={{ color: '#666', textAlign: 'center', marginBottom: 24, fontSize: 14 }}>
-          Enter your email address and we'll send you a link to reset your password.
-        </p>
-
-        {submitted ? (
-          <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>✉️</div>
-            <h3 style={{ fontSize: 18, marginBottom: 8 }}>Check your email</h3>
-            <p style={{ color: '#666', fontSize: 14 }}>
-              If an account exists with <strong>{email}</strong>, you will receive a password reset link shortly.
+    <div className="auth-page">
+      <div className="auth-container" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
+        {sent ? (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 16, animation: 'scaleIn 0.3s ease-out' }}>📧</div>
+            <h1>Check Your Email</h1>
+            <p className="auth-subtitle">
+              We've sent a password reset link to<br />
+              <strong>{email}</strong>
             </p>
+            <p style={{ fontSize: 13, color: 'var(--td-text-tertiary)', marginBottom: 24 }}>
+              Didn't receive it? Check your spam folder or{' '}
+              <button onClick={() => setSent(false)} style={{ color: 'var(--td-primary)', fontWeight: 600, background: 'none', border: 'none' }}>
+                try again
+              </button>
+            </p>
+            <Link to="/login" className="btn btn-primary btn-block">
+              <FaArrowLeft /> Back to Login
+            </Link>
           </div>
         ) : (
-          <form onSubmit={handleSubmit}>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              placeholder="Email address"
-              style={{
-                width: '100%', padding: 12, border: '1px solid #ddd',
-                borderRadius: 8, fontSize: 14, marginBottom: 16, boxSizing: 'border-box',
-              }}
-            />
-            <button type="submit" style={{
-              width: '100%', padding: 12, background: '#FF4D6D', color: '#fff',
-              border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer',
-              fontSize: 15,
-            }}>
-              Send Reset Link
-            </button>
-          </form>
+          <>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
+              <h1>Forgot Password?</h1>
+              <p className="auth-subtitle">No worries! Enter your email and we'll send you a reset link.</p>
+            </div>
+            <form className="auth-form" onSubmit={handleSubmit}>
+              <div className="form-group">
+                <label className="form-label">Email Address</label>
+                <div style={{ position: 'relative' }}>
+                  <FaEnvelope style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
+                  <input type="email" className="form-input" placeholder="you@example.com" value={email}
+                    onChange={(e) => setEmail(e.target.value)} style={{ paddingLeft: 36 }} required />
+                </div>
+              </div>
+              <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading}>
+                {loading ? <><span className="spinner spinner-sm" /> Sending...</> : <><FaPaperPlane /> Send Reset Link</>}
+              </button>
+            </form>
+            <div className="auth-footer">
+              <Link to="/login"><FaArrowLeft style={{ marginRight: 6 }} /> Back to Login</Link>
+            </div>
+          </>
         )}
-
-        <div style={{ textAlign: 'center', marginTop: 20 }}>
-          <a href="/login" style={{ color: '#FF4D6D', fontSize: 14, textDecoration: 'none' }}>
-            ← Back to Login
-          </a>
-        </div>
       </div>
     </div>
   );

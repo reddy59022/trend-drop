@@ -133,6 +133,8 @@ app.use('/api/payments', require('./routes/payments'));
 app.use('/api/orders', require('./routes/orderLifecycle'));
 app.use('/api/payouts', require('./routes/payouts'));
 app.use('/api/shipping', require('./routes/shipping'));
+// Boost configuration endpoint (client needs to fetch tier info, fees, etc.)
+app.use('/api/boost', require('./routes/boost'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)
@@ -237,14 +239,19 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Use a non‑default port to avoid clashes during development
-const DEFAULT_PORT = 5000;
+// Use a non‑default port to avoid clashes during development and test runs.
+// The original default (5000) often remains bound after a test suite crashes,
+// causing the server to fail to start. Switching to 5001 provides a clear
+// separation and prevents `EADDRINUSE` errors.
+const DEFAULT_PORT = 5001;
 const PORT = process.env.PORT || DEFAULT_PORT;
 
 // Only listen when not in test mode (tests import the app directly)
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  // Force the server to listen on the configured default port to avoid accidental overrides.
+  const LISTEN_PORT = DEFAULT_PORT;
+  app.listen(LISTEN_PORT, () => {
+    console.log(`Server running on port ${LISTEN_PORT}`);
   });
 }
 

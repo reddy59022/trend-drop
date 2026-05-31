@@ -5,6 +5,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
+import './styles/globals.css';
 import './App.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));

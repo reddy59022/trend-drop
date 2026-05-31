@@ -183,6 +183,21 @@ chargeback_open → chargeback_won / chargeback_lost
 - Max 10 active boosts per seller
 - Priority score = composite (likes × 2 + views × 0.5 + saves × 3 + sales × 10 + conversion × 50 − reports × 100)
 
+### API: Boost Configuration
+The client needs to know the boost tiers, fee percentages, and limits without hard‑coding them. A new endpoint `/api/boost/config` was added (see `server/routes/boost.js`). It returns the entire `boostConfig` object defined in `server/config/boost.js`, exposing:
+```
+{
+  boostFeePercent,
+  minDurationDays,
+  maxDurationDays,
+  defaultDurationDays,
+  priorityMultiplier,
+  maxActiveBoosts,
+  tiers,
+}
+```
+The frontend can fetch this via the newly added `getBoostConfig` helper in `client/src/services/api.js`.
+
 ---
 
 ## 11. Multi-Currency

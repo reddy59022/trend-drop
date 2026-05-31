@@ -109,8 +109,8 @@ NODE_ENV=development
 bash start.sh
 ```
 This starts everything:
-- **Backend API** on `http://localhost:5000`
-- **Web App** on `http://localhost:3000`
+  - **Backend API** on `http://localhost:5001`
+  - **Backend API** on `http://localhost:5001`
 - **Android Emulator** (if Android SDK is installed)
 - **iOS Simulator** (if on macOS with Xcode)
 
