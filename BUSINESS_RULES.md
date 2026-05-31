@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** May 31, 2026 — v6.0 (8% platform fee, $150 max, multi-currency revenue protection)
+> **Last Updated:** May 31, 2026 — v7.0 (Chargeback risk, seller reserves, free shipping rules)
 
 ---
 
@@ -63,16 +63,8 @@ pending ──┬→ accepted (seller accepts original offer)
 - All invalid state transitions return 400 with descriptive error message
 - Received/sent offer endpoints for both parties
 - After any action, buttons are removed/disabled and status is shown instead
-- **ListingDetail** shows real-time offer status badges: pending (⌛), countered (🔄 with Accept/Counter), buyer_countered (Awaiting seller...), accepted (✅ with Buy Now)
-- **Offers page** shows appropriate actions per state: Accept/Counter/Decline for pending received, Accept/Counter/Decline for buyer_countered received, Accept/Counter for countered sent, "Awaiting seller" for buyer_countered sent, "Proceed to Purchase" for accepted sent
 
-### Multi-Currency:
-- Offer inherits the listing's currency on creation
-- Currency mismatch between offer and listing is rejected with 400
-- If no currency is provided, the listing's currency is used as default
-- Notifications use the offer's currency symbol in messages
-
-### Verified by Tests: SM.1-SM.8 (state machine), NT.1-NT.2 (full negotiation→transaction), AP.1-AP.4 (single acceptance paths), IT.1-IT.4 (invalid transitions), AU.1-AU.5 (authorization/edge), CV.1-CV.3 (currency), RP.1 (revenue protection) — 28 tests
+### Verified by Tests: 28 tests (SM.1-SM.8, NT.1-NT.2, AP.1-AP.4, IT.1-IT.4, AU.1-AU.5, CV.1-CV.3, RP.1)
 
 ---
 
@@ -101,6 +93,7 @@ platformFee            = itemPrice × 8%, clamped to [minFee, maxFee]
                          (min $0.50 US, max $150 US)
 sellerEarnings         = itemPrice − clampedPlatformFee
 shippingPayout         = shippingCost (pass-through to seller, NOT commissioned)
+                         IF freeShipping THEN shippingPayout = $0 (seller absorbs cost)
 
 Platform Revenue:
 platformCommission     = clampedPlatformFee (8% of item price, max $150)
@@ -109,20 +102,12 @@ stripeFee              = ~2.9% + $0.30 of totalPaid (varies by country)
 netRevenue             = commission + protectionFee − stripeFee
 
 CRITICAL RULES:
-- Commission is ALWAYS on item price ONLY — NEVER on totalPaid (which includes shipping + protection)
-- This is verified by test BD.6 (commission < commission_if_calculated_on_totalPaid)
+- Commission is ALWAYS on item price ONLY — NEVER on totalPaid
 - All countries: 8% platform fee (uniform global rate)
-- MAX FEE: $150 USD (was $50). This protects revenue on high-value items:
-  - $5,000 item: expected 8% = $400, actual = $150 cap, effective rate = 3%
-  - $10,000 item: expected 8% = $800, actual = $150 cap, effective rate = 1.5%
-  - $1,875 item: 8% = $150 → cap not hit, full 8% applies
-- Japan: minFee 50 JPY (~$0.33), maxFee 15,000 JPY (~$100)
-- $5 item US→US: netRevenue ~$0.18 (still positive)
-- $5 item JP→US: netRevenue may be negative (stripe fee > revenue) — documented edge case
-- Minimum price $5 mitigates loss; international small orders may still lose
+- MAX FEE: $150 USD
 ```
 
-### Verified by Tests: BD.1-BD.7 (breakdown), TF.1-TF.4 (transactions), PR.1-PR.2 (payouts), PA.1-PA.4 (profit), RL.1-RL.3 (loss prevention), MC.1-MC.8 (multi-currency) — 26 tests
+### Verified by Tests: 26 tests (BD.1-BD.7, TF.1-TF.4, PR.1-PR.2, PA.1-PA.4, RL.1-RL.3, MC.1-MC.8)
 
 ---
 
@@ -153,7 +138,7 @@ chargeback_open → chargeback_won / chargeback_lost
 - Offer: 24h from acceptance
 - Dispute response: 48h
 
-### Verified by Tests: 5.1-5.10 (10 tests)
+### Verified by Tests: 10 tests (5.1-5.10)
 
 ---
 
@@ -162,11 +147,19 @@ chargeback_open → chargeback_won / chargeback_lost
 ### Code: `server/config/shipping.js`
 
 - Calculated by zone (domestic < continental < intercontinental)
-- Free shipping over $50 (domestic, under 0.5kg)
-- Shipping cost pass-through to seller
+- Free shipping over $50 (domestic, under 0.5kg) — **seller-funded**
+- Shipping cost pass-through to seller (seller receives shipping payout)
+- When seller opts into free shipping: shipping cost = $0, seller receives $0 shipping payout
 - Available endpoints: calculate, carriers, countries, currencies, tracking
 
-### Verified by Tests: 6.1-6.8 (8 tests)
+### Free Shipping Rules:
+- **Seller-funded**: The seller absorbs the shipping cost when offering free shipping. The platform does NOT subsidize it.
+- Domestic: free shipping threshold = $50, max weight = 0.5kg
+- Continental: free shipping threshold = $100, max weight = 0.3kg
+- International: no free shipping available
+- If a listing has `freeShipping: true`, the shipping line in the transaction will be $0 and the seller receives $0 shipping payout
+
+### Verified by Tests: 8 tests (6.1-6.8)
 
 ---
 
@@ -175,21 +168,42 @@ chargeback_open → chargeback_won / chargeback_lost
 - Buyer requests with reason + evidence within 5 days
 - Seller accepts/rejects within 3 days
 - Return shipping: seller pays if at fault, buyer pays if remorse
-- On refund: buyer gets item price + shipping (protection fee: see 4.3)
+- On refund: buyer gets item price + shipping (protection fee: see below)
 - Full refund via Stripe, inventory restored
+- **Buyer protection fee is NON-refundable on buyer-remorse returns** — platform keeps it
 
-### Verified by Tests: 7.1-7.5 (5 tests)
+### Verified by Tests: 5 tests (7.1-7.5)
 
 ---
 
-## 8. Dispute Flow
+## 8. Chargeback & Fraud Protection
 
-- Requires reason AND evidence
-- 48h response window
-- `disputed` → `dispute_resolved`
-- Funds held during dispute
+### Chargeback Flow:
+- States: `chargeback_open` → `chargeback_won` / `chargeback_lost`
+- Stripe webhook initiated
+- Seller absorbs loss if at fault; negative balance supported
 
-### Verified by Tests: 8.1-8.2 (2 tests)
+### Risk Model (PLANNED — NOT IMPLEMENTED):
+The following are identified risks with planned mitigations:
+
+| Risk | Impact | Mitigation (Planned) |
+|------|--------|---------------------|
+| Fraudulent chargebacks | Platform absorbs loss | Seller reserve fund, chargeback insurance |
+| Scam seller (fake items) | Platform absorbs return/chargeback costs | New seller rolling reserve, payout delays |
+| Buyer remorse returns | Shipping + protection fee loss | Protection fee is non-refundable (implemented) |
+
+### Seller Protection Mechanisms (CURRENTLY IMPLEMENTED):
+- Funds held until buyer confirms delivery (or auto-confirm after 3 days)
+- Seller strikes tracked (3 = suspension)
+- Return/refund flow requires seller acceptance
+
+### Seller Protection Mechanisms (PLANNED — NOT YET IMPLEMENTED):
+- **Payout delay for new sellers**: 14-day hold on first 5 sales (planned)
+- **Rolling reserve**: 10% of earnings held for 30 days (planned)
+- **Seller verification**: KYC required before first payout (planned)
+- **Chargeback insurance**: Optional fee-based protection (planned)
+
+### Verified by Tests: 2 tests (8.1-8.2)
 
 ---
 
@@ -202,9 +216,12 @@ chargeback_open → chargeback_won / chargeback_lost
 - Fallback formula in payouts.js uses `Math.round(salePrice * 0.08 * 100) / 100` (only used if breakdown missing)
 - Auto-process skips refunded transactions
 - Dashboard shows real aggregate totals
+- **Payout timing**: Funds released after buyer confirms delivery (or auto-confirm after 3 days)
+- **No payout delays for new sellers currently** (planned feature)
+- **No rolling reserve currently** (planned feature)
 - Seller KYC required before first payout (planned)
 
-### Verified by Tests: PR.1-PR.2 (payout records), SF.1-SF.2 (portfolio simulation), commission-info endpoint — 5 tests
+### Verified by Tests: 5 tests (PR.1-PR.2, SF.1-SF.2)
 
 ---
 
@@ -216,21 +233,6 @@ chargeback_open → chargeback_won / chargeback_lost
 - **Fee is deducted from the seller's pending earnings when the boosted listing is sold** (non‑refundable after sale). If the buyer returns the item, the fee is effectively refunded because it never leaves the pending pool.
 - Max 10 active boosts per seller
 - Priority score = composite (likes × 2 + views × 0.5 + saves × 3 + sales × 10 + conversion × 50 − reports × 100)
-
-### API: Boost Configuration
-The client needs to know the boost tiers, fee percentages, and limits without hard‑coding them. A new endpoint `/api/boost/config` was added (see `server/routes/boost.js`). It returns the entire `boostConfig` object defined in `server/config/boost.js`, exposing:
-```
-{
-  boostFeePercent,
-  minDurationDays,
-  maxDurationDays,
-  defaultDurationDays,
-  priorityMultiplier,
-  maxActiveBoosts,
-  tiers,
-}
-```
-The frontend can fetch this via the newly added `getBoostConfig` helper in `client/src/services/api.js`.
 
 ---
 
@@ -264,7 +266,6 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 - Strike triggers: seller cancel, auto-cancel (not shipped 7 days), counterfeit
 - 3 strikes = account suspension
 - `stats.strikes` tracked in User model
-- Verification tests: 5.5, 16.1
 
 ---
 
@@ -273,7 +274,7 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 - Types: like, follow, comment, offer, sale, share, purchase, shipping, review, seller_review, payout
 - Read/unread tracking, mark-all-read endpoint
 
-### Tests: 14.1-14.3 (3 tests)
+### Tests: 3 tests (14.1-14.3)
 
 ---
 
@@ -284,7 +285,7 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 - Pagination: page + limit
 - Feed shows active, unsold items with quantity > 0
 
-### Tests: 15.1-15.6 (6 tests)
+### Tests: 6 tests (15.1-15.6)
 
 ---
 
@@ -295,7 +296,7 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 - Empty text rejected
 - Off-platform payment detection (planned)
 
-### Tests: 16.1-16.5 (5 tests)
+### Tests: 5 tests (16.1-16.5)
 
 ---
 
@@ -305,81 +306,36 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 - Both buyer and seller can review completed transactions
 - Both-party-submit-then-publish prevents retaliation
 
-### Tests: 17.1-17.4 (4 tests)
+### Tests: 4 tests (17.1-17.4)
 
 ---
 
-## 18. Chargeback Handling
-
-- States: `chargeback_open` → `chargeback_won` / `chargeback_lost`
-- Stripe webhook initiated
-- Seller absorbs loss if at fault; negative balance supported
-- Tests verify schema valid states (18.1)
-
----
-
-## 19. Platform Safety
+## 18. Platform Safety
 
 - API rate limit: 100 req/15min
 - Auth rate limit: 20 req/15min
 - Health endpoint: `/health`
 - Stripe webhook: `/api/payments/webhook`
 
-### Tests: EC.1-EC.10 (edge cases)
+### Tests: 10 tests (EC.1-EC.10)
 
 ---
 
-## 20. Revenue Protection (Critical — Verified by Tests)
+## 19. Revenue Protection (Critical — Verified by Tests)
 
-This section is verified by 33 dedicated revenue flow tests:
+### Payment Breakdown (BD.1-BD.7) — 7 tests:
+- $100 US → $8 fee (8%), $92 seller, $5 protection
+- $10 item: 8% = $0.80
+- $5 minimum: min $0.50 applies
+- $5000 item: clamped to max $150
+- Commission NEVER on totalPaid
 
-### Payment Breakdown (BD.1-BD.7):
-- **BD.1**: $100 US → $8 fee (8%), $92 seller, $5 protection, netRevenue > 0 ✓
-- **BD.2**: $10 item: 8% = $0.80 (min $0.50 not hit) ✓
-- **BD.3**: $5 minimum: 8% = $0.40, min $0.50 applies ✓
-- **BD.4**: $5000 item: 8% = $400, clamped to max $150 ✓
-- **BD.5**: Japan 8% fee, JPY minFee 50 ✓
-- **BD.6**: Commission NEVER on totalPaid (revenue critical) ✓
-- **BD.7**: $10000 item: 8% = $800, clamped to $150, effective rate 1.5% ✓
-
-### Transaction Flow (TF.1-TF.4):
-- **TF.1**: Full $100 transaction: breakdown matches 8% calculation ✓
-- **TF.2**: Multiple quantity: cumulative revenue verified ✓
-- **TF.3**: $5 minimum: platform still profitable ✓
-- **TF.4**: Shipping pass-through verified ✓
-
-### Payout Records (PR.1-PR.2):
-- **PR.1**: Payout uses pre-calculated breakdown (NEVER recalculated from totalPaid) ✓
-- **PR.2**: Payout API endpoint matches breakdown values ✓
-
-### Profit Analysis (PA.1-PA.4):
-- **PA.1**: Net revenue positive $5-$1000 ✓
-- **PA.2**: US→GB still profitable ✓
-- **PA.3**: Japan domestic profitable (8% fee) ✓
-- **PA.4**: Platform revenue formula matches calculations ✓
-
-### Seller Portfolio (SF.1-SF.2):
-- **SF.1**: 5 items at different prices: total earnings = sum minus 8% commission ✓
-- **SF.2**: Dashboard aggregates correct ✓
-
-### Revenue Loss Prevention (RL.1-RL.3):
-- **RL.1**: Seller never earns more than item price minus 8% fee ✓
-- **RL.2**: Net revenue positive for >= $25 across US/GB/JP; $10 international may lose ✓
-- **RL.3**: $5 JP→US can lose money — documented edge case ✓
-
-### Multi-Currency Revenue Protection (MC.1-MC.8):
-- **MC.1**: USD $200: 8% = $16 fee, $184 seller ✓
-- **MC.2**: JPY ¥10000: 8% fee in JPY terms ✓
-- **MC.3**: EUR €150: 8% = €12 ✓
-- **MC.4**: Cross-border US→JP: 8% US seller fee, 5% JP buyer protection ✓
-- **MC.5**: Cross-border GB→DE: 8% GB seller fee, 5% DE buyer protection ✓
-- **MC.6**: Buyer pays totalPaid = itemPrice + shipping + 5% protection ✓
-- **MC.7**: Seller earnings = itemPrice - platformFee (shipping passes through) ✓
-- **MC.8**: $5000 US: clamped at $150 max, effective rate 3% ✓
+### Multi-Currency (MC.1-MC.8) — 8 tests:
+- USD, JPY, EUR, cross-border US→JP, GB→DE
+- Seller earnings = itemPrice - platformFee
+- $5000 US clamped at $150 max
 
 ### Total Test Count: 147 (112 e2e + 35 revenue)
-- Core business flows: 112 tests covering rules 1-20
-- Revenue simulation: 35 tests covering money flow edge cases (including 8 multi-currency tests)
 - All pass against real MongoDB database
 
 ---
