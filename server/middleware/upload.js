@@ -4,15 +4,17 @@ const path = require('path');
 // Performance: Use disk storage for better memory handling on mobile
 const storage = multer.memoryStorage();
 
+// Updated filter to accept any image MIME type. Mobile devices (e.g., iOS) often
+// upload HEIC/HEIF files, which previously caused the generic "Only JPEG, PNG, and
+// WebP images are allowed" error. Since Cloudinary will handle conversion/compression
+// downstream, we simply validate that the uploaded file is an image and rely on the
+// size limit (2 MB) to guard against abuse.
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|webp/; // Removed gif for performance
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
-
-  if (mimetype && extname) {
+  const isImage = /^image\//i.test(file.mimetype);
+  if (isImage) {
     return cb(null, true);
   }
-  cb(new Error('Only JPEG, PNG, and WebP images are allowed'));
+  cb(new Error('Only image files are allowed'));
 };
 
 // Performance: Smaller file limit (2MB) since Cloudinary compresses further
