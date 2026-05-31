@@ -396,13 +396,13 @@ const ListingDetail = () => {
                   <span>{formatPrice(listing.price, listing.currency || 'USD')}</span>
                 </div>
                 <div className="flex-between" style={{ color: 'var(--td-error)' }}>
-                  <span>Platform Fee (5%)</span>
-                  <span>-{formatPrice(listing.price * 0.05, listing.currency || 'USD')}</span>
+                  <span>Platform Fee (8%)</span>
+                  <span>-{formatPrice(listing.price * 0.08, listing.currency || 'USD')}</span>
                 </div>
                 <div style={{ borderTop: '1px solid var(--td-border)', paddingTop: 6, marginTop: 4 }}>
                   <div className="flex-between" style={{ color: 'var(--td-success)', fontWeight: 700 }}>
                     <span>You'll Receive</span>
-                    <span style={{ fontSize: 18 }}>{formatPrice(listing.price * 0.95, listing.currency || 'USD')}</span>
+                    <span style={{ fontSize: 18 }}>{formatPrice(listing.price * 0.92, listing.currency || 'USD')}</span>
                   </div>
                 </div>
               </div>

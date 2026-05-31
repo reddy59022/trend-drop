@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** May 31, 2026 — v5.0 (5% platform fee, multi-currency revenue protection)
+> **Last Updated:** May 31, 2026 — v6.0 (8% platform fee, $150 max, multi-currency revenue protection)
 
 ---
 
@@ -88,7 +88,7 @@ pending ──┬→ accepted (seller accepts original offer)
 - Exchange rate locked at authorization time in `exchangeRateUsed`
 - `buyerChargeAmount` and `sellerSettlementAmount` stored at locked rate
 
-### Payment Formulas (5% Platform Fee — UNIFORM across all countries):
+### Payment Formulas (8% Platform Fee — UNIFORM across all countries, max $150):
 ```
 Buyer Pays:
 itemPrice              = listing price (or negotiated offer price)
@@ -97,12 +97,13 @@ buyerProtectionFee     = itemPrice × 5% (separate from platform fee)
 totalPaid              = itemPrice + shippingCost + buyerProtectionFee
 
 Seller Receives:
-platformFee            = itemPrice × 5% (min $0.50, max $50 per country)
-sellerEarnings         = itemPrice − platformFee (shipping passes through separately)
+platformFee            = itemPrice × 8%, clamped to [minFee, maxFee]
+                         (min $0.50 US, max $150 US)
+sellerEarnings         = itemPrice − clampedPlatformFee
 shippingPayout         = shippingCost (pass-through to seller, NOT commissioned)
 
 Platform Revenue:
-platformCommission     = platformFee (5% of item price only)
+platformCommission     = clampedPlatformFee (8% of item price, max $150)
 buyerProtectionFee     = 5% of item price (non-refundable on buyer remorse)
 stripeFee              = ~2.9% + $0.30 of totalPaid (varies by country)
 netRevenue             = commission + protectionFee − stripeFee
@@ -110,14 +111,18 @@ netRevenue             = commission + protectionFee − stripeFee
 CRITICAL RULES:
 - Commission is ALWAYS on item price ONLY — NEVER on totalPaid (which includes shipping + protection)
 - This is verified by test BD.6 (commission < commission_if_calculated_on_totalPaid)
-- All countries: 5% platform fee (Japan dropped from 12% to 5% to match global)
-- Japan: minFee 50 JPY (~$0.33), maxFee 5000 JPY (~$33)
-- $5 item US→US: netRevenue ~$0.13 (still positive)
+- All countries: 8% platform fee (uniform global rate)
+- MAX FEE: $150 USD (was $50). This protects revenue on high-value items:
+  - $5,000 item: expected 8% = $400, actual = $150 cap, effective rate = 3%
+  - $10,000 item: expected 8% = $800, actual = $150 cap, effective rate = 1.5%
+  - $1,875 item: 8% = $150 → cap not hit, full 8% applies
+- Japan: minFee 50 JPY (~$0.33), maxFee 15,000 JPY (~$100)
+- $5 item US→US: netRevenue ~$0.18 (still positive)
 - $5 item JP→US: netRevenue may be negative (stripe fee > revenue) — documented edge case
 - Minimum price $5 mitigates loss; international small orders may still lose
 ```
 
-### Verified by Tests: BD.1-BD.6 (breakdown), TF.1-TF.4 (transactions), PR.1-PR.2 (payouts), PA.1-PA.4 (profit), RL.1-RL.3 (loss prevention), MC.1-MC.7 (multi-currency) — 25 tests
+### Verified by Tests: BD.1-BD.7 (breakdown), TF.1-TF.4 (transactions), PR.1-PR.2 (payouts), PA.1-PA.4 (profit), RL.1-RL.3 (loss prevention), MC.1-MC.8 (multi-currency) — 26 tests
 
 ---
 
@@ -192,9 +197,9 @@ chargeback_open → chargeback_won / chargeback_lost
 
 ### Code: `server/routes/payouts.js`, `server/models/Payout.js`
 
-- Commission: 5% of item price (min $0.50, max $50 per country)
+- Commission: 8% of item price (min $0.50, max $150 per country)
 - Payout records MUST use `paymentBreakdown.platformFee` — verified by tests
-- Fallback formula in payouts.js uses `Math.round(salePrice * 0.05 * 100) / 100` (only used if breakdown missing)
+- Fallback formula in payouts.js uses `Math.round(salePrice * 0.08 * 100) / 100` (only used if breakdown missing)
 - Auto-process skips refunded transactions
 - Dashboard shows real aggregate totals
 - Seller KYC required before first payout (planned)
@@ -235,9 +240,9 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 - Buyer sees local price (converted)
 - Exchange rate locked at authorization
 - Stripe handles conversion
-- Platform fee is always 5% of item price regardless of currency
+- Platform fee is always 8% of item price regardless of currency
 - Buyer protection is 5% of item price regardless of currency
-- Min/max fees are per-country (JPY min 50, max 5000; USD min $0.50, max $50)
+- Min/max fees are per-country (JPY min 50, max 15,000; USD min $0.50, max $150)
 
 ---
 
@@ -245,10 +250,12 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 
 | Platform | Commission |
 |----------|-----------|
-| TrendDrop | 5% |
+| TrendDrop | 8% (max $150) |
 | Poshmark | 20% |
 | Mercari | 10% |
 | Depop | 10% |
+| eBay | 13.25% |
+| StockX | 9-15% |
 
 ---
 
@@ -326,16 +333,17 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 
 This section is verified by 33 dedicated revenue flow tests:
 
-### Payment Breakdown (BD.1-BD.6):
-- **BD.1**: $100 US → $5 fee (5%), $95 seller, $5 protection, netRevenue > 0 ✓
-- **BD.2**: $10 item: 5% = $0.50 (min fee applies) ✓
-- **BD.3**: $5 minimum still profitable (US) ✓
-- **BD.4**: $5000 item: 5% = $250, clamped to max $50 ✓
-- **BD.5**: Japan 5% fee, JPY minFee 50 ✓
+### Payment Breakdown (BD.1-BD.7):
+- **BD.1**: $100 US → $8 fee (8%), $92 seller, $5 protection, netRevenue > 0 ✓
+- **BD.2**: $10 item: 8% = $0.80 (min $0.50 not hit) ✓
+- **BD.3**: $5 minimum: 8% = $0.40, min $0.50 applies ✓
+- **BD.4**: $5000 item: 8% = $400, clamped to max $150 ✓
+- **BD.5**: Japan 8% fee, JPY minFee 50 ✓
 - **BD.6**: Commission NEVER on totalPaid (revenue critical) ✓
+- **BD.7**: $10000 item: 8% = $800, clamped to $150, effective rate 1.5% ✓
 
 ### Transaction Flow (TF.1-TF.4):
-- **TF.1**: Full $100 transaction: breakdown matches 5% calculation ✓
+- **TF.1**: Full $100 transaction: breakdown matches 8% calculation ✓
 - **TF.2**: Multiple quantity: cumulative revenue verified ✓
 - **TF.3**: $5 minimum: platform still profitable ✓
 - **TF.4**: Shipping pass-through verified ✓
@@ -347,30 +355,31 @@ This section is verified by 33 dedicated revenue flow tests:
 ### Profit Analysis (PA.1-PA.4):
 - **PA.1**: Net revenue positive $5-$1000 ✓
 - **PA.2**: US→GB still profitable ✓
-- **PA.3**: Japan domestic profitable (5% fee) ✓
+- **PA.3**: Japan domestic profitable (8% fee) ✓
 - **PA.4**: Platform revenue formula matches calculations ✓
 
 ### Seller Portfolio (SF.1-SF.2):
-- **SF.1**: 5 items at different prices: total earnings = sum minus 5% commission ✓
+- **SF.1**: 5 items at different prices: total earnings = sum minus 8% commission ✓
 - **SF.2**: Dashboard aggregates correct ✓
 
 ### Revenue Loss Prevention (RL.1-RL.3):
-- **RL.1**: Seller never earns more than item price minus 5% fee ✓
-- **RL.2**: Net revenue positive $10-$1000 across US/GB/JP ✓
+- **RL.1**: Seller never earns more than item price minus 8% fee ✓
+- **RL.2**: Net revenue positive for >= $25 across US/GB/JP; $10 international may lose ✓
 - **RL.3**: $5 JP→US can lose money — documented edge case ✓
 
-### Multi-Currency Revenue Protection (MC.1-MC.7) — NEW:
-- **MC.1**: USD $200: 5% = $10 fee, $190 seller ✓
-- **MC.2**: JPY ¥10000: 5% fee in JPY terms ✓
-- **MC.3**: EUR €150: 5% = €7.50 ✓
-- **MC.4**: Cross-border US→JP: 5% US seller fee, 5% JP buyer protection ✓
-- **MC.5**: Cross-border GB→DE: 5% GB seller fee, 5% DE buyer protection ✓
+### Multi-Currency Revenue Protection (MC.1-MC.8):
+- **MC.1**: USD $200: 8% = $16 fee, $184 seller ✓
+- **MC.2**: JPY ¥10000: 8% fee in JPY terms ✓
+- **MC.3**: EUR €150: 8% = €12 ✓
+- **MC.4**: Cross-border US→JP: 8% US seller fee, 5% JP buyer protection ✓
+- **MC.5**: Cross-border GB→DE: 8% GB seller fee, 5% DE buyer protection ✓
 - **MC.6**: Buyer pays totalPaid = itemPrice + shipping + 5% protection ✓
 - **MC.7**: Seller earnings = itemPrice - platformFee (shipping passes through) ✓
+- **MC.8**: $5000 US: clamped at $150 max, effective rate 3% ✓
 
-### Total Test Count: 145 (112 e2e + 33 revenue)
+### Total Test Count: 147 (112 e2e + 35 revenue)
 - Core business flows: 112 tests covering rules 1-20
-- Revenue simulation: 33 tests covering money flow edge cases (including 7 multi-currency tests)
+- Revenue simulation: 35 tests covering money flow edge cases (including 8 multi-currency tests)
 - All pass against real MongoDB database
 
 ---

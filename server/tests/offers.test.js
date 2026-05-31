@@ -537,11 +537,11 @@ describe('Revenue Protection via Offers', () => {
     expect(txn.itemPrice).toBe(92);
     expect(txn.paymentBreakdown.subtotal).toBe(92);
     
-    // Platform fee should be 5% of 92 = 4.6
-    expect(txn.paymentBreakdown.platformFee).toBe(4.6);
+    // Platform fee should be 8% of 92 = 7.36
+    expect(txn.paymentBreakdown.platformFee).toBe(7.36);
     
-    // Seller earnings = 92 - 4.6 = 87.4
-    expect(txn.paymentBreakdown.sellerEarnings).toBe(87.4);
+    // Seller earnings = 92 - 7.36 = 84.64
+    expect(txn.paymentBreakdown.sellerEarnings).toBe(84.64);
 
     // Total paid includes protection fee and shipping
     expect(txn.paymentBreakdown.totalPaid).toBeGreaterThan(txn.itemPrice);
