@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getWishlist, removeFromWishlist } from '../services/api';
 import { useNavigate, Link } from 'react-router-dom';
-import { FaHeart, FaTimes, FaSearch, FaShoppingBag } from 'react-icons/fa';
+import { FaHeart, FaSearch } from 'react-icons/fa';
 import { formatPrice, defaultAvatar } from '../utils/helpers';
 import { toast } from 'react-toastify';
 

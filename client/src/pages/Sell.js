@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle } from 'react-icons/fa';
-import { countries, formatPrice, getConditionColor } from '../utils/helpers';
+import { countries, formatPrice } from '../utils/helpers';
 
 const steps = [
   { id: 'photos', label: 'Photos', icon: FaCamera },

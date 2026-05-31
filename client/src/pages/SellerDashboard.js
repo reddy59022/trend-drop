@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { getPayoutDashboard, getCommissionInfo, getRatingsBySeller } from '../services/api';
 import StarRating from '../components/StarRating';
 import { formatPrice } from '../utils/helpers';
-import { FaStore, FaDollarSign, FaChartLine, FaStar, FaHistory, FaRocket, FaQuestionCircle } from 'react-icons/fa';
+import { FaStore, FaDollarSign, FaChartLine, FaHistory, FaRocket, FaQuestionCircle } from 'react-icons/fa';
 
 const SellerDashboard = () => {
   const { user } = useAuth();

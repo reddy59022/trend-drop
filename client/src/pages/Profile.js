@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { FaMapMarkerAlt, FaCheckCircle, FaEdit, FaUserPlus, FaUserMinus, FaHeart, FaStar, FaTshirt } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaCheckCircle, FaEdit, FaUserPlus, FaUserMinus, FaTshirt } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';

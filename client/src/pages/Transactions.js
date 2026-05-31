@@ -4,7 +4,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { formatPrice, getStatusColor, getStatusLabel, formatDate } from '../utils/helpers';
-import { FaTruck, FaCheckCircle, FaClock, FaBox, FaFilter, FaShoppingBag, FaDownload, FaChevronDown, FaChevronUp } from 'react-icons/fa';
+import { FaTruck, FaCheckCircle, FaClock, FaBox, FaShoppingBag, FaDownload, FaChevronDown, FaChevronUp } from 'react-icons/fa';
 
 function Transactions() {
   const { user } = useAuth();

@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import moment from 'moment';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { FaExchangeAlt, FaArrowUp, FaArrowDown, FaCheck, FaTimes, FaGavel } from 'react-icons/fa';
+import { FaExchangeAlt, FaArrowUp, FaCheck, FaTimes, FaGavel } from 'react-icons/fa';
 
 const Offers = () => {
   const { user } = useAuth();

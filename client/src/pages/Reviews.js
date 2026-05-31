@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getRatingsBySeller, createRating, deleteRating } from '../services/api'; // eslint-disable-line
 import StarRating from '../components/StarRating';
-import { FaStar, FaPen, FaTrash, FaUserCircle } from 'react-icons/fa';
+import { FaStar, FaPen, FaTrash } from 'react-icons/fa';
 import { defaultAvatar, timeAgo } from '../utils/helpers';
 import { toast } from 'react-toastify';
 
