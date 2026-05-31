@@ -42,6 +42,8 @@ const storage = new CloudinaryStorage({
       quality: 'auto:good',     // Auto quality based on content
       eager_async: true,        // Generate responsive sizes in background
       // Responsive breakpoints for mobile/web/ios/android
+      // Generate only the thumbnail eagerly for listings to cut transformation usage.
+      // The cover image (first upload) will still be transformed on demand via the "large" preset.
       eager: req.path.includes('avatar')
         ? [
             imageOptimization.avatar.thumb,
@@ -49,8 +51,6 @@ const storage = new CloudinaryStorage({
           ]
         : [
             imageOptimization.listing.thumb,
-            imageOptimization.listing.medium,
-            imageOptimization.listing.large,
           ],
       transformation: [
         req.path.includes('avatar')
