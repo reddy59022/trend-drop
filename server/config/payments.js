@@ -16,18 +16,20 @@ if (process.env.STRIPE_SECRET_KEY) {
   console.warn('STRIPE_SECRET_KEY not set – Stripe functionality will be disabled.');
 }
 
+// ALL countries use 5% platform fee. Buyer protection is 5% (separate).
+// Commission is calculated on item price ONLY (not shipping or buyer protection fee).
 const countryCommissions = {
-  US: { platformFee: 10, buyerProtection: 5, minFee: 0.50, maxFee: 50, currency: 'USD' },
-  CA: { platformFee: 10, buyerProtection: 5, minFee: 0.75, maxFee: 65, currency: 'CAD' },
-  GB: { platformFee: 10, buyerProtection: 5, minFee: 0.40, maxFee: 40, currency: 'GBP' },
-  DE: { platformFee: 10, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
-  FR: { platformFee: 10, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
-  IT: { platformFee: 10, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
-  ES: { platformFee: 10, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
-  NL: { platformFee: 10, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
-  AU: { platformFee: 10, buyerProtection: 5, minFee: 0.75, maxFee: 60, currency: 'AUD' },
-  JP: { platformFee: 12, buyerProtection: 5, minFee: 50, maxFee: 5000, currency: 'JPY' },
-  default: { platformFee: 10, buyerProtection: 5, minFee: 0.50, maxFee: 50, currency: 'USD' },
+  US: { platformFee: 5, buyerProtection: 5, minFee: 0.50, maxFee: 50, currency: 'USD' },
+  CA: { platformFee: 5, buyerProtection: 5, minFee: 0.75, maxFee: 65, currency: 'CAD' },
+  GB: { platformFee: 5, buyerProtection: 5, minFee: 0.40, maxFee: 40, currency: 'GBP' },
+  DE: { platformFee: 5, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
+  FR: { platformFee: 5, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
+  IT: { platformFee: 5, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
+  ES: { platformFee: 5, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
+  NL: { platformFee: 5, buyerProtection: 5, minFee: 0.50, maxFee: 45, currency: 'EUR' },
+  AU: { platformFee: 5, buyerProtection: 5, minFee: 0.75, maxFee: 60, currency: 'AUD' },
+  JP: { platformFee: 5, buyerProtection: 5, minFee: 50, maxFee: 5000, currency: 'JPY' },
+  default: { platformFee: 5, buyerProtection: 5, minFee: 0.50, maxFee: 50, currency: 'USD' },
 };
 
 const stripeFees = {

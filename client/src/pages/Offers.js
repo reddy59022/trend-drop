@@ -28,11 +28,13 @@ const Offers = () => {
     setLoading(false);
   };
 
-  const handleAccept = async (offerId) => { try { await api.patch(`/offers/${offerId}/accept`); toast.success('Offer accepted!'); fetchOffers(); } catch (error) { toast.error('Failed to accept'); } };
+  const handleAccept = async (offerId) => { try { await api.patch(`/offers/${offerId}/accept`); toast.success('Offer accepted!'); fetchOffers(); } catch (error) { toast.error(error.response?.data?.message || 'Failed to accept'); } };
+  const handleSellerAcceptBuyerCounter = async (offerId) => { try { await api.patch(`/offers/${offerId}/seller-accept-buyer-counter`); toast.success('Counter accepted!'); fetchOffers(); } catch (error) { toast.error(error.response?.data?.message || 'Failed to accept counter'); } };
   const handleDecline = async (offerId) => { try { await api.patch(`/offers/${offerId}/decline`); toast.success('Offer declined'); fetchOffers(); } catch (error) { toast.error(error.response?.data?.message || 'Failed'); } };
   const handleSellerCounter = async (offer) => {
     const previous = offer.counterAmount || offer.amount;
-    const amount = prompt(`Counter offer amount (must be higher than $${previous}):`);
+    const currency = offer.currency || 'USD';
+    const amount = prompt(`Counter offer amount (must be higher than ${currency} ${previous}):`);
     if (!amount || isNaN(amount)) return;
     try { await api.patch(`/offers/${offer._id}/counter`, { counterAmount: Number(amount) }); toast.success('Counter sent!'); fetchOffers(); } catch (error) { toast.error(error.response?.data?.message || 'Failed'); }
   };
@@ -78,6 +80,7 @@ const Offers = () => {
         <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
       </div>
       {/* Actions */}
+      {/* Received offers - seller actions */}
       {type === 'received' && offer.status === 'pending' && (
         <div className="offer-actions">
           <button className="btn btn-primary btn-sm" onClick={() => handleAccept(offer._id)}><FaCheck size={12} /> Accept</button>
@@ -85,14 +88,45 @@ const Offers = () => {
           <button className="btn btn-sm" onClick={() => handleDecline(offer._id)} style={{ color: 'var(--td-error)' }}><FaTimes size={12} /> Decline</button>
         </div>
       )}
+      {type === 'received' && offer.status === 'buyer_countered' && (
+        <div className="offer-actions">
+          <button className="btn btn-primary btn-sm" onClick={() => handleSellerAcceptBuyerCounter(offer._id)}><FaCheck size={12} /> Accept Counter</button>
+          <button className="btn btn-outline btn-sm" onClick={() => handleSellerCounter(offer)}><FaExchangeAlt size={12} /> Counter Again</button>
+          <button className="btn btn-sm" onClick={() => handleDecline(offer._id)} style={{ color: 'var(--td-error)' }}><FaTimes size={12} /> Decline</button>
+        </div>
+      )}
+      {/* Sent offers - buyer actions */}
       {type === 'sent' && offer.status === 'countered' && (
         <div className="offer-actions">
-          <button className="btn btn-primary btn-sm" onClick={async () => { try { await api.patch(`/offers/${offer._id}/accept-counter`); toast.success('Counter accepted!'); fetchOffers(); } catch (e) { toast.error(e.response?.data?.message || 'Failed'); } }}>
+          <button className="btn btn-primary btn-sm" onClick={async (e) => { 
+            e.currentTarget.disabled = true;
+            try { await api.patch(`/offers/${offer._id}/accept-counter`); toast.success('Counter accepted!'); fetchOffers(); } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
+          }}>
             <FaCheck size={12} /> Accept
           </button>
-          <button className="btn btn-outline btn-sm" onClick={async () => { const p = offer.counterAmount || offer.amount; const amt = prompt(`Counter (higher than $${p}):`); if (!amt || isNaN(amt)) return; try { await api.patch(`/offers/${offer._id}/buyer-counter`, { counterAmount: Number(amt) }); toast.success('Counter sent'); fetchOffers(); } catch (e) { toast.error('Failed'); } }}>
+          <button className="btn btn-outline btn-sm" onClick={async () => { 
+            const p = offer.counterAmount || offer.amount; 
+            const currency = offer.currency || 'USD';
+            const amt = prompt(`Counter (higher than ${currency} ${p}):`); 
+            if (!amt || isNaN(amt)) return; 
+            try { await api.patch(`/offers/${offer._id}/buyer-counter`, { counterAmount: Number(amt) }); toast.success('Counter sent'); fetchOffers(); } catch (e) { toast.error('Failed'); } 
+          }}>
             <FaArrowUp size={12} /> Counter
           </button>
+        </div>
+      )}
+      {type === 'sent' && offer.status === 'buyer_countered' && (
+        <div className="offer-actions">
+          <span className="offer-status status-countered" style={{ padding: '4px 12px' }}>Awaiting seller response...</span>
+          {/* Buyer cannot accept their own counter - wait for seller */}
+        </div>
+      )}
+      {/* Accepted offers - show purchase action for buyer */}
+      {type === 'sent' && offer.status === 'accepted' && (
+        <div className="offer-actions">
+          <Link to={`/listing/${offer.listing?._id}`} className="btn btn-primary btn-sm">
+            Proceed to Purchase
+          </Link>
         </div>
       )}
     </div>

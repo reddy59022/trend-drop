@@ -40,36 +40,4 @@ const offerSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-// Progress checklist (for reference only)
-// - [x] Add `currency` field & new status to Offer model.
-// - [x] Implement buyer‑accept‑counter endpoint.
-// - [x] Implement buyer‑counter endpoint.
-// - [x] Refactor seller‑accept to not mark listing sold.
-// - [x] Add transaction‑by‑offer endpoint.
-// - [ ] Adjust payment breakdown for custom price.
-// - [ ] Update ListingDetail UI to display offers/counters.
-// - [x] Update OfferModal to handle currency.
-// - [ ] Update Offers page for buyer actions on counters.
-// - [ ] Remove/disable manual "Mark as Sold" button.
-// - [ ] Add currency validation.
-// - [ ] Ensure inventory decrement only on successful transaction.
-// - [ ] Write unit & integration tests for negotiation flow.
-// - [ ] Update README / API docs.
-
 module.exports = mongoose.model('Offer', offerSchema);
-
-// Task progress checklist (updated)
-// - [x] Add `currency` field & new status to Offer model.
-// - [x] Implement buyer‑accept‑counter endpoint.
-// - [x] Implement buyer‑counter endpoint.
-// - [x] Refactor seller‑accept to not mark listing sold.
-// - [x] Add transaction‑by‑offer endpoint.
-// - [ ] Adjust payment breakdown for custom price.
-// - [ ] Update ListingDetail UI to display offers/counters.
-// - [x] Update OfferModal to handle currency.
-// - [ ] Update Offers page for buyer actions on counters.
-// - [ ] Remove/disable manual "Mark as Sold" button.
-// - [ ] Add currency validation.
-// - [ ] Ensure inventory decrement only on successful transaction.
-// - [ ] Write unit & integration tests for negotiation flow.
-// - [ ] Update README / API docs.

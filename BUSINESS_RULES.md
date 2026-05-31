@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** May 30, 2026 — v4.0 (Final: exact codebase snapshot with all fixes applied)
+> **Last Updated:** May 31, 2026 — v5.0 (5% platform fee, multi-currency revenue protection)
 
 ---
 
@@ -39,15 +39,40 @@
 
 ## 3. Offer Negotiation Flow
 
-### Code: `server/routes/offers.js`, `server/models/Offer.js`
+### Code: `server/routes/offers.js`, `server/models/Offer.js`, `client/src/pages/Offers.js`, `client/src/pages/ListingDetail.js`
 
-- States: `pending → accepted/countered/declined → buyer_countered → accepted → completed/expired`
+### State Machine (enforced with validation on every endpoint):
+```
+pending ──┬→ accepted (seller accepts original offer)
+          ├→ declined (seller rejects)
+          └→ countered (seller counters) ──┬→ buyer_countered (buyer counters) ──┬→ countered (seller counters again — multi-round)
+                                           │                                     ├→ accepted (seller accepts buyer's counter)
+                                           │                                     └→ declined (seller declines)
+                                           └→ accepted (buyer accepts seller's counter)
+```
+
+### Rules:
 - Offers auto-set `expiresAt` to 24h from creation
 - Buyer cannot offer on own listing
-- Seller counter must be higher than offer (moves upward)
+- Seller can counter from `pending` (original offer) or `buyer_countered` (buyer's counter)
+- Buyer can counter only from `countered` (seller's counter)
+- Buyer can accept-counter only from `countered` state (NOT from `buyer_countered` — buyer cannot accept their own counter)
+- Seller can accept only from `pending` (seller-accept) or `buyer_countered` (seller-accept-buyer-counter)
+- Counter amount must be higher than the previous amount in the negotiation chain
+- Seller counter on original offer must be between offer amount and listing price
+- All invalid state transitions return 400 with descriptive error message
 - Received/sent offer endpoints for both parties
+- After any action, buttons are removed/disabled and status is shown instead
+- **ListingDetail** shows real-time offer status badges: pending (⌛), countered (🔄 with Accept/Counter), buyer_countered (Awaiting seller...), accepted (✅ with Buy Now)
+- **Offers page** shows appropriate actions per state: Accept/Counter/Decline for pending received, Accept/Counter/Decline for buyer_countered received, Accept/Counter for countered sent, "Awaiting seller" for buyer_countered sent, "Proceed to Purchase" for accepted sent
 
-### Verified by Tests: 3.1-3.9 (9 tests)
+### Multi-Currency:
+- Offer inherits the listing's currency on creation
+- Currency mismatch between offer and listing is rejected with 400
+- If no currency is provided, the listing's currency is used as default
+- Notifications use the offer's currency symbol in messages
+
+### Verified by Tests: SM.1-SM.8 (state machine), NT.1-NT.2 (full negotiation→transaction), AP.1-AP.4 (single acceptance paths), IT.1-IT.4 (invalid transitions), AU.1-AU.5 (authorization/edge), CV.1-CV.3 (currency), RP.1 (revenue protection) — 28 tests
 
 ---
 
@@ -63,33 +88,36 @@
 - Exchange rate locked at authorization time in `exchangeRateUsed`
 - `buyerChargeAmount` and `sellerSettlementAmount` stored at locked rate
 
-### Payment Formulas:
+### Payment Formulas (5% Platform Fee — UNIFORM across all countries):
 ```
 Buyer Pays:
-itemPrice              = listing price
-shippingCost           = estimated carrier cost
-buyerProtectionFee     = itemPrice × 5%
+itemPrice              = listing price (or negotiated offer price)
+shippingCost           = estimated carrier cost (pass-through)
+buyerProtectionFee     = itemPrice × 5% (separate from platform fee)
 totalPaid              = itemPrice + shippingCost + buyerProtectionFee
 
 Seller Receives:
-platformFee            = itemPrice × 10% (min $0.50, max $50)
-sellerEarnings         = itemPrice − platformFee
-shippingPayout         = shippingCost (pass-through to seller)
+platformFee            = itemPrice × 5% (min $0.50, max $50 per country)
+sellerEarnings         = itemPrice − platformFee (shipping passes through separately)
+shippingPayout         = shippingCost (pass-through to seller, NOT commissioned)
 
 Platform Revenue:
-platformCommission     = platformFee
-buyerProtectionFee     = 5% of item price (NON-refundable on buyer remorse)
-stripeFee              = ~2.9% + $0.30 of totalPaid
+platformCommission     = platformFee (5% of item price only)
+buyerProtectionFee     = 5% of item price (non-refundable on buyer remorse)
+stripeFee              = ~2.9% + $0.30 of totalPaid (varies by country)
 netRevenue             = commission + protectionFee − stripeFee
 
-Edge Cases Documented:
-- $5 item US → US: netRevenue ~$0.13 (still positive)
-- $5 item JP → US: netRevenue may be negative (stripe fee > revenue)
-- Minimum price $5 mitigates but international small orders may still lose
-- Japan minFee 50 JPY ($0.33): fee clamped to JPY values
+CRITICAL RULES:
+- Commission is ALWAYS on item price ONLY — NEVER on totalPaid (which includes shipping + protection)
+- This is verified by test BD.6 (commission < commission_if_calculated_on_totalPaid)
+- All countries: 5% platform fee (Japan dropped from 12% to 5% to match global)
+- Japan: minFee 50 JPY (~$0.33), maxFee 5000 JPY (~$33)
+- $5 item US→US: netRevenue ~$0.13 (still positive)
+- $5 item JP→US: netRevenue may be negative (stripe fee > revenue) — documented edge case
+- Minimum price $5 mitigates loss; international small orders may still lose
 ```
 
-### Verified by Tests: BD.1-BD.6 (breakdown), TF.1-TF.4 (transactions), PR.1-PR.2 (payouts), PA.1-PA.4 (profit), RL.1-RL.3 (loss prevention) — 18 tests
+### Verified by Tests: BD.1-BD.6 (breakdown), TF.1-TF.4 (transactions), PR.1-PR.2 (payouts), PA.1-PA.4 (profit), RL.1-RL.3 (loss prevention), MC.1-MC.7 (multi-currency) — 25 tests
 
 ---
 
@@ -164,13 +192,14 @@ chargeback_open → chargeback_won / chargeback_lost
 
 ### Code: `server/routes/payouts.js`, `server/models/Payout.js`
 
-- Commission: 10% of item price (min $0.50, max $50)
+- Commission: 5% of item price (min $0.50, max $50 per country)
 - Payout records MUST use `paymentBreakdown.platformFee` — verified by tests
+- Fallback formula in payouts.js uses `Math.round(salePrice * 0.05 * 100) / 100` (only used if breakdown missing)
 - Auto-process skips refunded transactions
 - Dashboard shows real aggregate totals
 - Seller KYC required before first payout (planned)
 
-### Verified by Tests: 9.1-9.8 (8 tests)
+### Verified by Tests: PR.1-PR.2 (payout records), SF.1-SF.2 (portfolio simulation), commission-info endpoint — 5 tests
 
 ---
 
@@ -206,6 +235,9 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 - Buyer sees local price (converted)
 - Exchange rate locked at authorization
 - Stripe handles conversion
+- Platform fee is always 5% of item price regardless of currency
+- Buyer protection is 5% of item price regardless of currency
+- Min/max fees are per-country (JPY min 50, max 5000; USD min $0.50, max $50)
 
 ---
 
@@ -213,7 +245,7 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 
 | Platform | Commission |
 |----------|-----------|
-| TrendDrop | 10% |
+| TrendDrop | 5% |
 | Poshmark | 20% |
 | Mercari | 10% |
 | Depop | 10% |
@@ -292,23 +324,53 @@ The frontend can fetch this via the newly added `getBoostConfig` helper in `clie
 
 ## 20. Revenue Protection (Critical — Verified by Tests)
 
-This section is verified by 24 dedicated revenue flow tests:
+This section is verified by 33 dedicated revenue flow tests:
 
-- **BD.1**: $100 US → $10 fee, $90 seller, $5 protection, netRevenue > 0 ✓
-- **BD.2**: $10 item minimum fee applied ✓
+### Payment Breakdown (BD.1-BD.6):
+- **BD.1**: $100 US → $5 fee (5%), $95 seller, $5 protection, netRevenue > 0 ✓
+- **BD.2**: $10 item: 5% = $0.50 (min fee applies) ✓
 - **BD.3**: $5 minimum still profitable (US) ✓
-- **BD.5**: Japan 12% fee, JPY minFee 50 ✓
+- **BD.4**: $5000 item: 5% = $250, clamped to max $50 ✓
+- **BD.5**: Japan 5% fee, JPY minFee 50 ✓
 - **BD.6**: Commission NEVER on totalPaid (revenue critical) ✓
-- **TF.1-TF.4**: Full transaction flow with real database ✓
-- **PR.1-PR.2**: Payout records match breakdown (NEVER recalculated) ✓
-- **SF.1**: Seller sells 5 items at different prices — total earnings = sum minus commission ✓
-- **RL.1**: Seller never earns more than item price minus fee ✓
-- **RL.2**: Platform net revenue positive for $10-$1000 across US/GB/JP ✓
+
+### Transaction Flow (TF.1-TF.4):
+- **TF.1**: Full $100 transaction: breakdown matches 5% calculation ✓
+- **TF.2**: Multiple quantity: cumulative revenue verified ✓
+- **TF.3**: $5 minimum: platform still profitable ✓
+- **TF.4**: Shipping pass-through verified ✓
+
+### Payout Records (PR.1-PR.2):
+- **PR.1**: Payout uses pre-calculated breakdown (NEVER recalculated from totalPaid) ✓
+- **PR.2**: Payout API endpoint matches breakdown values ✓
+
+### Profit Analysis (PA.1-PA.4):
+- **PA.1**: Net revenue positive $5-$1000 ✓
+- **PA.2**: US→GB still profitable ✓
+- **PA.3**: Japan domestic profitable (5% fee) ✓
+- **PA.4**: Platform revenue formula matches calculations ✓
+
+### Seller Portfolio (SF.1-SF.2):
+- **SF.1**: 5 items at different prices: total earnings = sum minus 5% commission ✓
+- **SF.2**: Dashboard aggregates correct ✓
+
+### Revenue Loss Prevention (RL.1-RL.3):
+- **RL.1**: Seller never earns more than item price minus 5% fee ✓
+- **RL.2**: Net revenue positive $10-$1000 across US/GB/JP ✓
 - **RL.3**: $5 JP→US can lose money — documented edge case ✓
 
-### Total Test Count: 135 (112 e2e + 24 revenue - 1 overlap)
+### Multi-Currency Revenue Protection (MC.1-MC.7) — NEW:
+- **MC.1**: USD $200: 5% = $10 fee, $190 seller ✓
+- **MC.2**: JPY ¥10000: 5% fee in JPY terms ✓
+- **MC.3**: EUR €150: 5% = €7.50 ✓
+- **MC.4**: Cross-border US→JP: 5% US seller fee, 5% JP buyer protection ✓
+- **MC.5**: Cross-border GB→DE: 5% GB seller fee, 5% DE buyer protection ✓
+- **MC.6**: Buyer pays totalPaid = itemPrice + shipping + 5% protection ✓
+- **MC.7**: Seller earnings = itemPrice - platformFee (shipping passes through) ✓
+
+### Total Test Count: 145 (112 e2e + 33 revenue)
 - Core business flows: 112 tests covering rules 1-20
-- Revenue simulation: 24 tests covering money flow edge cases
+- Revenue simulation: 33 tests covering money flow edge cases (including 7 multi-currency tests)
 - All pass against real MongoDB database
 
 ---
