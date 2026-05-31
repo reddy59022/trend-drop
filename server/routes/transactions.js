@@ -29,14 +29,14 @@ const { calculatePaymentBreakdown } = require('../config/payments');
         return res.status(400).json({ message: 'Out of stock' });
       }
 
-      // Determine if there is an accepted offer for this buyer and listing.
-      // If present, use its negotiated price instead of the listing's default price.
-      const existingOffer = await Offer.findOne({
-        listing: listingId,
-        buyer: req.user._id,
-        status: 'accepted',
-      });
-      const finalPrice = existingOffer ? existingOffer.counterAmount || existingOffer.amount : listing.price;
+    // Determine if there is an accepted offer for this buyer and listing (any accepted status).
+    // If present, use its negotiated price instead of the listing's default price.
+    const existingOffer = await Offer.findOne({
+      listing: listingId,
+      buyer: req.user._id,
+      status: 'accepted',
+    });
+    const finalPrice = existingOffer ? (existingOffer.counterAmount || existingOffer.amount) : listing.price;
 
       // Get seller info for country
       const seller = await User.findById(listing.seller);
@@ -140,7 +140,7 @@ const { calculatePaymentBreakdown } = require('../config/payments');
         from: req.user._id,
         listing: listing._id,
         transaction: transaction._id,
-        message: `Your item "${listing.title}" has been purchased for $${listing.price}! You'll earn $${finalSellerEarnings} after platform fees.`,
+        message: `Your item "${listing.title}" has been purchased for $${finalPrice}! You'll earn $${finalSellerEarnings} after platform fees.`,
       });
       await seller.save();
     }

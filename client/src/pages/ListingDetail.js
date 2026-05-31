@@ -1,7 +1,7 @@
 import { defaultAvatar, formatPrice, getConditionColor } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { FaHeart, FaShareAlt, FaArrowLeft, FaTruck, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag } from 'react-icons/fa';
+import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -129,9 +129,10 @@ const ListingDetail = () => {
         return;
       }
 
+      // Always use the offer's negotiated price if there's an active offer
       let finalPrice = listing.price;
       let negotiatedFlag = null;
-      if (latestOffer && latestOffer.status !== 'completed' && latestOffer.status !== 'declined' && (latestOffer.status === 'accepted' || latestOffer.status === 'countered' || latestOffer.status === 'buyer_countered')) {
+      if (latestOffer && latestOffer.status !== 'completed' && latestOffer.status !== 'declined' && latestOffer.status !== 'expired') {
         finalPrice = latestOffer.counterAmount || latestOffer.amount;
         negotiatedFlag = finalPrice;
       }
@@ -168,6 +169,9 @@ const ListingDetail = () => {
 
   const getOfferPrice = () => {
     if (!buyerOffer) return listing.price;
+    // If offer is declined/completed/expired, use listing price
+    const validStatuses = ['pending', 'countered', 'buyer_countered', 'accepted'];
+    if (!validStatuses.includes(buyerOffer.status)) return listing.price;
     return buyerOffer.counterAmount || buyerOffer.amount;
   };
 
@@ -353,7 +357,7 @@ const ListingDetail = () => {
             <div className="glass-card" style={{ padding: 'var(--td-space-md)', margin: 'var(--td-space-md) 0' }}>
               <h4 style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <FaShieldAlt color="var(--td-primary)" /> Purchase Summary
-                {buyerOffer && (buyerOffer.status === 'accepted' || buyerOffer.status === 'countered' || buyerOffer.status === 'buyer_countered') && (
+                {buyerOffer && (buyerOffer.status === 'accepted' || buyerOffer.status === 'countered' || buyerOffer.status === 'buyer_countered' || buyerOffer.status === 'pending') && (
                   <span className="badge badge-success">Negotiated Price</span>
                 )}
               </h4>
@@ -392,13 +396,13 @@ const ListingDetail = () => {
                   <span>{formatPrice(listing.price, listing.currency || 'USD')}</span>
                 </div>
                 <div className="flex-between" style={{ color: 'var(--td-error)' }}>
-                  <span>Platform Fee (10%)</span>
-                  <span>-{formatPrice(listing.price * 0.1, listing.currency || 'USD')}</span>
+                  <span>Platform Fee (5%)</span>
+                  <span>-{formatPrice(listing.price * 0.05, listing.currency || 'USD')}</span>
                 </div>
                 <div style={{ borderTop: '1px solid var(--td-border)', paddingTop: 6, marginTop: 4 }}>
                   <div className="flex-between" style={{ color: 'var(--td-success)', fontWeight: 700 }}>
                     <span>You'll Receive</span>
-                    <span style={{ fontSize: 18 }}>{formatPrice(listing.price * 0.9, listing.currency || 'USD')}</span>
+                    <span style={{ fontSize: 18 }}>{formatPrice(listing.price * 0.95, listing.currency || 'USD')}</span>
                   </div>
                 </div>
               </div>
@@ -423,38 +427,67 @@ const ListingDetail = () => {
             </div>
             {!isOwner && !listing.sold && user && (
               <div className="listing-detail-action-row">
-                {buyerOffer && (buyerOffer.status === 'countered' || buyerOffer.status === 'accepted' || buyerOffer.status === 'buyer_countered') ? (
+                {buyerOffer && buyerOffer.status === 'pending' && (
                   <>
-                    {buyerOffer.status === 'countered' && (
-                      <button className="btn btn-outline" onClick={async () => {
-                        const amount = prompt('Enter your counter amount (must be higher than ' + getOfferPrice() + '):');
-                        if (!amount || isNaN(amount)) return;
-                        try {
-                          await api.patch(`/offers/${buyerOffer._id}/buyer-counter`, { counterAmount: Number(amount) });
-                          toast.success('Counter sent');
-                          fetchBuyerOffer();
-                        } catch (e) {
-                          toast.error('Failed to send counter');
-                        }
-                      }}>
-                        Counter Offer
-                      </button>
-                    )}
-                    <button className="btn btn-primary btn-lg" style={{ flex: 2 }} onClick={async () => {
+                    <span className="badge badge-warning" style={{ padding: '8px 16px', fontSize: 14 }}>
+                      ⏳ Offer pending — awaiting seller response
+                    </span>
+                    <button className="btn btn-primary btn-lg" onClick={handleAddToBag}>
+                      Add to Bag at {formatPrice(listing.price, listing.currency || 'USD')}
+                    </button>
+                  </>
+                )}
+                {buyerOffer && buyerOffer.status === 'countered' && (
+                  <>
+                    <button className="btn btn-outline btn-lg" onClick={async () => {
+                      const currency = buyerOffer.currency || 'USD';
+                      const currentPrice = buyerOffer.counterAmount || buyerOffer.amount;
+                      const amount = prompt(`Enter your counter amount (must be higher than ${currency} ${currentPrice}):`);
+                      if (!amount || isNaN(amount)) return;
                       try {
-                        if (buyerOffer.status === 'countered') {
-                          await api.patch(`/offers/${buyerOffer._id}/accept-counter`);
-                          fetchBuyerOffer();
-                        }
-                        handleAddToBag();
+                        await api.patch(`/offers/${buyerOffer._id}/buyer-counter`, { counterAmount: Number(amount) });
+                        toast.success('Counter sent');
+                        fetchBuyerOffer();
                       } catch (e) {
-                        toast.error('Failed to accept offer');
+                        toast.error(e.response?.data?.message || 'Failed to send counter');
                       }
                     }}>
+                      Counter Offer
+                    </button>
+                    <button className="btn btn-primary btn-lg" style={{ flex: 2 }} onClick={async () => {
+                      try {
+                        await api.patch(`/offers/${buyerOffer._id}/accept-counter`);
+                        fetchBuyerOffer();
+                        toast.success('Counter accepted! You can now purchase.');
+                      } catch (e) {
+                        toast.error(e.response?.data?.message || 'Failed to accept offer');
+                      }
+                    }}>
+                      Accept & Buy at {formatPrice(getOfferPrice(), listing.currency || 'USD')}
+                    </button>
+                  </>
+                )}
+                {buyerOffer && buyerOffer.status === 'buyer_countered' && (
+                  <>
+                    <span className="badge badge-warning" style={{ padding: '8px 16px', fontSize: 14 }}>
+                      🔄 Counter sent — awaiting seller response
+                    </span>
+                    <button className="btn btn-primary btn-lg" onClick={handleAddToBag}>
+                      Add to Bag at {formatPrice(listing.price, listing.currency || 'USD')}
+                    </button>
+                  </>
+                )}
+                {buyerOffer && buyerOffer.status === 'accepted' && (
+                  <>
+                    <span className="badge badge-success" style={{ padding: '8px 16px', fontSize: 14 }}>
+                      ✅ Offer accepted at {formatPrice(getOfferPrice(), listing.currency || 'USD')}
+                    </span>
+                    <button className="btn btn-primary btn-lg" style={{ flex: 2 }} onClick={handleAddToBag}>
                       Buy Now at {formatPrice(getOfferPrice(), listing.currency || 'USD')}
                     </button>
                   </>
-                ) : (
+                )}
+                {(!buyerOffer || buyerOffer.status === 'declined' || buyerOffer.status === 'completed' || buyerOffer.status === 'expired') && (
                   <>
                     <button className="btn btn-outline btn-lg" onClick={() => setOfferModalOpen(true)}>
                       Make Offer
@@ -508,7 +541,7 @@ const ListingDetail = () => {
         </div>
       )}
 
-      <OfferModal listing={listing} isOpen={offerModalOpen} onClose={() => setOfferModalOpen(false)} onOfferSubmitted={fetchListing} />
+          <OfferModal listing={listing} isOpen={offerModalOpen} onClose={() => setOfferModalOpen(false)} onOfferSubmitted={() => { fetchListing(); fetchBuyerOffer(); }} />
     </div>
 
     {/* Mobile Sticky Buy Bar */}
