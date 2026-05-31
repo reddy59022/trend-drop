@@ -179,7 +179,7 @@ chargeback_open → chargeback_won / chargeback_lost
 ### Code: `server/config/boost.js`
 
 - Tiers: standard (10%), premium (15%), elite (20%)
-- Charged upfront from seller balance (non-refundable)
+- **Fee is deducted from the seller's pending earnings when the boosted listing is sold** (non‑refundable after sale). If the buyer returns the item, the fee is effectively refunded because it never leaves the pending pool.
 - Max 10 active boosts per seller
 - Priority score = composite (likes × 2 + views × 0.5 + saves × 3 + sales × 10 + conversion × 50 − reports × 100)
 

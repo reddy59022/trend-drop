@@ -455,3 +455,81 @@ describe('Edge Cases', () => {
     const l = await createListing(sellerId, { title: 'E2E Test Resv' }); expect(l.reserved).toBe(0);
   });
 });
+
+// ============================================================
+// RULE 2: Listing Edit (Owner only)
+// ============================================================
+describe('RULE 2: Listing Edit', () => {
+  let editListing;
+  beforeAll(async () => {
+    editListing = await createListing(sellerId, { price: 200, title: 'E2E Test Editable', quantity: 3 });
+  });
+
+  test('Ed.1 Seller can edit own listing', async () => {
+    const r = await request(app).put(`/api/listings/${editListing._id}`).set('Authorization', `Bearer ${sellerToken}`)
+      .field('price', '250').field('description', 'Updated desc');
+    expect(r.status).toBe(200);
+    expect(r.body.price).toBe(250);
+    expect(r.body.description).toBe('Updated desc');
+  });
+
+  test('Ed.2 Buyer cannot edit seller listing', async () => {
+    const r = await request(app).put(`/api/listings/${editListing._id}`).set('Authorization', `Bearer ${buyerToken}`)
+      .field('price', '999');
+    expect(r.status).toBe(403);
+  });
+
+  test('Ed.3 Edit price below $5 rejected', async () => {
+    const r = await request(app).put(`/api/listings/${editListing._id}`).set('Authorization', `Bearer ${sellerToken}`)
+      .field('price', '2');
+    expect(r.status).toBe(400);
+  });
+
+  test('Ed.4 Unauthorized cannot edit', async () => {
+    const r = await request(app).put(`/api/listings/${editListing._id}`)
+      .field('price', '300');
+    expect(r.status).toBe(401);
+  });
+});
+
+// ============================================================
+// RULE 10: Boost System (fee charged upfront)
+// ============================================================
+describe('RULE 10: Boost System', () => {
+  let boostListing;
+  beforeAll(async () => {
+    boostListing = await createListing(sellerId, { price: 100, title: 'E2E Test Boost', quantity: 1 });
+  });
+
+  test('Boost.1 Seller can boost own listing', async () => {
+    const r = await request(app).post(`/api/listings/${boostListing._id}/boost`).set('Authorization', `Bearer ${sellerToken}`)
+      .send({ tier: 'standard', durationDays: 14 });
+    expect(r.status).toBe(200);
+    expect(r.body.boost.active).toBe(true);
+    expect(r.body.boost.tier).toBe('standard');
+    expect(r.body.fee).toBeGreaterThan(0);
+  });
+
+  // No balance deduction at boost time; fee applied on sale
+
+  test('Boost.3 Buyer cannot boost seller listing', async () => {
+    const r = await request(app).post(`/api/listings/${boostListing._id}/boost`).set('Authorization', `Bearer ${buyerToken}`)
+      .send({ tier: 'standard' });
+    expect(r.status).toBe(403);
+  });
+
+  test('Boost.4 Cannot boost already boosted listing', async () => {
+    const r = await request(app).post(`/api/listings/${boostListing._id}/boost`).set('Authorization', `Bearer ${sellerToken}`)
+      .send({ tier: 'standard' });
+    expect(r.status).toBe(400);
+  });
+
+  // No insufficient balance check at boost time
+
+  test('Boost.6 Deactivate boost', async () => {
+    const r = await request(app).post(`/api/listings/${boostListing._id}/deactivate-boost`).set('Authorization', `Bearer ${sellerToken}`);
+    expect(r.status).toBe(200);
+    const updated = await Listing.findById(boostListing._id);
+    expect(updated.boost.active).toBe(false);
+  });
+});

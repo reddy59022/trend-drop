@@ -222,7 +222,13 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
       updateData.images = imageUrls;
     }
 
-    if (updateData.price) updateData.price = Number(updateData.price);
+    if (updateData.price) {
+      updateData.price = Number(updateData.price);
+      // Minimum price: $5
+      if (updateData.price < 5) {
+        return res.status(400).json({ message: 'Minimum listing price is $5.00' });
+      }
+    }
     if (updateData.originalPrice) updateData.originalPrice = Number(updateData.originalPrice);
 
     listing = await Listing.findByIdAndUpdate(
@@ -276,7 +282,8 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
-// POST /api/listings/:id/boost - Boost a listing
+ // POST /api/listings/:id/boost - Boost a listing
+ // Fee is applied when the boosted item is sold (deducted from seller's pending earnings)
 router.post('/:id/boost', auth, async (req, res) => {
   try {
     const { tier, durationDays } = req.body;
@@ -294,10 +301,7 @@ router.post('/:id/boost', auth, async (req, res) => {
     const { calculateBoostFee } = require('../config/boost');
     const boostInfo = calculateBoostFee(listing.price, tier || 'standard', durationDays || 14);
 
-    // No upfront fee - boost fee is deducted from the product sale
-    // Only charged when the boosted item is sold. If cancelled/returned, no fee.
-
-    // Activate boost
+    // Activate boost (fee will be deducted when the item is sold)
     listing.boost = {
       active: true,
       tier: tier || 'standard',

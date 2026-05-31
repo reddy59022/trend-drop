@@ -5,10 +5,10 @@ const config: CapacitorConfig = {
   appName: 'TrendDrop',
   webDir: 'build',
   server: {
+    // Production: Render backend for iOS and Android
+    url: 'https://trend-drop.onrender.com',
+    cleartext: false,
     androidScheme: 'https',
-    // For local development with live reload:
-    // url: 'http://YOUR_LOCAL_IP:3000',
-    // cleartext: true,
   },
   plugins: {
     SplashScreen: {
@@ -16,15 +16,18 @@ const config: CapacitorConfig = {
       backgroundColor: '#E24455',
       showSpinner: true,
     },
-    // RevenueCat In-App Purchases for iOS/Android
-    // Configure in native projects via RevenueCat dashboard
+    CapacitorCookies: {
+      enabled: true,
+    },
+    CapacitorHttp: {
+      enabled: true,
+    },
   },
-  // iOS specific
   ios: {
     contentInset: 'automatic',
     backgroundColor: '#ffffff',
+    preferredContentMode: 'mobile',
   },
-  // Android specific
   android: {
     backgroundColor: '#ffffff',
     allowMixedContent: true,
