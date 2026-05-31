@@ -16,13 +16,13 @@ function createTempFile(name, size) {
 async function getAuthToken() {
   const mongoose = require('mongoose');
   const User = require('../models/User');
-  // Ensure the test DB is connected (jest will have started the server which connects)
-  // Create a user with a known ObjectId
+  // Create a user with a unique email for each test run to avoid duplicate key errors
   const dummyId = new mongoose.Types.ObjectId();
+  const uniqueEmail = `testuser_${Date.now()}@example.com`;
   await User.create({
     _id: dummyId,
     name: 'TestUser',
-    email: 'testuser@example.com',
+    email: uniqueEmail,
     password: 'hashed', // password not validated here
     emailVerified: true,
     authProvider: 'email',
