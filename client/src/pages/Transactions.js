@@ -4,7 +4,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { formatPrice, getStatusColor, getStatusLabel, formatDate } from '../utils/helpers';
-import { FaTruck, FaCheckCircle, FaClock, FaBox } from 'react-icons/fa';
+import { FaTruck, FaCheckCircle, FaClock, FaBox, FaFilter, FaShoppingBag, FaDownload, FaChevronDown, FaChevronUp } from 'react-icons/fa';
 
 function Transactions() {
   const { user } = useAuth();
@@ -13,10 +13,7 @@ function Transactions() {
   const [filter, setFilter] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
 
-  useEffect(() => {
-    fetchTransactions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  useEffect(() => { fetchTransactions(); }, [filter]); // eslint-disable-line
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -24,42 +21,47 @@ function Transactions() {
       const params = filter !== 'all' ? `?type=${filter}` : '';
       const res = await api.get(`/transactions${params}`);
       setTransactions(res.data);
-    } catch (err) {
-      console.error(err);
-    }
+    } catch (err) { console.error(err); }
     setLoading(false);
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
       case 'shipped': case 'in_transit': return <FaTruck />;
-      case 'delivered': case 'completed': return <FaCheckCircle />;
+      case 'delivered': case 'completed': case 'buyer_confirmed': return <FaCheckCircle />;
       case 'paid': case 'processing': return <FaClock />;
       default: return <FaBox />;
     }
   };
 
-  if (loading) return <div className="page-container" style={{ textAlign: 'center', padding: 60 }}><div className="spinner"></div></div>;
+  if (loading) return (
+    <div className="page-container">
+      <h1 className="page-title"><FaShoppingBag /> My Orders</h1>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {[...Array(4)].map((_, i) => <div key={i} className="skeleton" style={{ height: 80, borderRadius: 'var(--td-radius-lg)' }} />)}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="page-container" style={{ maxWidth: 800, margin: '0 auto', padding: 20 }}>
-      <h1 style={{ marginBottom: 20 }}>My Orders</h1>
+    <div className="page-container" style={{ maxWidth: 800, margin: '0 auto' }}>
+      <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}><FaShoppingBag /> My Orders</h1>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+      {/* Filter Tabs */}
+      <div className="tabs" style={{ marginBottom: 'var(--td-space-lg)' }}>
         {['all', 'bought', 'sold'].map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            style={{ padding: '8px 20px', borderRadius: 20, border: 'none', cursor: 'pointer', textTransform: 'capitalize',
-              background: filter === f ? '#e91e63' : '#f0f0f0', color: filter === f ? '#fff' : '#333',
-              fontWeight: filter === f ? 600 : 400 }}>
-            {f}
+          <button key={f} className={`tab ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
+            {f === 'all' ? '📦 All' : f === 'bought' ? '🛒 Bought' : '💰 Sold'}
           </button>
         ))}
       </div>
 
       {transactions.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, color: '#666' }}>
-          <p>No orders yet.</p>
-          <Link to="/feed" style={{ color: '#e91e63' }}>Browse items</Link>
+        <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
+          <div className="empty-state-icon">📦</div>
+          <h2>No orders yet</h2>
+          <p>Your transaction history will appear here</p>
+          <Link to="/feed" className="btn btn-primary">Browse Items</Link>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -67,159 +69,83 @@ function Transactions() {
             const isBuyer = (txn.buyer?._id?.toString() || txn.buyer?.toString()) === (user?.id || user?._id)?.toString();
             const isExpanded = expandedId === txn._id;
             const breakdown = txn.paymentBreakdown || {};
+            const statusColor = getStatusColor(txn.status);
 
             return (
-              <div key={txn._id} style={{ background: '#fff', border: '1px solid #eee', borderRadius: 12, overflow: 'hidden' }}>
-                {/* Main row */}
+              <div key={txn._id} className="glass-card" style={{ overflow: 'hidden', animation: 'fadeInUp 0.3s ease-out' }}>
                 <div onClick={() => setExpandedId(isExpanded ? null : txn._id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, cursor: 'pointer' }}>
-                  <img src={txn.listing?.images?.[0] || ''} alt="" style={{ width: 60, height: 60, borderRadius: 8, objectFit: 'cover' }} />
-                  <div style={{ flex: 1 }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 'var(--td-space-md)', cursor: 'pointer' }}>
+                  <img src={txn.listing?.images?.[0] || ''} alt="" style={{ width: 64, height: 64, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <Link to={`/listing/${txn.listing?._id}`} onClick={e => e.stopPropagation()}
-                      style={{ fontWeight: 600, textDecoration: 'none', color: '#333' }}>
+                      style={{ fontWeight: 600, textDecoration: 'none', color: 'var(--td-text)', fontSize: 15 }}>
                       {txn.listing?.title}
                     </Link>
-                    <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
+                    <div style={{ fontSize: 13, color: 'var(--td-text-secondary)', marginTop: 2 }}>
                       {isBuyer ? `Seller: ${txn.seller?.name}` : `Buyer: ${txn.buyer?.name}`}
                     </div>
-                    <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>{formatDate(txn.createdAt)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', marginTop: 2 }}>{formatDate(txn.createdAt)}</div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 600 }}>
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                    <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--td-primary)' }}>
                       {isBuyer ? formatPrice(breakdown.totalPaid, txn.currency) : formatPrice(breakdown.sellerEarnings, txn.currency)}
                     </div>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 12,
-                      background: getStatusColor(txn.status) + '20', color: getStatusColor(txn.status), fontSize: 12, fontWeight: 600, marginTop: 4 }}>
+                    <span className="badge" style={{ background: `${statusColor}15`, color: statusColor, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {getStatusIcon(txn.status)} {getStatusLabel(txn.status)}
-                    </div>
+                    </span>
+                    {isExpanded ? <FaChevronUp size={12} color="var(--td-text-tertiary)" /> : <FaChevronDown size={12} color="var(--td-text-tertiary)" />}
                   </div>
                 </div>
 
-                {/* Expanded breakdown */}
+                {/* Expanded Detail */}
                 {isExpanded && (
-                  <div style={{ padding: '0 16px 16px', borderTop: '1px solid #f0f0f0' }}>
-                    {/* Download Label Button - only for sellers */}
+                  <div style={{ padding: '0 var(--td-space-md) var(--td-space-md)', borderTop: '1px solid var(--td-border-light)', animation: 'fadeIn 0.2s ease-out' }}>
+                    {/* Shipping Label */}
                     {!isBuyer && (txn.shipping?.trackingNumber || txn.shipping?.labelCreated) && (
-                      <div style={{ marginTop: 12, marginBottom: 12 }}>
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                              // Fetch PDF with auth token via axios, then create blob download
-                              const res = await api.get(`/shipping/label/${txn._id}`, {
-                                responseType: 'blob',
-                              });
-                              const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-                              const link = document.createElement('a');
-                              link.href = url;
-                              link.setAttribute('download', `trenddrop-label-${txn._id}.pdf`);
-                              document.body.appendChild(link);
-                              link.click();
-                              link.remove();
-                              window.URL.revokeObjectURL(url);
-                            } catch (err) {
-                              console.error('Label download failed:', err);
-                              toast.error('Failed to download label. Make sure you are authorized.');
-                            }
-                          }}
-                          className="btn btn-primary btn-sm"
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6,
-                            padding: '8px 16px',
-                            background: '#FF4D6D', color: '#fff', border: 'none',
-                            borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                          }}
-                        >
-                          📦 Download Shipping Label
-                        </button>
-                      </div>
+                      <button className="btn btn-primary btn-sm" onClick={async (e) => {
+                        e.stopPropagation();
+                        try { const res = await api.get(`/shipping/label/${txn._id}`, { responseType: 'blob' }); const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' })); const link = document.createElement('a'); link.href = url; link.download = `label-${txn._id}.pdf`; document.body.appendChild(link); link.click(); link.remove(); } catch { toast.error('Download failed'); }
+                      }}><FaDownload size={12} /> Download Label</button>
                     )}
 
-                    {/* Tracking info */}
+                    {/* Tracking */}
                     {txn.shipping?.trackingNumber && (
-                      <div style={{ background: '#f8f9fa', padding: 12, borderRadius: 8, marginTop: 12, marginBottom: 12 }}>
-                        <div style={{ fontWeight: 600, marginBottom: 4 }}>Tracking</div>
-                        <div style={{ fontSize: 13 }}>
-                          <span>{txn.shipping.carrier}:</span>{' '}
-                          {txn.shipping.trackingUrl ? (
-                            <a href={txn.shipping.trackingUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#e91e63' }}>
-                              {txn.shipping.trackingNumber}
-                            </a>
-                          ) : txn.shipping.trackingNumber}
-                        </div>
-                        {txn.shipping.estimatedDelivery && (
-                          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                            Est. delivery: {formatDate(txn.shipping.estimatedDelivery)}
-                          </div>
-                        )}
-                        {/* Tracking history */}
-                        {txn.shipping.trackingHistory?.length > 0 && (
-                          <div style={{ marginTop: 8 }}>
-                            {txn.shipping.trackingHistory.map((h, i) => (
-                              <div key={i} style={{ display: 'flex', gap: 8, fontSize: 12, padding: '4px 0', borderBottom: '1px solid #eee' }}>
-                                <span style={{ color: '#999', minWidth: 100 }}>{formatDate(h.timestamp, 'MMM D, h:mm A')}</span>
-                                <span style={{ fontWeight: 600 }}>{h.label}</span>
-                                <span style={{ color: '#666' }}>{h.location}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                      <div style={{ background: 'var(--td-surface-secondary)', padding: 12, borderRadius: 'var(--td-radius-sm)', marginTop: 12, marginBottom: 12, fontSize: 13 }}>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>Tracking: {txn.shipping.carrier}</div>
+                        {txn.shipping.trackingUrl ? <a href={txn.shipping.trackingUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--td-primary)' }}>{txn.shipping.trackingNumber}</a> : <span>{txn.shipping.trackingNumber}</span>}
+                        {txn.shipping.estimatedDelivery && <div style={{ color: 'var(--td-text-tertiary)', marginTop: 4 }}>Est. delivery: {formatDate(txn.shipping.estimatedDelivery)}</div>}
                       </div>
                     )}
 
-                    {/* Payment breakdown */}
-                    <div style={{ fontWeight: 600, marginTop: 12, marginBottom: 8 }}>
-                      {isBuyer ? 'What You Paid' : 'What You Earned'}
+                    {/* Payment Breakdown */}
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 14, color: 'var(--td-text-secondary)' }}>{isBuyer ? 'What You Paid' : 'What You Earned'}</div>
+                      <div style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {isBuyer ? (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Item Price</span><span>{formatPrice(breakdown.subtotal, txn.currency)}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Shipping</span><span>{formatPrice(breakdown.shippingCost, txn.currency)}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Buyer Protection (5%)</span><span>{formatPrice(breakdown.buyerProtectionFee, txn.currency)}</span></div>
+                            <div style={{ borderTop: '1px solid var(--td-border)', paddingTop: 6, marginTop: 4 }}><div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>Total Paid</span><span>{formatPrice(breakdown.totalPaid, txn.currency)}</span></div></div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Item Price</span><span>{formatPrice(breakdown.subtotal, txn.currency)}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--td-error)' }}><span>Platform Fee (10%)</span><span>-{formatPrice(breakdown.platformFee, txn.currency)}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Shipping Payout</span><span>{formatPrice(breakdown.shippingPayout, txn.currency)}</span></div>
+                            <div style={{ borderTop: '1px solid var(--td-border)', paddingTop: 6, marginTop: 4 }}><div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: 'var(--td-success)' }}><span>Your Earnings</span><span>{formatPrice(breakdown.sellerEarnings, txn.currency)}</span></div></div>
+                          </>
+                        )}
+                      </div>
                     </div>
 
-                    <>
-                    {isBuyer ? (
-                      <div style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Item Price</span><span>{formatPrice(breakdown.subtotal, txn.currency)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Shipping</span><span>{formatPrice(breakdown.shippingCost, txn.currency)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Buyer Protection ({breakdown.buyerProtectionPercent || 5}%)</span>
-                          <span>{formatPrice(breakdown.buyerProtectionFee, txn.currency)}</span>
-                        </div>
-                        {breakdown.tax > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span>Tax</span><span>{formatPrice(breakdown.tax, txn.currency)}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, borderTop: '1px solid #eee', paddingTop: 8, marginTop: 4 }}>
-                          <span>Total Paid</span><span>{formatPrice(breakdown.totalPaid, txn.currency)}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Item Price</span><span>{formatPrice(breakdown.subtotal, txn.currency)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#ef4444' }}>
-                          <span>Platform Fee ({breakdown.platformFeePercent || 10}%)</span>
-                          <span>-{formatPrice(breakdown.platformFee, txn.currency)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Shipping Payout</span><span>{formatPrice(breakdown.shippingPayout, txn.currency)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, borderTop: '1px solid #eee', paddingTop: 8, marginTop: 4, color: '#10b981' }}>
-                          <span>Your Earnings</span><span>{formatPrice(breakdown.sellerEarnings, txn.currency)}</span>
-                        </div>
+                    {txn.shippingAddress && (
+                      <div style={{ marginTop: 12, fontSize: 13, color: 'var(--td-text-tertiary)' }}>
+                        <strong>Ship to:</strong> {txn.shippingAddress.fullName}, {txn.shippingAddress.street1}, {txn.shippingAddress.city}, {txn.shippingAddress.state} {txn.shippingAddress.postalCode}
                       </div>
                     )}
-
-                  {/* Address info */}
-                  {txn.shippingAddress && (
-                    <div style={{ marginTop: 12, fontSize: 13, color: '#666' }}>
-                      <strong>Shipping to:</strong> {txn.shippingAddress.fullName}, {txn.shippingAddress.street1}, {txn.shippingAddress.city}, {txn.shippingAddress.state} {txn.shippingAddress.postalCode}, {txn.shippingAddress.country}
-                    </div>
-                  )}
-                  </>
-                </div>)}
+                  </div>
+                )}
               </div>
             );
           })}
