@@ -8,6 +8,87 @@ const { auth } = require('../middleware/auth');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
 const { calculatePaymentBreakdown } = require('../config/payments');
 
+// POST /api/transactions/batch - Create multiple transactions for multi-seller checkout
+router.post('/batch', auth, async (req, res) => {
+  try {
+    const { items, shippingAddress, buyerCountry } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'No items provided' });
+    }
+
+    const transactions = [];
+    let totalAmount = 0;
+
+    for (const item of items) {
+      const listing = await Listing.findById(item.listingId);
+      if (!listing) throw new Error(`Listing ${item.listingId} not found`);
+      if (!listing.available || listing.sold || listing.quantity < item.quantity) {
+        throw new Error(`Item "${listing.title}" is no longer available`);
+      }
+
+      const seller = await User.findById(listing.seller);
+      const sellerCountry = seller?.country || listing.shipsFrom || 'US';
+      const toCountry = buyerCountry || req.user.country || 'US';
+      const weightKg = listing.weight || 0.5;
+
+      const { calculatePaymentBreakdown } = require('../config/payments');
+      const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, weightKg);
+      
+      const itemTotal = breakdown.buyer.totalPaid * item.quantity;
+      totalAmount += itemTotal;
+
+      const transaction = await Transaction.create({
+        listing: listing._id,
+        buyer: req.user._id,
+        seller: listing.seller,
+        itemPrice: listing.price,
+        currency: listing.currency || 'USD',
+        paymentBreakdown: {
+          subtotal: breakdown.buyer.itemPrice,
+          shippingCost: breakdown.buyer.shippingCost,
+          buyerProtectionFee: breakdown.buyer.buyerProtectionFee,
+          buyerProtectionPercent: breakdown.buyer.buyerProtectionPercent,
+          tax: 0,
+          totalPaid: breakdown.buyer.totalPaid,
+          platformFee: breakdown.seller.platformFee,
+          platformFeePercent: breakdown.seller.platformFeePercent,
+          shippingPayout: breakdown.seller.shippingPayout,
+          sellerEarnings: breakdown.seller.sellerEarnings,
+        },
+        shippingAddress: {
+          fullName: shippingAddress?.fullName || req.user.name,
+          ...shippingAddress,
+          country: toCountry,
+        },
+        status: 'pending',
+        payout: { status: 'pending' },
+      });
+      transactions.push(transaction);
+    }
+
+    // Create a single Stripe PaymentIntent for the total amount
+    const { authorizePaymentIntent } = require('../config/payments');
+    const paymentIntent = await authorizePaymentIntent(
+      totalAmount,
+      'USD',
+      {
+        transactionIds: transactions.map(t => t._id.toString()),
+        buyerId: req.user._id.toString(),
+      }
+    );
+
+    res.json({
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      totalAmount,
+      transactions,
+    });
+  } catch (error) {
+    console.error('Batch transaction error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+});
+
 // POST /api/transactions - Create transaction (purchase) with full payment breakdown
   router.post('/', auth, async (req, res) => {
     try {

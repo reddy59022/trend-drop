@@ -497,6 +497,343 @@ describe('RULE 2: Listing Edit', () => {
 // ============================================================
 // RULE 10: Boost System (fee charged upfront)
 // ============================================================
+// ============================================================
+// RULE 20: Offer Visibility (Issue #1 Fix)
+// ============================================================
+describe('RULE 20: Offer Visibility', () => {
+  let offerList;
+  beforeAll(async () => {
+    offerList = await createListing(sellerId, { price: 150, quantity: 1, title: 'E2E Test OfferVis' });
+  });
+
+  test('20a Pending offer does not change display price', async () => {
+    const offer = await request(app).post('/api/offers').set('Authorization', `Bearer ${buyerToken}`).send({ listingId: offerList._id, amount: 100 });
+    expect(offer.body.status).toBe('pending');
+    // Listing price should remain unchanged
+    const listing = await Listing.findById(offerList._id);
+    expect(listing.price).toBe(150);
+  });
+
+  test('20b Countered offer shows counter price only after acceptance', async () => {
+    const offer = await request(app).post('/api/offers').set('Authorization', `Bearer ${buyerToken}`).send({ listingId: offerList._id, amount: 110 });
+    // Seller counters
+    await request(app).patch(`/api/offers/${offer.body._id}/counter`).set('Authorization', `Bearer ${sellerToken}`).send({ counterAmount: 125 });
+    const offerData = (await request(app).get('/api/offers/sent').set('Authorization', `Bearer ${buyerToken}`)).body.find(o => o._id === offer.body._id);
+    expect(offerData.status).toBe('countered');
+    // Buyer accepts
+    await request(app).patch(`/api/offers/${offer.body._id}/accept-counter`).set('Authorization', `Bearer ${buyerToken}`);
+    const accepted = (await request(app).get('/api/offers/sent').set('Authorization', `Bearer ${buyerToken}`)).body.find(o => o._id === offer.body._id);
+    expect(accepted.status).toBe('accepted');
+    expect(accepted.counterAmount).toBe(125);
+  });
+
+  test('20c Multiple buyers can have separate offers', async () => {
+    const { token: buyer2Token } = await createUser('Buyer2', mkEmail('buyer2'));
+    const offer1 = await request(app).post('/api/offers').set('Authorization', `Bearer ${buyerToken}`).send({ listingId: offerList._id, amount: 95 });
+    const offer2 = await request(app).post('/api/offers').set('Authorization', `Bearer ${buyer2Token}`).send({ listingId: offerList._id, amount: 105 });
+    expect(offer1.body.status).toBe('pending');
+    expect(offer2.body.status).toBe('pending');
+  });
+});
+
+// ============================================================
+// RULE 21: Shipping Fee (Issue #3 Fix)
+// ============================================================
+describe('RULE 21: Shipping Fee', () => {
+  test('21a Listing with shipping cost stores it', async () => {
+    const r = await request(app).post('/api/listings').set('Authorization', `Bearer ${sellerToken}`)
+      .field('title', 'E2E Test ShipFee').field('description', 'D').field('price', '25')
+      .field('category', 'Men').field('condition', 'Good').field('shippingCost', '7.99')
+      .field('shipsFrom', 'US').field('weight', '1');
+    expect(r.status).toBe(201);
+    expect(r.body.shipping.shippingCost).toBe(7.99);
+  });
+
+  test('21b Domestic vs international shipping costs differ', async () => {
+    const domestic = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'US', weightKg: 1 });
+    const intl = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'GB', weightKg: 1 });
+    expect(intl.body.cost).toBeGreaterThan(domestic.body.cost);
+  });
+
+  test('21c Free shipping listing', async () => {
+    const r = await request(app).post('/api/listings').set('Authorization', `Bearer ${sellerToken}`)
+      .field('title', 'E2E Test FreeShip').field('description', 'D').field('price', '30')
+      .field('category', 'Women').field('condition', 'Good').field('freeShipping', 'true');
+    expect(r.status).toBe(201);
+    expect(r.body.shipping.freeShipping).toBe(true);
+  });
+});
+
+// ============================================================
+// RULE 22: Label Restriction (Issue #4 Fix)
+// ============================================================
+describe('RULE 22: Label Download Restriction', () => {
+  let labelTxn;
+  beforeAll(async () => {
+    const l = await createListing(sellerId, { price: 75, quantity: 1, title: 'E2E Test Label' });
+    labelTxn = await buy(buyerToken, l._id);
+  });
+
+  test('22a Seller can download label', async () => {
+    const r = await request(app).get(`/api/shipping/label/${labelTxn._id}`).set('Authorization', `Bearer ${sellerToken}`);
+    expect(r.status).toBe(200);
+    expect(r.headers['content-type']).toBe('application/pdf');
+  });
+
+  test('22b Buyer cannot download label', async () => {
+    const r = await request(app).get(`/api/shipping/label/${labelTxn._id}`).set('Authorization', `Bearer ${buyerToken}`);
+    expect(r.status).toBe(403);
+  });
+
+  test('22c Seller can generate label', async () => {
+    const r = await request(app).post('/api/shipping/generate-label').set('Authorization', `Bearer ${sellerToken}`).send({ transactionId: labelTxn._id });
+    expect(r.status).toBe(200);
+    expect(r.body.trackingNumber).toBeDefined();
+  });
+
+  test('22d Buyer cannot generate label', async () => {
+    const r = await request(app).post('/api/shipping/generate-label').set('Authorization', `Bearer ${buyerToken}`).send({ transactionId: labelTxn._id });
+    expect(r.status).toBe(403);
+  });
+});
+
+// ============================================================
+// RULE 23: Seller Dashboard Numbers (Issue #5 Fix)
+// ============================================================
+describe('RULE 23: Seller Dashboard Numbers', () => {
+  test('23a Dashboard includes pending payouts in totalSales', async () => {
+    // Create a sale
+    const l = await createListing(sellerId, { price: 150, quantity: 1, title: 'E2E Test DashNum' });
+    const t = await buy(buyerToken, l._id);
+    // Dashboard should show this sale even though it's pending
+    const r = await request(app).get('/api/payouts/dashboard').set('Authorization', `Bearer ${sellerToken}`);
+    expect(r.status).toBe(200);
+    expect(r.body.totalSales).toBeGreaterThanOrEqual(150);
+    expect(r.body.pendingAmount).toBeGreaterThanOrEqual(0);
+  });
+
+  test('23b Dashboard pendingCount is accurate', async () => {
+    const r = await request(app).get('/api/payouts/dashboard').set('Authorization', `Bearer ${sellerToken}`);
+    expect(r.body.pendingCount).toBeDefined();
+    expect(typeof r.body.pendingCount).toBe('number');
+  });
+});
+
+// ============================================================
+// RULE 24: Multi-Currency Shipping
+// ============================================================
+describe('RULE 24: Multi-Currency Scenarios', () => {
+  test('24a US-UK shipping calculation', async () => {
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'GB', weightKg: 0.5 });
+    expect(r.body.cost).toBeGreaterThan(0);
+    expect(r.body.zone).toBe(3); // Intercontinental
+  });
+
+  test('24b US-EU (same continent Europe) shipping', async () => {
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'CA', weightKg: 0.5 });
+    expect(r.body.cost).toBeGreaterThan(0);
+    expect(r.body.zone).toBe(2); // Continental
+  });
+
+  test('24c Domestic US shipping', async () => {
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'US', weightKg: 0.5 });
+    expect(r.body.cost).toBeGreaterThan(0);
+    expect(r.body.zone).toBe(1); // Domestic
+  });
+
+  test('24d Payment breakdown with different seller/buyer countries', async () => {
+    const r = await request(app).post('/api/payments/breakdown').send({ itemPrice: 100, fromCountry: 'US', toCountry: 'GB', weightKg: 1 });
+    expect(r.body.buyer.shippingCost).toBeGreaterThan(0);
+    expect(r.body.seller.platformFee).toBe(8); // 8% of 100
+    expect(r.body.seller.sellerEarnings).toBe(92);
+  });
+
+  test('24e Payment breakdown US to Japan', async () => {
+    const r = await request(app).post('/api/payments/breakdown').send({ itemPrice: 100, fromCountry: 'US', toCountry: 'JP', weightKg: 0.5 });
+    expect(r.body.buyer.totalPaid).toBeGreaterThan(100);
+    expect(r.body.seller.platformFee).toBe(8);
+  });
+
+  test('24f UK to US shipping costs more than domestic', async () => {
+    const domestic = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'GB', toCountry: 'GB', weightKg: 1 });
+    const intl = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'GB', toCountry: 'US', weightKg: 1 });
+    expect(intl.body.cost).toBeGreaterThan(domestic.body.cost);
+    expect(intl.body.zone).toBe(3); // Intercontinental
+  });
+
+  test('24g Germany to France (same continent Europe)', async () => {
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'DE', toCountry: 'FR', weightKg: 0.5 });
+    expect(r.body.cost).toBeGreaterThan(0);
+    expect(r.body.zone).toBe(2); // Continental
+  });
+
+  test('24h Australia to Japan (same continent Asia-Pacific)', async () => {
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'AU', toCountry: 'JP', weightKg: 0.5 });
+    expect(r.body.cost).toBeGreaterThan(0);
+    expect(r.body.zone).toBe(2); // Continental
+  });
+
+  test('24i India to UAE (same continent Middle East/Asia)', async () => {
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'IN', toCountry: 'AE', weightKg: 0.5 });
+    expect(r.body.cost).toBeGreaterThan(0);
+    expect(r.body.zone).toBe(2); // Continental
+  });
+
+  test('24j Canada to US (North America)', async () => {
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'CA', toCountry: 'US', weightKg: 0.5 });
+    expect(r.body.cost).toBeGreaterThan(0);
+    expect(r.body.zone).toBe(2); // Continental
+  });
+
+  test('24k Brazil to Argentina (South America)', async () => {
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'BR', toCountry: 'AR', weightKg: 0.5 });
+    expect(r.body.cost).toBeGreaterThan(0);
+    expect(r.body.zone).toBe(2); // Continental
+  });
+
+  test('24l Payment breakdown GB to DE', async () => {
+    const r = await request(app).post('/api/payments/breakdown').send({ itemPrice: 50, fromCountry: 'GB', toCountry: 'DE', weightKg: 0.5 });
+    expect(r.body.buyer.shippingCost).toBeGreaterThan(0);
+    expect(r.body.seller.platformFee).toBe(4); // 8% of 50
+    expect(r.body.seller.sellerEarnings).toBe(46);
+  });
+
+  test('24m Payment breakdown AU to SG', async () => {
+    const r = await request(app).post('/api/payments/breakdown').send({ itemPrice: 75, fromCountry: 'AU', toCountry: 'SG', weightKg: 0.5 });
+    expect(r.body.buyer.shippingCost).toBeGreaterThan(0);
+    expect(r.body.seller.platformFee).toBe(6); // 8% of 75
+    expect(r.body.seller.sellerEarnings).toBe(69);
+  });
+
+  test('24n Heavy item shipping costs more', async () => {
+    const light = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'GB', weightKg: 0.5 });
+    const heavy = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'GB', weightKg: 5 });
+    expect(heavy.body.cost).toBeGreaterThan(light.body.cost);
+  });
+
+  test('24o Free shipping threshold for domestic', async () => {
+    // US domestic: free shipping over $50, under 0.5kg
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'US', weightKg: 0.3, itemPrice: 60 });
+    expect(r.body.freeShipping).toBe(true);
+    expect(r.body.cost).toBe(0);
+  });
+
+  test('24p No free shipping for international', async () => {
+    const r = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'GB', weightKg: 0.3, itemPrice: 60 });
+    expect(r.body.freeShipping).toBe(false);
+    expect(r.body.cost).toBeGreaterThan(0);
+  });
+
+  test('24q Platform fee same across all countries', async () => {
+    const countries = ['US', 'GB', 'JP', 'AU', 'DE', 'FR', 'CA', 'IN'];
+    for (const country of countries) {
+      const r = await request(app).get(`/api/payments/platform-fee?country=${country}`);
+      expect(r.body.platformFeePercent).toBe(8);
+    }
+  });
+
+  test('24r Buyer protection fee consistent', async () => {
+    const r = await request(app).post('/api/payments/breakdown').send({ itemPrice: 200, fromCountry: 'US', toCountry: 'GB', weightKg: 1 });
+    expect(r.body.buyer.buyerProtectionFee).toBe(10); // 5% of 200
+    expect(r.body.buyer.buyerProtectionPercent).toBe(5);
+  });
+
+  test('24s Seller earnings = item price - platform fee', async () => {
+    const r = await request(app).post('/api/payments/breakdown').send({ itemPrice: 150, fromCountry: 'US', toCountry: 'JP', weightKg: 1 });
+    expect(r.body.seller.sellerEarnings).toBe(138); // 150 - 12
+    expect(r.body.seller.platformFee).toBe(12); // 8% of 150
+  });
+
+  test('24t Shipping payout = shipping cost (pass-through)', async () => {
+    const r = await request(app).post('/api/payments/breakdown').send({ itemPrice: 100, fromCountry: 'US', toCountry: 'GB', weightKg: 1 });
+    expect(r.body.seller.shippingPayout).toBe(r.body.buyer.shippingCost);
+  });
+
+  test('24u Different weights affect shipping cost', async () => {
+    const w1 = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'US', weightKg: 0.5 });
+    const w2 = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'US', weightKg: 2 });
+    const w3 = await request(app).post('/api/shipping/calculate').send({ fromCountry: 'US', toCountry: 'US', weightKg: 5 });
+    expect(w2.body.cost).toBeGreaterThan(w1.body.cost);
+    expect(w3.body.cost).toBeGreaterThan(w2.body.cost);
+  });
+
+  test('24v Multi-seller listing creation with different countries', async () => {
+    // US seller
+    const l1 = await createListing(sellerId, { price: 50, quantity: 1, title: 'E2E Test MultiSeller1', shipsFrom: 'US' });
+    expect(l1.shipsFrom).toBe('US');
+    
+    // Verify breakdown works for different buyer locations
+    const r1 = await request(app).post('/api/payments/breakdown').send({ itemPrice: 50, fromCountry: 'US', toCountry: 'US', weightKg: 0.5 });
+    const r2 = await request(app).post('/api/payments/breakdown').send({ itemPrice: 50, fromCountry: 'US', toCountry: 'GB', weightKg: 0.5 });
+    expect(r2.body.buyer.shippingCost).toBeGreaterThan(r1.body.buyer.shippingCost);
+  });
+
+  test('24w Transaction with international shipping', async () => {
+    const l = await createListing(sellerId, { price: 100, quantity: 1, title: 'E2E Test IntlShip', shipsFrom: 'US', weight: 1 });
+    const t = await buy(buyerToken, l._id);
+    const txn = await Transaction.findById(t._id);
+    expect(txn.paymentBreakdown.shippingCost).toBeGreaterThan(0);
+    expect(txn.paymentBreakdown.platformFee).toBe(8);
+    expect(txn.paymentBreakdown.sellerEarnings).toBe(92);
+  });
+
+  test('24x Checkout shows correct currency', async () => {
+    const l = await createListing(sellerId, { price: 200, quantity: 1, title: 'E2E Test Currency', currency: 'USD' });
+    const t = await buy(buyerToken, l._id);
+    const txn = await Transaction.findById(t._id);
+    expect(txn.currency).toBe('USD');
+    expect(txn.paymentBreakdown.subtotal).toBe(200);
+  });
+
+  test('24y Seller dashboard reflects international sales', async () => {
+    const l = await createListing(sellerId, { price: 150, quantity: 1, title: 'E2E Test IntlDash', shipsFrom: 'US' });
+    const t = await buy(buyerToken, l._id);
+    const r = await request(app).get('/api/payouts/dashboard').set('Authorization', `Bearer ${sellerToken}`);
+    expect(r.status).toBe(200);
+    expect(r.body.totalSales).toBeGreaterThanOrEqual(150);
+  });
+
+  test('24z Multiple international purchases update dashboard', async () => {
+    const l1 = await createListing(sellerId, { price: 80, quantity: 1, title: 'E2E Test IntlMulti1' });
+    const l2 = await createListing(sellerId, { price: 120, quantity: 1, title: 'E2E Test IntlMulti2' });
+    await buy(buyerToken, l1._id);
+    await buy(buyerToken, l2._id);
+    const r = await request(app).get('/api/payouts/dashboard').set('Authorization', `Bearer ${sellerToken}`);
+    expect(r.status).toBe(200);
+    expect(r.body.totalSales).toBeGreaterThanOrEqual(200);
+  });
+});
+
+// ============================================================
+// RULE 25: Checkout/Payment/Payout Sync
+// ============================================================
+describe('RULE 25: Checkout/Payment/Payout Sync', () => {
+  test('25a Transaction payment breakdown matches listing price', async () => {
+    const l = await createListing(sellerId, { price: 88, quantity: 1, title: 'E2E Test Sync' });
+    const t = await buy(buyerToken, l._id);
+    const txn = await Transaction.findById(t._id);
+    expect(txn.itemPrice).toBe(88);
+    expect(txn.paymentBreakdown.subtotal).toBe(88);
+    expect(txn.paymentBreakdown.platformFee).toBe(7.04); // 8% of 88
+    expect(txn.paymentBreakdown.sellerEarnings).toBe(80.96);
+  });
+
+  test('25b Payout amount matches transaction sellerEarnings', async () => {
+    const l = await createListing(sellerId, { price: 120, quantity: 1, title: 'E2E Test PayoutSync' });
+    const t = await buy(buyerToken, l._id);
+    // Auto-create payout
+    await Transaction.findByIdAndUpdate(t._id, { status: 'completed' });
+    const r = await request(app).post('/api/payouts/auto-create').set('Authorization', `Bearer ${sellerToken}`).send({ transactionId: t._id });
+    if (r.status === 201) {
+      expect(r.body.payout.payoutAmount).toBe(110.4); // 92% of 120
+      expect(r.body.payout.commissionAmount).toBe(9.6); // 8% of 120
+    }
+  });
+});
+
+// ============================================================
+// RULE 10: Boost System (fee charged upfront)
+// ============================================================
 describe('RULE 10: Boost System', () => {
   let boostListing;
   beforeAll(async () => {

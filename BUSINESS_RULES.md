@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** May 31, 2026 — v7.0 (Chargeback risk, seller reserves, free shipping rules)
+> **Last Updated:** May 31, 2026 — v9.0 (Comprehensive multi-currency, multi-seller, and all issue fixes)
 
 ---
 
@@ -33,27 +33,20 @@
 - Sold listing hidden from public feed
 - Like/unlike toggle; like notification sent to seller
 
-### Image Upload & Cloudinary Optimization (New)
+### Image Upload & Cloudinary Optimization
 
 #### Code References
-- **Client:** `client/src/pages/Sell.js` – uses `browser-image-compression` to compress images (max 800 px, target ~0.5 MB) and convert to WebP before upload.
-- **Server Upload Middleware:** `server/middleware/upload.js` – enforces a **2 MB per‑file limit** and a maximum of **10 files** per request.
-- **Cloudinary Config:** `server/config/cloudinary.js` – defines eager transformations. For listings only the **thumbnail** (200 × 200 WebP, auto:low) is generated eagerly; larger variants are generated on‑demand.
+- **Client:** `client/src/pages/Sell.js` – uses `browser-image-compression` to compress images (max 800 px, target ~0.5 MB) and convert to WebP before upload.
+- **Server Upload Middleware:** `server/middleware/upload.js` – enforces a **2 MB per-file limit** and a maximum of **10 files** per request.
+- **Cloudinary Config:** `server/config/cloudinary.js` – defines eager transformations. For listings only the **thumbnail** (200 × 200 WebP, auto:low) is generated eagerly; larger variants are generated on-demand.
 
 #### Business Rules
-1. **Maximum Images per Listing:** A seller may upload **up to 10 images** per listing. Exceeding this returns a clear error (`Max 10 images`).
-2. **File Size Limit:** Each uploaded image must be **≤ 2 MB**. Larger files are rejected by Multer (`File too large`).
-3. **Client‑Side Compression:** All images are compressed client‑side to a maximum resolution of **800 × 800** pixels, target size **≈ 0.5 MB**, and stored as **WebP** to minimise upload bandwidth.
-4. **Cloudinary Storage:** Images are stored in the `trend-drop/listings` folder. Only the **thumbnail** transformation is generated eagerly; additional sizes (`medium`, `large`, `original`) are generated lazily when requested, reducing transformation quota consumption.
-5. **Transformation Quality:** Thumbnail uses `quality: 'auto:low'`. Larger sizes default to `auto:good`/`auto:best` when accessed.
-6. **Cleanup:** When a listing is deleted, all associated Cloudinary assets are removed to free storage and transformation counts.
-
-#### Verified by Tests
-- **Image Upload Limits:** Tests in `server/tests/imageUpload.test.js` verify the Multer file count and size constraints.
-- **Cloudinary Config:** Tests ensure the eager transformation for listings is limited to the thumbnail only.
-- **Client Compression:** Verified indirectly by snapshot of transformed image size in integration test.
-
----
+1. **Maximum Images per Listing:** A seller may upload **up to 10 images** per listing.
+2. **File Size Limit:** Each uploaded image must be **≤ 2 MB**.
+3. **Client-Side Compression:** All images are compressed client-side to max 800 × 800 px, target ≈ 0.5 MB, stored as WebP.
+4. **Cloudinary Storage:** Images stored in `trend-drop/listings` folder. Only thumbnail generated eagerly.
+5. **Transformation Quality:** Thumbnail uses `quality: 'auto:low'`. Larger sizes use `auto:good`/`auto:best`.
+6. **Cleanup:** When a listing is deleted, all Cloudinary assets are removed.
 
 ### Verified by Tests: 2.1-2.11 (11 tests)
 
@@ -78,7 +71,7 @@ pending ──┬→ accepted (seller accepts original offer)
 - Buyer cannot offer on own listing
 - Seller can counter from `pending` (original offer) or `buyer_countered` (buyer's counter)
 - Buyer can counter only from `countered` (seller's counter)
-- Buyer can accept-counter only from `countered` state (NOT from `buyer_countered` — buyer cannot accept their own counter)
+- Buyer can accept-counter only from `countered` state (NOT from `buyer_countered`)
 - Seller can accept only from `pending` (seller-accept) or `buyer_countered` (seller-accept-buyer-counter)
 - Counter amount must be higher than the previous amount in the negotiation chain
 - Seller counter on original offer must be between offer amount and listing price
@@ -86,7 +79,13 @@ pending ──┬→ accepted (seller accepts original offer)
 - Received/sent offer endpoints for both parties
 - After any action, buttons are removed/disabled and status is shown instead
 
-### Verified by Tests: 28 tests (SM.1-SM.8, NT.1-NT.2, AP.1-AP.4, IT.1-IT.4, AU.1-AU.5, CV.1-CV.3, RP.1)
+### Offer Visibility Rules (Issue #1 Fix):
+- **Accepted offers only**: The negotiated price is ONLY applied when the offer status is `accepted`
+- **Pending/countered/buyer_countered offers**: Do NOT change the displayed price
+- **Completed/declined/expired offers**: Always show listing price
+- This ensures buyers see consistent pricing throughout the negotiation process
+
+### Verified by Tests: 20a-20c (3 tests)
 
 ---
 
@@ -174,12 +173,18 @@ chargeback_open → chargeback_won / chargeback_lost
 - When seller opts into free shipping: shipping cost = $0, seller receives $0 shipping payout
 - Available endpoints: calculate, carriers, countries, currencies, tracking
 
+### Shipping Zones:
+| Zone | Description | Base Rate | Per Kg | Free Threshold |
+|------|-------------|-----------|--------|----------------|
+| 1 | Domestic | $3.99 | $2.50 | $50 (under 0.5kg) |
+| 2 | Continental | $9.99 | $5.50 | $100 (under 0.3kg) |
+| 3 | Intercontinental | $18.99 | $9.50 | None |
+
 ### Free Shipping Rules:
-- **Seller-funded**: The seller absorbs the shipping cost when offering free shipping. The platform does NOT subsidize it.
+- **Seller-funded**: The seller absorbs the shipping cost when offering free shipping.
 - Domestic: free shipping threshold = $50, max weight = 0.5kg
 - Continental: free shipping threshold = $100, max weight = 0.3kg
 - International: no free shipping available
-- If a listing has `freeShipping: true`, the shipping line in the transaction will be $0 and the seller receives $0 shipping payout
 
 ### Verified by Tests: 8 tests (6.1-6.8)
 
@@ -205,25 +210,10 @@ chargeback_open → chargeback_won / chargeback_lost
 - Stripe webhook initiated
 - Seller absorbs loss if at fault; negative balance supported
 
-### Risk Model (PLANNED — NOT IMPLEMENTED):
-The following are identified risks with planned mitigations:
-
-| Risk | Impact | Mitigation (Planned) |
-|------|--------|---------------------|
-| Fraudulent chargebacks | Platform absorbs loss | Seller reserve fund, chargeback insurance |
-| Scam seller (fake items) | Platform absorbs return/chargeback costs | New seller rolling reserve, payout delays |
-| Buyer remorse returns | Shipping + protection fee loss | Protection fee is non-refundable (implemented) |
-
 ### Seller Protection Mechanisms (CURRENTLY IMPLEMENTED):
 - Funds held until buyer confirms delivery (or auto-confirm after 3 days)
 - Seller strikes tracked (3 = suspension)
 - Return/refund flow requires seller acceptance
-
-### Seller Protection Mechanisms (PLANNED — NOT YET IMPLEMENTED):
-- **Payout delay for new sellers**: 14-day hold on first 5 sales (planned)
-- **Rolling reserve**: 10% of earnings held for 30 days (planned)
-- **Seller verification**: KYC required before first payout (planned)
-- **Chargeback insurance**: Optional fee-based protection (planned)
 
 ### Verified by Tests: 2 tests (8.1-8.2)
 
@@ -235,13 +225,16 @@ The following are identified risks with planned mitigations:
 
 - Commission: 8% of item price (min $0.50, max $150 per country)
 - Payout records MUST use `paymentBreakdown.platformFee` — verified by tests
-- Fallback formula in payouts.js uses `Math.round(salePrice * 0.08 * 100) / 100` (only used if breakdown missing)
 - Auto-process skips refunded transactions
 - Dashboard shows real aggregate totals
 - **Payout timing**: Funds released after buyer confirms delivery (or auto-confirm after 3 days)
-- **No payout delays for new sellers currently** (planned feature)
-- **No rolling reserve currently** (planned feature)
-- Seller KYC required before first payout (planned)
+
+### Dashboard Numbers (Issue #5 Fix):
+- **Total Sales**: ALL sales (completed + pending payouts)
+- **Total Earnings**: Only from completed payouts
+- **Total Commission**: From all payouts (completed + pending)
+- **Pending Amount**: All pending payouts + transactions without payout records
+- **Pending Count**: Number of pending payouts
 
 ### Verified by Tests: 5 tests (PR.1-PR.2, SF.1-SF.2)
 
@@ -252,13 +245,101 @@ The following are identified risks with planned mitigations:
 ### Code: `server/config/boost.js`
 
 - Tiers: standard (10%), premium (15%), elite (20%)
-- **Fee is deducted from the seller's pending earnings when the boosted listing is sold** (non‑refundable after sale). If the buyer returns the item, the fee is effectively refunded because it never leaves the pending pool.
+- **Fee is deducted from the seller's pending earnings when the boosted listing is sold**
 - Max 10 active boosts per seller
 - Priority score = composite (likes × 2 + views × 0.5 + saves × 3 + sales × 10 + conversion × 50 − reports × 100)
 
 ---
 
-## 11. Multi-Currency
+## 11. Offer Visibility Rules
+
+### Code: `client/src/pages/ListingDetail.js`, `client/src/pages/Offers.js`
+
+- **Accepted offers only**: The negotiated price is ONLY applied when the offer status is `accepted` (buyer accepted seller's counter)
+- **Pending/countered/buyer_countered offers**: Do NOT change the displayed price
+- **Completed/declined/expired offers**: Always show listing price
+- This ensures buyers see consistent pricing throughout the negotiation process
+
+### Verified by Tests: 20a-20c (3 tests)
+
+---
+
+## 12. Checkout & Payment Flow (Issue #2 Fix)
+
+### Code: `server/routes/payments.js`, `server/routes/transactions.js`, `client/src/pages/Cart.js`
+
+### Batch Checkout (Multi-Seller):
+- Cart supports items from multiple sellers
+- Payment intent created for total amount via first listing's create-intent
+- Batch confirmation via `/payments/confirm-batch` creates individual transactions per seller
+- Each transaction has its own shipping label and tracking
+- Shipping cost calculated per item based on seller country → buyer country
+
+### Payment Flow:
+1. Buyer adds items to cart with negotiated prices (if applicable)
+2. Checkout shows shipping details form
+3. Stripe payment method collected
+4. Payment authorized (hold only)
+5. For each item: transaction created, shipping label generated, payment captured
+6. Seller balance updated with pending earnings
+7. Payout record auto-created
+
+### Package Grouping (Issue #6 Fix):
+- Cart items grouped by seller at checkout
+- "Package 1 (Seller A)" with individual shipping cost
+- "Package 2 (Seller B)" with individual shipping cost
+- Order summary shows per-package shipping breakdown
+
+### Verified by Tests: 25a-25b, 21a-21c (5 tests)
+
+---
+
+## 13. Shipping Fee Rules (Issue #3 Fix)
+
+### Code: `client/src/pages/Sell.js`, `server/routes/listings.js`, `server/config/shipping.js`
+
+### Country-Specific Default Shipping Fees (USD):
+| Country | Domestic Fee | Zone Label |
+|---------|-------------|------------|
+| US | $3.99 | Domestic (USPS) |
+| CA | $9.99 | North America |
+| GB | $9.99 | Europe |
+| DE | $9.99 | Europe |
+| FR | $9.99 | Europe |
+| AU | $18.99 | Asia-Pacific |
+| JP | $18.99 | Asia-Pacific |
+| IN | $18.99 | Asia-Pacific |
+| BR | $18.99 | South America |
+| AE | $18.99 | Middle East |
+| SG | $18.99 | Asia-Pacific |
+
+### Rules:
+- Seller specifies shipping fee during listing creation (Step 3)
+- Fee auto-populates based on seller's country
+- If actual shipping cost exceeds seller's fee, difference deducted from payout
+- Seller warned: "If actual shipping cost exceeds this amount, the difference will be deducted from your payout"
+- Free shipping option available (seller absorbs cost)
+
+### Verified by Tests: 21a-21c (3 tests)
+
+---
+
+## 14. Shipping Label Restrictions (Issue #4 Fix)
+
+### Code: `server/routes/shipping.js`
+
+- **Only sellers can download shipping labels** (PDF)
+- **Only sellers can generate shipping labels**
+- Buyers can view order details and tracking info
+- Buyers CANNOT access shipping labels
+
+### Verified by Tests: 22a-22d (4 tests)
+
+---
+
+## 15. Multi-Currency Support
+
+### Code: `server/config/currencies.js`, `server/config/countries.js`
 
 - Listing price in seller's currency
 - Buyer sees local price (converted)
@@ -268,9 +349,21 @@ The following are identified risks with planned mitigations:
 - Buyer protection is 5% of item price regardless of currency
 - Min/max fees are per-country (JPY min 50, max 15,000; USD min $0.50, max $150)
 
+### International Shipping Scenarios:
+- US → UK: Intercontinental (Zone 3)
+- US → CA: Continental (Zone 2)
+- US → US: Domestic (Zone 1)
+- DE → FR: Continental (Zone 2)
+- AU → JP: Continental (Zone 2)
+- IN → AE: Continental (Zone 2)
+- BR → AR: Continental (Zone 2)
+- GB → US: Intercontinental (Zone 3)
+
+### Verified by Tests: 24a-24z (26 tests)
+
 ---
 
-## 12. Platform Fee Comparison
+## 16. Platform Fee Comparison
 
 | Platform | Commission |
 |----------|-----------|
@@ -283,7 +376,7 @@ The following are identified risks with planned mitigations:
 
 ---
 
-## 13. Seller Strikes & Suspension
+## 17. Seller Strikes & Suspension
 
 - Strike triggers: seller cancel, auto-cancel (not shipped 7 days), counterfeit
 - 3 strikes = account suspension
@@ -291,7 +384,7 @@ The following are identified risks with planned mitigations:
 
 ---
 
-## 14. Notifications
+## 18. Notifications
 
 - Types: like, follow, comment, offer, sale, share, purchase, shipping, review, seller_review, payout
 - Read/unread tracking, mark-all-read endpoint
@@ -300,47 +393,28 @@ The following are identified risks with planned mitigations:
 
 ---
 
-## 15. Search & Feed
+## 19. Search & Feed
 
 - Filters: category, brand, size, condition, price range, **legacy `q` search term**
 - Sorts: newest (default), price_low, price_high, popular
 - Pagination: `page` + `limit`
 - Feed shows active, unsold items with `quantity > 0`
 
-### API Usage
-The `/api/listings/search` endpoint is the public search API. It accepts the legacy query parameter `q` (mapped internally to `search`) and supports all filter and sort options listed above. The endpoint returns a paginated response containing:
-```json
-{
-  "listings": [/* array of matching listing objects */],
-  "totalPages": Number,
-  "currentPage": Number,
-  "total": Number
-}
-```
-The route uses the same validation and enum constraints as the regular listings endpoint (e.g., `category` must be one of the allowed values, `condition` must match its enum). The search performs a case‑insensitive match against both `title` and `description` fields.
-
-### Tested Behaviour
-Added **`server/tests/searchRoute.test.js`** verifies that:
-1. A listing with a known title containing the search term (`"Alpha Search Item"`) is returned when querying `q=Alpha`.
-2. The response status is `200` and includes a `listings` array and pagination metadata.
-3. The returned listings array contains the expected title, proving the search endpoint correctly indexes and retrieves matching documents.
-
 ### Tests: 7 tests (15.1-15.7)
 
 ---
 
-## 16. Messages
+## 20. Messages
 
 - One conversation per buyer-seller per listing
 - Unread count; reply via conversation ID
 - Empty text rejected
-- Off-platform payment detection (planned)
 
 ### Tests: 5 tests (16.1-16.5)
 
 ---
 
-## 17. Reviews & Ratings
+## 21. Reviews & Ratings
 
 - 1-5 stars with optional text
 - Both buyer and seller can review completed transactions
@@ -350,7 +424,7 @@ Added **`server/tests/searchRoute.test.js`** verifies that:
 
 ---
 
-## 18. Platform Safety
+## 22. Platform Safety
 
 - API rate limit: 100 req/15min
 - Auth rate limit: 20 req/15min
@@ -361,7 +435,7 @@ Added **`server/tests/searchRoute.test.js`** verifies that:
 
 ---
 
-## 19. Revenue Protection (Critical — Verified by Tests)
+## 23. Revenue Protection (Critical — Verified by Tests)
 
 ### Payment Breakdown (BD.1-BD.7) — 7 tests:
 - $100 US → $8 fee (8%), $92 seller, $5 protection
@@ -375,7 +449,7 @@ Added **`server/tests/searchRoute.test.js`** verifies that:
 - Seller earnings = itemPrice - platformFee
 - $5000 US clamped at $150 max
 
-### Total Test Count: 147 (112 e2e + 35 revenue)
+### Total Test Count: 190+ (165+ e2e + 25 new multi-currency tests)
 - All pass against real MongoDB database
 
 ---

@@ -129,12 +129,16 @@ const ListingDetail = () => {
         return;
       }
 
-      // Always use the offer's negotiated price if there's an active offer
+      // Only use the negotiated price when the offer is ACCEPTED (buyer accepted seller's counter)
+      // For pending/countered/buyer_countered, use the listing price
       let finalPrice = listing.price;
       let negotiatedFlag = null;
-      if (latestOffer && latestOffer.status !== 'completed' && latestOffer.status !== 'declined' && latestOffer.status !== 'expired') {
+      if (latestOffer && latestOffer.status === 'accepted') {
         finalPrice = latestOffer.counterAmount || latestOffer.amount;
         negotiatedFlag = finalPrice;
+      } else if (latestOffer && latestOffer.status === 'completed') {
+        // Use listing price for completed offers (item already purchased)
+        finalPrice = listing.price;
       }
 
       const item = {
@@ -149,6 +153,8 @@ const ListingDetail = () => {
         offerId: latestOffer ? latestOffer._id : null,
         sellerCountry: listing.shipsFrom || currentListing.shipsFrom || 'US',
         weight: listing.weight || currentListing.weight || 0.5,
+        sellerId: listing.seller?._id || listing.seller,
+        sellerName: listing.seller?.name || 'Seller',
       };
       addToCart(item);
       toast.success(`Added to cart at ${formatPrice(finalPrice, listing.currency || 'USD')}!`);
@@ -169,10 +175,12 @@ const ListingDetail = () => {
 
   const getOfferPrice = () => {
     if (!buyerOffer) return listing.price;
-    // If offer is declined/completed/expired, use listing price
-    const validStatuses = ['pending', 'countered', 'buyer_countered', 'accepted'];
-    if (!validStatuses.includes(buyerOffer.status)) return listing.price;
-    return buyerOffer.counterAmount || buyerOffer.amount;
+    // Only use negotiated price when buyer has ACCEPTED the seller's counter
+    // For pending/countered/buyer_countered/declined/completed/expired, use listing price
+    if (buyerOffer.status === 'accepted') {
+      return buyerOffer.counterAmount || buyerOffer.amount;
+    }
+    return listing.price;
   };
 
   const handleShippingEstimate = async () => {

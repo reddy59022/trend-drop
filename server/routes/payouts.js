@@ -25,23 +25,23 @@ router.get('/dashboard', auth, async (req, res) => {
       status: 'completed',
     }).populate('listing', 'title images price');
 
-    // Calculate totals from payouts
+    // Calculate totals from ALL payouts (both completed and pending)
+    // Total sales = all sales (completed + pending)
+    const totalSales = payouts.reduce((sum, p) => sum + (p.salePrice || 0), 0);
+
+    // Completed earnings = only from completed payouts
     const totalEarnings = payouts
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + p.payoutAmount, 0);
 
-    const totalCommission = payouts
-      .filter(p => p.status === 'completed')
-      .reduce((sum, p) => sum + p.commissionAmount, 0);
+    // Total commission = from all payouts (completed + pending)
+    const totalCommission = payouts.reduce((sum, p) => sum + (p.commissionAmount || 0), 0);
 
-    const totalSales = payouts
-      .filter(p => p.status === 'completed')
-      .reduce((sum, p) => sum + p.salePrice, 0);
-
+    // Pending = all pending payouts + transactions without payout records
     const pendingPayouts = payouts.filter(p => p.status === 'pending');
     const pendingAmount = pendingPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
 
-    // Include completed transactions not yet in payouts for accurate pending amount
+    // Include transactions not yet in payouts for accurate pending amount
     const pendingFromTransactions = completedTransactions
       .filter(t => !payouts.some(p => p.transaction?.toString() === t._id.toString()))
       .reduce((sum, t) => sum + (t.paymentBreakdown?.sellerEarnings || 0), 0);

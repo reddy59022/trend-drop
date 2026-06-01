@@ -10,7 +10,7 @@ import StripeCheckoutForm from '../components/StripeCheckoutForm';
 import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard } from 'react-icons/fa';
 
 const Cart = () => {
-  const { cart, removeFromCart, updateQuantity, clearCart, totalAmount } = useCart();
+  const { cart, removeFromCart, updateQuantity, clearCart } = useCart();
   const [stripePromise, setStripePromise] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [shippingInfo, setShippingInfo] = useState({
@@ -57,10 +57,46 @@ const Cart = () => {
     setShowForm(true);
   };
 
-  const handleSuccess = () => {
-    clearCart();
-    setShowForm(false);
-    toast.success('Order placed successfully! 🎉');
+  const handleSuccess = async (paymentMethod) => {
+    try {
+      // Prepare items with negotiated prices from breakdowns
+      const items = cart.map(item => ({
+        listingId: item.listingId,
+        quantity: item.quantity,
+        negotiatedPrice: item.negotiatedPrice || item.price,
+        currency: item.currency || 'USD'
+      }));
+
+      // Step 1: Authorize payment for total amount using first listing's create-intent
+      // For multi-seller, we use the total from breakdowns
+      const firstItem = items[0];
+      const createRes = await api.post('/payments/create-intent', {
+        listingId: firstItem.listingId,
+        shippingAddress: shippingInfo,
+        buyerCountry: shippingInfo.country || 'US'
+      });
+
+      // Step 2: Confirm batch with all items
+      const confirmRes = await api.post('/payments/confirm-batch', {
+        paymentIntentId: createRes.data.paymentIntentId,
+        items,
+        shippingAddress: shippingInfo
+      });
+
+      clearCart();
+      setShowForm(false);
+      toast.success('Order placed successfully! 🎉');
+      
+      // Redirect to order confirmation
+      if (confirmRes.data.transactions && confirmRes.data.transactions.length > 0) {
+        setTimeout(() => {
+          window.location.href = `/orders/${confirmRes.data.transactions[0]._id}`;
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      toast.error(error.response?.data?.message || 'Failed to place order');
+    }
   };
 
   const [itemBreakdowns, setItemBreakdowns] = useState({});
@@ -95,18 +131,43 @@ const Cart = () => {
     if (cart.length > 0) fetchBreakdowns();
   }, [cart, shippingInfo.country]);
 
-  let subtotalItems = 0, totalShipping = 0, totalProtection = 0, grandTotal = 0;
+  // Group cart items by seller for package display
+  const sellerGroups = {};
   cart.forEach(item => {
-    const bd = itemBreakdowns[item.listingId];
-    if (bd && bd.buyer) {
-      subtotalItems += bd.buyer.itemPrice * item.quantity;
-      totalShipping += bd.buyer.shippingCost * item.quantity;
-      totalProtection += bd.buyer.buyerProtectionFee * item.quantity;
-      grandTotal += bd.buyer.totalPaid * item.quantity;
-    } else {
-      subtotalItems += item.price * item.quantity;
-      grandTotal += item.price * item.quantity;
+    const sellerKey = item.sellerId || 'unknown';
+    if (!sellerGroups[sellerKey]) {
+      sellerGroups[sellerKey] = {
+        sellerId: sellerKey,
+        sellerName: item.sellerName || 'Seller',
+        items: [],
+        subtotal: 0,
+        shipping: 0,
+        protection: 0,
+        total: 0
+      };
     }
+    const group = sellerGroups[sellerKey];
+    const bd = itemBreakdowns[item.listingId];
+    group.items.push({ ...item, breakdown: bd });
+    
+    if (bd && bd.buyer) {
+      group.subtotal += bd.buyer.itemPrice * item.quantity;
+      group.shipping += bd.buyer.shippingCost * item.quantity;
+      group.protection += bd.buyer.buyerProtectionFee * item.quantity;
+      group.total += bd.buyer.totalPaid * item.quantity;
+    } else {
+      group.subtotal += item.price * item.quantity;
+      group.total += item.price * item.quantity;
+    }
+  });
+  const sellerPackages = Object.values(sellerGroups);
+  
+  let subtotalItems = 0, totalShipping = 0, totalProtection = 0, grandTotal = 0;
+  sellerPackages.forEach(pkg => {
+    subtotalItems += pkg.subtotal;
+    totalShipping += pkg.shipping;
+    totalProtection += pkg.protection;
+    grandTotal += pkg.total;
   });
 
   return (
@@ -127,62 +188,86 @@ const Cart = () => {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 'var(--td-space-xl)', alignItems: 'start' }}>
-          {/* Cart Items */}
+          {/* Cart Items Grouped by Seller */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--td-space-md)' }}>
-            {cart.map((item, i) => {
-              const bd = itemBreakdowns[item.listingId];
-              return (
-                <div key={item.listingId} className="glass-card" style={{ 
-                  display: 'flex', gap: 16, padding: 16, alignItems: 'center',
-                  animation: `fadeInUp 0.3s ease-out ${i * 0.05}s both`
+            {sellerPackages.map((pkg, pkgIndex) => (
+              <div key={pkg.sellerId || pkgIndex} className="glass-card" style={{ 
+                padding: 0, overflow: 'hidden',
+                animation: `fadeInUp 0.3s ease-out ${pkgIndex * 0.1}s both`
+              }}>
+                {/* Package Header */}
+                <div style={{ 
+                  background: 'linear-gradient(135deg, var(--td-primary), #ff6b8a)',
+                  padding: '10px 16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
                 }}>
-                  <img 
-                    src={item.thumbnail} 
-                    alt={item.title}
-                    style={{ width: 80, height: 80, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover', flexShrink: 0 }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h4 style={{ fontWeight: 600, marginBottom: 4, fontSize: 15 }}>{item.title}</h4>
-                    {item.negotiatedPrice && (
-                      <span className="badge badge-success" style={{ marginBottom: 4 }}>Negotiated Price</span>
-                    )}
-                    <div style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>
-                      {formatPrice(item.price, item.currency)} each
-                    </div>
-                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <FaTruck size={14} color="#fff" />
+                    <span style={{ fontWeight: 700, color: '#fff', fontSize: 13 }}>
+                      Package {pkgIndex + 1} — {pkg.sellerName}
+                    </span>
+                  </div>
+                  <span style={{ fontWeight: 600, color: '#fff', fontSize: 12 }}>
+                    Shipping: {formatPrice(pkg.shipping, 'USD')}
+                  </span>
+                </div>
+                
+                {/* Package Items */}
+                {pkg.items.map((item, i) => (
+                  <div key={item.listingId} style={{ 
+                    display: 'flex', gap: 16, padding: 16, alignItems: 'center',
+                    borderTop: i > 0 ? '1px solid var(--td-border-light)' : 'none'
+                  }}>
+                    <img 
+                      src={item.thumbnail} 
+                      alt={item.title}
+                      style={{ width: 72, height: 72, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover', flexShrink: 0 }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h4 style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{item.title}</h4>
+                      {item.negotiatedPrice && (
+                        <span className="badge badge-success" style={{ marginBottom: 4, fontSize: 10 }}>Negotiated</span>
+                      )}
+                      <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
+                        {formatPrice(item.price, item.currency)} each
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button 
+                        className="btn btn-icon btn-ghost" 
+                        onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
+                        style={{ width: 28, height: 28 }}
+                      ><FaMinus size={10} /></button>
+                      <span style={{ fontWeight: 700, minWidth: 24, textAlign: 'center', fontSize: 14 }}>{item.quantity}</span>
+                      <button 
+                        className="btn btn-icon btn-ghost"
+                        onClick={() => {
+                          if (item.quantity < (item.available || Infinity)) {
+                            updateQuantity(item.listingId, item.quantity + 1);
+                          } else {
+                            toast.error(`Only ${item.available} available`);
+                          }
+                        }}
+                        style={{ width: 28, height: 28 }}
+                      ><FaPlus size={10} /></button>
+                    </div>
+                    <div style={{ textAlign: 'right', minWidth: 70 }}>
+                      <div style={{ fontWeight: 700, color: 'var(--td-primary)', fontSize: 14 }}>
+                        {formatPrice(item.price * item.quantity, item.currency)}
+                      </div>
+                    </div>
                     <button 
                       className="btn btn-icon btn-ghost" 
-                      onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
-                      style={{ width: 32, height: 32 }}
-                    ><FaMinus size={10} /></button>
-                    <span style={{ fontWeight: 700, minWidth: 24, textAlign: 'center' }}>{item.quantity}</span>
-                    <button 
-                      className="btn btn-icon btn-ghost"
-                      onClick={() => {
-                        if (item.quantity < (item.available || Infinity)) {
-                          updateQuantity(item.listingId, item.quantity + 1);
-                        } else {
-                          toast.error(`Only ${item.available} available`);
-                        }
-                      }}
-                      style={{ width: 32, height: 32 }}
-                    ><FaPlus size={10} /></button>
+                      onClick={() => removeFromCart(item.listingId)}
+                      style={{ color: 'var(--td-error)', width: 32, height: 32 }}
+                      title="Remove"
+                    ><FaTrash size={12} /></button>
                   </div>
-                  <div style={{ textAlign: 'right', minWidth: 80 }}>
-                    <div style={{ fontWeight: 700, color: 'var(--td-primary)', fontSize: 16 }}>
-                      {formatPrice(item.price * item.quantity, item.currency)}
-                    </div>
-                  </div>
-                  <button 
-                    className="btn btn-icon btn-ghost" 
-                    onClick={() => removeFromCart(item.listingId)}
-                    style={{ color: 'var(--td-error)', width: 36, height: 36 }}
-                    title="Remove"
-                  ><FaTrash size={14} /></button>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            ))}
           </div>
 
           {/* Order Summary Sidebar */}
@@ -194,8 +279,17 @@ const Cart = () => {
                 <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-text-secondary)' }}>
                   <span>Items Subtotal</span><span>{formatPrice(subtotalItems, 'USD')}</span>
                 </div>
+                
+                {/* Per-package shipping breakdown */}
+                {sellerPackages.length > 1 && sellerPackages.map((pkg, i) => (
+                  <div key={i} className="flex-between" style={{ fontSize: 12, color: 'var(--td-text-tertiary)', paddingLeft: 8 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaTruck size={10} /> Package {i + 1} ({pkg.sellerName})</span>
+                    <span>{formatPrice(pkg.shipping, 'USD')}</span>
+                  </div>
+                ))}
+                
                 <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-text-secondary)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaTruck size={12} /> Shipping</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaTruck size={12} /> Total Shipping ({sellerPackages.length} {sellerPackages.length === 1 ? 'package' : 'packages'})</span>
                   <span>{formatPrice(totalShipping, 'USD')}</span>
                 </div>
                 <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-text-secondary)' }}>
@@ -205,7 +299,7 @@ const Cart = () => {
                 <div style={{ borderTop: '1px solid var(--td-border)', margin: '4px 0', paddingTop: 12 }}>
                   <div className="flex-between">
                     <span style={{ fontWeight: 700, fontSize: 16 }}>Total</span>
-                    <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(grandTotal, 'USD')}</span>
+                    <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(grandTotal, cart[0]?.currency || 'USD')}</span>
                   </div>
                 </div>
               </div>

@@ -23,13 +23,31 @@ const Sell = () => {
   const [images, setImages] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [loading, setLoading] = useState(false);
+  // Country-specific default shipping fees (in USD)
+  const defaultShippingFees = {
+    US: 3.99, CA: 9.99, GB: 9.99, DE: 9.99, FR: 9.99, AU: 18.99,
+    JP: 18.99, IN: 18.99, BR: 18.99, AE: 18.99, SG: 18.99,
+    MX: 18.99, TR: 18.99, KR: 18.99, IT: 9.99, ES: 9.99,
+    NL: 9.99, SE: 9.99, PL: 9.99, ZA: 18.99, CN: 18.99,
+    NZ: 18.99, CH: 9.99,
+  };
+  const defaultShippingLabels = {
+    US: 'Domestic (USPS)', CA: 'North America', GB: 'Europe', DE: 'Europe',
+    FR: 'Europe', AU: 'Asia-Pacific', JP: 'Asia-Pacific', IN: 'Asia-Pacific',
+    BR: 'South America', AE: 'Middle East', SG: 'Asia-Pacific',
+    MX: 'North America', TR: 'Europe', KR: 'Asia-Pacific', IT: 'Europe',
+    ES: 'Europe', NL: 'Europe', SE: 'Europe', PL: 'Europe',
+    ZA: 'Africa', CN: 'Asia-Pacific', NZ: 'Asia-Pacific', CH: 'Europe',
+  };
+
   const [formData, setFormData] = useState({
     title: '', description: '', price: '', originalPrice: '',
     category: 'Women', brand: '', size: '', condition: 'Good',
     color: '', weight: '0.5', weightUnit: 'kg',
     shipsFrom: user?.country || 'US',
     domesticShipping: true, internationalShipping: false, freeShipping: false,
-    shippingCost: '', quantity: '1',
+    shippingCost: String(defaultShippingFees[user?.country || 'US'] || '3.99'),
+    quantity: '1',
   });
 
   useEffect(() => { if (!user) navigate('/login'); }, [user, navigate]);
@@ -177,7 +195,26 @@ const Sell = () => {
               <div className="form-group"><label className="form-label">Weight</label><div style={{ display: 'flex', gap: 8 }}><input type="number" name="weight" value={formData.weight} onChange={handleChange} min="0.1" step="0.1" className="form-input" style={{ flex: 1 }} /><select name="weightUnit" value={formData.weightUnit} onChange={handleChange} className="form-input" style={{ width: 80 }}><option value="kg">kg</option><option value="lb">lb</option><option value="oz">oz</option></select></div></div>
               <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="domesticShipping" checked={formData.domesticShipping} onChange={e => setFormData(prev => ({ ...prev, domesticShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> Domestic</label></div>
               <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="internationalShipping" checked={formData.internationalShipping} onChange={e => setFormData(prev => ({ ...prev, internationalShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> International</label></div>
-              <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="freeShipping" checked={formData.freeShipping} onChange={e => setFormData(prev => ({ ...prev, freeShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> Free Shipping</label></div>
+               <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="freeShipping" checked={formData.freeShipping} onChange={e => setFormData(prev => ({ ...prev, freeShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> Free Shipping</label></div>
+               <div className="form-group full-width">
+                 <label className="form-label">Shipping Fee ({user?.currency || 'USD'})</label>
+                 <input
+                   type="number"
+                   name="shippingCost"
+                   value={formData.shippingCost}
+                   onChange={handleChange}
+                   min="0"
+                   step="0.01"
+                   className="form-input"
+                   placeholder={defaultShippingFees[formData.shipsFrom] || '3.99'}
+                 />
+                 <p className="form-hint" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                   <FaTruck size={12} /> Default for {formData.shipsFrom}: {formatPrice(defaultShippingFees[formData.shipsFrom] || 3.99, user?.currency)} ({defaultShippingLabels[formData.shipsFrom] || 'International'})
+                 </p>
+                 <p className="form-hint" style={{ marginTop: 4, fontSize: 11, color: 'var(--td-error)' }}>
+                   ⚠️ If actual shipping cost exceeds this amount, the difference will be deducted from your payout.
+                 </p>
+               </div>
             </div>
             <div style={{ display: 'flex', gap: 12, marginTop: 'var(--td-space-md)' }}>
               <button type="button" className="btn btn-outline" onClick={() => setCurrentStep(1)}>← Back</button>
