@@ -19,6 +19,10 @@ const Offer = require('../models/Offer');
 
 let sellerToken, buyerToken, sellerId, buyerId, listingId;
 const PASS = 'password123';
+
+// Track all test-created IDs for targeted cleanup (only delete data created by THIS test run)
+const testUserIds = [];
+const testListingIds = [];
 const mkEmail = p => `${p}_offerchain_${Date.now()}@test.com`;
 
 async function createUser(name, email, overrides = {}) {
@@ -45,7 +49,7 @@ beforeAll(async () => {
   await Promise.all([
     User.deleteMany({ email: re }),
     Listing.deleteMany({ title: re }),
-    Offer.deleteMany({}),
+    Offer.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
   ]);
   
   // Create users
@@ -79,7 +83,7 @@ afterAll(async () => {
   await Promise.all([
     User.deleteMany({ email: re }),
     Listing.deleteMany({ title: re }),
-    Offer.deleteMany({}),
+    Offer.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
   ]);
   await mongoose.disconnect();
 });

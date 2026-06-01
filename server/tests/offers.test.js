@@ -27,6 +27,10 @@ const generateToken = (userId) => jwt.sign({ id: userId }, JWT_SECRET, { expires
 
 let seller, buyer, sellerToken, buyerToken, listing;
 
+// Track all test-created IDs for targeted cleanup (only delete data created by THIS test run)
+const testUserIds = [];
+const testListingIds = [];
+
 beforeAll(async () => {
   const testMongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/trend-drop-test";
   if (mongoose.connection.readyState === 0) {
@@ -42,6 +46,7 @@ beforeAll(async () => {
     country: 'US',
     currency: 'USD',
   });
+  testUserIds.push(seller._id);
   buyer = await User.create({
     name: 'TestBuyer',
     email: 'buyer_offers_test@example.com',
@@ -50,6 +55,7 @@ beforeAll(async () => {
     country: 'US',
     currency: 'USD',
   });
+  testUserIds.push(buyer._id);
   
   sellerToken = generateToken(seller._id);
   buyerToken = generateToken(buyer._id);
@@ -67,13 +73,15 @@ beforeAll(async () => {
     shipsFrom: 'US',
     weight: 1,
   });
+  testListingIds.push(listing._id);
 });
 
 afterAll(async () => {
-  await Offer.deleteMany({});
-  await Listing.deleteMany({});
-  await User.deleteMany({ email: /_offers_test@/ });
-  await Transaction.deleteMany({});
+  // Targeted cleanup: only delete data created by THIS test run
+  await Offer.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] });
+  await Listing.deleteMany({ _id: { $in: testListingIds } });
+  await User.deleteMany({ _id: { $in: testUserIds } });
+  await Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] });
   await mongoose.disconnect();
 });
 
@@ -494,6 +502,7 @@ describe('Currency Validation', () => {
       shipsFrom: 'JP',
       weight: 0.5,
     });
+    testListingIds.push(jpyListing._id);
   });
 
   test('CV.1 Offer in matching currency succeeds', async () => {

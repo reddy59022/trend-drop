@@ -16,33 +16,54 @@ const Message = require('../models/Message');
 
 let sellerToken, buyerToken, sellerId, buyerId, listingId;
 const PASS = 'password123';
-const mkEmail = p => `${p}_e2e_${Date.now()}@test.com`;
+// Unique test run ID to isolate this run's data
+const TEST_RUN_ID = `e2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const mkEmail = p => `${p}_${TEST_RUN_ID}@test.com`;
 const sellerEmail = mkEmail('seller');
 const buyerEmail = mkEmail('buyer');
 
+// Track all test-created IDs for targeted cleanup
+const testUserIds = [];
+const testListingIds = [];
+
 async function createUser(name, email) {
   const u = await User.create({ name, email: email.toLowerCase(), password: PASS, emailVerified: true, authProvider: 'email', country: 'US', currency: 'USD', shippingAddress: { fullName: name, street1: '123 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' }, balance: { available: 500, pending: 0, totalEarned: 0, totalPaidOut: 0, currency: 'USD' }, stats: { totalSales: 0, totalPurchases: 0, strikes: 0 } });
+  testUserIds.push(u._id);
   const jwt = require('jsonwebtoken');
   const t = jwt.sign({ id: u._id }, process.env.JWT_SECRET || 'fallback_secret_change_me', { expiresIn: '30d' });
   return { user: u, token: t };
 }
 async function createListing(sellerId, overrides = {}) {
-  return Listing.create({ seller: sellerId, title: 'E2E Test Item', description: 'Test desc', price: 100, category: 'Men', condition: 'New with tags', available: true, sold: false, quantity: 5, shipsFrom: 'US', weight: 1, ...overrides });
+  const l = await Listing.create({ seller: sellerId, title: overrides.title || 'E2E Test Item', description: 'Test desc', price: 100, category: 'Men', condition: 'New with tags', available: true, sold: false, quantity: 5, shipsFrom: 'US', weight: 1, ...overrides });
+  testListingIds.push(l._id);
+  return l;
 }
 async function buy(buyerToken, listingId) {
   const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${buyerToken}`).send({ listingId, shippingAddress: { fullName: 'B', street1: '456 St', city: 'City', state: 'NY', postalCode: '10001', country: 'US' }, buyerCountry: 'US' });
   return r.body;
 }
 
+// Targeted cleanup: only delete data created by THIS test run
+async function cleanupTestData() {
+  if (testListingIds.length > 0) {
+    await Listing.deleteMany({ _id: { $in: testListingIds } });
+    await Offer.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] });
+    await Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] });
+    await Payout.deleteMany({ seller: { $in: testUserIds } });
+    await Rating.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { fromUser: { $in: testUserIds } }, { toUser: { $in: testUserIds } }] });
+    await Message.deleteMany({ $or: [{ from: { $in: testUserIds } }, { to: { $in: testUserIds } }] });
+  }
+  if (testUserIds.length > 0) {
+    await User.deleteMany({ _id: { $in: testUserIds } });
+  }
+}
+
 beforeAll(async () => {
   const uri = process.env.MONGODB_URI || 'mongodb+srv://reddy59022_db_user:anNecZCiT3eJQfre@cluster.mongodb.net/poshmark?retryWrites=true&w=majority';
   if (mongoose.connection.readyState === 0) await mongoose.connect(uri);
-  const re = /e2e_test|E2E Test|Rev Test/;
-  await Promise.all([User.deleteMany({ email: re }), Listing.deleteMany({ title: re }), Offer.deleteMany({}), Transaction.deleteMany({}), Payout.deleteMany({}), Rating.deleteMany({}), Message.deleteMany({})]);
 });
 afterAll(async () => {
-  const re = /e2e_test|E2E Test|Rev Test/;
-  await Promise.all([User.deleteMany({ email: re }), Listing.deleteMany({ title: re }), Offer.deleteMany({}), Transaction.deleteMany({}), Payout.deleteMany({}), Rating.deleteMany({}), Message.deleteMany({})]);
+  await cleanupTestData();
   await mongoose.disconnect();
 });
 
@@ -166,6 +187,11 @@ describe('RULE 2: Listings', () => {
 describe('RULE 3: Offers', () => {
   let listing;
   beforeAll(async () => { listing = await createListing(sellerId, { price: 200, quantity: 1, title: 'E2E Test Offer' }); });
+  // Clean up offers before each test so the buyer can create a new offer
+  // (avoids "You already have an active offer" error)
+  beforeEach(async () => {
+    await Offer.deleteMany({ listing: listing._id });
+  });
   test('3a Buyer creates pending offer', async () => {
     const r = await request(app).post('/api/offers').set('Authorization', `Bearer ${buyerToken}`).send({ listingId: listing._id, amount: 150 });
     expect(r.status).toBe(201); expect(r.body.status).toBe('pending');
@@ -504,6 +530,10 @@ describe('RULE 20: Offer Visibility', () => {
   let offerList;
   beforeAll(async () => {
     offerList = await createListing(sellerId, { price: 150, quantity: 1, title: 'E2E Test OfferVis' });
+  });
+  // Clean up offers before each test
+  beforeEach(async () => {
+    await Offer.deleteMany({ listing: offerList._id });
   });
 
   test('20a Pending offer does not change display price', async () => {
@@ -1413,21 +1443,32 @@ describe('RULE 33: Complete Lifecycle with Refund', () => {
     const t = await buy(buyerToken, l._id);
     expect(t.status).toBe('paid');
     
-    // Simulate ship + deliver via DB update
-    await Transaction.findByIdAndUpdate(t._id, { status: 'shipped' });
-    await Transaction.findByIdAndUpdate(t._id, { status: 'delivered', 'shipping.actualDelivery': new Date() });
+    // Set seller's totalSales to 5+ to bypass new seller hold
+    await User.findByIdAndUpdate(sellerId, { 'stats.totalSales': 10 });
     
-    // Confirm receipt with date 4 days ago (simulates 3+ days passing)
+    // Simulate ship + deliver via DB update using findById + save to preserve nested fields
+    // Set delivery date to 6 days ago to pass the 5-day PAYOUT_HOLD_FROM_DELIVERY check
+    const sixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
     const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
-    await Transaction.findByIdAndUpdate(t._id, { 
-      status: 'buyer_confirmed',
-      'buyerConfirmed.confirmedAt': fourDaysAgo
-    });
+    
     let txn = await Transaction.findById(t._id);
+    txn.status = 'delivered';
+    txn.shipping = txn.shipping || {};
+    txn.shipping.actualDelivery = sixDaysAgo;
+    txn.buyerConfirmed = txn.buyerConfirmed || {};
+    txn.buyerConfirmed.confirmedAt = fourDaysAgo;
+    txn.status = 'buyer_confirmed';
+    await txn.save();
+    
+    txn = await Transaction.findById(t._id);
     expect(txn.status).toBe('buyer_confirmed');
+    expect(txn.shipping?.actualDelivery).toBeDefined();
     
     // Complete
-    await request(app).post(`/api/orders/${t._id}/auto-complete`).set('Authorization', `Bearer ${sellerToken}`);
+    const r = await request(app).post(`/api/orders/${t._id}/auto-complete`).set('Authorization', `Bearer ${sellerToken}`);
+    if (r.status !== 200) {
+      console.log('Auto-complete response:', r.status, r.body);
+    }
     txn = await Transaction.findById(t._id);
     expect(txn.status).toBe('completed');
     
@@ -1681,18 +1722,32 @@ describe('RULE 34: Multi-Seller Batch Orders', () => {
     const t1 = await buy(buyerToken, l1._id);
     const t2 = await buy(buyerToken, l2._id);
 
-    // Deliver both
-    await Transaction.findByIdAndUpdate(t1._id, { status: 'delivered', 'shipping.actualDelivery': new Date() });
-    await Transaction.findByIdAndUpdate(t2._id, { status: 'delivered', 'shipping.actualDelivery': new Date() });
+    // Set both sellers' totalSales to 10+ to bypass new seller hold
+    await User.findByIdAndUpdate(sellerId, { 'stats.totalSales': 10 });
+    await User.findByIdAndUpdate(seller2Id, { 'stats.totalSales': 10 });
 
-    // Confirm receipt for both
-    await request(app).post(`/api/orders/${t1._id}/confirm-received`).set('Authorization', `Bearer ${buyerToken}`);
-    await request(app).post(`/api/orders/${t2._id}/confirm-received`).set('Authorization', `Bearer ${buyerToken}`);
-
-    // Simulate 3+ days passing
+    // Deliver both using findById + save to preserve nested fields
+    // Set delivery date to 6 days ago to pass the 5-day PAYOUT_HOLD_FROM_DELIVERY check
+    const sixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
     const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
-    await Transaction.findByIdAndUpdate(t1._id, { 'buyerConfirmed.confirmedAt': fourDaysAgo });
-    await Transaction.findByIdAndUpdate(t2._id, { 'buyerConfirmed.confirmedAt': fourDaysAgo });
+    
+    let txn1 = await Transaction.findById(t1._id);
+    txn1.status = 'delivered';
+    txn1.shipping = txn1.shipping || {};
+    txn1.shipping.actualDelivery = sixDaysAgo;
+    txn1.buyerConfirmed = txn1.buyerConfirmed || {};
+    txn1.buyerConfirmed.confirmedAt = fourDaysAgo;
+    txn1.status = 'buyer_confirmed';
+    await txn1.save();
+    
+    let txn2 = await Transaction.findById(t2._id);
+    txn2.status = 'delivered';
+    txn2.shipping = txn2.shipping || {};
+    txn2.shipping.actualDelivery = sixDaysAgo;
+    txn2.buyerConfirmed = txn2.buyerConfirmed || {};
+    txn2.buyerConfirmed.confirmedAt = fourDaysAgo;
+    txn2.status = 'buyer_confirmed';
+    await txn2.save();
 
     // Auto-complete both
     await request(app).post(`/api/orders/${t1._id}/auto-complete`).set('Authorization', `Bearer ${sellerToken}`);

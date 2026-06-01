@@ -28,6 +28,10 @@ const {
 
 let sellerToken, buyerToken, sellerId, buyerId;
 const PASS = 'password123';
+
+// Track all test-created IDs for targeted cleanup (only delete data created by THIS test run)
+const testUserIds = [];
+const testListingIds = [];
 const mkEmail = p => `${p}_risk_${Date.now()}@test.com`;
 
 async function createUser(name, email, overrides = {}) {
@@ -82,8 +86,8 @@ beforeAll(async () => {
   await Promise.all([
     User.deleteMany({ email: re }),
     Listing.deleteMany({ title: re }),
-    Transaction.deleteMany({}),
-    Payout.deleteMany({}),
+    Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
+    Payout.deleteMany({ seller: { $in: testUserIds } }),
   ]);
   const { user: s, token: st } = await createUser('RiskSeller', mkEmail('seller'));
   sellerId = s._id;
@@ -98,8 +102,8 @@ afterAll(async () => {
   await Promise.all([
     User.deleteMany({ email: re }),
     Listing.deleteMany({ title: re }),
-    Transaction.deleteMany({}),
-    Payout.deleteMany({}),
+    Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
+    Payout.deleteMany({ seller: { $in: testUserIds } }),
   ]);
   await mongoose.disconnect();
 });

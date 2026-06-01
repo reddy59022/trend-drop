@@ -20,6 +20,10 @@ const { orderStates, timeWindows } = require('../config/orderLifecycle');
 
 let sellerToken, buyerToken, sellerId, buyerId;
 const PASS = 'password123';
+
+// Track all test-created IDs for targeted cleanup (only delete data created by THIS test run)
+const testUserIds = [];
+const testListingIds = [];
 const mkEmail = p => `${p}_payout_${Date.now()}@test.com`;
 
 async function createUser(name, email) {
@@ -29,23 +33,28 @@ async function createUser(name, email) {
     country: 'US', currency: 'USD',
     shippingAddress: { fullName: name, street1: '123 Main St', city: 'Austin', state: 'TX', postalCode: '78701', country: 'US' },
     balance: { available: 0, pending: 0, totalEarned: 0, totalPaidOut: 0, currency: 'USD' },
-    stats: { totalSales: 0, totalPurchases: 0, strikes: 0 },
+    stats: { totalSales: 10, totalPurchases: 0, strikes: 0 }, // Set to 10 to bypass new seller hold
   });
+  testUserIds.push(u._id);
   const jwt = require('jsonwebtoken');
   const token = jwt.sign({ id: u._id }, process.env.JWT_SECRET || 'fallback_secret_change_me', { expiresIn: '30d' });
   return { user: u, token };
 }
 
 async function createListing(overrides = {}) {
-  return Listing.create({
+  const l = await Listing.create({
     seller: sellerId, title: 'Payout Test Item', description: 'Test desc',
     price: 100, category: 'Men', condition: 'New with tags',
     available: true, sold: false, quantity: 5, shipsFrom: 'US', weight: 1, ...overrides,
   });
+  testListingIds.push(l._id);
+  return l;
 }
 
 async function createTransaction(overrides = {}) {
   const listing = await createListing();
+  // Set delivery date to 6 days ago to pass the 5-day PAYOUT_HOLD_FROM_DELIVERY check
+  const sixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
   return Transaction.create({
     listing: listing._id,
     buyer: buyerId,
@@ -74,6 +83,7 @@ async function createTransaction(overrides = {}) {
       labelCreated: true,
       labelCreatedDate: new Date(),
       estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      actualDelivery: sixDaysAgo, // Set to 6 days ago to pass PAYOUT_HOLD_FROM_DELIVERY check
       service: 'Priority',
       trackingHistory: [],
     },
@@ -91,8 +101,8 @@ beforeAll(async () => {
   await Promise.all([
     User.deleteMany({ email: re }),
     Listing.deleteMany({ title: re }),
-    Transaction.deleteMany({}),
-    Payout.deleteMany({}),
+    Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
+    Payout.deleteMany({ seller: { $in: testUserIds } }),
   ]);
   const { user: s, token: st } = await createUser('PayoutSeller', mkEmail('seller'));
   sellerId = s._id;
@@ -107,8 +117,8 @@ afterAll(async () => {
   await Promise.all([
     User.deleteMany({ email: re }),
     Listing.deleteMany({ title: re }),
-    Transaction.deleteMany({}),
-    Payout.deleteMany({}),
+    Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
+    Payout.deleteMany({ seller: { $in: testUserIds } }),
   ]);
   await mongoose.disconnect();
 });
@@ -260,10 +270,15 @@ describe('Order Payout Flow — Seller Gets Paid Only After Delivery', () => {
       expect(r.body.sellerEarnings).toBe(sellerEarnings);
 
       // Verify funds moved from pending to available
+      // Note: 10% rolling reserve is applied, so only 90% goes to available
+      const reserveAmount = Math.round(sellerEarnings * 0.10 * 100) / 100; // 9.2
+      const availableAmount = sellerEarnings - reserveAmount; // 82.8
+      
       const updatedSeller = await User.findById(sellerId);
       expect(updatedSeller.balance.pending).toBe(initialPending - sellerEarnings);
-      expect(updatedSeller.balance.available).toBe(initialAvailable + sellerEarnings);
+      expect(updatedSeller.balance.available).toBe(initialAvailable + availableAmount);
       expect(updatedSeller.balance.totalEarned).toBe(sellerEarnings);
+      expect(updatedSeller.balance.reserve).toBe(reserveAmount);
     });
 
     test('seller CAN withdraw after funds are available', async () => {

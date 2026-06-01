@@ -32,6 +32,10 @@ const { calculatePaymentBreakdown, countryCommissions } = require('../config/pay
 
 let sellerToken, buyerToken, sellerId, buyerId;
 const PASS = 'password123';
+
+// Track all test-created IDs for targeted cleanup (only delete data created by THIS test run)
+const testUserIds = [];
+const testListingIds = [];
 const mkEmail = p => `${p}_batch_${Date.now()}@test.com`;
 
 async function createUser(name, email) {
@@ -76,8 +80,8 @@ beforeAll(async () => {
   await Promise.all([
     User.deleteMany({ email: re }),
     Listing.deleteMany({ title: re }),
-    Transaction.deleteMany({}),
-    Payout.deleteMany({}),
+    Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
+    Payout.deleteMany({ seller: { $in: testUserIds } }),
   ]);
   const { user: s, token: st } = await createUser('BatchSeller', mkEmail('seller'));
   sellerId = s._id;
@@ -92,8 +96,8 @@ afterAll(async () => {
   await Promise.all([
     User.deleteMany({ email: re }),
     Listing.deleteMany({ title: re }),
-    Transaction.deleteMany({}),
-    Payout.deleteMany({}),
+    Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
+    Payout.deleteMany({ seller: { $in: testUserIds } }),
   ]);
   await mongoose.disconnect();
 });
@@ -179,6 +183,9 @@ describe('Batch Checkout: Payment + Order Creation', () => {
   // ============================
   describe('Item availability — all-or-nothing abort', () => {
     test('aborts entire batch if ANY item is sold out (no transactions created)', async () => {
+      // Count transactions before this test
+      const txnsBefore = await Transaction.countDocuments({ buyer: buyerId });
+      
       const item1 = await createListing({ title: 'Batch Test Item Good', price: 30, quantity: 5 });
       const item2 = await createListing({ title: 'Batch Test Item SoldOut', price: 40, quantity: 0, available: false, sold: true });
 
@@ -198,9 +205,9 @@ describe('Batch Checkout: Payment + Order Creation', () => {
       expect(r.status).toBe(400);
       expect(r.body.message).toMatch(/no longer available/i);
 
-      // Verify NO transactions were created for either item
-      const txns = await Transaction.find({ buyer: buyerId });
-      expect(txns.length).toBe(0);
+      // Verify NO NEW transactions were created for either item
+      const txnsAfter = await Transaction.countDocuments({ buyer: buyerId });
+      expect(txnsAfter).toBe(txnsBefore);
     });
 
     test('aborts entire batch if listing does not exist', async () => {
