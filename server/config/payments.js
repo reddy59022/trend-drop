@@ -84,17 +84,44 @@ const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg =
 // capture_method: 'automatic' means Stripe captures the payment immediately
 // Money is held in Stripe and released when seller fulfills
 // This avoids 7-day authorization expiration issues
+// Helper: generate a deterministic idempotency key for a given payload
+const generateIdempotencyKey = (payload) => {
+  // Simple deterministic hash – in production you might use a UUID or more robust hash
+  const str = JSON.stringify(payload);
+  let hash = 0, i, chr;
+  for (i = 0; i < str.length; i++) {
+    chr = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0; // Convert to 32bit integer
+  }
+  return `idemp_${Math.abs(hash)}`;
+};
+
+// Fetch the latest exchange rate for a given currency using Stripe's rate API (fallback to 1)
+const fetchExchangeRate = async (currency) => {
+  if (!stripe) return 1;
+  try {
+    // Stripe exposes exchange rates via the `rates` endpoint (e.g., stripe.rates.retrieve)
+    const rateObj = await stripe.rates.retrieve(currency.toUpperCase());
+    return rateObj?.rates?.[currency.toUpperCase()] || 1;
+  } catch (e) {
+    console.warn('Exchange rate fetch failed, defaulting to 1:', e.message);
+    return 1;
+  }
+};
+
 const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
   if (!stripe) {
     throw new Error('Stripe not initialized. Please check STRIPE_SECRET_KEY.');
   }
+  const idempotencyKey = generateIdempotencyKey({ amount, currency, metadata });
   return stripe.paymentIntents.create({
     amount: Math.round(amount * 100),
     currency: currency.toLowerCase(),
     metadata,
     capture_method: 'automatic',
     automatic_payment_methods: { enabled: true },
-  });
+  }, { idempotencyKey });
 };
 
 // STEP 2: Capture the authorized payment (only after fulfillment)
@@ -103,7 +130,8 @@ const capturePaymentIntent = async (paymentIntentId) => {
   if (!stripe) {
     throw new Error('Stripe not initialized. Please check STRIPE_SECRET_KEY.');
   }
-  return stripe.paymentIntents.capture(paymentIntentId);
+  const idempotencyKey = generateIdempotencyKey({ paymentIntentId, action: 'capture' });
+  return stripe.paymentIntents.capture(paymentIntentId, {}, { idempotencyKey });
 };
 
 // Retrieve a PaymentIntent
@@ -148,8 +176,32 @@ const issueRefund = async (paymentIntentId, amount) => {
   return stripe.refunds.create(refundParams);
 };
 
-// Process seller payout (simulated MVP, real Stripe Connect in production)
+// Process seller payout – real Stripe Connect if account ID exists, otherwise simulated.
 const processSellerPayout = async (sellerId, amount, currency, payoutMethod) => {
+  // Look up seller to see if they have a connected Stripe account ID (custom field `stripeAccountId`)
+  const User = require('../models/User');
+  const seller = await User.findById(sellerId);
+  const accountId = seller?.stripeAccountId;
+  if (stripe && accountId) {
+    const idempotencyKey = generateIdempotencyKey({ sellerId, amount, currency, payoutMethod });
+    const payout = await stripe.payouts.create({
+      amount: Math.round(amount * 100),
+      currency: currency.toLowerCase(),
+      method: payoutMethod || 'standard',
+    }, {
+      stripeAccount: accountId,
+      idempotencyKey,
+    });
+    return {
+      id: payout.id,
+      amount,
+      currency,
+      status: payout.status,
+      method: payoutMethod || payout.method,
+      estimatedArrival: payout.arrival_date ? new Date(payout.arrival_date * 1000) : null,
+    };
+  }
+  // Fallback simulation (MVP)
   return {
     id: `payout_sim_${Date.now()}`,
     amount,
@@ -172,4 +224,6 @@ module.exports = {
   verifyStripeWebhook,
   processSellerPayout,
   issueRefund,
+  generateIdempotencyKey,
+  fetchExchangeRate,
 };

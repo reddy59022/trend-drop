@@ -16,6 +16,7 @@ const {
   verifyStripeWebhook,
   processSellerPayout,
   issueRefund,
+  fetchExchangeRate,
 } = require('../config/payments');
 
 // ===================== PUBLIC ENDPOINTS =====================
@@ -56,7 +57,7 @@ router.post('/breakdown', (req, res) => {
 // capture_method: manual means Stripe holds authorization but doesn't capture funds
 router.post('/create-intent', auth, async (req, res) => {
   try {
-    const { listingId, shippingAddress, buyerCountry } = req.body;
+  const { listingId, shippingAddress, buyerCountry } = req.body;
 
     const listing = await Listing.findById(listingId);
     if (!listing) return res.status(404).json({ message: 'Listing not found' });
@@ -71,7 +72,11 @@ router.post('/create-intent', auth, async (req, res) => {
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
     const toCountry = buyerCountry || req.user.country || 'US';
 
-    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
+    // Determine buyer currency based on destination country
+    const buyerCurrency = (countryCommissions[toCountry] || countryCommissions.default).currency;
+    // Get live exchange rate for buyer currency (defaults to 1 if unavailable)
+    const exchangeRate = await fetchExchangeRate(buyerCurrency);
+    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5, exchangeRate);
 
     // Authorize ONLY - no money moves yet
     const paymentIntent = await authorizePaymentIntent(
@@ -85,6 +90,7 @@ router.post('/create-intent', auth, async (req, res) => {
         buyerCountry: toCountry,
         platformFee: breakdown.seller.platformFee.toString(),
         sellerEarnings: breakdown.seller.sellerEarnings.toString(),
+        exchangeRate,
       }
     );
 
@@ -94,6 +100,7 @@ router.post('/create-intent', auth, async (req, res) => {
       amount: breakdown.buyer.totalPaid,
       currency: breakdown.buyerCurrency,
       breakdown,
+      exchangeRate,
       status: paymentIntent.status, // 'requires_payment_method' → 'requires_capture'
     });
   } catch (error) {

@@ -7,12 +7,13 @@ import { toast } from 'react-toastify';
 import api from '../services/api';
 import { formatPrice } from '../utils/helpers';
 import StripeCheckoutForm from '../components/StripeCheckoutForm';
-import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard } from 'react-icons/fa';
+import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner } from 'react-icons/fa';
 
 const Cart = () => {
   const { cart, removeFromCart, updateQuantity, clearCart } = useCart();
   const [stripePromise, setStripePromise] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const [shippingInfo, setShippingInfo] = useState({
     fullName: '', street1: '', city: '', state: '', postalCode: '', country: 'US', phone: ''
   });
@@ -33,33 +34,38 @@ const Cart = () => {
 
   const handleCheckout = async () => {
     if (cart.length === 0) return toast.error('Cart is empty');
+    setPaymentLoading(true);
     try {
       for (const item of cart) {
         const res = await api.get(`/listings/${item.listingId}`);
         const listing = res.data.listing;
         if (!listing.available || listing.sold) {
           toast.error(`"${listing.title}" is no longer available`);
+          setPaymentLoading(false);
           return;
         }
         if (listing.quantity < item.quantity) {
           toast.error(`Only ${listing.quantity} left of "${listing.title}"`);
+          setPaymentLoading(false);
           return;
         }
       }
     } catch (error) {
       toast.error('Failed to verify item availability');
+      setPaymentLoading(false);
       return;
     }
     if (!stripePromise) {
       toast.error('Payment system not loaded. Please refresh the page.');
+      setPaymentLoading(false);
       return;
     }
     setShowForm(true);
+    setPaymentLoading(false);
   };
 
   const handleSuccess = async (paymentMethod) => {
     try {
-      // Prepare items with negotiated prices from breakdowns
       const items = cart.map(item => ({
         listingId: item.listingId,
         quantity: item.quantity,
@@ -67,8 +73,7 @@ const Cart = () => {
         currency: item.currency || 'USD'
       }));
 
-      // Step 1: Authorize payment for total amount using first listing's create-intent
-      // For multi-seller, we use the total from breakdowns
+      // Step 1: Create payment intent
       const firstItem = items[0];
       const createRes = await api.post('/payments/create-intent', {
         listingId: firstItem.listingId,
@@ -76,9 +81,22 @@ const Cart = () => {
         buyerCountry: shippingInfo.country || 'US'
       });
 
-      // Step 2: Confirm batch with all items
+      const { clientSecret: cs, paymentIntentId } = createRes.data;
+
+      // Step 2: Confirm payment with Stripe
+      if (!stripePromise) throw new Error('Stripe not loaded');
+      const stripe = await stripePromise;
+      
+      const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(cs, {
+        payment_method: paymentMethod.id,
+      });
+
+      if (confirmError) throw new Error(confirmError.message);
+      if (paymentIntent.status !== 'succeeded') throw new Error(`Payment status: ${paymentIntent.status}`);
+
+      // Step 3: Confirm batch with all items
       const confirmRes = await api.post('/payments/confirm-batch', {
-        paymentIntentId: createRes.data.paymentIntentId,
+        paymentIntentId,
         items,
         shippingAddress: shippingInfo
       });
@@ -87,7 +105,6 @@ const Cart = () => {
       setShowForm(false);
       toast.success('Order placed successfully! 🎉');
       
-      // Redirect to order confirmation
       if (confirmRes.data.transactions && confirmRes.data.transactions.length > 0) {
         setTimeout(() => {
           window.location.href = `/orders/${confirmRes.data.transactions[0]._id}`;
@@ -195,7 +212,6 @@ const Cart = () => {
                 padding: 0, overflow: 'hidden',
                 animation: `fadeInUp 0.3s ease-out ${pkgIndex * 0.1}s both`
               }}>
-                {/* Package Header */}
                 <div style={{ 
                   background: 'linear-gradient(135deg, var(--td-primary), #ff6b8a)',
                   padding: '10px 16px',
@@ -214,63 +230,39 @@ const Cart = () => {
                   </span>
                 </div>
                 
-                {/* Package Items */}
                 {pkg.items.map((item, i) => (
                   <div key={item.listingId} style={{ 
                     display: 'flex', gap: 16, padding: 16, alignItems: 'center',
                     borderTop: i > 0 ? '1px solid var(--td-border-light)' : 'none'
                   }}>
-                    <img 
-                      src={item.thumbnail} 
-                      alt={item.title}
-                      style={{ width: 72, height: 72, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover', flexShrink: 0 }}
-                    />
+                    <img src={item.thumbnail} alt={item.title}
+                      style={{ width: 72, height: 72, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h4 style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{item.title}</h4>
-                      {item.negotiatedPrice && (
-                        <span className="badge badge-success" style={{ marginBottom: 4, fontSize: 10 }}>Negotiated</span>
-                      )}
-                      <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
-                        {formatPrice(item.price, item.currency)} each
-                      </div>
+                      {item.negotiatedPrice && <span className="badge badge-success" style={{ marginBottom: 4, fontSize: 10 }}>Negotiated</span>}
+                      <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>{formatPrice(item.price, item.currency)} each</div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <button 
-                        className="btn btn-icon btn-ghost" 
-                        onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
-                        style={{ width: 28, height: 28 }}
-                      ><FaMinus size={10} /></button>
+                      <button className="btn btn-icon btn-ghost" onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
+                        style={{ width: 28, height: 28 }}><FaMinus size={10} /></button>
                       <span style={{ fontWeight: 700, minWidth: 24, textAlign: 'center', fontSize: 14 }}>{item.quantity}</span>
-                      <button 
-                        className="btn btn-icon btn-ghost"
-                        onClick={() => {
-                          if (item.quantity < (item.available || Infinity)) {
-                            updateQuantity(item.listingId, item.quantity + 1);
-                          } else {
-                            toast.error(`Only ${item.available} available`);
-                          }
-                        }}
-                        style={{ width: 28, height: 28 }}
-                      ><FaPlus size={10} /></button>
+                      <button className="btn btn-icon btn-ghost" onClick={() => {
+                        if (item.quantity < (item.available || Infinity)) updateQuantity(item.listingId, item.quantity + 1);
+                        else toast.error(`Only ${item.available} available`);
+                      }} style={{ width: 28, height: 28 }}><FaPlus size={10} /></button>
                     </div>
                     <div style={{ textAlign: 'right', minWidth: 70 }}>
-                      <div style={{ fontWeight: 700, color: 'var(--td-primary)', fontSize: 14 }}>
-                        {formatPrice(item.price * item.quantity, item.currency)}
-                      </div>
+                      <div style={{ fontWeight: 700, color: 'var(--td-primary)', fontSize: 14 }}>{formatPrice(item.price * item.quantity, item.currency)}</div>
                     </div>
-                    <button 
-                      className="btn btn-icon btn-ghost" 
-                      onClick={() => removeFromCart(item.listingId)}
-                      style={{ color: 'var(--td-error)', width: 32, height: 32 }}
-                      title="Remove"
-                    ><FaTrash size={12} /></button>
+                    <button className="btn btn-icon btn-ghost" onClick={() => removeFromCart(item.listingId)}
+                      style={{ color: 'var(--td-error)', width: 32, height: 32 }} title="Remove"><FaTrash size={12} /></button>
                   </div>
                 ))}
               </div>
             ))}
           </div>
 
-          {/* Order Summary Sidebar */}
+          {/* Order Summary */}
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', position: 'sticky', top: 'calc(var(--td-nav-height) + var(--td-space-lg))' }}>
             <h3 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Order Summary</h3>
             
@@ -279,15 +271,12 @@ const Cart = () => {
                 <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-text-secondary)' }}>
                   <span>Items Subtotal</span><span>{formatPrice(subtotalItems, 'USD')}</span>
                 </div>
-                
-                {/* Per-package shipping breakdown */}
                 {sellerPackages.length > 1 && sellerPackages.map((pkg, i) => (
                   <div key={i} className="flex-between" style={{ fontSize: 12, color: 'var(--td-text-tertiary)', paddingLeft: 8 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaTruck size={10} /> Package {i + 1} ({pkg.sellerName})</span>
                     <span>{formatPrice(pkg.shipping, 'USD')}</span>
                   </div>
                 ))}
-                
                 <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-text-secondary)' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaTruck size={12} /> Total Shipping ({sellerPackages.length} {sellerPackages.length === 1 ? 'package' : 'packages'})</span>
                   <span>{formatPrice(totalShipping, 'USD')}</span>
@@ -306,23 +295,23 @@ const Cart = () => {
             )}
 
             {!showForm ? (
-              <button className="btn btn-primary btn-block btn-lg" onClick={handleCheckout} disabled={cart.length === 0}>
-                <FaCreditCard /> Proceed to Checkout
+              <button className="btn btn-primary btn-block btn-lg" onClick={handleCheckout} disabled={cart.length === 0 || paymentLoading}>
+                {paymentLoading ? <><FaSpinner className="spinner-sm" /> Checking...</> : <><FaCreditCard /> Proceed to Checkout</>}
               </button>
             ) : (
               <div style={{ animation: 'fadeInUp 0.3s ease-out' }}>
                 <h4 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Shipping Details</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--td-space-md)' }}>
-                  <input type="text" className="form-input" placeholder="Full Name" value={shippingInfo.fullName}
+                  <input type="text" className="form-input" placeholder="Full Name *" value={shippingInfo.fullName}
                     onChange={e => setShippingInfo({...shippingInfo, fullName: e.target.value})} required />
-                  <input type="text" className="form-input" placeholder="Street Address" value={shippingInfo.street1}
+                  <input type="text" className="form-input" placeholder="Street Address *" value={shippingInfo.street1}
                     onChange={e => setShippingInfo({...shippingInfo, street1: e.target.value})} required />
-                  <input type="text" className="form-input" placeholder="City" value={shippingInfo.city}
+                  <input type="text" className="form-input" placeholder="City *" value={shippingInfo.city}
                     onChange={e => setShippingInfo({...shippingInfo, city: e.target.value})} required />
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <input type="text" className="form-input" placeholder="State" value={shippingInfo.state}
+                    <input type="text" className="form-input" placeholder="State *" value={shippingInfo.state}
                       onChange={e => setShippingInfo({...shippingInfo, state: e.target.value})} required />
-                    <input type="text" className="form-input" placeholder="ZIP Code" value={shippingInfo.postalCode}
+                    <input type="text" className="form-input" placeholder="ZIP Code *" value={shippingInfo.postalCode}
                       onChange={e => setShippingInfo({...shippingInfo, postalCode: e.target.value})} required />
                   </div>
                   <select className="form-input" value={shippingInfo.country}
@@ -343,7 +332,6 @@ const Cart = () => {
                     onChange={e => setShippingInfo({...shippingInfo, phone: e.target.value})} />
                 </div>
 
-                {/* Order items recap */}
                 <div className="glass-card" style={{ padding: 12, marginBottom: 'var(--td-space-md)' }}>
                   <h5 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--td-text-secondary)' }}>Items</h5>
                   {cart.map(item => {
@@ -371,9 +359,7 @@ const Cart = () => {
                   <div style={{ textAlign: 'center', padding: 20 }}>
                     <div className="spinner" style={{ margin: '0 auto 12px' }} />
                     <p style={{ color: 'var(--td-text-tertiary)', fontSize: 14 }}>Loading payment system...</p>
-                    <button className="btn btn-outline btn-sm" onClick={() => setShowForm(false)} style={{ marginTop: 12 }}>
-                      Back
-                    </button>
+                    <button className="btn btn-outline btn-sm" onClick={() => setShowForm(false)} style={{ marginTop: 12 }}>Back</button>
                   </div>
                 )}
               </div>
