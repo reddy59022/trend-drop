@@ -19,6 +19,10 @@ const { calculatePaymentBreakdown, countryCommissions } = require('../config/pay
 const mkEmail = p => `${p}_rev_${Date.now()}@test.com`;
 const PASS = 'password123';
 
+// Track all test-created IDs for targeted cleanup (only delete data created by THIS test run)
+const testUserIds = [];
+const testListingIds = [];
+
 let sellerToken, buyerToken, sellerId, buyerId;
 
 async function createUser(name, email) {
@@ -38,12 +42,12 @@ async function buy(buyerToken, listingId) {
 beforeAll(async () => {
   const uri = process.env.MONGODB_URI || 'mongodb+srv://reddy59022_db_user:anNecZCiT3eJQfre@cluster.mongodb.net/poshmark?retryWrites=true&w=majority';
   if (mongoose.connection.readyState === 0) await mongoose.connect(uri);
-  await Promise.all([User.deleteMany({ email: /rev_test/ }), Listing.deleteMany({ title: /Rev Test/ }), Transaction.deleteMany({}), Payout.deleteMany({})]);
+  await Promise.all([User.deleteMany({ email: /rev_test/ }), Listing.deleteMany({ title: /Rev Test/ }), Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }), Payout.deleteMany({ seller: { $in: testUserIds } })]);
   const { user: s, token: st } = await createUser('RevSeller', mkEmail('seller')); sellerId = s._id; sellerToken = st;
   const { user: b, token: bt } = await createUser('RevBuyer', mkEmail('buyer')); buyerId = b._id; buyerToken = bt;
 });
 afterAll(async () => {
-  await Promise.all([User.deleteMany({ email: /rev_test/ }), Listing.deleteMany({ title: /Rev Test/ }), Transaction.deleteMany({}), Payout.deleteMany({})]);
+  await Promise.all([User.deleteMany({ email: /rev_test/ }), Listing.deleteMany({ title: /Rev Test/ }), Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }), Payout.deleteMany({ seller: { $in: testUserIds } })]);
   await mongoose.disconnect();
 });
 
@@ -74,10 +78,10 @@ describe('Payment Breakdown Math', () => {
     console.log(`$5 item: stripeFee=$${b.platform.stripeFee}, netRevenue=$${b.platform.netRevenue}`);
   });
 
-  test('BD.4 $5000 item: 8% = $400, clamped to max $150', () => {
+  test('BD.4 $5000 item: 8% = $400, under max $500', () => {
     const b = calculatePaymentBreakdown(5000, 'US', 'US', 1);
-    expect(b.seller.platformFee).toBe(150); // clamped to max $150
-    expect(b.seller.sellerEarnings).toBe(4850);
+    expect(b.seller.platformFee).toBe(400); // 8% of 5000 = 400, under max $500
+    expect(b.seller.sellerEarnings).toBe(4600);
   });
 
   test('BD.5 Japan item: 8% fee, minFee 50 JPY applies', () => {
@@ -96,13 +100,13 @@ describe('Payment Breakdown Math', () => {
     expect(commission).toBe(8); // 8% of item price only
   });
 
-  test('BD.7 $10000 item: 8% = $800, clamped to max $150, effective rate 1.5%', () => {
+  test('BD.7 $10000 item: 8% = $800, clamped to max $500, effective rate 5%', () => {
     const b = calculatePaymentBreakdown(10000, 'US', 'US', 1);
-    expect(b.seller.platformFee).toBe(150); // clamped to max
-    expect(b.seller.sellerEarnings).toBe(9850);
-    // Effective commission rate on high-value items drops to 1.5%
+    expect(b.seller.platformFee).toBe(500); // clamped to max $500
+    expect(b.seller.sellerEarnings).toBe(9500);
+    // Effective commission rate on high-value items drops to 5%
     const effectiveRate = Math.round((b.seller.platformFee / b.buyer.itemPrice) * 10000) / 100;
-    expect(effectiveRate).toBe(1.5);
+    expect(effectiveRate).toBe(5);
     console.log(`$10000 item: effective commission rate= ${effectiveRate}%`);
   });
 });
@@ -449,11 +453,11 @@ describe('Multi-Currency Revenue Protection', () => {
     expect(b.seller.shippingPayout).toBe(b.buyer.shippingCost);
   });
 
-  test('MC.8 $5000 US item clamped at maxFee $150 vs 8% = $400', () => {
+  test('MC.8 $5000 US item: 8% = $400, under maxFee $500', () => {
     const b = calculatePaymentBreakdown(5000, 'US', 'US', 1);
-    expect(b.seller.platformFee).toBe(150); // clamped to max
-    expect(b.seller.sellerEarnings).toBe(4850);
-    // Effective rate = 150/5000 = 3% (still reasonable for high value)
+    expect(b.seller.platformFee).toBe(400); // 8% of 5000 = 400, under max $500
+    expect(b.seller.sellerEarnings).toBe(4600);
+    // Effective rate = 400/5000 = 8%
     expect(b.platform.netRevenue).toBeGreaterThan(0);
   });
 });

@@ -52,6 +52,11 @@ const payoutSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  // Deduplication: track payment intent to prevent double processing
+  paymentIntentId: {
+    type: String,
+    default: '',
+  },
 }, { timestamps: true });
 
 payoutSchema.index({ seller: 1, status: 1 });

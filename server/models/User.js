@@ -89,8 +89,14 @@ const userSchema = new mongoose.Schema({
     available: { type: Number, default: 0 },
     pending: { type: Number, default: 0 },
     totalEarned: { type: Number, default: 0 },
-    // New rolling reserve field: funds held for a period (e.g., 30 days) before becoming available
+    // Rolling reserve: 10% of earnings held for 60 days to protect against chargebacks
     reserve: { type: Number, default: 0 },
+    // Track when each reserve amount becomes available
+    reserveReleaseDate: [{
+      amount: { type: Number, required: true },
+      releaseDate: { type: Date, required: true },
+      transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
+    }],
     totalPaidOut: { type: Number, default: 0 },
     currency: { type: String, default: 'USD' },
   },

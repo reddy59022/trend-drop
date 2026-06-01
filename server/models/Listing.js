@@ -33,6 +33,10 @@ const listingSchema = new mongoose.Schema({
   images: [{
     type: String,
   }],
+  videoUrl: {
+    type: String,
+    default: '',
+  },
   category: {
     type: String,
     required: true,

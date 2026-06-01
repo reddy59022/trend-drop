@@ -27,6 +27,10 @@ const generateToken = (userId) => jwt.sign({ id: userId }, JWT_SECRET, { expires
 
 let seller, buyer, sellerToken, buyerToken, listing;
 
+// Track all test-created IDs for targeted cleanup (only delete data created by THIS test run)
+const testUserIds = [];
+const testListingIds = [];
+
 beforeAll(async () => {
   const testMongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/trend-drop-test";
   if (mongoose.connection.readyState === 0) {
@@ -42,6 +46,7 @@ beforeAll(async () => {
     country: 'US',
     currency: 'USD',
   });
+  testUserIds.push(seller._id);
   buyer = await User.create({
     name: 'TestBuyer',
     email: 'buyer_offers_test@example.com',
@@ -50,6 +55,7 @@ beforeAll(async () => {
     country: 'US',
     currency: 'USD',
   });
+  testUserIds.push(buyer._id);
   
   sellerToken = generateToken(seller._id);
   buyerToken = generateToken(buyer._id);
@@ -67,13 +73,15 @@ beforeAll(async () => {
     shipsFrom: 'US',
     weight: 1,
   });
+  testListingIds.push(listing._id);
 });
 
 afterAll(async () => {
-  await Offer.deleteMany({});
-  await Listing.deleteMany({});
-  await User.deleteMany({ email: /_offers_test@/ });
-  await Transaction.deleteMany({});
+  // Targeted cleanup: only delete data created by THIS test run
+  await Offer.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] });
+  await Listing.deleteMany({ _id: { $in: testListingIds } });
+  await User.deleteMany({ _id: { $in: testUserIds } });
+  await Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] });
   await mongoose.disconnect();
 });
 
@@ -111,21 +119,21 @@ describe('Offer State Machine Validation', () => {
     expect(res.body.message).toContain('Cannot counter');
   });
 
-  test('SM.4 Buyer counters (countered → buyer_countered) — must be higher than 90', async () => {
+  test('SM.4 Buyer counters (countered → buyer_countered) — must be between 80 and 90', async () => {
     const res = await request(app)
       .patch(`/api/offers/${offerId}/buyer-counter`)
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ counterAmount: 92 }); // must be > 90
+      .send({ counterAmount: 85 }); // must be > 80 (original) and < 90 (seller counter)
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('buyer_countered');
-    expect(res.body.counterAmount).toBe(92);
+    expect(res.body.counterAmount).toBe(85);
   });
 
   test('SM.5 Buyer cannot counter again (buyer_countered state invalid for buyer-counter)', async () => {
     const res = await request(app)
       .patch(`/api/offers/${offerId}/buyer-counter`)
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ counterAmount: 95 });
+      .send({ counterAmount: 87 });
     expect(res.status).toBe(400);
     expect(res.body.message).toContain('You can only counter when the seller has countered');
   });
@@ -134,10 +142,10 @@ describe('Offer State Machine Validation', () => {
     const res = await request(app)
       .patch(`/api/offers/${offerId}/counter`)
       .set('Authorization', `Bearer ${sellerToken}`)
-      .send({ counterAmount: 95 }); // must be > 92
+      .send({ counterAmount: 88 }); // must be > 85 (buyer counter)
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('countered');
-    expect(res.body.counterAmount).toBe(95);
+    expect(res.body.counterAmount).toBe(88);
   });
 
   test('SM.7 Buyer accepts counter (countered → accepted)', async () => {
@@ -146,7 +154,7 @@ describe('Offer State Machine Validation', () => {
       .set('Authorization', `Bearer ${buyerToken}`);
     expect(res.status).toBe(200);
     expect(res.body.offer.status).toBe('accepted');
-    expect(res.body.finalPrice).toBe(95);
+    expect(res.body.finalPrice).toBe(88);
   });
 
   test('SM.8 Cannot accept counter on accepted offer', async () => {
@@ -175,11 +183,11 @@ describe('Full Negotiation → Transaction Flow', () => {
       .set('Authorization', `Bearer ${sellerToken}`)
       .send({ counterAmount: 85 });
 
-    // Buyer counters at 88 (must be > 85)
+    // Buyer counters at 80 (must be > 70 and < 85)
     await request(app)
       .patch(`/api/offers/${offerId}/buyer-counter`)
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ counterAmount: 88 });
+      .send({ counterAmount: 80 });
 
     // Seller accepts buyer's counter
     const acceptRes = await request(app)
@@ -187,7 +195,7 @@ describe('Full Negotiation → Transaction Flow', () => {
       .set('Authorization', `Bearer ${sellerToken}`);
     expect(acceptRes.status).toBe(200);
     expect(acceptRes.body.offer.status).toBe('accepted');
-    expect(acceptRes.body.finalPrice).toBe(88);
+    expect(acceptRes.body.finalPrice).toBe(80);
   });
 
   test('NT.2 Buyer creates transaction from accepted offer at negotiated price', async () => {
@@ -195,7 +203,7 @@ describe('Full Negotiation → Transaction Flow', () => {
     const offer = await Offer.findById(offerId);
     expect(offer).toBeDefined();
     expect(offer.status).toBe('accepted');
-    expect(offer.counterAmount).toBe(88);
+    expect(offer.acceptedPrice).toBe(80);
 
     // Create transaction via offer endpoint
     const txnRes = await request(app)
@@ -203,8 +211,8 @@ describe('Full Negotiation → Transaction Flow', () => {
       .set('Authorization', `Bearer ${buyerToken}`);
     expect(txnRes.status).toBe(201);
     expect(txnRes.body.transaction).toBeDefined();
-    expect(txnRes.body.transaction.itemPrice).toBe(88);
-    expect(txnRes.body.transaction.paymentBreakdown.subtotal).toBe(88);
+    expect(txnRes.body.transaction.itemPrice).toBe(80);
+    expect(txnRes.body.transaction.paymentBreakdown.subtotal).toBe(80);
     
     // Verify offer is now completed
     const updatedOffer = await Offer.findById(offer._id);
@@ -282,11 +290,11 @@ describe('Single Acceptance Paths', () => {
       .send({ counterAmount: 80 });
     expect(counterRes.status).toBe(200);
 
-    // Buyer counters at 82 (must be > 80)
+    // Buyer counters at 75 (must be > 65 and < 80)
     const buyerCounterRes = await request(app)
       .patch(`/api/offers/${oId}/buyer-counter`)
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ counterAmount: 82 });
+      .send({ counterAmount: 75 });
     expect(buyerCounterRes.status).toBe(200);
 
     // Seller declines (valid from buyer_countered)
@@ -299,6 +307,12 @@ describe('Single Acceptance Paths', () => {
 });
 
 describe('Invalid State Transitions', () => {
+  beforeEach(async () => {
+    // Clean up any existing offers for this buyer before each test
+    await Offer.deleteMany({ buyer: buyer._id });
+    await Transaction.deleteMany({ buyer: buyer._id });
+  });
+
   test('IT.1 Cannot accept a declined offer', async () => {
     const createRes = await request(app)
       .post('/api/offers')
@@ -368,11 +382,11 @@ describe('Invalid State Transitions', () => {
       .set('Authorization', `Bearer ${sellerToken}`)
       .send({ counterAmount: 60 });
 
-    // Buyer counters at 65 (must be > 60)
+    // Buyer counters at 50 (must be > 40 and < 60)
     await request(app)
       .patch(`/api/offers/${oId}/buyer-counter`)
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ counterAmount: 65 });
+      .send({ counterAmount: 50 });
 
     // Seller tries to use seller-accept (wrong - only for pending)
     const res = await request(app)
@@ -389,6 +403,12 @@ describe('Invalid State Transitions', () => {
 });
 
 describe('Authorization & Edge Cases', () => {
+  beforeEach(async () => {
+    // Clean up any existing offers for this buyer before each test
+    await Offer.deleteMany({ buyer: buyer._id });
+    await Transaction.deleteMany({ buyer: buyer._id });
+  });
+
   test('AU.1 Buyer cannot accept their own offer (only seller can accept pending)', async () => {
     const createRes = await request(app)
       .post('/api/offers')
@@ -462,6 +482,12 @@ describe('Authorization & Edge Cases', () => {
 describe('Currency Validation', () => {
   let jpyListing;
 
+  beforeEach(async () => {
+    // Clean up any existing offers for this buyer before each test
+    await Offer.deleteMany({ buyer: buyer._id });
+    await Transaction.deleteMany({ buyer: buyer._id });
+  });
+
   beforeAll(async () => {
     jpyListing = await Listing.create({
       seller: seller._id,
@@ -476,6 +502,7 @@ describe('Currency Validation', () => {
       shipsFrom: 'JP',
       weight: 0.5,
     });
+    testListingIds.push(jpyListing._id);
   });
 
   test('CV.1 Offer in matching currency succeeds', async () => {
@@ -507,6 +534,12 @@ describe('Currency Validation', () => {
 });
 
 describe('Revenue Protection via Offers', () => {
+  beforeEach(async () => {
+    // Clean up any existing offers for this buyer before each test
+    await Offer.deleteMany({ buyer: buyer._id });
+    await Transaction.deleteMany({ buyer: buyer._id });
+  });
+
   test('RP.1 Transaction via offer uses negotiated price in payment breakdown', async () => {
     const createRes = await request(app)
       .post('/api/offers')

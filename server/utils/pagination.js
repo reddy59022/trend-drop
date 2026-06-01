@@ -14,9 +14,9 @@ const paginate = async (Model, {
 } = {}) => {
   // Enforce limits
   const safeLimit = Math.min(Math.max(1, parseInt(limit) || 20), parseInt(maxLimit) || 50);
-  const safePage = Math.max(1, parseInt(page) || 1);
+  const requestedPage = Math.max(1, parseInt(page) || 1);
 
-  let total, docs, hasMore;
+  let total, docs, hasMore, effectivePage;
 
   if (cursor) {
     // Cursor-based pagination (better for infinite scroll on mobile)
@@ -33,20 +33,26 @@ const paginate = async (Model, {
 
     // Get total count (expensive for large collections, so we cache)
     total = await Model.countDocuments(filter);
+    effectivePage = 1; // Cursor-based doesn't use page numbers
   } else {
     // Offset-based pagination (better for page numbers)
-    const skip = (safePage - 1) * safeLimit;
-
-    [total, docs] = await Promise.all([
-      Model.countDocuments(filter),
-      Model.find(filter)
-        .sort(sort)
-        .skip(skip)
-        .limit(safeLimit)
-        .populate(populate || '')
-        .select(select || '')
-        .lean(lean),
-    ]);
+    // CRITICAL FIX: First get total count to calculate totalPages
+    total = await Model.countDocuments(filter);
+    
+    // Calculate totalPages and clamp page to valid range
+    const totalPages = Math.ceil(total / safeLimit);
+    effectivePage = Math.min(requestedPage, Math.max(1, totalPages));
+    
+    // Now fetch documents with the clamped page
+    const skip = (effectivePage - 1) * safeLimit;
+    
+    docs = await Model.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(safeLimit)
+      .populate(populate || '')
+      .select(select || '')
+      .lean(lean);
 
     hasMore = skip + docs.length < total;
   }
@@ -58,13 +64,13 @@ const paginate = async (Model, {
     pagination: {
       total,
       totalPages,
-      currentPage: safePage,
+      currentPage: effectivePage,
       limit: safeLimit,
       hasMore,
-      hasNextPage: safePage < totalPages,
-      hasPrevPage: safePage > 1,
-      nextPage: safePage < totalPages ? safePage + 1 : null,
-      prevPage: safePage > 1 ? safePage - 1 : null,
+      hasNextPage: effectivePage < totalPages,
+      hasPrevPage: effectivePage > 1,
+      nextPage: effectivePage < totalPages ? effectivePage + 1 : null,
+      prevPage: effectivePage > 1 ? effectivePage - 1 : null,
     },
     // For cursor-based
     ...(cursor && { nextCursor: docs.length > 0 ? docs[docs.length - 1]._id : null }),
@@ -74,18 +80,21 @@ const paginate = async (Model, {
 // Paginate Mongoose query result
 const paginateResult = (docs, total, page, limit) => {
   const totalPages = Math.ceil(total / limit);
+  // CRITICAL FIX: Clamp page to valid range
+  const effectivePage = Math.min(page, Math.max(1, totalPages));
+  
   return {
     docs,
     pagination: {
       total,
       totalPages,
-      currentPage: page,
+      currentPage: effectivePage,
       limit,
-      hasMore: page < totalPages,
-      hasNextPage: page < totalPages,
-      hasPrevPage: page > 1,
-      nextPage: page < totalPages ? page + 1 : null,
-      prevPage: page > 1 ? page - 1 : null,
+      hasMore: effectivePage < totalPages,
+      hasNextPage: effectivePage < totalPages,
+      hasPrevPage: effectivePage > 1,
+      nextPage: effectivePage < totalPages ? effectivePage + 1 : null,
+      prevPage: effectivePage > 1 ? effectivePage - 1 : null,
     },
   };
 };

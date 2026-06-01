@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
+const Offer = require('../models/Offer'); // CRITICAL: For offer price validation
 const {
   stripe,
   countryCommissions,
@@ -110,8 +111,15 @@ router.post('/create-intent', auth, async (req, res) => {
 });
 
 // STEP 2 (Batch): Fulfill batch orders then capture payment
+// STEP 2 (Batch): ALL-OR-NOTHING transactional checkout
+// Phase 1: Validate all items + generate all labels (no DB writes)
+// Phase 2: Only if ALL succeeded → create all transactions, update inventory, payouts
+// Phase 3: If anything fails → full refund + no partial state
 router.post('/confirm-batch', auth, async (req, res) => {
-  const transactions = [];
+  const createdTransactions = [];
+  const createdPayouts = [];
+  const inventoryChanges = [];
+  const sellerBalanceUpdates = [];
   let captured = false;
 
   try {
@@ -120,36 +128,69 @@ router.post('/confirm-batch', auth, async (req, res) => {
       return res.status(400).json({ message: 'Missing paymentIntentId or items' });
     }
 
-    // Verify authorization status from Stripe
+    // Deduplicate - check if already processed
+    const existingPayout = await Payout.findOne({ paymentIntentId });
+    if (existingPayout) {
+      return res.json({ message: 'Order already processed', transactions: [] });
+    }
+
+    // Verify payment status from Stripe
     const paymentIntent = await retrievePaymentIntent(paymentIntentId);
-    if (paymentIntent.status !== 'requires_capture') {
+    const VALID_STATUSES = ['succeeded', 'requires_capture'];
+    if (!VALID_STATUSES.includes(paymentIntent.status)) {
       return res.status(400).json({
         message: `Payment not authorized. Status: ${paymentIntent.status}`,
       });
     }
 
-    // Deduplicate - check if already processed
-    const existingPayout = await Payout.findOne({ 'paymentIntentId': paymentIntentId });
-    if (existingPayout) {
-      return res.json({ message: 'Order already processed', transactions: [] });
-    }
+    // ========== PHASE 1: Validate + Build (NO DB WRITES) ==========
+    // This phase must succeed completely or we abort with no side effects
+    const { generateLabel, getPreferredCarrier } = require('../config/shipping');
+    const orderPlans = [];
 
     for (const item of items) {
       const listing = await Listing.findById(item.listingId);
       if (!listing || !listing.available || listing.sold || listing.quantity <= 0) {
-        continue; // Skip unavailable items
+        return res.status(400).json({
+          message: `Item ${item.listingId} is no longer available`,
+          failedItem: item.listingId,
+        });
       }
 
       const seller = await User.findById(listing.seller);
       const sellerCountry = seller?.country || listing.shipsFrom || 'US';
       const toCountry = shippingAddress?.country || req.user.country || 'US';
-
-      // Use negotiated price if available, otherwise listing price
-      const salePrice = item.negotiatedPrice || listing.price;
+      
+      // CRITICAL: Offer price validation (v14.0)
+      let salePrice = listing.price;
+      let offer = null;
+      let isNegotiated = false;
+      
+      if (item.offerId) {
+        offer = await Offer.findById(item.offerId);
+        if (!offer) {
+          return res.status(400).json({ message: `Offer ${item.offerId} not found`, failedItem: item.listingId });
+        }
+        if (offer.listing.toString() !== listing._id.toString()) {
+          return res.status(400).json({ message: 'Offer does not belong to this listing', failedItem: item.listingId });
+        }
+        if (offer.buyer.toString() !== req.user._id.toString()) {
+          return res.status(400).json({ message: 'Offer does not belong to this buyer', failedItem: item.listingId });
+        }
+        if (offer.status !== 'accepted') {
+          return res.status(400).json({ message: `Offer is not accepted. Status: ${offer.status}`, failedItem: item.listingId });
+        }
+        salePrice = offer.acceptedPrice;
+        isNegotiated = true;
+        if (item.negotiatedPrice && Math.abs(item.negotiatedPrice - offer.acceptedPrice) > 0.01) {
+          return res.status(400).json({ message: `Price mismatch. Expected ${offer.acceptedPrice}`, failedItem: item.listingId });
+        }
+      } else if (item.negotiatedPrice) {
+        salePrice = item.negotiatedPrice;
+      }
+      
       const breakdown = calculatePaymentBreakdown(salePrice, sellerCountry, toCountry, listing.weight || 0.5);
 
-      // Generate shipping label
-      const { generateLabel, getPreferredCarrier } = require('../config/shipping');
       const sellerAddress = seller?.shippingAddress ? {
         street1: seller.shippingAddress.street1,
         city: seller.shippingAddress.city,
@@ -164,6 +205,27 @@ router.post('/confirm-batch', auth, async (req, res) => {
         sellerAddress,
         weight: listing.weight || 0.5,
       }, carrierCode);
+
+      orderPlans.push({
+        listing, seller, sellerCountry, toCountry, salePrice, breakdown, label,
+        offer, isNegotiated,
+      });
+    }
+
+    // ========== PHASE 2: Capture Payment ==========
+    // Only after ALL labels generated successfully
+    let captureResult = null;
+    if (paymentIntent.status === 'requires_capture') {
+      captureResult = await capturePaymentIntent(paymentIntentId);
+    } else {
+      captureResult = { id: paymentIntentId, status: 'succeeded' };
+    }
+    captured = true;
+
+    // ========== PHASE 3: Commit all writes ==========
+    // All DB writes happen here. If ANY fails, we refund and rollback.
+    for (const plan of orderPlans) {
+      const { listing, seller, toCountry, salePrice, breakdown, label, offer, isNegotiated } = plan;
 
       const txn = await Transaction.create({
         listing: listing._id,
@@ -206,76 +268,114 @@ router.post('/confirm-batch', auth, async (req, res) => {
         status: 'shipped',
         payout: { status: 'pending', transactionId: paymentIntentId },
         autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
+        // CRITICAL: Link offer to transaction (v14.0)
+        offer: offer ? offer._id : null,
+        negotiatedPrice: isNegotiated ? salePrice : null,
+        isNegotiated: isNegotiated,
       });
 
-      transactions.push(txn);
+      createdTransactions.push(txn);
+      
+      // CRITICAL: Mark offer as completed and link to transaction (v14.0)
+      if (offer) {
+        offer.status = 'completed';
+        offer.transaction = txn._id;
+        await offer.save();
+      }
 
       // Update inventory
       const wasLastOne = listing.quantity === 1;
-      await Listing.findOneAndUpdate(
+      const updated = await Listing.findOneAndUpdate(
         { _id: listing._id, quantity: { $gt: 0 } },
         { $inc: { quantity: -1, quantitySold: 1 }, $set: wasLastOne ? { sold: true, available: false } : {} },
         { new: true }
       );
-
-      // Update seller balance
-      if (seller) {
-        seller.balance.pending = (seller.balance.pending || 0) + breakdown.seller.sellerEarnings;
-        seller.notifications.unshift({
-          type: 'sale',
-          from: req.user._id,
-          listing: listing._id,
-          transaction: txn._id,
-          message: `Item sold! You'll earn ${breakdown.seller.sellerEarnings} ${breakdown.sellerCurrency}.`,
-        });
-        await seller.save();
-      }
+      inventoryChanges.push({ listingId: listing._id, updated });
 
       // Create payout record
-      try {
-        await Payout.create({
-          seller: listing.seller,
-          transaction: txn._id,
-          listing: listing._id,
-          salePrice: breakdown.buyer.itemPrice,
-          commissionRate: breakdown.seller.platformFeePercent / 100,
-          commissionAmount: breakdown.seller.platformFee,
-          payoutAmount: breakdown.seller.sellerEarnings,
-          status: 'pending',
+      const payout = await Payout.create({
+        seller: listing.seller,
+        transaction: txn._id,
+        listing: listing._id,
+        salePrice: breakdown.buyer.itemPrice,
+        commissionRate: breakdown.seller.platformFeePercent / 100,
+        commissionAmount: breakdown.seller.platformFee,
+        payoutAmount: breakdown.seller.sellerEarnings,
+        status: 'pending',
+      });
+      createdPayouts.push(payout);
+
+      // Prepare seller balance update
+      sellerBalanceUpdates.push({
+        sellerDoc: seller,
+        earnings: breakdown.seller.sellerEarnings,
+        listingId: listing._id,
+        transactionId: txn._id,
+        sellerCurrency: breakdown.sellerCurrency,
+      });
+    }
+
+    // ========== PHASE 4: Update seller balances + notifications ==========
+    // All transactions succeeded — now update seller state
+    for (const update of sellerBalanceUpdates) {
+      const { sellerDoc, earnings, listingId, transactionId, sellerCurrency } = update;
+      if (sellerDoc) {
+        sellerDoc.balance.pending = (sellerDoc.balance.pending || 0) + earnings;
+        sellerDoc.notifications.unshift({
+          type: 'sale',
+          from: req.user._id,
+          listing: listingId,
+          transaction: transactionId,
+          message: `Item sold! You'll earn ${earnings} ${sellerCurrency}.`,
         });
-      } catch (pErr) {
-        console.error('Auto-payout creation error:', pErr.message);
+        await sellerDoc.save();
       }
     }
 
-    // Capture payment
-    const captureResult = await capturePaymentIntent(paymentIntentId);
-    captured = true;
-
     // Populate all transactions
-    for (const txn of transactions) {
+    for (const txn of createdTransactions) {
       await txn.populate(['buyer', 'seller', 'listing']);
     }
 
     res.json({
-      transactions,
+      transactions: createdTransactions,
       captureResult: { id: captureResult.id, status: captureResult.status },
     });
 
   } catch (error) {
     console.error('Confirm batch payment error:', error);
-    if (!captured && req.body.paymentIntentId) {
-      try { await releaseAuthorization(req.body.paymentIntentId); } catch (e) {}
-    }
+
+    // ========== ROLLBACK: Full cleanup ==========
+    // If payment was captured, issue a full refund
     if (captured && req.body.paymentIntentId) {
-      try { await issueRefund(req.body.paymentIntentId); } catch (e) {}
+      try { await issueRefund(req.body.paymentIntentId); } catch (e) { console.error('Refund rollback failed:', e.message); }
     }
-    // Cleanup partial transactions
-    for (const txn of transactions) {
-      if (!captured) {
-        try { await Transaction.findByIdAndDelete(txn._id); } catch (e) {}
+    // If payment was only authorized (not yet captured), release it
+    if (!captured && req.body.paymentIntentId) {
+      try { await releaseAuthorization(req.body.paymentIntentId); } catch (e) { console.error('Release rollback failed:', e.message); }
+    }
+
+    // Cleanup all partial DB writes (reverse order)
+    for (const payout of createdPayouts) {
+      try { await Payout.findByIdAndDelete(payout._id); } catch (e) {}
+    }
+    for (const txn of createdTransactions) {
+      try { await Transaction.findByIdAndDelete(txn._id); } catch (e) {}
+    }
+    // Restore inventory
+    for (const change of inventoryChanges) {
+      if (!change.updated) {
+        // Item was marked as sold but wasn't updated — restore quantity
+        try {
+          await Listing.findOneAndUpdate(
+            { _id: change.listingId },
+            { $inc: { quantity: 1, quantitySold: -1 } },
+            { new: true }
+          );
+        } catch (e) {}
       }
     }
+
     res.status(500).json({ message: error.message || 'Error confirming batch payment' });
   }
 });
@@ -295,11 +395,13 @@ router.post('/confirm', auth, async (req, res) => {
 
     if (!paymentIntentId) return res.status(400).json({ message: 'Missing paymentIntentId' });
 
-    // Verify authorization status from Stripe
+    // Verify payment status from Stripe
+    // With automatic capture, status is 'succeeded' after client confirms
     const paymentIntent = await retrievePaymentIntent(paymentIntentId);
-    if (paymentIntent.status !== 'requires_capture') {
+    const VALID_STATUSES = ['succeeded', 'requires_capture'];
+    if (!VALID_STATUSES.includes(paymentIntent.status)) {
       return res.status(400).json({
-        message: `Payment not authorized. Status: ${paymentIntent.status}. Expected: requires_capture`,
+        message: `Payment not authorized. Status: ${paymentIntent.status}`,
       });
     }
 
@@ -311,12 +413,10 @@ router.post('/confirm', auth, async (req, res) => {
 
     const listing = await Listing.findById(listingId);
     if (!listing) {
-      await releaseAuthorization(paymentIntentId);
-      return res.status(404).json({ message: 'Listing not found. Authorization released.' });
+      return res.status(404).json({ message: 'Listing not found' });
     }
     if (!listing.available || listing.sold || listing.quantity <= 0) {
-      await releaseAuthorization(paymentIntentId);
-      return res.status(400).json({ message: 'Item sold out. Authorization released.' });
+      return res.status(400).json({ message: 'Item sold out' });
     }
 
     const seller = await User.findById(listing.seller);

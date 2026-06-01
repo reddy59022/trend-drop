@@ -7,7 +7,7 @@ const upload = require('../middleware/upload');
 const { paginate } = require('../utils/pagination');
 
 // Performance: Select only needed fields for list queries
-const LISTING_LIST_FIELDS = 'title price originalPrice images seller category brand size condition likes sold createdAt';
+const LISTING_LIST_FIELDS = 'title price originalPrice images videoUrl seller category brand size condition likes sold createdAt';
 const USER_PUBLIC_FIELDS = 'name avatar';
 
 // GET /api/listings - Get all listings with filters
@@ -186,7 +186,9 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       category, brand, size, condition, color,
       weight, weightUnit, shipsFrom,
       domesticShipping, internationalShipping, freeShipping, shippingCost,
-      quantity,
+      quantity, videoUrl,
+      // Boost fields
+      boostTier, boostDuration,
     } = req.body;
 
     let imageUrls = [];
@@ -209,6 +211,31 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       return res.status(400).json({ message: 'Minimum listing price is $5.00' });
     }
 
+    // Calculate boost fee if boost tier is selected
+    let boostData = {
+      active: false,
+      tier: '',
+      durationDays: 14,
+      fee: 0,
+      priorityScore: 0,
+    };
+
+    if (boostTier && ['standard', 'premium', 'elite'].includes(boostTier)) {
+      const { calculateBoostFee } = require('../config/boost');
+      const duration = boostDuration ? Number(boostDuration) : 14;
+      const boostInfo = calculateBoostFee(Number(price), boostTier, duration);
+      
+      boostData = {
+        active: true,
+        tier: boostTier,
+        startDate: new Date(),
+        endDate: new Date(Date.now() + duration * 24 * 60 * 60 * 1000),
+        durationDays: duration,
+        fee: boostInfo.fee,
+        priorityScore: boostInfo.priorityScore,
+      };
+    }
+
     const listing = await Listing.create({
       seller: req.user._id,
       title,
@@ -216,6 +243,7 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       price: Number(price),
       originalPrice: originalPrice ? Number(originalPrice) : undefined,
       images: imageUrls,
+      videoUrl: videoUrl || '',
       category,
       brand,
       size,
@@ -231,6 +259,7 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
         shippingCost: shippingCost ? Number(shippingCost) : 0,
       },
       quantity: quantity ? Number(quantity) : 1,
+      boost: boostData,
     });
 
     await listing.populate('seller', 'name avatar');
@@ -245,7 +274,7 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
   }
 });
 
-// PUT /api/listings/:id - Update listing
+// PUT /api/listings/:id - Update listing (full edit capability)
 router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
   try {
     let listing = await Listing.findById(req.params.id);
@@ -257,10 +286,38 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    const updateData = { ...req.body };
+    const {
+      title, description, price, originalPrice,
+      category, brand, size, condition, color,
+      weight, weightUnit, shipsFrom,
+      domesticShipping, internationalShipping, freeShipping, shippingCost,
+      quantity, videoUrl,
+      // Boost fields
+      boostTier, boostDuration, removeBoost,
+      // Image management
+      existingImages, // JSON array of images to keep
+    } = req.body;
+
+    const updateData = {};
+
+    // Handle images - combine existing images to keep with new uploads
+    let imageUrls = [];
+    
+    // Parse existingImages if provided (images to keep from original listing)
+    if (existingImages) {
+      try {
+        const imagesToKeep = JSON.parse(existingImages);
+        if (Array.isArray(imagesToKeep)) {
+          imageUrls = [...imagesToKeep];
+        }
+      } catch (e) {
+        // If parsing fails, ignore
+      }
+    }
+
+    // Add new uploaded images
     if (req.files && req.files.length > 0) {
       const { cloudinary } = require('../config/cloudinary');
-      const imageUrls = [];
       for (const file of req.files) {
         const b64 = Buffer.from(file.buffer).toString('base64');
         const dataURI = `data:${file.mimetype};base64,${b64}`;
@@ -270,17 +327,84 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
         });
         imageUrls.push(result.secure_url);
       }
+    }
+
+    // Only update images if we have new ones or explicitly provided existingImages
+    if (imageUrls.length > 0 || existingImages !== undefined) {
       updateData.images = imageUrls;
     }
 
-    if (updateData.price) {
-      updateData.price = Number(updateData.price);
-      // Minimum price: $5
+    // Update basic fields if provided
+    if (title) updateData.title = title;
+    if (description) updateData.description = description;
+    if (category) updateData.category = category;
+    if (brand !== undefined) updateData.brand = brand;
+    if (size !== undefined) updateData.size = size;
+    if (condition) updateData.condition = condition;
+    if (color !== undefined) updateData.color = color;
+    if (videoUrl !== undefined) updateData.videoUrl = videoUrl;
+    if (quantity) updateData.quantity = Number(quantity);
+
+    // Update price with validation
+    if (price) {
+      updateData.price = Number(price);
       if (updateData.price < 5) {
         return res.status(400).json({ message: 'Minimum listing price is $5.00' });
       }
     }
-    if (updateData.originalPrice) updateData.originalPrice = Number(updateData.originalPrice);
+    if (originalPrice) updateData.originalPrice = Number(originalPrice);
+
+    // Update weight and shipping
+    if (weight) updateData.weight = Number(weight);
+    if (weightUnit) updateData.weightUnit = weightUnit;
+    if (shipsFrom) updateData.shipsFrom = shipsFrom;
+
+    // Update shipping options
+    const shippingUpdate = {};
+    if (domesticShipping !== undefined) shippingUpdate.domestic = domesticShipping === 'true' || domesticShipping === true;
+    if (internationalShipping !== undefined) shippingUpdate.international = internationalShipping === 'true' || internationalShipping === true;
+    if (freeShipping !== undefined) shippingUpdate.freeShipping = freeShipping === 'true' || freeShipping === true;
+    if (shippingCost !== undefined) shippingUpdate.shippingCost = Number(shippingCost);
+    
+    if (Object.keys(shippingUpdate).length > 0) {
+      updateData.shipping = { ...listing.shipping.toObject(), ...shippingUpdate };
+    }
+
+    // Handle boost updates
+    if (removeBoost === 'true' || removeBoost === true) {
+      // Remove boost entirely
+      updateData.boost = {
+        active: false,
+        tier: '',
+        durationDays: 14,
+        fee: 0,
+        priorityScore: 0,
+      };
+    } else if (boostTier && ['standard', 'premium', 'elite'].includes(boostTier)) {
+      // Update or add boost
+      const { calculateBoostFee } = require('../config/boost');
+      const listingPrice = updateData.price || listing.price;
+      const duration = boostDuration ? Number(boostDuration) : 14;
+      const boostInfo = calculateBoostFee(listingPrice, boostTier, duration);
+      
+      updateData.boost = {
+        active: true,
+        tier: boostTier,
+        startDate: new Date(),
+        endDate: new Date(Date.now() + duration * 24 * 60 * 60 * 1000),
+        durationDays: duration,
+        fee: boostInfo.fee,
+        priorityScore: boostInfo.priorityScore,
+      };
+    } else if (updateData.price && listing.boost?.active) {
+      // Recalculate boost fee if price changed and listing has active boost
+      const { calculateBoostFee } = require('../config/boost');
+      const boostInfo = calculateBoostFee(updateData.price, listing.boost.tier, listing.boost.durationDays || 14);
+      updateData.boost = {
+        ...listing.boost.toObject(),
+        fee: boostInfo.fee,
+      };
+    }
 
     listing = await Listing.findByIdAndUpdate(
       req.params.id,

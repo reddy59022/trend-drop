@@ -249,31 +249,78 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
       return res.status(400).json({ message: `Cannot complete from '${txn.status}'` });
     }
 
-    // Verify 3 days have passed since buyer confirmed
+    // CRITICAL FIX #1: Verify BOTH conditions are met:
+    // 1. 3 days have passed since buyer confirmed (return window for buyer)
+    // 2. 5 days have passed since delivery (return window protection)
     const confirmedAt = txn.buyerConfirmed?.confirmedAt || txn.updatedAt;
+    const deliveredAt = txn.shipping?.actualDelivery || txn.shipping?.labelCreatedDate || txn.createdAt;
+    
     const timeSinceConfirm = Date.now() - new Date(confirmedAt).getTime();
+    const timeSinceDelivery = Date.now() - new Date(deliveredAt).getTime();
+    
+    // Check 3-day wait after confirmation
     if (timeSinceConfirm < timeWindows.AUTO_COMPLETE) {
       const remaining = Math.ceil((timeWindows.AUTO_COMPLETE - timeSinceConfirm) / (1000 * 60 * 60));
       return res.status(400).json({
-        message: `Cannot complete yet. ${remaining} hours remaining.`,
+        message: `Cannot complete yet. ${remaining} hours remaining after confirmation.`,
         releaseDate: new Date(new Date(confirmedAt).getTime() + timeWindows.AUTO_COMPLETE).toISOString(),
+      });
+    }
+    
+    // CRITICAL: Check 5-day return window from delivery has expired
+    if (timeSinceDelivery < timeWindows.PAYOUT_HOLD_FROM_DELIVERY) {
+      const remaining = Math.ceil((timeWindows.PAYOUT_HOLD_FROM_DELIVERY - timeSinceDelivery) / (1000 * 60 * 60));
+      return res.status(400).json({
+        message: `Cannot complete yet. Return window still active. ${remaining} hours remaining from delivery.`,
+        releaseDate: new Date(new Date(deliveredAt).getTime() + timeWindows.PAYOUT_HOLD_FROM_DELIVERY).toISOString(),
+        reason: 'return_window_protection',
       });
     }
 
     const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
 
-    // CRITICAL: Move money from pending → available for seller
+    // CRITICAL FIX #2 & #3: Apply seller reserve and new seller hold
     const seller = await User.findById(txn.seller);
     if (seller) {
+      // FIX #3: New seller hold - first 5 sales held for 14 days
+      const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
+      if (isNewSeller) {
+        const accountAge = Date.now() - new Date(seller.createdAt).getTime();
+        if (accountAge < timeWindows.NEW_SELLER_HOLD) {
+          const remaining = Math.ceil((timeWindows.NEW_SELLER_HOLD - accountAge) / (1000 * 60 * 60 * 24));
+          return res.status(400).json({
+            message: `New seller hold active. ${remaining} days remaining before funds release.`,
+            releaseDate: new Date(new Date(seller.createdAt).getTime() + timeWindows.NEW_SELLER_HOLD).toISOString(),
+            reason: 'new_seller_hold',
+          });
+        }
+      }
+      
+      // FIX #2: 10% rolling reserve held for 60 days
+      const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
+      const availableAmount = sellerEarnings - reserveAmount;
+      
+      // Move money from pending → available (minus reserve)
       seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-      seller.balance.available = (seller.balance.available || 0) + sellerEarnings;
+      seller.balance.available = (seller.balance.available || 0) + availableAmount;
       seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
+      
+      // Track reserve separately
+      if (!seller.balance.reserve) seller.balance.reserve = 0;
+      if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
+      seller.balance.reserve += reserveAmount;
+      seller.balance.reserveReleaseDate.push({
+        amount: reserveAmount,
+        releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+        transactionId: txn._id,
+      });
+      
       seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
       seller.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
         transaction: txn._id,
-        message: `Payment of ${sellerEarnings} ${txn.currency} released to your available balance!`,
+        message: `Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
       });
       await seller.save();
     }
