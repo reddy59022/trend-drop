@@ -22,11 +22,22 @@ const Cart = () => {
     const initStripe = async () => {
       try {
         const res = await api.get('/payments/publishable-key');
-        if (res.data.publishableKey && res.data.publishableKey !== 'pk_test_placeholder') {
-          setStripePromise(loadStripe(res.data.publishableKey));
+        const key = res.data.publishableKey;
+        const configured = res.data.configured;
+        
+        console.log('Stripe init:', { configured, keyPrefix: key ? key.substring(0, 7) + '...' : 'not set' });
+        
+        if (configured && key && key.startsWith('pk_')) {
+          setStripePromise(loadStripe(key));
+        } else {
+          // Check status endpoint for debugging
+          try {
+            const statusRes = await api.get('/payments/status');
+            console.log('Payment status:', statusRes.data);
+          } catch (e) {}
         }
       } catch (e) {
-        console.warn('Stripe init warning:', e);
+        console.error('Stripe init error:', e);
       }
     };
     initStripe();

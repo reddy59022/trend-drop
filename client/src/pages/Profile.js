@@ -43,13 +43,28 @@ const Profile = () => {
   };
 
   const handleFollow = async () => {
-    if (!currentUser) return toast.error('Please login');
+    if (!currentUser) {
+      toast.error('Please login to follow');
+      return;
+    }
+    if (isOwnProfile) {
+      toast.error('Cannot follow yourself');
+      return;
+    }
     try {
       const res = await api.post(`/users/${id}/follow`);
       setIsFollowing(res.data.following);
-      fetchProfile();
+      // Update profile to reflect new follower count
+      setProfile(prev => ({
+        ...prev,
+        followers: res.data.following 
+          ? [...(prev.followers || []), { _id: currentUser._id || currentUser.id }]
+          : (prev.followers || []).filter(f => (f._id || f) !== (currentUser._id || currentUser.id))
+      }));
+      toast.success(res.data.following ? 'Following!' : 'Unfollowed');
     } catch (error) {
-      toast.error('Failed to follow');
+      console.error('Follow error:', error);
+      toast.error(error.response?.data?.message || 'Failed to follow');
     }
   };
 
@@ -67,8 +82,6 @@ const Profile = () => {
   );
 
   if (!profile) return null;
-
-  const isOwnProfile = currentUser && (currentUser.id || currentUser._id) === id;
 
   return (
     <div className="page-container">
