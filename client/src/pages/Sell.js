@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle, FaPlay, FaYoutube, FaInstagram, FaLink } from 'react-icons/fa';
+import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle, FaPlay, FaYoutube, FaInstagram, FaLink, FaRocket, FaStar, FaCrown, FaBolt } from 'react-icons/fa';
 import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
 import { countries, formatPrice } from '../utils/helpers';
 
@@ -14,7 +14,36 @@ const steps = [
   { id: 'details', label: 'Details', icon: FaInfoCircle },
   { id: 'shipping', label: 'Shipping', icon: FaTruck },
   { id: 'pricing', label: 'Pricing', icon: FaDollarSign },
+  { id: 'boost', label: 'Boost', icon: FaRocket },
 ];
+
+// Boost tier configuration
+const BOOST_TIERS = {
+  standard: {
+    name: 'Standard Boost',
+    feePercent: 10,
+    icon: FaStar,
+    color: '#4CAF50',
+    features: ['Priority placement', 'Featured badge', 'Search boost'],
+    description: 'Get your listing noticed with enhanced visibility',
+  },
+  premium: {
+    name: 'Premium Boost',
+    feePercent: 15,
+    icon: FaRocket,
+    color: '#FF9800',
+    features: ['Top placement', 'Featured badge', 'Search boost', 'Homepage spotlight', 'Category highlight'],
+    description: 'Maximum visibility for your listing across the platform',
+  },
+  elite: {
+    name: 'Elite Boost',
+    feePercent: 20,
+    icon: FaCrown,
+    color: '#9C27B0',
+    features: ['#1 placement', 'Featured badge', 'Search boost', 'Homepage spotlight', 'Category highlight', 'Push notification to followers', 'Social media promotion'],
+    description: 'Ultimate promotion with all premium features',
+  },
+};
 
 const Sell = () => {
   const { user } = useAuth();
@@ -26,6 +55,13 @@ const Sell = () => {
   const [videoUrl, setVideoUrl] = useState('');
   const [videoPreview, setVideoPreview] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [boostConfig, setBoostConfig] = useState(null);
+  
+  // Boost selection state - default to 'premium' (middle tier)
+  const [selectedBoostTier, setSelectedBoostTier] = useState('premium');
+  const [boostDuration, setBoostDuration] = useState(14);
+  const [enableBoost, setEnableBoost] = useState(true);
+  
   // Country-specific default shipping fees (in USD)
   const defaultShippingFees = {
     US: 3.99, CA: 9.99, GB: 9.99, DE: 9.99, FR: 9.99, AU: 18.99,
@@ -53,10 +89,44 @@ const Sell = () => {
     quantity: '1',
   });
 
+  // Fetch boost config on mount
+  useEffect(() => {
+    const fetchBoostConfig = async () => {
+      try {
+        const res = await api.get('/boost/config');
+        setBoostConfig(res.data);
+      } catch (err) {
+        console.error('Failed to fetch boost config:', err);
+      }
+    };
+    fetchBoostConfig();
+  }, []);
+
   useEffect(() => { if (!user) navigate('/login'); }, [user, navigate]);
   if (!user) return null;
 
   const handleChange = (e) => { setFormData({ ...formData, [e.target.name]: e.target.value }); };
+
+  // Calculate boost fee for display
+  const calculateBoostFee = (price, tier) => {
+    const tierConfig = BOOST_TIERS[tier];
+    if (!tierConfig || !price) return 0;
+    return (price * tierConfig.feePercent / 100);
+  };
+
+  // Calculate platform fee (8%)
+  const calculatePlatformFee = (price) => {
+    if (!price) return 0;
+    return price * 0.08;
+  };
+
+  // Calculate seller earnings
+  const calculateSellerEarnings = (price, tier) => {
+    if (!price) return 0;
+    const platformFee = calculatePlatformFee(price);
+    const boostFee = enableBoost ? calculateBoostFee(price, tier) : 0;
+    return price - platformFee - boostFee;
+  };
 
   const handleImageChange = async (e) => {
     const files = Array.from(e.target.files);
@@ -65,9 +135,8 @@ const Sell = () => {
     const newPreviews = [];
     for (const file of files) {
       try {
-        // Compress to max width/height 800px, keep good quality, convert to WebP when possible
         const options = {
-          maxSizeMB: 0.5, // target ~0.5 MB per image (after compression)
+          maxSizeMB: 0.5,
           maxWidthOrHeight: 800,
           useWebWorker: true,
           fileType: 'image/webp',
@@ -78,7 +147,6 @@ const Sell = () => {
         newPreviews.push(previewDataUrl);
       } catch (err) {
         console.error('Compression error', err);
-        // Fallback to original file if compression fails
         compressedFiles.push(file);
         const reader = new FileReader();
         const dataUrlPromise = new Promise(res => {
@@ -105,17 +173,28 @@ const Sell = () => {
     try {
       const data = new FormData();
       images.forEach(img => data.append('images', img));
-      // Append video URL if provided
       if (videoUrl.trim()) {
         data.append('videoUrl', videoUrl.trim());
       }
       Object.keys(formData).forEach(key => { if (formData[key]) data.append(key, formData[key]); });
+      
+      // Add boost fields if boost is enabled
+      if (enableBoost && selectedBoostTier) {
+        data.append('boostTier', selectedBoostTier);
+        data.append('boostDuration', boostDuration);
+      }
+      
       const res = await api.post('/listings', data, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Listing created!');
       navigate(`/listing/${res.data._id}`);
     } catch (error) { toast.error(error.response?.data?.message || 'Failed'); }
     setLoading(false);
   };
+
+  const listingPrice = parseFloat(formData.price) || 0;
+  const platformFee = calculatePlatformFee(listingPrice);
+  const boostFee = enableBoost ? calculateBoostFee(listingPrice, selectedBoostTier) : 0;
+  const sellerEarnings = calculateSellerEarnings(listingPrice, selectedBoostTier);
 
   return (
     <div className="page-container" style={{ maxWidth: 800, margin: '0 auto' }}>
@@ -321,6 +400,189 @@ const Sell = () => {
             </div>
             <div style={{ display: 'flex', gap: 12, marginTop: 'var(--td-space-lg)' }}>
               <button type="button" className="btn btn-outline" onClick={() => setCurrentStep(2)}>← Back</button>
+              <button type="button" className="btn btn-primary" onClick={() => setCurrentStep(4)}>Next: Boost Options →</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Boost Options */}
+        {currentStep === 4 && (
+          <div className="glass-card" style={{ padding: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FaRocket style={{ color: 'var(--td-primary)' }} /> Boost Your Listing
+            </h2>
+            <p className="form-hint" style={{ marginBottom: 'var(--td-space-md)' }}>
+              Increase visibility and sell faster. Boost fee is deducted from your earnings when the item sells.
+            </p>
+
+            {/* Enable/Disable Boost Toggle */}
+            <div style={{ 
+              padding: 'var(--td-space-md)', 
+              background: enableBoost ? 'rgba(255, 56, 92, 0.06)' : 'var(--td-surface)',
+              borderRadius: 'var(--td-radius-sm)',
+              border: `2px solid ${enableBoost ? 'var(--td-primary)' : 'var(--td-border)'}`,
+              marginBottom: 'var(--td-space-md)',
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={enableBoost}
+                  onChange={(e) => setEnableBoost(e.target.checked)}
+                  style={{ accentColor: 'var(--td-primary)', width: 20, height: 20 }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 16 }}>Enable Boost Promotion</div>
+                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
+                    {enableBoost ? 'Boost is active - select your preferred tier below' : 'No boost - listing will appear in standard results'}
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {/* Boost Tier Selection */}
+            {enableBoost && (
+              <>
+                <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 'var(--td-space-sm)', color: 'var(--td-text-secondary)' }}>
+                  Select Boost Tier
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 'var(--td-space-md)' }}>
+                  {Object.entries(BOOST_TIERS).map(([key, tier]) => {
+                    const TierIcon = tier.icon;
+                    const isSelected = selectedBoostTier === key;
+                    const fee = calculateBoostFee(listingPrice, key);
+                    const isRecommended = key === 'premium';
+                    
+                    return (
+                      <div
+                        key={key}
+                        onClick={() => setSelectedBoostTier(key)}
+                        style={{
+                          padding: 'var(--td-space-md)',
+                          borderRadius: 'var(--td-radius-sm)',
+                          border: `2px solid ${isSelected ? tier.color : 'var(--td-border)'}`,
+                          background: isSelected ? `${tier.color}10` : 'var(--td-surface)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          position: 'relative',
+                        }}
+                      >
+                        {isRecommended && (
+                          <div style={{
+                            position: 'absolute',
+                            top: -10,
+                            right: 12,
+                            background: tier.color,
+                            color: '#fff',
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontSize: 10,
+                            fontWeight: 700,
+                          }}>
+                            RECOMMENDED
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <div style={{
+                            width: 32, height: 32,
+                            borderRadius: 'var(--td-radius-sm)',
+                            background: tier.color,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <TierIcon size={16} color="#fff" />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 14 }}>{tier.name}</div>
+                            <div style={{ fontSize: 12, color: tier.color, fontWeight: 600 }}>{tier.feePercent}% fee</div>
+                          </div>
+                        </div>
+                        <p style={{ fontSize: 12, color: 'var(--td-text-tertiary)', marginBottom: 8, lineHeight: 1.4 }}>
+                          {tier.description}
+                        </p>
+                        <div style={{ fontSize: 11, color: 'var(--td-text-secondary)' }}>
+                          <strong>Features:</strong>
+                          <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                            {tier.features.slice(0, 3).map((f, i) => (
+                              <li key={i}>{f}</li>
+                            ))}
+                            {tier.features.length > 3 && <li>+{tier.features.length - 3} more</li>}
+                          </ul>
+                        </div>
+                        {listingPrice > 0 && (
+                          <div style={{ 
+                            marginTop: 8, 
+                            padding: '6px 8px', 
+                            background: `${tier.color}15`, 
+                            borderRadius: 4,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: tier.color,
+                          }}>
+                            Fee: {formatPrice(fee, user?.currency)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Duration Selection */}
+                <div style={{ marginBottom: 'var(--td-space-md)' }}>
+                  <label className="form-label" style={{ fontSize: 14, fontWeight: 600 }}>Boost Duration</label>
+                  <select 
+                    value={boostDuration}
+                    onChange={(e) => setBoostDuration(Number(e.target.value))}
+                    className="form-input"
+                    style={{ maxWidth: 200 }}
+                  >
+                    <option value={7}>7 days</option>
+                    <option value={14}>14 days (recommended)</option>
+                    <option value={21}>21 days</option>
+                    <option value={30}>30 days</option>
+                  </select>
+                </div>
+
+                {/* Earnings Summary */}
+                {listingPrice > 0 && (
+                  <div style={{
+                    padding: 'var(--td-space-md)',
+                    background: 'var(--td-surface)',
+                    borderRadius: 'var(--td-radius-sm)',
+                    border: '1px solid var(--td-border)',
+                  }}>
+                    <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Earnings Summary</h4>
+                    <div style={{ display: 'grid', gap: 8, fontSize: 13 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--td-text-tertiary)' }}>Listing Price:</span>
+                        <span style={{ fontWeight: 600 }}>{formatPrice(listingPrice, user?.currency)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--td-text-tertiary)' }}>Platform Fee (8%):</span>
+                        <span style={{ fontWeight: 600, color: 'var(--td-error)' }}>-{formatPrice(platformFee, user?.currency)}</span>
+                      </div>
+                      {enableBoost && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--td-text-tertiary)' }}>Boost Fee ({BOOST_TIERS[selectedBoostTier]?.feePercent}%):</span>
+                          <span style={{ fontWeight: 600, color: 'var(--td-error)' }}>-{formatPrice(boostFee, user?.currency)}</span>
+                        </div>
+                      )}
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        paddingTop: 8,
+                        borderTop: '1px solid var(--td-border)',
+                        fontWeight: 700,
+                      }}>
+                        <span>You'll Earn:</span>
+                        <span style={{ color: 'var(--td-success)', fontSize: 16 }}>{formatPrice(sellerEarnings, user?.currency)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div style={{ display: 'flex', gap: 12, marginTop: 'var(--td-space-lg)' }}>
+              <button type="button" className="btn btn-outline" onClick={() => setCurrentStep(3)}>← Back</button>
               <button type="submit" className="btn btn-primary btn-lg" disabled={loading} style={{ flex: 1 }}>
                 {loading ? <><FaSpinner className="spinner-sm" /> Creating...</> : <><FaCheckCircle /> Publish Listing</>}
               </button>

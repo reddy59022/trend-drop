@@ -183,8 +183,58 @@ Day 9: Auto-complete → seller.balance.available += $92 (NOW withdrawable)
 - **Returned order**: Pending funds removed, full refund to buyer
 - **Disputed order**: Funds held until dispute resolved
 
-## 10. Boost System ✓ 4 tests
-- Tiers: standard (10%), premium (15%), elite (20%)
+## 10. Boost System ✓ 27 tests (NEW - Complete Implementation)
+
+### Boost Tiers:
+| Tier | Fee | Priority | Features |
+|------|-----|----------|----------|
+| **Standard** | 10% | 1 | Priority placement, Featured badge, Search boost |
+| **Premium** | 15% | 2 | Top placement, Featured badge, Search boost, Homepage spotlight, Category highlight |
+| **Elite** | 20% | 3 | #1 placement, Featured badge, Search boost, Homepage spotlight, Category highlight, Push notification to followers, Social media promotion |
+
+### Boost Configuration:
+- **Duration**: 7-30 days (default: 14 days)
+- **Max active boosts per seller**: 10
+- **Fee calculation**: `(listingPrice × feePercent / 100 / 14) × durationDays`
+- **Fee is deducted from seller earnings when item sells**
+
+### Revenue Split with Boost:
+```
+Example: $100 item with Premium Boost (15%)
+├── Platform Fee (8%): $8
+├── Boost Fee (15%): $15
+├── Seller Earnings: $100 - $8 - $15 = $77
+└── Total Platform Revenue: $8 + $15 = $23
+```
+
+### Boost Selection During Listing Creation:
+- Sellers can select boost tier when creating a listing
+- **Default selection: Premium (middle tier)**
+- Clear fee breakdown shown to seller before publishing
+- Boost can be added, changed, or removed via listing edit
+
+### Boost API Endpoints:
+- `GET /api/boost/config` - Returns boost configuration (tiers, limits, pricing)
+- `POST /api/listings/:id/boost` - Activate boost on existing listing
+- `POST /api/listings/:id/deactivate-boost` - Deactivate boost
+- `PUT /api/listings/:id` - Edit listing (can add/change/remove boost)
+
+### Listing Edit Capabilities:
+Sellers can edit ANY field on their listings:
+- Title, Description, Price, Category, Brand, Size, Condition, Color
+- Images (add new, remove existing)
+- Video URL (YouTube, Instagram, Facebook, TikTok, direct)
+- Shipping options (domestic, international, free shipping, cost)
+- Weight, dimensions, ships from country
+- Quantity
+- **Boost tier** (add, change, or remove)
+- Boost fee is automatically recalculated if price changes
+
+### Boost Fee Rules:
+- Fee is ONLY charged when the item sells
+- If item doesn't sell, no boost fee is charged
+- Fee is deducted from seller's pending balance
+- Platform receives boost fee IN ADDITION to standard 8% platform fee
 
 ## 11. Wishlist ✓ 6 tests
 - Add/remove/view, seller cannot wishlist own, auth required
@@ -268,6 +318,6 @@ Order completed → Payout record updated (status: 'completed', paidAt: now)
 Order returned → Payout record updated (status: 'refunded')
 ```
 
-## Total Test Count: 296 tests (all passing)
+## Total Test Count: 323 tests (all passing)
 - All pass against real MongoDB database
-- 9 test suites: e2e.test.js, offers.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, offerChain.test.js, riskControls.test.js
+- 10 test suites: e2e.test.js, offers.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, offerChain.test.js, riskControls.test.js, **boost.test.js (NEW)**
