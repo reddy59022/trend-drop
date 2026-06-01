@@ -15,6 +15,9 @@ const Profile = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [listingsCount, setListingsCount] = useState(0);
 
+  // Calculate isOwnProfile early so it can be used in handleFollow and JSX
+  const isOwnProfile = currentUser && (currentUser.id || currentUser._id) === id;
+
   useEffect(() => {
     fetchProfile();
     // eslint-disable-next-line
