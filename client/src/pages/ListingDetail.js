@@ -2,10 +2,10 @@ import { defaultAvatar, formatPrice, getConditionColor } from "../utils/helpers"
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag } from 'react-icons/fa';
-import api from '../services/api';
+import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
-import ImageCarousel from '../components/ImageCarousel';
+import MediaCarousel from '../components/MediaCarousel';
 import CommentSection from '../components/CommentSection';
 import OfferModal from '../components/OfferModal';
 import ListingCard from '../components/ListingCard';
@@ -61,7 +61,13 @@ const ListingDetail = () => {
         // Price history may not be available
       }
       if (user) {
-        setLiked(res.data.listing.likes?.includes(user.id || user._id) || false);
+        // Check wishlist first, fallback to likes array
+        try {
+          const wishlistRes = await checkInWishlist(id);
+          setLiked(wishlistRes.data.inWishlist);
+        } catch (e) {
+          setLiked(res.data.listing.likes?.includes(user.id || user._id) || false);
+        }
         setIsFollowing(
           res.data.listing.seller?.followers?.some(
             (f) => (f._id || f) === (user.id || user._id)
@@ -78,11 +84,23 @@ const ListingDetail = () => {
   const handleLike = async () => {
     if (!user) return toast.error('Please login');
     try {
+      if (liked) {
+        // Remove from wishlist
+        await removeFromWishlist(id);
+        setLiked(false);
+        toast.info('Removed from wishlist');
+      } else {
+        // Add to wishlist
+        await addToWishlist(id);
+        setLiked(true);
+        toast.success('Added to wishlist!');
+      }
+      // Also toggle the like on the listing for social features
       const res = await api.post(`/listings/${id}/like`);
-      setLiked(res.data.liked);
       setLikeCount(res.data.likes.length);
     } catch (error) {
-      toast.error('Failed to like');
+      console.error('Wishlist error:', error);
+      toast.error('Failed to update wishlist');
     }
   };
 
@@ -233,7 +251,7 @@ const ListingDetail = () => {
       <div className="listing-detail">
         {/* Left - Image */}
         <div className="listing-detail-left">
-          <ImageCarousel images={listing.images} />
+          <MediaCarousel images={listing.images} videoUrl={listing.videoUrl} />
           
           {/* Price History Chart */}
           {priceHistory.length > 0 && (

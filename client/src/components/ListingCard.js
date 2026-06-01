@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FaHeart, FaShoppingBag, FaCheckCircle, FaBolt } from 'react-icons/fa';
+import { FaHeart, FaShoppingBag, FaCheckCircle, FaBolt, FaPlay } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { toast } from 'react-toastify';
+import { parseVideoUrl } from '../utils/videoEmbed';
 import { defaultAvatar, getConditionColor } from '../utils/helpers';
 
 const ListingCard = ({ listing }) => {
@@ -69,18 +70,81 @@ const ListingCard = ({ listing }) => {
 
   const conditionColor = getConditionColor(listing.condition);
 
+  const hasNoImages = !listing.images || listing.images.length === 0;
+  
+  // Try to get video thumbnail for card preview
+  let videoThumbnail = null;
+  if (listing.videoUrl) {
+    const parsed = parseVideoUrl(listing.videoUrl);
+    if (parsed && parsed.thumbnail) {
+      videoThumbnail = parsed.thumbnail;
+    }
+  }
+
   return (
     <Link to={`/listing/${listing._id}`} className="listing-card">
       <div className="listing-card-image">
-        {!imageLoaded && <div className="skeleton skeleton-image" />}
-        <img
-          src={listing.images?.[0] || defaultAvatar}
-          alt={listing.title}
-          onLoad={() => setImageLoaded(true)}
-          style={{ opacity: imageLoaded ? 1 : 0 }}
-        />
-        
+        {hasNoImages && listing.videoUrl && videoThumbnail ? (
+          /* Video-only listing — show video thumbnail with play overlay LIKE YouTube style */
+          /* MUST use position: absolute to fill the padding-based aspect-ratio parent */
+          <div style={{ position: 'absolute', inset: 0 }}>
+            {!imageLoaded && <div className="skeleton skeleton-image" style={{ position: 'absolute', inset: 0 }} />}
+            <img
+              src={videoThumbnail}
+              alt={listing.title}
+              onLoad={() => setImageLoaded(true)}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                opacity: imageLoaded ? 1 : 0,
+              }}
+            />
+            {/* Play button overlay */}
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(0,0,0,0.15)',
+            }}>
+              <div style={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.92)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#6C63FF',
+                fontSize: 24,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                transition: 'transform 0.2s',
+              }}>
+                <FaPlay style={{ marginLeft: 3 }} />
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Normal image display */
+          <>
+            {!imageLoaded && <div className="skeleton skeleton-image" />}
+            <img
+              src={listing.images?.[0] || defaultAvatar}
+              alt={listing.title}
+              onLoad={() => setImageLoaded(true)}
+              style={{ opacity: imageLoaded ? 1 : 0 }}
+            />
+          </>
+        )}
+
         {/* Badges */}
+        {listing.videoUrl && (
+          <span className="video-badge">
+            <FaPlay size={10} /> Video
+          </span>
+        )}
         {listing.boosted && (
           <span className="boost-badge">
             <FaBolt size={10} /> BOOSTED
@@ -115,7 +179,7 @@ const ListingCard = ({ listing }) => {
 
       <div className="listing-card-info">
         <h3 className="listing-card-title">{listing.title}</h3>
-        
+
         <div className="listing-card-price">
           <span className="current-price">
             ${listing.price.toFixed(2)}
@@ -126,9 +190,9 @@ const ListingCard = ({ listing }) => {
         </div>
 
         <div className="listing-card-meta">
-          <span 
+          <span
             className="listing-condition"
-            style={{ 
+            style={{
               background: `${conditionColor}15`,
               color: conditionColor,
             }}
@@ -147,9 +211,9 @@ const ListingCard = ({ listing }) => {
           />
           <span>{listing.seller?.name}</span>
           {listing.seller?.verified && (
-            <FaCheckCircle 
-              size={14} 
-              style={{ color: 'var(--td-primary)', marginLeft: 2 }} 
+            <FaCheckCircle
+              size={14}
+              style={{ color: 'var(--td-primary)', marginLeft: 2 }}
               title="Verified seller"
             />
           )}

@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** May 31, 2026 — v12.0 (Enterprise multi-seller, partial returns, 261 tests passing)
+> **Last Updated:** June 1, 2026 — v14.0 (Full counter-offer chain, offer-transaction linking, 296 tests passing)
 
 ---
 
@@ -16,8 +16,47 @@
 - Inventory: quantity (default 1), reserved, quantitySold
 - Sold listings hidden from public feed
 
-## 3. Offer Negotiation ✓ 28 tests
-### Offer Visibility Rules (Issue #1):
+## 3. Offer Negotiation ✓ 41 tests (13 new counter-offer chain tests)
+
+### Offer State Machine (v14.0 - Full Counter-Offer Chain):
+```
+pending ──→ accepted          (seller accepts original offer)
+pending ──→ countered         (seller counters)
+pending ──→ declined          (seller declines)
+
+countered ──→ accepted        (buyer accepts seller's counter)
+countered ──→ buyer_countered (buyer counters back)
+
+buyer_countered ──→ accepted  (seller accepts buyer's counter)
+buyer_countered ──→ countered (seller counters again)
+buyer_countered ──→ declined  (seller declines)
+
+accepted ──→ completed        (after purchase)
+```
+
+### Counter-Offer Chain Rules:
+- **Unlimited rounds**: Counter-offers can go back and forth any number of times
+- **counterHistory**: Full audit trail of every offer/counter with timestamps
+- **lastCounterBy**: Tracks who made the last counter (determines who can act next)
+- **acceptedPrice**: The final agreed price (set explicitly when accepted)
+- **acceptedBy**: Who accepted ('buyer' or 'seller')
+
+### Buyer Counter Validation:
+- Must be HIGHER than buyer's original offer (increasing their offer)
+- Must be LOWER than seller's counter (meeting in the middle)
+- If buyer agrees with seller's counter, they should use "accept" instead
+
+### Seller Counter Validation:
+- From `pending`: Must be higher than buyer's offer, cannot exceed listing price
+- From `buyer_countered`: Must be higher than buyer's counter
+
+### Offer-Transaction Linking:
+- When buyer purchases at accepted price, offer is linked to transaction
+- Offer status changes to `completed` after purchase
+- Transaction stores `offer` reference and `negotiatedPrice`
+- Payment validation ensures offer price matches transaction price
+
+### Offer Visibility Rules:
 - Negotiated price ONLY when offer status is `accepted`
 - Pending/countered/buyer_countered: show listing price
 - Each buyer-seller pair has independent offers
@@ -28,6 +67,39 @@
 - Payment deduction only on order placement
 - Cancelled orders get full refund via Stripe
 - Shipping cost passed through to seller
+
+### Payment Capture Strategy (Manual Capture):
+- **capture_method: 'manual'** — Stripe authorizes payment but does NOT capture immediately
+- Client confirms payment → status becomes `requires_capture` (authorized, not charged)
+- Server calls `confirm-batch` → validates, generates labels, THEN captures payment
+- This ensures payment is only captured AFTER fulfillment (label generation) succeeds
+- If fulfillment fails → authorization is released (no charge to customer)
+
+### Batch Checkout — All-or-Nothing Transactional Flow:
+**Phase 1: Validate + Build (NO DB WRITES)**
+- Validate ALL items are available
+- Generate ALL shipping labels
+- If ANY item fails → abort entire batch (no side effects)
+
+**Phase 2: Capture Payment**
+- Only after ALL labels generated successfully
+- Capture the authorized payment (money moves from customer to Stripe)
+
+**Phase 3: Commit All Writes**
+- Create ALL transactions
+- Update ALL inventory
+- Create ALL payout records
+- If ANY write fails → full refund + rollback all partial writes
+
+**Phase 4: Update Seller Balances**
+- Only after ALL transactions created successfully
+- Update seller.balance.pending for each seller
+- Send notifications to each seller
+
+### Rollback on Failure:
+- If payment captured but fulfillment fails → `issueRefund()` immediately
+- If payment only authorized → `releaseAuthorization()` (no charge)
+- Cleanup all partial DB writes (transactions, payouts, inventory)
 
 ## 5. Order Lifecycle ✓ 18 tests
 ### States: paid → shipped → delivered → buyer_confirmed → completed
@@ -69,10 +141,47 @@
 ## 8. Chargeback ✓ 2 tests
 - States: chargeback_open → chargeback_won / chargeback_lost
 
-## 9. Payout & Commission ✓ 12 tests
+## 9. Payout & Commission ✓ 12 tests + 11 payout flow tests
 - 8% commission, dashboard shows ALL sales (pending + completed)
 - Seller payout methods: Stripe, PayPal
-- Payout timing: 3 days after buyer confirms delivery
+- **Payout timing: Seller gets paid ONLY after order is delivered and completed**
+
+### Seller Payout Flow (Delivery-Based):
+**CRITICAL: Seller CANNOT withdraw funds until order is completed**
+
+**Phase 1: Order Placed**
+- Payment captured from buyer
+- Seller earnings go to `balance.pending` (NOT `balance.available`)
+- Seller CANNOT withdraw pending funds
+
+**Phase 2: Order Delivered**
+- Tracking shows delivered
+- Status changes to `delivered`
+- Funds still in `balance.pending`
+
+**Phase 3: Buyer Confirms (or Auto-Confirms after 3 days)**
+- Buyer manually confirms receipt OR system auto-confirms after 3 days
+- Status changes to `buyer_confirmed`
+- Funds still in `balance.pending` (3-day return window)
+
+**Phase 4: Auto-Complete (3 days after confirmation)**
+- System auto-completes order after 3-day waiting period
+- **Funds move: `balance.pending` → `balance.available`**
+- Seller can NOW withdraw funds
+- Payout record created with status `completed`
+
+### Example Timeline:
+```
+Day 0: Order placed → seller.balance.pending += $92
+Day 3: Order delivered → funds still pending
+Day 6: Buyer confirms (or auto-confirms) → funds still pending
+Day 9: Auto-complete → seller.balance.available += $92 (NOW withdrawable)
+```
+
+### Edge Cases:
+- **Cancelled order**: Pending funds removed, full refund to buyer
+- **Returned order**: Pending funds removed, full refund to buyer
+- **Disputed order**: Funds held until dispute resolved
 
 ## 10. Boost System ✓ 4 tests
 - Tiers: standard (10%), premium (15%), elite (20%)
@@ -96,7 +205,7 @@
 - **33a:** buy → deliver → return → refund (seller NOT paid)
 - **33b:** buy → deliver → complete → payout (seller paid)
 
-## 24. ENTERPRISE: Multi-Seller Batch Orders ✓ 10 tests
+## 24. ENTERPRISE: Multi-Seller Batch Orders ✓ 10 tests + 12 batch checkout tests
 
 ### Architecture: Per-Item Transactions
 Each item from each seller gets its own Transaction record:
@@ -110,6 +219,14 @@ Each item from each seller gets its own Transaction record:
 - **34c:** Buyer sees ALL items from ALL sellers
 - **34d:** Each item has its own shipping fee (based on seller's country)
 - **34e:** Each seller gets correct payout (92% of their item price)
+
+### Batch Checkout — All-or-Nothing (NEW):
+- **34k:** ALL items must be available or entire batch fails
+- **34l:** ALL shipping labels must generate or entire batch fails
+- **34m:** Payment captured ONLY after all validations pass
+- **34n:** If ANY item fails → full refund + no partial orders created
+- **34o:** Idempotency: duplicate paymentIntentId returns "already processed"
+- **34p:** Seller balances updated ONLY after ALL items succeed
 
 ### Partial Returns (Enterprise Feature):
 - **34f:** Buyer can return 1 item from 10 sellers, keep 9
@@ -133,6 +250,24 @@ Buyer returns Item B only:
   ✓ Buyer sees all 10 transactions
 ```
 
-## Total Test Count: 261 tests (all passing)
+## 25. Order Payout Flow ✓ 11 tests (NEW)
+
+### Seller Gets Paid ONLY After Delivery:
+- **35a:** Order placed → seller.balance.pending += earnings (NOT available)
+- **35b:** Order delivered → funds still in pending
+- **35c:** Buyer confirms → funds still in pending (3-day return window)
+- **35d:** Auto-complete after 3 days → funds move to available
+- **35e:** Seller CANNOT withdraw until order is completed
+- **35f:** Cancelled order → pending funds removed
+- **35g:** Returned order → pending funds removed + refund to buyer
+
+### Payout Record Lifecycle:
+```
+Order placed → Payout record created (status: 'pending')
+Order completed → Payout record updated (status: 'completed', paidAt: now)
+Order returned → Payout record updated (status: 'refunded')
+```
+
+## Total Test Count: 296 tests (all passing)
 - All pass against real MongoDB database
-- 6 test suites: e2e.test.js, offers.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js
+- 9 test suites: e2e.test.js, offers.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, offerChain.test.js, riskControls.test.js

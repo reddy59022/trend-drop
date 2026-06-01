@@ -530,6 +530,23 @@
   z-index: 2;
 }
 
+.video-badge {
+  position: absolute;
+  top: var(--td-space-sm);
+  right: var(--td-space-sm);
+  background: linear-gradient(135deg, #6C63FF, #4A42CC);
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: var(--td-radius-xs);
+  font-size: 10px;
+  font-weight: 800;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  box-shadow: 0 2px 8px rgba(108, 99, 255, 0.3);
+}
+
 .boost-badge {
   position: absolute;
   top: var(--td-space-sm);
@@ -944,6 +961,93 @@
 
 .carousel-thumb:hover {
   opacity: 0.9;
+}
+
+/* ===== Media Carousel (Video Support) ===== */
+.media-carousel-video-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-carousel-embed-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.media-carousel-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  aspect-ratio: 1;
+}
+
+.media-carousel-direct-video {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.media-carousel-video-element {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  cursor: pointer;
+}
+
+.media-carousel-platform-badge {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.carousel-thumb-wrapper {
+  flex-shrink: 0;
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: var(--td-radius-sm);
+  transition: all var(--td-transition-fast);
+  overflow: hidden;
+}
+
+.carousel-thumb-wrapper.active {
+  border-color: var(--td-primary);
+}
+
+.carousel-thumb-video {
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+
+.carousel-thumb-video img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--td-radius-sm);
+}
+
+.carousel-thumb-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--td-radius-sm);
+  color: #fff;
+  font-size: 12px;
+  transition: background var(--td-transition-fast);
+}
+
+.carousel-thumb-wrapper:hover .carousel-thumb-play-overlay {
+  background: rgba(0, 0, 0, 0.5);
 }
 
 /* ===== Comments ===== */

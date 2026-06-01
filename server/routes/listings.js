@@ -7,7 +7,7 @@ const upload = require('../middleware/upload');
 const { paginate } = require('../utils/pagination');
 
 // Performance: Select only needed fields for list queries
-const LISTING_LIST_FIELDS = 'title price originalPrice images seller category brand size condition likes sold createdAt';
+const LISTING_LIST_FIELDS = 'title price originalPrice images videoUrl seller category brand size condition likes sold createdAt';
 const USER_PUBLIC_FIELDS = 'name avatar';
 
 // GET /api/listings - Get all listings with filters
@@ -186,7 +186,7 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       category, brand, size, condition, color,
       weight, weightUnit, shipsFrom,
       domesticShipping, internationalShipping, freeShipping, shippingCost,
-      quantity,
+      quantity, videoUrl,
     } = req.body;
 
     let imageUrls = [];
@@ -216,6 +216,7 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       price: Number(price),
       originalPrice: originalPrice ? Number(originalPrice) : undefined,
       images: imageUrls,
+      videoUrl: videoUrl || '',
       category,
       brand,
       size,

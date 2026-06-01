@@ -49,7 +49,12 @@ const timeWindows = {
   RETURN_SHIP_WINDOW: 7 * 24 * 60 * 60 * 1000,        // 7 days to ship return
   DISPUTE_WINDOW: 14 * 24 * 60 * 60 * 1000,           // 14 days to dispute
   AUTO_COMPLETE: 3 * 24 * 60 * 60 * 1000,             // Auto-complete 3 days after confirm
+  PAYOUT_HOLD_FROM_DELIVERY: 5 * 24 * 60 * 60 * 1000, // CRITICAL: Hold funds 5 days from delivery (return window)
   CANCELLATION_WINDOW: 24 * 60 * 60 * 1000,           // 24h cancel window
+  NEW_SELLER_HOLD: 14 * 24 * 60 * 60 * 1000,          // New seller: hold first 5 sales for 14 days
+  NEW_SELLER_THRESHOLD: 5,                              // First 5 sales subject to hold
+  SELLER_RESERVE_PERCENT: 0.10,                         // 10% rolling reserve
+  SELLER_RESERVE_HOLD_DAYS: 60 * 24 * 60 * 60 * 1000,  // Reserve held 60 days
 };
 
 // Cancellation rules

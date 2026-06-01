@@ -5,7 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle } from 'react-icons/fa';
+import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle, FaPlay, FaYoutube, FaInstagram, FaLink } from 'react-icons/fa';
+import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
 import { countries, formatPrice } from '../utils/helpers';
 
 const steps = [
@@ -22,6 +23,8 @@ const Sell = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [images, setImages] = useState([]);
   const [previews, setPreviews] = useState([]);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoPreview, setVideoPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   // Country-specific default shipping fees (in USD)
   const defaultShippingFees = {
@@ -96,12 +99,16 @@ const Sell = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (images.length === 0) { toast.error('Add at least one image'); return; }
+    if (images.length === 0 && !videoUrl.trim()) { toast.error('Add at least one image or a video URL'); return; }
     if (!formData.title || !formData.description || !formData.price) { toast.error('Fill required fields'); return; }
     setLoading(true);
     try {
       const data = new FormData();
       images.forEach(img => data.append('images', img));
+      // Append video URL if provided
+      if (videoUrl.trim()) {
+        data.append('videoUrl', videoUrl.trim());
+      }
       Object.keys(formData).forEach(key => { if (formData[key]) data.append(key, formData[key]); });
       const res = await api.post('/listings', data, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Listing created!');
@@ -159,7 +166,88 @@ const Sell = () => {
               )}
               <input ref={fileInputRef} type="file" multiple accept="image/*" onChange={handleImageChange} style={{ display: 'none' }} />
             </div>
-            <button type="button" className="btn btn-primary" onClick={() => setCurrentStep(1)} disabled={images.length === 0} style={{ marginTop: 'var(--td-space-md)' }}>
+
+            {/* Video URL Section */}
+            <div style={{ marginTop: 'var(--td-space-lg)', borderTop: '1px solid var(--td-border)', paddingTop: 'var(--td-space-md)' }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FaPlay size={16} style={{ color: 'var(--td-primary)' }} /> Product Video <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--td-text-tertiary)' }}>(optional)</span>
+              </h2>
+              <p className="form-hint" style={{ marginBottom: 'var(--td-space-sm)' }}>
+                Add a YouTube, Instagram Reel, Facebook video, TikTok, or direct video URL to showcase your item in action
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="url"
+                  value={videoUrl}
+                  onChange={(e) => {
+                    const url = e.target.value;
+                    setVideoUrl(url);
+                    if (url.trim()) {
+                      const parsed = parseVideoUrl(url);
+                      setVideoPreview(parsed);
+                    } else {
+                      setVideoPreview(null);
+                    }
+                  }}
+                  placeholder="https://youtube.com/watch?v=... or Instagram/Facebook reel URL"
+                  className="form-input"
+                  style={{ flex: 1 }}
+                />
+                {videoPreview && (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setVideoUrl('');
+                      setVideoPreview(null);
+                    }}
+                    style={{ padding: '8px 12px', color: 'var(--td-error)' }}
+                    title="Remove video"
+                  >
+                    <FaTimes size={16} />
+                  </button>
+                )}
+              </div>
+              
+              {/* Video Preview */}
+              {videoPreview && (
+                <div style={{
+                  marginTop: 'var(--td-space-sm)',
+                  padding: 'var(--td-space-md)',
+                  background: `${getVideoPlatformColor(videoPreview)}10`,
+                  borderRadius: 'var(--td-radius-sm)',
+                  border: `1px solid ${getVideoPlatformColor(videoPreview)}30`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                }}>
+                  <div style={{
+                    width: 40, height: 40,
+                    borderRadius: 'var(--td-radius-sm)',
+                    background: getVideoPlatformColor(videoPreview),
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    {videoPreview.platform === 'youtube' && <FaYoutube size={20} color="#fff" />}
+                    {videoPreview.platform === 'instagram' && <FaInstagram size={20} color="#fff" />}
+                    {videoPreview.platform === 'facebook' && <FaLink size={20} color="#fff" />}
+                    {videoPreview.platform === 'direct' && <FaPlay size={20} color="#fff" />}
+                    {!['youtube', 'instagram', 'facebook', 'direct'].includes(videoPreview.platform) && <FaPlay size={20} color="#fff" />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: getVideoPlatformColor(videoPreview) }}>
+                      {getVideoPlatformLabel(videoPreview)} linked
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {videoPreview.url}
+                    </div>
+                  </div>
+                  <FaCheckCircle size={18} style={{ color: 'var(--td-success)', flexShrink: 0 }} />
+                </div>
+              )}
+            </div>
+
+            <button type="button" className="btn btn-primary" onClick={() => setCurrentStep(1)} disabled={images.length === 0 && !videoPreview} style={{ marginTop: 'var(--td-space-md)' }}>
               Next: Add Details →
             </button>
           </div>
