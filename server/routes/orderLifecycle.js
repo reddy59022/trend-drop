@@ -571,6 +571,97 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
   }
 });
 
+// POST /api/orders/:transactionId/process-return
+// Alias for confirm-return-received - processes the refund
+router.post('/:transactionId/process-return', auth, validateOrderAccess, async (req, res) => {
+  try {
+    const txn = req.transaction;
+
+    if (req.orderRole !== 'seller') {
+      return res.status(403).json({ message: 'Only seller can process return' });
+    }
+
+    if (!isValidTransition(txn.status, orderStates.REFUNDED)) {
+      return res.status(400).json({ message: 'Cannot process return in current status' });
+    }
+
+    const { condition, inspectionNotes, sellerPackingProof } = req.body;
+
+    // Restore listing inventory FIRST
+    await Listing.findByIdAndUpdate(txn.listing, {
+      $inc: { quantity: 1, quantitySold: -1 },
+      $set: { sold: false, available: true },
+    });
+
+    // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
+    const refundAmount = txn.paymentBreakdown.totalPaid || 0;
+    const sellerEarnings = txn.paymentBreakdown.sellerEarnings || 0;
+
+    // Issue proper Stripe refund
+    const paymentIntentId = txn.payout?.transactionId;
+    let stripeRefundResult = null;
+    if (paymentIntentId) {
+      try {
+        const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
+        const pi = await retrievePaymentIntent(paymentIntentId);
+        if (pi.status === 'succeeded') {
+          stripeRefundResult = await issueRefund(paymentIntentId);
+        } else if (pi.status === 'requires_capture') {
+          stripeRefundResult = await releaseAuthorization(paymentIntentId);
+        }
+      } catch (stripeErr) {
+        console.error('Stripe refund on return:', stripeErr.message);
+      }
+    }
+
+    // Notify buyer of refund
+    const buyer = await User.findById(txn.buyer);
+    if (buyer) {
+      buyer.notifications.unshift({
+        type: 'sale',
+        listing: txn.listing,
+        transaction: txn._id,
+        message: `Return processed. Refund of ${refundAmount} ${txn.currency} has been processed to your original payment method.`,
+      });
+      await buyer.save();
+    }
+
+    // Remove from seller's pending balance
+    const seller = await User.findById(txn.seller);
+    if (seller) {
+      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
+      seller.notifications.unshift({
+        type: 'sale',
+        listing: txn.listing,
+        transaction: txn._id,
+        message: `Return processed. ${refundAmount} ${txn.currency} refunded to buyer.`,
+      });
+      await seller.save();
+    }
+
+    txn.status = orderStates.REFUNDED;
+    txn.returnDetails = {
+      ...txn.returnDetails,
+      receivedAt: new Date(),
+      inspectionNotes,
+      sellerInspectionProof: sellerPackingProof || [],
+    };
+    txn.payout = { status: 'refunded', processedAt: new Date() };
+
+    await txn.save();
+
+    res.json({
+      message: 'Return processed. Full refund issued to buyer via original payment method.',
+      transaction: txn,
+      refundAmount,
+      stripeRefund: stripeRefundResult,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // POST /api/orders/:transactionId/dispute
 router.post('/:transactionId/dispute', auth, validateOrderAccess, async (req, res) => {
   try {
