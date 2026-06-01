@@ -23,7 +23,26 @@ const {
 // ===================== PUBLIC ENDPOINTS =====================
 
 router.get('/publishable-key', (req, res) => {
-  res.json({ publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder' });
+  const key = process.env.STRIPE_PUBLISHABLE_KEY;
+  res.json({ 
+    publishableKey: key || 'pk_test_placeholder',
+    configured: !!(key && key.startsWith('pk_')),
+  });
+});
+
+// Debug endpoint to check payment system status
+router.get('/status', (req, res) => {
+  const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  
+  res.json({
+    stripe: {
+      publishableKeyConfigured: !!(publishableKey && publishableKey.startsWith('pk_')),
+      secretKeyConfigured: !!(secretKey && secretKey.startsWith('sk_')),
+      stripeInitialized: !!stripe,
+    },
+    environment: process.env.NODE_ENV || 'development',
+  });
 });
 
 router.get('/commissions', (req, res) => res.json(countryCommissions));

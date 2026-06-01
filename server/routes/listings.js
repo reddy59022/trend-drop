@@ -521,7 +521,7 @@ router.post('/:id/deactivate-boost', auth, async (req, res) => {
   }
 });
 
-// POST /api/listings/:id/like - Toggle like
+// POST /api/listings/:id/like - Toggle like (also adds/removes from wishlist)
 router.post('/:id/like', auth, async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id);
@@ -529,11 +529,37 @@ router.post('/:id/like', auth, async (req, res) => {
       return res.status(404).json({ message: 'Listing not found' });
     }
 
+    const Wishlist = require('../models/Wishlist');
     const index = listing.likes.indexOf(req.user._id);
+    let liked = false;
+    
     if (index > -1) {
+      // Unlike - remove from likes and wishlist
       listing.likes.splice(index, 1);
+      liked = false;
+      
+      // Remove from wishlist
+      let wishlist = await Wishlist.findOne({ user: req.user._id });
+      if (wishlist) {
+        wishlist.items = wishlist.items.filter(i => i.listing.toString() !== req.params.id);
+        await wishlist.save();
+      }
     } else {
+      // Like - add to likes and wishlist
       listing.likes.push(req.user._id);
+      liked = true;
+
+      // Add to wishlist
+      let wishlist = await Wishlist.findOne({ user: req.user._id });
+      if (!wishlist) {
+        wishlist = await Wishlist.create({ user: req.user._id, items: [{ listing: req.params.id }] });
+      } else {
+        const exists = wishlist.items.find(i => i.listing.toString() === req.params.id);
+        if (!exists) {
+          wishlist.items.push({ listing: req.params.id });
+          await wishlist.save();
+        }
+      }
 
       // Add notification to seller
       if (listing.seller.toString() !== req.user._id.toString()) {
@@ -551,7 +577,7 @@ router.post('/:id/like', auth, async (req, res) => {
     }
 
     await listing.save();
-    res.json({ likes: listing.likes, liked: index === -1 });
+    res.json({ likes: listing.likes, liked });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
