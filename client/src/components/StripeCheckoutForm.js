@@ -3,7 +3,7 @@ import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { FaSpinner, FaCheckCircle, FaCreditCard, FaLock } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 
-const StripeCheckoutForm = ({ amount, currency, onSuccess, onError, buttonText }) => {
+const StripeCheckoutForm = ({ amount, currency, onSuccess, onError, buttonText, items, shippingInfo }) => {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);

@@ -175,13 +175,12 @@ router.get('/label/:transactionId', auth, async (req, res) => {
       return res.status(404).json({ message: 'Transaction not found' });
     }
 
-    // Check authorization (seller or buyer)
-    const isAuthorized = 
-      (typeof transaction.buyer === 'object' ? transaction.buyer._id.toString() : transaction.buyer.toString()) === req.user._id.toString() ||
-      (typeof transaction.seller === 'object' ? transaction.seller._id.toString() : transaction.seller.toString()) === req.user._id.toString();
+    // Only the seller can download the shipping label (Issue #4 fix)
+    const sellerId = typeof transaction.seller === 'object' && transaction.seller._id 
+      ? transaction.seller._id.toString() : transaction.seller.toString();
 
-    if (!isAuthorized) {
-      return res.status(403).json({ message: 'Not authorized' });
+    if (sellerId !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the seller can download shipping labels' });
     }
 
     // If no real label data, generate it
@@ -268,17 +267,11 @@ router.post('/generate-label', auth, async (req, res) => {
     if (!transaction) {
       return res.status(404).json({ message: 'Transaction not found' });
     }
-  // Allow the seller or the buyer who owns the transaction to generate the label.
-  // Determine if the requesting user is the seller or buyer for this transaction.
-  // `transaction.seller` and `transaction.buyer` may be either ObjectId strings or populated documents.
-  // When populated, they are objects containing an `_id` field. We normalize both cases to compare IDs.
+  // Only the seller can generate shipping labels (Issue #4 fix)
   const sellerId = typeof transaction.seller === 'object' && transaction.seller._id ? transaction.seller._id.toString() : transaction.seller.toString();
-  const buyerId = typeof transaction.buyer === 'object' && transaction.buyer._id ? transaction.buyer._id.toString() : transaction.buyer?.toString();
-
   const isSeller = sellerId === req.user._id.toString();
-  const isBuyer = buyerId && buyerId === req.user._id.toString();
-  if (!isSeller && !isBuyer) {
-    return res.status(403).json({ message: 'Not authorized' });
+  if (!isSeller) {
+    return res.status(403).json({ message: 'Only the seller can generate shipping labels' });
   }
 
     const carrierCode = carrier || getPreferredCarrier(

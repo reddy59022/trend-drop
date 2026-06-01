@@ -97,6 +97,11 @@ const transactionSchema = new mongoose.Schema({
     postalCode: String,
     country: String,
   },
+  // Stripe payment intent ID for webhook reconciliation
+  stripePaymentIntentId: {
+    type: String,
+    default: '',
+  },
   // Payout tracking
   payout: {
     status: { type: String, enum: ['pending', 'processing', 'completed', 'failed', 'refunded'], default: 'pending' },

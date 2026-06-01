@@ -63,12 +63,8 @@ router.get('/', optionalAuth, async (req, res) => {
       listings: result.docs,
       ...result.pagination,
     });
-  } catch (error) {
-    // Distinguish validation errors from unexpected server errors.
-    // Mongoose throws a ValidationError when required fields are missing
-    // (e.g., title). The previous implementation always returned a generic
-    // 500 which masks client‑side mistakes. Returning 400 provides the caller
-    // with a clear indication that the request payload is invalid.
+  }  catch (error) {
+    // Return a clear 400 response when Mongoose validation fails (e.g., missing title).
     console.error(error);
     if (error.name === 'ValidationError') {
       return res.status(400).json({ message: error.message });

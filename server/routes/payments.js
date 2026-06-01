@@ -16,6 +16,7 @@ const {
   verifyStripeWebhook,
   processSellerPayout,
   issueRefund,
+  fetchExchangeRate,
 } = require('../config/payments');
 
 // ===================== PUBLIC ENDPOINTS =====================
@@ -56,7 +57,7 @@ router.post('/breakdown', (req, res) => {
 // capture_method: manual means Stripe holds authorization but doesn't capture funds
 router.post('/create-intent', auth, async (req, res) => {
   try {
-    const { listingId, shippingAddress, buyerCountry } = req.body;
+  const { listingId, shippingAddress, buyerCountry } = req.body;
 
     const listing = await Listing.findById(listingId);
     if (!listing) return res.status(404).json({ message: 'Listing not found' });
@@ -71,7 +72,11 @@ router.post('/create-intent', auth, async (req, res) => {
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
     const toCountry = buyerCountry || req.user.country || 'US';
 
-    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
+    // Determine buyer currency based on destination country
+    const buyerCurrency = (countryCommissions[toCountry] || countryCommissions.default).currency;
+    // Get live exchange rate for buyer currency (defaults to 1 if unavailable)
+    const exchangeRate = await fetchExchangeRate(buyerCurrency);
+    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5, exchangeRate);
 
     // Authorize ONLY - no money moves yet
     const paymentIntent = await authorizePaymentIntent(
@@ -85,6 +90,7 @@ router.post('/create-intent', auth, async (req, res) => {
         buyerCountry: toCountry,
         platformFee: breakdown.seller.platformFee.toString(),
         sellerEarnings: breakdown.seller.sellerEarnings.toString(),
+        exchangeRate,
       }
     );
 
@@ -94,6 +100,7 @@ router.post('/create-intent', auth, async (req, res) => {
       amount: breakdown.buyer.totalPaid,
       currency: breakdown.buyerCurrency,
       breakdown,
+      exchangeRate,
       status: paymentIntent.status, // 'requires_payment_method' → 'requires_capture'
     });
   } catch (error) {
@@ -102,7 +109,178 @@ router.post('/create-intent', auth, async (req, res) => {
   }
 });
 
-// STEP 2: Fulfill order then capture payment
+// STEP 2 (Batch): Fulfill batch orders then capture payment
+router.post('/confirm-batch', auth, async (req, res) => {
+  const transactions = [];
+  let captured = false;
+
+  try {
+    const { paymentIntentId, items, shippingAddress } = req.body;
+    if (!paymentIntentId || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Missing paymentIntentId or items' });
+    }
+
+    // Verify authorization status from Stripe
+    const paymentIntent = await retrievePaymentIntent(paymentIntentId);
+    if (paymentIntent.status !== 'requires_capture') {
+      return res.status(400).json({
+        message: `Payment not authorized. Status: ${paymentIntent.status}`,
+      });
+    }
+
+    // Deduplicate - check if already processed
+    const existingPayout = await Payout.findOne({ 'paymentIntentId': paymentIntentId });
+    if (existingPayout) {
+      return res.json({ message: 'Order already processed', transactions: [] });
+    }
+
+    for (const item of items) {
+      const listing = await Listing.findById(item.listingId);
+      if (!listing || !listing.available || listing.sold || listing.quantity <= 0) {
+        continue; // Skip unavailable items
+      }
+
+      const seller = await User.findById(listing.seller);
+      const sellerCountry = seller?.country || listing.shipsFrom || 'US';
+      const toCountry = shippingAddress?.country || req.user.country || 'US';
+
+      // Use negotiated price if available, otherwise listing price
+      const salePrice = item.negotiatedPrice || listing.price;
+      const breakdown = calculatePaymentBreakdown(salePrice, sellerCountry, toCountry, listing.weight || 0.5);
+
+      // Generate shipping label
+      const { generateLabel, getPreferredCarrier } = require('../config/shipping');
+      const sellerAddress = seller?.shippingAddress ? {
+        street1: seller.shippingAddress.street1,
+        city: seller.shippingAddress.city,
+        state: seller.shippingAddress.state,
+        postalCode: seller.shippingAddress.postalCode,
+        country: seller.shippingAddress.country || sellerCountry,
+      } : { country: sellerCountry };
+
+      const carrierCode = getPreferredCarrier(toCountry, sellerCountry === toCountry);
+      const label = generateLabel({
+        shippingAddress: { fullName: shippingAddress?.fullName || req.user.name, ...shippingAddress },
+        sellerAddress,
+        weight: listing.weight || 0.5,
+      }, carrierCode);
+
+      const txn = await Transaction.create({
+        listing: listing._id,
+        buyer: req.user._id,
+        seller: listing.seller,
+        itemPrice: salePrice,
+        currency: listing.currency || 'USD',
+        paymentBreakdown: {
+          subtotal: breakdown.buyer.itemPrice,
+          shippingCost: breakdown.buyer.shippingCost,
+          buyerProtectionFee: breakdown.buyer.buyerProtectionFee,
+          buyerProtectionPercent: breakdown.buyer.buyerProtectionPercent,
+          tax: 0,
+          totalPaid: breakdown.buyer.totalPaid,
+          platformFee: breakdown.seller.platformFee,
+          platformFeePercent: breakdown.seller.platformFeePercent,
+          shippingPayout: breakdown.seller.shippingPayout,
+          sellerEarnings: breakdown.seller.sellerEarnings,
+        },
+        shippingAddress: {
+          fullName: shippingAddress?.fullName || req.user.name,
+          street1: shippingAddress?.street1,
+          street2: shippingAddress?.street2,
+          city: shippingAddress?.city,
+          state: shippingAddress?.state,
+          postalCode: shippingAddress?.postalCode,
+          country: toCountry,
+          phone: shippingAddress?.phone,
+        },
+        shipping: {
+          carrier: label.carrier,
+          trackingNumber: label.trackingNumber,
+          trackingUrl: label.trackingUrl,
+          labelCreated: true,
+          labelCreatedDate: new Date(),
+          estimatedDelivery: new Date(label.estimatedDelivery),
+          service: label.service,
+          trackingHistory: label.statusHistory,
+        },
+        status: 'shipped',
+        payout: { status: 'pending', transactionId: paymentIntentId },
+        autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
+      });
+
+      transactions.push(txn);
+
+      // Update inventory
+      const wasLastOne = listing.quantity === 1;
+      await Listing.findOneAndUpdate(
+        { _id: listing._id, quantity: { $gt: 0 } },
+        { $inc: { quantity: -1, quantitySold: 1 }, $set: wasLastOne ? { sold: true, available: false } : {} },
+        { new: true }
+      );
+
+      // Update seller balance
+      if (seller) {
+        seller.balance.pending = (seller.balance.pending || 0) + breakdown.seller.sellerEarnings;
+        seller.notifications.unshift({
+          type: 'sale',
+          from: req.user._id,
+          listing: listing._id,
+          transaction: txn._id,
+          message: `Item sold! You'll earn ${breakdown.seller.sellerEarnings} ${breakdown.sellerCurrency}.`,
+        });
+        await seller.save();
+      }
+
+      // Create payout record
+      try {
+        await Payout.create({
+          seller: listing.seller,
+          transaction: txn._id,
+          listing: listing._id,
+          salePrice: breakdown.buyer.itemPrice,
+          commissionRate: breakdown.seller.platformFeePercent / 100,
+          commissionAmount: breakdown.seller.platformFee,
+          payoutAmount: breakdown.seller.sellerEarnings,
+          status: 'pending',
+        });
+      } catch (pErr) {
+        console.error('Auto-payout creation error:', pErr.message);
+      }
+    }
+
+    // Capture payment
+    const captureResult = await capturePaymentIntent(paymentIntentId);
+    captured = true;
+
+    // Populate all transactions
+    for (const txn of transactions) {
+      await txn.populate(['buyer', 'seller', 'listing']);
+    }
+
+    res.json({
+      transactions,
+      captureResult: { id: captureResult.id, status: captureResult.status },
+    });
+
+  } catch (error) {
+    console.error('Confirm batch payment error:', error);
+    if (!captured && req.body.paymentIntentId) {
+      try { await releaseAuthorization(req.body.paymentIntentId); } catch (e) {}
+    }
+    if (captured && req.body.paymentIntentId) {
+      try { await issueRefund(req.body.paymentIntentId); } catch (e) {}
+    }
+    // Cleanup partial transactions
+    for (const txn of transactions) {
+      if (!captured) {
+        try { await Transaction.findByIdAndDelete(txn._id); } catch (e) {}
+      }
+    }
+    res.status(500).json({ message: error.message || 'Error confirming batch payment' });
+  }
+});
+
+// STEP 2: Fulfill order then capture payment (single item)
 // 1. Verify authorization succeeded
 // 2. Generate shipping label
 // 3. Create transaction record
