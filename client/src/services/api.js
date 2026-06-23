@@ -160,4 +160,24 @@ export const getAdminTransactions = (params) => api.get('/admin/transactions', {
 export const adminRefundTransaction = (id) => api.post(`/admin/transactions/${id}/refund`);
 export const autoSuspendUsers = () => api.post('/admin/auto-suspend');
 
+// ====== Bundle Discounts (Section 28a) ======
+export const createBundleRule = (data) => api.post('/offers/bundle', data);
+export const getBundleRules = () => api.get('/offers/bundle');
+export const updateBundleRule = (id, data) => api.put(`/offers/bundle/${id}`, data);
+export const deleteBundleRule = (id) => api.delete(`/offers/bundle/${id}`);
+export const applyBundleDiscount = (data) => api.post('/offers/bundle/apply', data);
+
+// ====== Offers to Likers (Section 28b) ======
+export const sendOfferToLikers = (data) => api.post('/offers/to-likers', data);
+export const getBulkOffers = (listingId) => api.get(`/offers/bulk/${listingId}`);
+export const claimBulkOffer = (offerId) => api.post(`/offers/to-likers/${offerId}/claim`);
+
+// ====== Promotions / Coupon Codes (Section 28c) ======
+export const createPromo = (data) => api.post('/promos', data);
+export const getPromos = () => api.get('/promos');
+export const updatePromo = (id, data) => api.put(`/promos/${id}`, data);
+export const deletePromo = (id) => api.delete(`/promos/${id}`);
+export const validatePromo = (data) => api.post('/promos/validate', data);
+export const usePromo = (id) => api.post(`/promos/${id}/use`);
+
 export default api;

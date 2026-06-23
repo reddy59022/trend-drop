@@ -78,6 +78,28 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: 'en',
   },
+  // Verified seller badge (Poshmark/Depop standard)
+  isVerified: {
+    type: Boolean,
+    default: false,
+  },
+  // Social media links (Poshmark/Depop standard)
+  socialLinks: {
+    instagram: { type: String, default: '' },
+    tiktok: { type: String, default: '' },
+    pinterest: { type: String, default: '' },
+    youtube: { type: String, default: '' },
+    twitter: { type: String, default: '' },
+    facebook: { type: String, default: '' },
+  },
+  // Seller store customization
+  store: {
+    banner: { type: String, default: '' },
+    logo: { type: String, default: '' },
+    colorTheme: { type: String, default: '' },
+    tagline: { type: String, default: '', maxlength: 200 },
+    returnPolicy: { type: String, default: '' },
+  },
   // Shipping address
   shippingAddress: {
     fullName: { type: String, default: '' },

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { countries, formatPrice } from '../utils/helpers';
 import api from '../services/api';
-import { FaUser, FaTruck, FaGlobe, FaCreditCard, FaShieldAlt, FaSave, FaSignOutAlt, FaTrash, FaCamera } from 'react-icons/fa';
+import { FaUser, FaTruck, FaGlobe, FaCreditCard, FaShieldAlt, FaSave, FaSignOutAlt, FaTrash, FaCamera, FaInstagram, FaTiktok, FaPinterest, FaYoutube, FaTwitter, FaFacebook, FaStore } from 'react-icons/fa';
 
 const currenciesList = [
   'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'INR', 'MXN', 'BRL', 'KRW', 'CNY', 'CHF',
@@ -51,6 +51,12 @@ function Settings() {
     } else if (name.startsWith('payoutMethod.')) {
       const field = name.split('.')[1];
       setFormData(prev => ({ ...prev, payoutMethod: { ...prev.payoutMethod, [field]: value } }));
+    } else if (name.startsWith('socialLinks.')) {
+      const field = name.split('.')[1];
+      setFormData(prev => ({ ...prev, socialLinks: { ...(prev.socialLinks || {}), [field]: value } }));
+    } else if (name.startsWith('store.')) {
+      const field = name.split('.')[1];
+      setFormData(prev => ({ ...prev, store: { ...(prev.store || {}), [field]: value } }));
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
       if (name === 'country') {
@@ -81,6 +87,8 @@ function Settings() {
         phone: formData.phone, phoneCode: formData.phoneCode,
         currency: formData.currency, language: formData.language,
         shippingAddress: formData.shippingAddress, payoutMethod: formData.payoutMethod,
+        socialLinks: formData.socialLinks || {},
+        store: formData.store || {},
       });
       toast.success('Profile updated!');
     } catch (err) { toast.error('Failed to update profile'); }
@@ -91,6 +99,8 @@ function Settings() {
     { id: 'profile', label: 'Profile', icon: <FaUser size={14} /> },
     { id: 'shipping', label: 'Shipping', icon: <FaTruck size={14} /> },
     { id: 'preferences', label: 'Preferences', icon: <FaGlobe size={14} /> },
+    { id: 'social', label: 'Social Links', icon: <FaInstagram size={14} /> },
+    { id: 'store', label: 'Store', icon: <FaStore size={14} /> },
     { id: 'payout', label: 'Payout', icon: <FaCreditCard size={14} /> },
     { id: 'account', label: 'Account', icon: <FaShieldAlt size={14} /> },
   ];
@@ -155,6 +165,29 @@ function Settings() {
             <div className="form-group"><label className="form-label">Phone</label><div style={{ display: 'flex', gap: 8 }}><input value={formData.phoneCode} readOnly className="form-input" style={{ width: 80 }} /><input name="phone" value={formData.phone} onChange={handleChange} className="form-input" placeholder={selectedCountry?.phoneFormat || 'Phone'} style={{ flex: 1 }} /></div></div>
             <div className="form-group"><label className="form-label">Currency</label><select name="currency" value={formData.currency} onChange={handleChange} className="form-input">{currenciesList.map(c => <option key={c} value={c}>{c}</option>)}</select><p className="form-hint">All prices will be displayed in {formData.currency}</p></div>
             <div className="form-group"><label className="form-label">Language</label><select name="language" value={formData.language} onChange={handleChange} className="form-input">{languages.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}</select></div>
+          </div>
+        )}
+
+        {activeTab === 'social' && (
+          <div className="glass-card" style={{ padding: 'var(--td-space-lg)', display: 'flex', flexDirection: 'column', gap: 'var(--td-space-md)' }}>
+            <p style={{ fontSize: 13, color: 'var(--td-text-tertiary)', marginBottom: 8 }}>Connect your social media accounts to your profile.</p>
+            <div className="form-group"><label className="form-label"><FaInstagram /> Instagram</label><input name="socialLinks.instagram" value={formData.socialLinks?.instagram || ''} onChange={handleChange} className="form-input" placeholder="username (without @)" /></div>
+            <div className="form-group"><label className="form-label"><FaTiktok /> TikTok</label><input name="socialLinks.tiktok" value={formData.socialLinks?.tiktok || ''} onChange={handleChange} className="form-input" placeholder="username" /></div>
+            <div className="form-group"><label className="form-label"><FaPinterest /> Pinterest</label><input name="socialLinks.pinterest" value={formData.socialLinks?.pinterest || ''} onChange={handleChange} className="form-input" placeholder="username" /></div>
+            <div className="form-group"><label className="form-label"><FaYoutube /> YouTube</label><input name="socialLinks.youtube" value={formData.socialLinks?.youtube || ''} onChange={handleChange} className="form-input" placeholder="channel handle" /></div>
+            <div className="form-group"><label className="form-label"><FaTwitter /> Twitter</label><input name="socialLinks.twitter" value={formData.socialLinks?.twitter || ''} onChange={handleChange} className="form-input" placeholder="username" /></div>
+            <div className="form-group"><label className="form-label"><FaFacebook /> Facebook</label><input name="socialLinks.facebook" value={formData.socialLinks?.facebook || ''} onChange={handleChange} className="form-input" placeholder="page or profile name" /></div>
+          </div>
+        )}
+
+        {activeTab === 'store' && (
+          <div className="glass-card" style={{ padding: 'var(--td-space-lg)', display: 'flex', flexDirection: 'column', gap: 'var(--td-space-md)' }}>
+            <p style={{ fontSize: 13, color: 'var(--td-text-tertiary)', marginBottom: 8 }}>Customize your storefront appearance.</p>
+            <div className="form-group"><label className="form-label">Store Tagline</label><input name="store.tagline" value={formData.store?.tagline || ''} onChange={handleChange} className="form-input" placeholder="A short description of your store" maxLength={200} /></div>
+            <div className="form-group"><label className="form-label">Custom Color Theme</label><input name="store.colorTheme" value={formData.store?.colorTheme || ''} onChange={handleChange} className="form-input" placeholder="e.g. #4CAF50" /></div>
+            <div className="form-group"><label className="form-label">Banner Image URL</label><input name="store.banner" value={formData.store?.banner || ''} onChange={handleChange} className="form-input" placeholder="https://..." /></div>
+            <div className="form-group"><label className="form-label">Store Logo URL</label><input name="store.logo" value={formData.store?.logo || ''} onChange={handleChange} className="form-input" placeholder="https://..." /></div>
+            <div className="form-group"><label className="form-label">Return Policy</label><textarea name="store.returnPolicy" value={formData.store?.returnPolicy || ''} onChange={handleChange} className="form-input" placeholder="Describe your return policy..." rows={3} /></div>
           </div>
         )}
 

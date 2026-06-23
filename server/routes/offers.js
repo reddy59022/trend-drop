@@ -141,6 +141,240 @@ router.get('/sent', auth, async (req, res) => {
   }
 });
 
+// ============================================================
+// BUNDLE DISCOUNTS (Section 28a)
+// MUST be before /:id routes to avoid "bundle" being caught as ObjectId
+// ============================================================
+const BundleRule = require('../models/BundleRule');
+
+// POST /api/offers/bundle - Create bundle discount rule
+router.post('/bundle', auth, async (req, res) => {
+  try {
+    const { name, minQuantity, discountPercent, applicableCategories, description, maxApplications, expiresAt } = req.body;
+
+    if (!name || !discountPercent) {
+      return res.status(400).json({ message: 'Name and discount percent are required' });
+    }
+
+    const rule = await BundleRule.create({
+      seller: req.user._id,
+      name,
+      minQuantity: minQuantity || 2,
+      discountPercent,
+      applicableCategories: applicableCategories || [],
+      description: description || '',
+      maxApplications: maxApplications || 0,
+      expiresAt: expiresAt || null,
+    });
+
+    res.status(201).json(rule);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/offers/bundle - List seller's bundle rules
+router.get('/bundle', auth, async (req, res) => {
+  try {
+    const rules = await BundleRule.find({ seller: req.user._id }).sort({ createdAt: -1 });
+    res.json(rules);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /api/offers/bundle/:id - Update bundle rule
+router.put('/bundle/:id', auth, async (req, res) => {
+  try {
+    const rule = await BundleRule.findById(req.params.id);
+    if (!rule) return res.status(404).json({ message: 'Bundle rule not found' });
+    if (rule.seller.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Not authorized' });
+
+    const { name, minQuantity, discountPercent, applicableCategories, description, maxApplications, isActive, expiresAt } = req.body;
+    if (name) rule.name = name;
+    if (minQuantity) rule.minQuantity = minQuantity;
+    if (discountPercent) rule.discountPercent = discountPercent;
+    if (applicableCategories) rule.applicableCategories = applicableCategories;
+    if (description !== undefined) rule.description = description;
+    if (maxApplications !== undefined) rule.maxApplications = maxApplications;
+    if (isActive !== undefined) rule.isActive = isActive;
+    if (expiresAt !== undefined) rule.expiresAt = expiresAt;
+
+    await rule.save();
+    res.json(rule);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /api/offers/bundle/:id - Delete bundle rule
+router.delete('/bundle/:id', auth, async (req, res) => {
+  try {
+    const rule = await BundleRule.findById(req.params.id);
+    if (!rule) return res.status(404).json({ message: 'Bundle rule not found' });
+    if (rule.seller.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Not authorized' });
+
+    await BundleRule.deleteOne({ _id: req.params.id });
+    res.json({ message: 'Bundle rule deleted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/offers/bundle/apply - Calculate eligible discounts for cart
+router.post('/bundle/apply', auth, async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Items array is required' });
+    }
+
+    const Listing = require('../models/Listing');
+    const listingIds = items.map(i => i.listingId);
+    const listings = await Listing.find({ _id: { $in: listingIds } });
+
+    const sellerGroups = {};
+    for (const item of items) {
+      const listing = listings.find(l => l._id.toString() === item.listingId);
+      if (!listing) continue;
+      const sellerId = listing.seller.toString();
+      if (!sellerGroups[sellerId]) sellerGroups[sellerId] = { seller: sellerId, items: [], totalPrice: 0, totalQuantity: 0 };
+      sellerGroups[sellerId].items.push({ ...item, category: listing.category, title: listing.title });
+      sellerGroups[sellerId].totalPrice += (item.price || 0) * (item.quantity || 1);
+      sellerGroups[sellerId].totalQuantity += item.quantity || 1;
+    }
+
+    const discounts = [];
+    for (const [, group] of Object.entries(sellerGroups)) {
+      const rules = await BundleRule.find({
+        seller: group.seller,
+        isActive: true,
+        $or: [{ expiresAt: { $exists: false } }, { expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+      });
+
+      for (const rule of rules) {
+        let eligibleItems = group.items;
+        if (rule.applicableCategories && rule.applicableCategories.length > 0) {
+          eligibleItems = group.items.filter(i => rule.applicableCategories.includes(i.category));
+        }
+        const eligibleQuantity = eligibleItems.reduce((sum, i) => sum + (i.quantity || 1), 0);
+        const eligibleTotal = eligibleItems.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0);
+
+        if (eligibleQuantity >= rule.minQuantity) {
+          const discountAmount = (eligibleTotal * rule.discountPercent) / 100;
+          discounts.push({ ruleId: rule._id, ruleName: rule.name, sellerId: group.seller, discountPercent: rule.discountPercent, discountAmount, eligibleQuantity, eligibleTotal, description: rule.description });
+        }
+      }
+    }
+
+    const totalBundleDiscount = discounts.reduce((sum, d) => sum + d.discountAmount, 0);
+    res.json({
+      discounts,
+      totalBundleDiscount,
+      message: discounts.length > 0 ? `Bundle discounts applied! Save ${totalBundleDiscount.toFixed(2)}` : 'No bundle discounts available for these items',
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
+// OFFERS TO LIKERS (Section 28b) — MUST be before /:id routes
+// ============================================================
+
+// POST /api/offers/to-likers - Send bulk discount to listing likers
+router.post('/to-likers', auth, async (req, res) => {
+  try {
+    const { listingId, discountType, discountValue, validHours } = req.body;
+    if (!listingId || !discountType || !discountValue) {
+      return res.status(400).json({ message: 'listingId, discountType, and discountValue are required' });
+    }
+    if (!['percentage', 'fixed'].includes(discountType)) {
+      return res.status(400).json({ message: 'discountType must be "percentage" or "fixed"' });
+    }
+
+    const Listing = require('../models/Listing');
+    const listing = await Listing.findById(listingId);
+    if (!listing) return res.status(404).json({ message: 'Listing not found' });
+    if (listing.seller.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Not authorized' });
+
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const existingBulkOffer = await Offer.findOne({ seller: req.user._id, 'bulkOffer.isBulk': true, createdAt: { $gt: oneWeekAgo } });
+    if (existingBulkOffer) return res.status(400).json({ message: 'You can only send one bulk offer per week' });
+
+    let discountedPrice;
+    if (discountType === 'percentage') {
+      discountedPrice = listing.price - (listing.price * discountValue / 100);
+    } else {
+      discountedPrice = Math.max(1, listing.price - discountValue);
+    }
+
+    const bulkOffer = await Offer.create({
+      listing: listingId,
+      buyer: req.user._id,
+      seller: req.user._id,
+      amount: discountedPrice,
+      status: 'pending',
+      currency: listing.currency || 'USD',
+      expiresAt: new Date(Date.now() + (validHours || 48) * 60 * 60 * 1000),
+      bulkOffer: { isBulk: true, discountType, discountValue, claimedBy: [] },
+    });
+
+    const User = require('../models/User');
+    const likers = await User.find({ _id: { $in: listing.likes || [] } });
+    await Promise.all(likers.map(liker => {
+      liker.notifications.unshift({ type: 'offer', from: req.user._id, listing: listing._id, message: `Exclusive offer! ${discountType === 'percentage' ? discountValue + '% off' : '$' + discountValue + ' off'} "${listing.title}" — limited time!` });
+      return liker.save();
+    }));
+
+    res.status(201).json({ message: `Offer sent to ${likers.length} likers`, offer: bulkOffer });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/offers/bulk/:listingId - View bulk offers for a listing
+router.get('/bulk/:listingId', auth, async (req, res) => {
+  try {
+    const offers = await Offer.find({ listing: req.params.listingId, 'bulkOffer.isBulk': true, seller: req.user._id }).sort({ createdAt: -1 });
+    res.json(offers);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/offers/to-likers/:offerId/claim - Liker claims exclusive offer
+router.post('/to-likers/:offerId/claim', auth, async (req, res) => {
+  try {
+    const offer = await Offer.findById(req.params.offerId);
+    if (!offer) return res.status(404).json({ message: 'Offer not found' });
+    if (!offer.bulkOffer || !offer.bulkOffer.isBulk) return res.status(400).json({ message: 'Not a bulk offer' });
+    if (offer.expiresAt && offer.expiresAt < new Date()) return res.status(400).json({ message: 'Offer has expired' });
+    if (offer.bulkOffer.claimedBy.includes(req.user._id)) return res.status(400).json({ message: 'You have already claimed this offer' });
+
+    const claimedOffer = await Offer.create({
+      listing: offer.listing, buyer: req.user._id, seller: offer.seller, amount: offer.amount,
+      status: 'accepted', acceptedPrice: offer.amount, acceptedAt: new Date(), acceptedBy: 'seller',
+      currency: offer.currency, expiresAt: offer.expiresAt,
+    });
+
+    offer.bulkOffer.claimedBy.push(req.user._id);
+    await offer.save();
+
+    res.status(201).json({ message: 'Offer claimed! You can now purchase at the discounted price.', offer: claimedOffer });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /api/offers/:id - Get single offer with full history
 router.get('/:id', auth, async (req, res) => {
   try {

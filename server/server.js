@@ -143,6 +143,8 @@ app.use('/api/saved-searches', require('./routes/savedSearch'));
 app.use('/api/collections', require('./routes/collections'));
 // Size guide routes
 app.use('/api/size-guides', require('./routes/sizeGuides'));
+// Promo / coupon code routes
+app.use('/api/promos', require('./routes/promos'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)

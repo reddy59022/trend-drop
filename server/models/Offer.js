@@ -79,6 +79,13 @@ const offerSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  // Bulk offer / Offers to Likers (Section 28b)
+  bulkOffer: {
+    isBulk: { type: Boolean, default: false },
+    discountType: { type: String, enum: ['percentage', 'fixed', null], default: null },
+    discountValue: { type: Number },
+    claimedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  },
 }, { timestamps: true });
 
 // Index for efficient queries

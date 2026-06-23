@@ -109,6 +109,12 @@ const listingSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   }],
+  // Listing status: draft (hidden), active (visible), sold (purchased)
+  status: {
+    type: String,
+    enum: ['draft', 'active', 'sold'],
+    default: 'active',
+  },
   sold: {
     type: Boolean,
     default: false,
@@ -116,6 +122,10 @@ const listingSchema = new mongoose.Schema({
   available: {
     type: Boolean,
     default: true,
+  },
+  // Auto-expiration: listings expire after this date
+  expiresAt: {
+    type: Date,
   },
   // Inventory management
   quantity: {

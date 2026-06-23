@@ -117,13 +117,30 @@ const Profile = () => {
         <div className="profile-info" style={{ paddingTop: 16 }}>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {profile.name}
-            {profile.verified && <FaCheckCircle size={22} color="var(--td-primary)" title="Verified" />}
+            {profile.isVerified && <FaCheckCircle size={22} color="var(--td-primary)" title="Verified Seller" />}
           </h1>
           {profile.closetName && <p className="closet-name">🏪 {profile.closetName}</p>}
           {profile.location && (
             <p className="profile-location"><FaMapMarkerAlt /> {profile.location}</p>
           )}
           {profile.bio && <p className="profile-bio">{profile.bio}</p>}
+          {/* Social Links */}
+          {profile.socialLinks && Object.entries(profile.socialLinks).filter(([, v]) => v).length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              {profile.socialLinks.instagram && <a href={`https://instagram.com/${profile.socialLinks.instagram}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">📸 Instagram</a>}
+              {profile.socialLinks.tiktok && <a href={`https://tiktok.com/@${profile.socialLinks.tiktok}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">🎵 TikTok</a>}
+              {profile.socialLinks.pinterest && <a href={`https://pinterest.com/${profile.socialLinks.pinterest}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">📌 Pinterest</a>}
+              {profile.socialLinks.youtube && <a href={`https://youtube.com/@${profile.socialLinks.youtube}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">▶️ YouTube</a>}
+            </div>
+          )}
+          {/* Seller Stats */}
+          {!isOwnProfile && profile.stats && (
+            <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, color: 'var(--td-text-tertiary)' }}>
+              {profile.stats.responseRate > 0 && <span>📨 {profile.stats.responseRate}% response rate</span>}
+              {profile.stats.shipTime > 0 && <span>🚚 Ships in {profile.stats.shipTime} days</span>}
+              {profile.stats.ratingCount > 0 && <span>⭐ {profile.stats.avgRating?.toFixed(1)} ({profile.stats.ratingCount})</span>}
+            </div>
+          )}
           <div className="profile-stats">
             <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <strong style={{ fontSize: 20 }}>{listingsCount}</strong>

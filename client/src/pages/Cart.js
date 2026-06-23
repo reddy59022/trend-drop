@@ -4,10 +4,10 @@ import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 import { useCart } from '../context/CartContext';
 import { toast } from 'react-toastify';
-import api from '../services/api';
+import api, { validatePromo, applyBundleDiscount } from '../services/api';
 import { formatPrice } from '../utils/helpers';
 import StripeCheckoutForm from '../components/StripeCheckoutForm';
-import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner } from 'react-icons/fa';
+import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaPercent, FaBoxes } from 'react-icons/fa';
 
 const Cart = () => {
   const { cart, removeFromCart, updateQuantity, clearCart } = useCart();
@@ -17,6 +17,14 @@ const Cart = () => {
   const [shippingInfo, setShippingInfo] = useState({
     fullName: '', street1: '', city: '', state: '', postalCode: '', country: 'US', phone: ''
   });
+  // Promo code state
+  const [promoCode, setPromoCode] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError] = useState('');
+  // Bundle discount state
+  const [bundleDiscounts, setBundleDiscounts] = useState([]);
+  const [bundleDiscount, setBundleDiscount] = useState(0);
 
   useEffect(() => {
     const initStripe = async () => {
@@ -277,6 +285,59 @@ const Cart = () => {
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', position: 'sticky', top: 'calc(var(--td-nav-height) + var(--td-space-lg))' }}>
             <h3 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Order Summary</h3>
             
+            {/* Promo Code Section */}
+            {!showForm && (
+              <div style={{ marginBottom: 'var(--td-space-md)' }}>
+                {!appliedPromo ? (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="form-input" placeholder="Promo code" value={promoCode}
+                      onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoError(''); }}
+                      style={{ flex: 1, fontSize: 13 }} />
+                    <button className="btn btn-outline btn-sm" disabled={!promoCode || promoLoading}
+                      onClick={async () => {
+                        setPromoLoading(true);
+                        setPromoError('');
+                        try {
+                          const res = await validatePromo({
+                            code: promoCode,
+                            items: cart.map(i => ({ listingId: i.listingId, price: i.price, quantity: i.quantity }))
+                          });
+                          if (res.data.valid) {
+                            setAppliedPromo(res.data.promo);
+                            toast.success(`Promo applied! Save ${formatPrice(res.data.promo.discountAmount, 'USD')}`);
+                          }
+                        } catch (err) {
+                          setPromoError(err.response?.data?.message || 'Invalid promo code');
+                        } finally { setPromoLoading(false); }
+                      }}>
+                      <FaTag size={12} /> Apply
+                    </button>
+                  </div>
+                ) : (
+                  <div className="badge badge-success" style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <span>Code <strong>{appliedPromo.code}</strong> — Save {formatPrice(appliedPromo.discountAmount, 'USD')}</span>
+                    <button className="btn btn-icon btn-ghost" onClick={() => { setAppliedPromo(null); setPromoCode(''); }}
+                      style={{ color: '#fff', width: 24, height: 24 }}><FaTrash size={10} /></button>
+                  </div>
+                )}
+                {promoError && <div style={{ fontSize: 12, color: 'var(--td-error)', marginTop: 4 }}>{promoError}</div>}
+              </div>
+            )}
+
+            {/* Bundle Discount Display */}
+            {bundleDiscounts.length > 0 && (
+              <div style={{ marginBottom: 'var(--td-space-md)', padding: 8, background: 'var(--td-surface-2)', borderRadius: 'var(--td-radius-sm)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--td-success)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <FaBoxes /> Bundle Discounts Active
+                </div>
+                {bundleDiscounts.map((d, i) => (
+                  <div key={i} style={{ fontSize: 11, color: 'var(--td-text-tertiary)', marginTop: 2 }}>
+                    {d.ruleName}: -{formatPrice(d.discountAmount, 'USD')}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {Object.keys(itemBreakdowns).length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 'var(--td-space-md)' }}>
                 <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-text-secondary)' }}>

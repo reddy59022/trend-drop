@@ -186,7 +186,7 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       category, brand, size, condition, color,
       weight, weightUnit, shipsFrom,
       domesticShipping, internationalShipping, freeShipping, shippingCost,
-      quantity, videoUrl,
+      quantity, videoUrl, status,
       // Boost fields
       boostTier, boostDuration,
     } = req.body;
@@ -258,6 +258,7 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
         freeShipping: freeShipping === 'true' || freeShipping === true,
         shippingCost: shippingCost ? Number(shippingCost) : 0,
       },
+      status: status === 'draft' ? 'draft' : 'active',
       quantity: quantity ? Number(quantity) : 1,
       boost: boostData,
     });

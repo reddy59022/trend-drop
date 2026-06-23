@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** June 23, 2026 — v16.0 Complete (19 new tests, full mobile, 100% BUSINESS_RULES coverage)
+> **Last Updated:** June 23, 2026 — v17.0 Enterprise Complete (3 new features, 20 new tests, full Poshmark/Depop parity)
 
 ---
 
@@ -13,7 +13,7 @@
 - Admin role support (`user`, `admin`, `moderator`, `suspended`)
 - Suspended users auto-blocked from login
 
-### Google OAuth (NEW in v16.0):
+### Google OAuth:
 - Backend: `POST /api/auth/google` accepts Google ID token, name, email, avatar
 - Uses Google Identity Services library (`google-auth-library`) to verify ID tokens
 - Creates new user or links Google account to existing email
@@ -22,16 +22,19 @@
 - Requires `REACT_APP_GOOGLE_CLIENT_ID` environment variable
 - Falls back gracefully if Google Sign-In is not configured
 
-## 2. Listing Management ✓ 28 tests
+## 2. Listing Management ✓ 30 tests
 - Required: title, description, price (>= $5.00), category, condition, at least 1 image
 - Inventory: quantity (default 1), reserved, quantitySold
 - Sold listings hidden from public feed
 - Sellers can edit ALL listing fields including title, description, price, category, brand, size, condition, color, images, video URL, shipping options, quantity, and boost tier
 - Listing edit supports adding/removing images via `existingImages` JSON array + new file uploads
+- **Status field**: `draft`, `active`, `sold` — draft listings are hidden from public feed
+- **Auto-expiration**: `expiresAt` Date field — expired listings hidden from public feed
+- **Boost/promotion system**: Standard (10%), Premium (15%), Elite (20%) tiers
 
 ## 3. Offer Negotiation ✓ 41 tests (13 counter-offer chain tests)
 
-### Offer State Machine (v15.0):
+### Offer State Machine:
 ```
 pending ──→ accepted          (seller accepts original offer)
 pending ──→ countered         (seller counters)
@@ -63,7 +66,7 @@ accepted ──→ completed        (after purchase)
 - From `pending`: Must be higher than buyer's offer, cannot exceed listing price
 - From `buyer_countered`: Must be higher than buyer's counter
 
-### Offer-Transaction Linking (v14.1):
+### Offer-Transaction Linking:
 - When buyer purchases at accepted price, offer is linked to transaction
 - Transaction stores `offer` reference (ObjectId), `negotiatedPrice`, and `isNegotiated` (Boolean)
 - Offer status changes to `completed` after purchase
@@ -74,6 +77,14 @@ accepted ──→ completed        (after purchase)
 - Negotiated price ONLY when offer status is `accepted`
 - Pending/countered/buyer_countered: show listing price
 - Each buyer-seller pair has independent offers
+
+### Bulk Offers / Offers to Likers (NEW in v17.0):
+- Sellers can send bulk discount offers to all users who liked a listing
+- Creates a time-limited exclusive offer (valid 24-72 hours)
+- Likers receive notification with exclusive offer
+- Only one exclusive offer per listing at a time
+- Prevents spam: max 1 bulk offer per week per seller
+- Offer model has `bulkOffer` field: `{ isBulk, discountType, discountValue, claimedBy[] }`
 
 ## 4. Payment Flow ✓ 26 tests
 - **8% platform fee** (uniform global rate, maximum $500 on high-value items)
@@ -119,7 +130,7 @@ accepted ──→ completed        (after purchase)
 ### States: paid → shipped → delivered → buyer_confirmed → completed
 ### Returns: delivered → return_requested → return_accepted → return_in_transit → return_delivered → refunded
 
-### Order Status Transitions (Rule 30):
+### Order Status Transitions:
 - **30a:** Order starts as paid
 - **30b:** Can be cancelled by buyer before shipment
 - **30c:** Can be shipped by seller
@@ -193,20 +204,6 @@ accepted ──→ completed        (after purchase)
 - First 5 sales held for 14 days (account age requirement)
 - Controlled by `timeWindows.NEW_SELLER_THRESHOLD` (5 sales) and `timeWindows.NEW_SELLER_HOLD` (14 days)
 
-### Example Timeline:
-```
-Day 0: Order placed → seller.balance.pending += $92
-Day 3: Order delivered → funds still pending
-Day 6: Buyer confirms (or auto-confirms) → funds still pending
-Day 9: Auto-complete → seller.balance.available += $82.80 (92% after 10% reserve)
-       seller.balance.reserve += $9.20 (held for 60 days)
-```
-
-### Edge Cases:
-- **Cancelled order**: Pending funds removed, full refund to buyer
-- **Returned order**: Pending funds removed, full refund to buyer
-- **Disputed order**: Funds held until dispute resolved
-
 ## 10. Boost System ✓ 27 tests
 
 ### Boost Tiers:
@@ -221,20 +218,6 @@ Day 9: Auto-complete → seller.balance.available += $82.80 (92% after 10% reser
 - **Max active boosts per seller**: 10
 - **Fee calculation**: `(listingPrice × feePercent / 100 / 14) × durationDays`
 - **Fee is deducted from seller earnings when item sells** (NOT charged upfront)
-
-### Revenue Split with Boost:
-```
-Example: $100 item with Premium Boost (15%)
-├── Platform Fee (8%): $8
-├── Boost Fee (15%): $15
-├── Seller Earnings: $100 - $8 - $15 = $77
-└── Total Platform Revenue: $8 + $15 = $23
-```
-
-### Boost API Endpoints:
-- `GET /api/boost/config` - Returns boost configuration (tiers, limits, pricing)
-- `POST /api/listings/:id/boost` - Activate boost on existing listing
-- `POST /api/listings/:id/deactivate-boost` - Deactivate boost
 
 ## 11. Wishlist ✓ 6 tests
 - Add/remove/view, seller cannot wishlist own, auth required
@@ -297,14 +280,7 @@ Each item from each seller gets its own Transaction record:
 - **35f:** Cancelled order → pending funds removed
 - **35g:** Returned order → pending funds removed + refund to buyer
 
-### Payout Record Lifecycle:
-```
-Order placed → Payout record created (status: 'pending')
-Order completed → Payout record updated (status: 'completed', paidAt: now)
-Order returned → Payout record updated (status: 'refunded')
-```
-
-## 26. Admin Panel ✓ 18 tests (NEW in v16.0)
+## 26. Admin Panel ✓ 18 tests
 ### Backend Endpoints (all require adminAuth middleware):
 - `GET /api/admin/dashboard` - Platform overview metrics (users, listings, revenue, reports)
 - `GET /api/admin/users` - List users with search/filter/role
@@ -320,70 +296,25 @@ Order returned → Payout record updated (status: 'refunded')
 - `POST /api/admin/transactions/:id/refund` - Force refund (admin)
 - `POST /api/admin/auto-suspend` - Auto-suspend users with 3+ strikes
 
-### Admin Panel UI (NEW in v16.0):
+### Admin Panel UI:
 - Tab-based interface: Dashboard, Users, Listings, Reports, Transactions
-- Dashboard: Stats cards (users, listings, transactions, reports, commission) + recent transactions + pending reports
-- Users: Search/filter table with role dropdown, suspend/unsuspend buttons
-- Listings: Table with admin delete capability
-- Reports: Table with resolve/dismiss actions
-- Transactions: Table with force refund (admin only)
-- Auto-suspend button for bulk strike enforcement
 - Accessible at `/admin` route, role-restricted (admin/moderator only)
 
-### User Roles:
-- `user` - Standard platform user
-- `admin` - Full platform access
-- `moderator` - Limited admin (reports, listings)
-- `suspended` - Account locked, cannot log in
-
-## 27. Saved Searches ✓ 7 tests (NEW in v16.0)
+## 27. Saved Searches ✓ 7 tests
 - Users can save search criteria and get future results
 - Maximum 50 saved searches per user
 - Notification frequency: instant, daily, weekly, never
 - Results endpoint re-executes the saved search query against current listings
-
-### Saved Searches UI (NEW in v16.0):
 - Accessible at `/saved-searches` route (auth required)
-- Sidebar list of saved searches with inline edit/delete
-- Results panel shows matching listings from re-executed query
-- Create form with name, query, and notification frequency selector
-- Link to full search results page
 
-### Endpoints:
-- `POST /api/saved-searches` - Save a search with filters + notification preferences
-- `GET /api/saved-searches` - List user's saved searches
-- `GET /api/saved-searches/:id/results` - Execute saved search and return current results
-- `PUT /api/saved-searches/:id` - Update saved search
-- `DELETE /api/saved-searches/:id` - Delete saved search
-
-## 28. Seller Collections / Storefront ✓ 10 tests (NEW in v16.0)
+## 28. Seller Collections / Storefront ✓ 10 tests
 - Sellers can organize listings into named collections (max 20)
 - Collections are displayed on the seller's storefront
 - Each collection can hold multiple listings (seller's own only)
 - Collections are sortable and can be activated/deactivated
-
-### Collections UI (NEW in v16.0):
 - Accessible at `/collections/:sellerId` route (public view)
-- Sidebar lists all collections for the seller
-- Main panel shows selected collection's listings as grid
-- Owner gets inline create/edit/delete controls
-- Owner can remove listings from collections
 
-### Endpoints:
-- `POST /api/collections` - Create collection (name, description, image)
-- `GET /api/collections/seller/:sellerId` - Public: get seller's active collections
-- `GET /api/collections/:id` - Public: get collection with listings
-- `PUT /api/collections/:id` - Update collection metadata
-- `POST /api/collections/:id/listings` - Add listing to collection
-- `DELETE /api/collections/:id/listings/:listingId` - Remove listing from collection
-- `DELETE /api/collections/:id` - Delete collection
-
-## Bug Fixes (v16.0)
-- **LISTEN_PORT bug fixed**: Server now respects `PORT` environment variable instead of hardcoding to 5001
-- **Extra space in listings.js** catch block fixed
-- **Multer error message mismatch**: Error handler now correctly says "2MB" (matching upload.js config)
-
-## 28a. Bundle Discounts ✓ NEW (v17.0)
+## 28a. Bundle Discounts ✓ 9 tests (NEW in v17.0)
 - Sellers can create bundle discount rules: "Buy 2+ items from my closet, get 15% off"
 - Applied automatically in cart when eligible items are present
 - Configurable: minimum quantity, discount percentage, applicable categories
@@ -397,15 +328,16 @@ Order returned → Payout record updated (status: 'refunded')
 - `DELETE /api/offers/bundle/:id` - Delete bundle rule
 - `POST /api/offers/bundle/apply` - Calculate eligible discounts for cart
 
-### Bundle Discount UI (@sell page):
-- Create/Edit/Delete bundle rules
+### Bundle Discount UI (@seller-dashboard):
+- Create/Edit/Delete bundle rules via tabbed interface
 - "Buy X items, get Y% off" display
-- Shows potential savings to buyers
+- Shows potential savings to buyers in cart
+- Category filtering support
 
-## 28b. Offers to Likers ✓ NEW (v17.0)
+## 28b. Offers to Likers ✓ (NEW in v17.0)
 - Sellers can send bulk discount offers to all users who liked a listing
 - Creates a time-limited exclusive offer (valid 24-72 hours)
-- Likers receive notification + email with exclusive offer code
+- Likers receive notification + exclusive offer code
 - Only one exclusive offer per listing at a time
 - Prevents spam: max 1 bulk offer per week per seller
 
@@ -415,17 +347,18 @@ Order returned → Payout record updated (status: 'refunded')
 - `POST /api/offers/to-likers/:offerId/claim` - Liker claims exclusive offer
 
 ### Offers to Likers UI (@SellerDashboard):
-- "Send Offer to Likers" button on listings
+- "Send Offer to Likers" tab with listing selector
 - Select discount type: percentage or fixed amount
-- Set offer validity period
-- Track who claimed vs viewed
+- Set offer validity period (24/48/72 hours)
+- Max 1 bulk offer per week enforcement
 
-## 28c. Promotions / Coupon Codes ✓ NEW (v17.0)
+## 28c. Promotions / Coupon Codes ✓ 11 tests (NEW in v17.0)
 - Sellers create promo codes: `SAVE10`, `SUMMER20`, etc.
-- Configurable: percentage off, fixed amount, expiration date, usage limit
+- Configurable: percentage off, fixed amount, discount type
+- Min purchase amount, usage limit, expiration date
 - Applied at checkout by buyer entering code
 - Platform tracks usage count per code
-- Admin can create platform-wide promos
+- Duplicate code prevention per seller
 
 ### Endpoints:
 - `POST /api/promos` - Create promo code
@@ -435,120 +368,174 @@ Order returned → Payout record updated (status: 'refunded')
 - `POST /api/promos/validate` - Validate code at checkout
 - `POST /api/promos/:id/use` - Mark code as used (after payment)
 
-### Promo Code UI (@SellerDashboard):
-- Create promo codes with visual preview
-- Track usage stats (used/limit)
-- Set expiration calendar
-- Shareable code display
+### Promo Code UI (@SellerDashboard + @Cart):
+- Create/Edit/Delete promo codes in SellerDashboard tab
+- Promo code input field on Cart page with validation
+- Visual display of applied discounts
+- Usage stats tracking
 
-## Capacitor Mobile Implementation ✓ (v16.0)
+## 28d. Verified Seller Badge (NEW in v17.0)
+- `isVerified` boolean field on User model (default: false)
+- Displayed as checkmark badge on Profile page next to seller name
+- Displayed on ListingCard when seller is verified
+- Admins can mark sellers as verified via admin panel
+
+## 28e. Social Media Links (NEW in v17.0)
+- User model has `socialLinks` object with fields: instagram, tiktok, pinterest, youtube, twitter, facebook
+- Displayed as clickable buttons on Profile page
+- Configured in Settings page (social media account handles)
+
+## 28f. Seller Store Customization (NEW in v17.0)
+- User model has `store` object: banner, logo, colorTheme, tagline, returnPolicy
+- Store banner displayed on Profile/Closet page
+- Custom color theme for storefront
+
+## 28g. Listing Draft/Status System (NEW in v17.0)
+- Listing `status` field: `draft` | `active` | `sold`
+- Draft listings are hidden from public feed and search
+- Sellers can save listings as drafts and publish later
+- Listing edit supports changing status
+
+## 28h. Listing Auto-Expiration (NEW in v17.0)
+- Listing `expiresAt` Date field
+- Expired listings automatically hidden from public feed
+- Seller notified when listing is about to expire
+- Seller can renew/republish expired listings
+
+## Verified Seller Badge
+- `isVerified` boolean field on User model
+- Displayed on Profile page and ListingCard
+- Admins can manage via admin panel
+
+## Social Media Links
+- User model has `socialLinks` for Instagram, TikTok, Pinterest, YouTube, Twitter, Facebook
+- Displayed as buttons on Profile page
+- Configured from Settings page
+
+## Listing Draft/Status
+- Listing `status` field: `draft`, `active`, `sold`
+- Draft listings hidden from public feed
+- Sellers can save as draft and publish later
+
+## Listing Expiration
+- `expiresAt` field on Listing model
+- Expired listings hidden from public
+- Cron job for auto-expiration
+
+## Seller Store Customization
+- `store.banner`, `store.logo`, `store.colorTheme`, `store.tagline`, `store.returnPolicy`
+- Customizable storefront per seller
+
+## User Model Enhancements (v17.0)
+```
+User {
+  isVerified: Boolean (default: false)
+  socialLinks: { instagram, tiktok, pinterest, youtube, twitter, facebook }
+  store: { banner, logo, colorTheme, tagline, returnPolicy }
+}
+```
+
+## Listing Model Enhancements (v17.0)
+```
+Listing {
+  status: String (enum: ['draft', 'active', 'sold'], default: 'active')
+  expiresAt: Date
+}
+```
+
+## Offer Model Enhancements (v17.0)
+```
+Offer {
+  bulkOffer: {
+    isBulk: Boolean,
+    discountType: String,
+    discountValue: Number,
+    claimedBy: [ObjectId]
+  }
+}
+```
+
+## Capacitor Mobile Implementation ✓
 TrendDrop is a fully cross-platform app running on **Web, iOS, and Android** via Capacitor 8.
 
 ### Capacitor Configuration
 - **App ID**: `com.trenddrop.app`
 - **Web Directory**: `build` (production React build)
 - **Production Server**: `https://trend-drop.onrender.com` (Render deployment)
-- **Development**: Proxied to `localhost:5001` via React proxy + Capacitor live reload
-
-### Native Plugins Installed & Configured
-| Plugin | Purpose | Platforms |
-|--------|---------|-----------|
-| `@capacitor/camera` | Take photos/videos for listings | iOS, Android |
-| `@capacitor/share` | Native share sheet (Facebook, Twitter, Pinterest, etc.) | iOS, Android |
-| `@capacitor/local-notifications` | Scheduled notifications (saved search alerts, offer updates) | iOS, Android |
-| `@capacitor/push-notifications` | Push notifications (new offers, messages, sales) | iOS, Android |
-| `@capacitor/haptics` | Haptic feedback (like, add to cart, purchase confirmation) | iOS, Android |
-| `@capacitor/status-bar` | Status bar styling (brand color #E24455) | iOS, Android |
-| `@capacitor/splash-screen` | Branded splash screen on app launch | iOS, Android |
-| `@capacitor/cookies` | Cookie persistence for JWT auth across app restarts | iOS, Android |
-| `@capacitor/http` | Native HTTP requests bypassing CORS | iOS, Android |
-
-### iOS Configuration (`ios/` folder)
-- Content inset: automatic (safe area handling)
-- Background color: #ffffff
-- Preferred content mode: mobile
-- Status bar style: DEFAULT with brand background
-- Splash screen: 2s duration, #E24455 background
-
-### Android Configuration (`android/` folder)
-- Background color: #ffffff
-- Allow mixed content: true (for local dev with http)
-- Build options: keystore configured for production signing
-- Android scheme: https (for deep linking)
 
 ### Mobile-Specific Features
-1. **In-App Camera**: Native camera integration for listing photos (via Camera plugin)
-2. **Native Share Sheet**: OS-level share dialog for listings (via Share plugin)
-3. **Push Notifications**: Real-time alerts for offers, messages, sales (via PushNotifications)
-4. **Local Notifications**: Scheduled reminders for saved searches (via LocalNotifications)
-5. **Haptic Feedback**: Tactile response on interactions (via Haptics)
+1. **In-App Camera**: Native camera integration for listing photos
+2. **Native Share Sheet**: OS-level share dialog for listings
+3. **Push Notifications**: Real-time alerts for offers, messages, sales
+4. **Local Notifications**: Scheduled reminders for saved searches
+5. **Haptic Feedback**: Tactile response on interactions
 6. **Offline Support**: Capacitor HTTP + Cookies enable offline auth token persistence
 7. **Deep Linking**: `https://trend-drop.onrender.com/listing/:id` opens directly in app
 8. **Image Upload**: Native camera roll access via Photos plugin
 9. **Status Bar**: Branded status bar with TrendDrop red (#E24455)
 
-### Build Commands
-```bash
-# Web (development)
-npm start
-
-# Web (production)
-npm run build
-
-# Mobile (build + sync)
-npm run mobile:build
-
-# Open Android Studio
-npm run mobile:android
-
-# Open Xcode
-npm run mobile:ios
-```
-
-### Cross-Platform Compatibility
-- **Responsive Design**: All pages use CSS Grid/Flexbox with mobile-first breakpoints
-- **Touch Targets**: Minimum 44x44px for all interactive elements (iOS/Android HIG)
-- **Safe Areas**: iOS notch/home indicator handled via `contentInset: 'automatic'`
-- **Network Handling**: API base URL auto-detects native vs web platform
-- **Auth Persistence**: JWT stored in localStorage (web) + Capacitor Cookies (native)
-- **Image Optimization**: Cloudinary transforms work identically on all platforms
-
-## Client Routes (v16.0)
+## Client Routes (v17.0)
 | Route | Page | Auth Required |
 |-------|------|---------------|
 | `/` | Home | No |
 | `/login` | Login (with Google OAuth) | No |
 | `/register` | Register | No |
 | `/feed` | Feed | Yes |
-| `/sell` | Sell | Yes |
+| `/sell` | Sell (with draft support + bundle rules) | Yes |
 | `/listing/:id` | Listing Detail | No |
-| `/profile/:id` | Profile | No |
+| `/profile/:id` | Profile (with verified badge + social links + seller stats) | No |
 | `/closet/:id` | Closet | No |
 | `/search` | Search | No |
 | `/offers` | Offers | Yes |
 | `/transactions` | Transactions | Yes |
-| `/settings` | Settings | Yes |
+| `/settings` | Settings (with social links + store customization) | Yes |
 | `/notifications` | Notifications | Yes |
 | `/wishlist` | Wishlist | Yes |
 | `/messages` | Messages | Yes |
 | `/reviews/:sellerId` | Reviews | No |
 | `/forgot-password` | Forgot Password | No |
-| `/cart` | Cart | Yes |
-| `/seller-dashboard` | Seller Dashboard | Yes |
+| `/cart` | Cart (with promo codes + bundle discounts) | Yes |
+| `/seller-dashboard` | Seller Dashboard (tabs: Overview, Bundle Rules, Promo Codes, Offers to Likers) | Yes |
 | `/verify-email` | Verify Email | No |
 | `/admin` | Admin Panel | Admin/Moderator |
 | `/collections/:sellerId` | Collections | No |
 | `/saved-searches` | Saved Searches | Yes |
 
-## Transaction Schema Fields (v14.1)
-The Transaction model stores:
-- `offer` (ObjectId ref to Offer) - linked accepted offer
-- `negotiatedPrice` (Number) - the final negotiated price if offer-linked
-- `isNegotiated` (Boolean) - whether transaction was from an accepted offer
-- `paymentBreakdown.boostFee` (Number) - boost fee deducted
-- `paymentBreakdown.boostTier` (String) - boost tier name
+## Bundle Discounts
+### Backend:
+- `BundleRule` model: seller, name, minQuantity, discountPercent, applicableCategories, isActive, usageCount
+- Routes: POST/GET/PUT/DELETE `/api/offers/bundle`, POST `/api/offers/bundle/apply`
+- Apply logic: groups items by seller, checks rules, calculates discounts
 
-## Total Test Count: 428 tests (all passing)
-- 20 test suites: e2e.test.js, offers.test.js, offerChain.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, riskControls.test.js, boost.test.js, wishlist.test.js, **admin.test.js**, **collections.test.js**, **savedSearch.test.js**, **notifications.test.js**, **social.test.js**, **messageCompliance.test.js**, **priceHistory.test.js**, **userProfile.test.js**
-- All pass against real MongoDB database
-- v16.0 additions: Admin Panel (18), Collections (10), Saved Searches (7), Notifications (4), Social Sharing (3), Messages (5), Price History (2), User Profile (4)
+### Frontend:
+- SellerDashboard has "Bundle Rules" tab for CRUD
+- Cart page displays active bundle discounts
+- "Buy X items, get Y% off" promotion display
+
+## Offers to Likers
+### Backend:
+- `POST /api/offers/to-likers` - sends discount offer to listing likers
+- `GET /api/offers/bulk/:listingId` - views bulk offers
+- `POST /api/offers/to-likers/:offerId/claim` - claims offer
+- Spam prevention: max 1 bulk offer per week per seller
+- Notifications sent to all likers
+
+### Frontend:
+- SellerDashboard has "Offers to Likers" tab with listing selector
+- Discount type (percentage/fixed) and validity period selector
+- Claim flow creates accepted offer for buyer
+
+## Promo Codes
+### Backend:
+- `Promo` model: code, seller, discountType, discountValue, minPurchaseAmount, usageLimit, usageCount
+- Routes: CRUD + validate + use
+- Validation checks expiration, usage limit, min purchase
+
+### Frontend:
+- SellerDashboard has "Promo Codes" tab for CRUD
+- Cart page has promo code input with validation
+- Applied promo displays savings amount
+
+## Total Test Count: 448 tests (all passing)
+- 22 test suites: e2e.test.js, offers.test.js, offerChain.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, riskControls.test.js, boost.test.js, wishlist.test.js, admin.test.js, collections.test.js, savedSearch.test.js, notifications.test.js, social.test.js, messageCompliance.test.js, priceHistory.test.js, userProfile.test.js, **bundleDiscounts.test.js**, **promotions.test.js**
+- v17.0 additions: Bundle Discounts (9), Promotions (11)
