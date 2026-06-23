@@ -6,6 +6,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import MobileTabBar from './components/MobileTabBar';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Performance: Lazy load pages - they only load when navigated to
 const Home = lazy(() => import('./pages/Home'));
@@ -31,6 +32,7 @@ const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
 const AdminPage = lazy(() => import('./pages/Admin'));
 const CollectionsPage = lazy(() => import('./pages/Collections'));
 const SavedSearchesPage = lazy(() => import('./pages/SavedSearches'));
+const OrderDetailPage = lazy(() => import('./pages/OrderDetail'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -55,6 +57,7 @@ function App() {
     <ThemeProvider>
       <CartProvider>
         <div className="app">
+          <ErrorBoundary>
           <Navbar />
           <main className="main-content">
             <Suspense fallback={<PageLoader />}>
@@ -82,11 +85,13 @@ function App() {
                 <Route path="/admin" element={<AdminPage />} />
                 <Route path="/collections/:sellerId" element={<CollectionsPage />} />
                 <Route path="/saved-searches" element={<SavedSearchesPage />} />
+                <Route path="/orders/:id" element={<OrderDetailPage />} />
               </Routes>
             </Suspense>
           </main>
           <MobileTabBar />
           <Footer />
+          </ErrorBoundary>
         </div>
       </CartProvider>
     </ThemeProvider>

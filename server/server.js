@@ -14,9 +14,13 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const connectDB = require('./config/db');
+const { initCronJobs } = require('./config/cron');
 
 // Connect to MongoDB
 connectDB();
+
+// Initialize cron jobs for auto-expiration, auto-complete, reserve release
+initCronJobs();
 
 const app = express();
 

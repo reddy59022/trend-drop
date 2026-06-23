@@ -5,15 +5,17 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
-const Offer = require('../models/Offer'); // CRITICAL: For offer price validation
+const Offer = require('../models/Offer');
+const Promo = require('../models/Promo');
+const BundleRule = require('../models/BundleRule');
 const {
   stripe,
   countryCommissions,
   calculatePaymentBreakdown,
-  authorizePaymentIntent,   // Auth only - no charge
-  capturePaymentIntent,     // Capture after fulfillment
+  authorizePaymentIntent,
+  capturePaymentIntent,
   retrievePaymentIntent,
-  releaseAuthorization,     // Release auth if fulfillment fails
+  releaseAuthorization,
   verifyStripeWebhook,
   processSellerPayout,
   issueRefund,
@@ -73,55 +75,176 @@ router.post('/breakdown', (req, res) => {
 
 // ===================== AUTHENTICATED ENDPOINTS =====================
 
-// STEP 1: Authorize payment only (NO CHARGE)
-// capture_method: manual means Stripe holds authorization but doesn't capture funds
+// STEP 1: Authorize payment for batch/multi-item checkout (NO CHARGE)
+// Supports multiple items from potentially different sellers
+// Applies promo codes and bundle discounts
 router.post('/create-intent', auth, async (req, res) => {
   try {
-  const { listingId, shippingAddress, buyerCountry } = req.body;
-
-    const listing = await Listing.findById(listingId);
-    if (!listing) return res.status(404).json({ message: 'Listing not found' });
-    if (listing.seller.toString() === req.user._id.toString()) {
-      return res.status(400).json({ message: 'Cannot purchase your own listing' });
+    const { items, shippingAddress, buyerCountry, promoCode } = req.body;
+    
+    // Support both single listingId and batch items array
+    let itemsArray = items;
+    if (!itemsArray && req.body.listingId) {
+      // Legacy single-item support
+      itemsArray = [{ listingId: req.body.listingId, quantity: 1 }];
     }
-    if (!listing.available || listing.sold || listing.quantity <= 0) {
-      return res.status(400).json({ message: 'Item is no longer available' });
+    
+    if (!itemsArray || !Array.isArray(itemsArray) || itemsArray.length === 0) {
+      return res.status(400).json({ message: 'No items provided' });
     }
 
-    const seller = await User.findById(listing.seller);
-    const sellerCountry = seller?.country || listing.shipsFrom || 'US';
-    const toCountry = buyerCountry || req.user.country || 'US';
+    // Validate all items and calculate total
+    let totalAmount = 0;
+    const breakdowns = [];
+    const itemData = [];
+    let promoDiscount = 0;
+    let appliedPromo = null;
 
-    // Determine buyer currency based on destination country
-    const buyerCurrency = (countryCommissions[toCountry] || countryCommissions.default).currency;
-    // Get live exchange rate for buyer currency (defaults to 1 if unavailable)
-    const exchangeRate = await fetchExchangeRate(buyerCurrency);
-    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5, exchangeRate);
-
-    // Authorize ONLY - no money moves yet
-    const paymentIntent = await authorizePaymentIntent(
-      breakdown.buyer.totalPaid,
-      breakdown.buyerCurrency,
-      {
-        listingId: listing._id.toString(),
-        buyerId: req.user._id.toString(),
-        sellerId: listing.seller.toString(),
-        sellerCountry,
-        buyerCountry: toCountry,
-        platformFee: breakdown.seller.platformFee.toString(),
-        sellerEarnings: breakdown.seller.sellerEarnings.toString(),
-        exchangeRate,
+    for (const item of itemsArray) {
+      const listing = await Listing.findById(item.listingId);
+      if (!listing) return res.status(404).json({ message: `Listing ${item.listingId} not found` });
+      if (listing.seller.toString() === req.user._id.toString()) {
+        return res.status(400).json({ message: 'Cannot purchase your own listing' });
       }
+      if (!listing.available || listing.sold || listing.quantity <= 0) {
+        return res.status(400).json({ message: `"${listing.title}" is no longer available` });
+      }
+      if (listing.quantity < (item.quantity || 1)) {
+        return res.status(400).json({ message: `Only ${listing.quantity} left of "${listing.title}"` });
+      }
+
+      const seller = await User.findById(listing.seller);
+      const sellerCountry = seller?.country || listing.shipsFrom || 'US';
+      const toCountry = buyerCountry || shippingAddress?.country || req.user.country || 'US';
+
+      // Determine price (offer price or listing price)
+      let salePrice = listing.price;
+      let isNegotiated = false;
+      if (item.offerId) {
+        const offer = await Offer.findById(item.offerId);
+        if (offer && offer.status === 'accepted' && offer.buyer.toString() === req.user._id.toString()) {
+          salePrice = offer.acceptedPrice || offer.counterAmount || offer.amount;
+          isNegotiated = true;
+        }
+      } else if (item.negotiatedPrice) {
+        salePrice = item.negotiatedPrice;
+        isNegotiated = true;
+      }
+
+      const buyerCurrency = (countryCommissions[toCountry] || countryCommissions.default).currency;
+      const exchangeRate = await fetchExchangeRate(buyerCurrency);
+      const breakdown = calculatePaymentBreakdown(salePrice, sellerCountry, toCountry, listing.weight || 0.5, exchangeRate);
+      
+      totalAmount += breakdown.buyer.totalPaid * (item.quantity || 1);
+      breakdowns.push(breakdown);
+      itemData.push({
+        listing, seller, sellerCountry, toCountry, salePrice, breakdown,
+        isNegotiated, exchangeRate, quantity: item.quantity || 1
+      });
+    }
+
+    // ===== Promo Code Application =====
+    if (promoCode) {
+      const promo = await Promo.findOne({
+        code: promoCode.toUpperCase(),
+        seller: { $in: itemData.map(d => d.listing.seller) },
+        isActive: true,
+        $or: [
+          { expiresAt: { $exists: false } },
+          { expiresAt: null },
+          { expiresAt: { $gt: new Date() } },
+        ],
+      });
+      if (promo) {
+        if (promo.usageLimit && promo.usageCount >= promo.usageLimit) {
+          return res.status(400).json({ message: 'Promo code usage limit reached' });
+        }
+        if (totalAmount < (promo.minPurchaseAmount || 0)) {
+          return res.status(400).json({ message: `Minimum purchase amount $${promo.minPurchaseAmount} not met` });
+        }
+        if (promo.discountType === 'percentage') {
+          promoDiscount = Math.round(totalAmount * (promo.discountValue / 100) * 100) / 100;
+        } else {
+          promoDiscount = Math.min(promo.discountValue, totalAmount);
+        }
+        promoDiscount = Math.round(promoDiscount * 100) / 100;
+        appliedPromo = promo;
+      }
+    }
+
+    // Apply promo discount to total
+    if (promoDiscount > 0) {
+      totalAmount = Math.max(0, Math.round((totalAmount - promoDiscount) * 100) / 100);
+    }
+
+    // ===== Bundle Discount Application =====
+    let bundleDiscountTotal = 0;
+    const sellerGroups = {};
+    itemData.forEach(d => {
+      const sellerKey = d.seller._id.toString();
+      if (!sellerGroups[sellerKey]) sellerGroups[sellerKey] = { items: [], seller: d.seller };
+      sellerGroups[sellerKey].items.push(d);
+    });
+
+    for (const key of Object.keys(sellerGroups)) {
+      const group = sellerGroups[key];
+      const bundleRules = await BundleRule.find({ seller: group.seller._id, isActive: true });
+      for (const rule of bundleRules) {
+        let eligibleItems = group.items;
+        if (rule.applicableCategories && rule.applicableCategories.length > 0) {
+          eligibleItems = group.items.filter(d => rule.applicableCategories.includes(d.listing.category));
+        }
+        if (eligibleItems.length >= rule.minQuantity) {
+          const discount = eligibleItems.reduce((sum, d) => sum + d.salePrice, 0) * (rule.discountPercent / 100);
+          bundleDiscountTotal += Math.round(discount * 100) / 100;
+        }
+      }
+    }
+
+    if (bundleDiscountTotal > 0) {
+      totalAmount = Math.max(0, Math.round((totalAmount - bundleDiscountTotal) * 100) / 100);
+    }
+
+    // Authorize payment for total amount (all items combined)
+    const metadata = {
+      buyerId: req.user._id.toString(),
+      itemIds: itemData.map(d => d.listing._id.toString()).join(','),
+      sellerIds: [...new Set(itemData.map(d => d.seller._id.toString()))].join(','),
+      totalItems: itemData.length.toString(),
+      appliedPromoId: appliedPromo?._id?.toString() || '',
+      promoDiscount: promoDiscount.toString(),
+      bundleDiscount: bundleDiscountTotal.toString(),
+    };
+
+    const paymentIntent = await authorizePaymentIntent(
+      totalAmount,
+      'USD',
+      metadata
     );
 
     res.json({
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
-      amount: breakdown.buyer.totalPaid,
-      currency: breakdown.buyerCurrency,
-      breakdown,
-      exchangeRate,
-      status: paymentIntent.status, // 'requires_payment_method' → 'requires_capture'
+      amount: totalAmount,
+      currency: 'USD',
+      breakdowns,
+      promoDiscount,
+      bundleDiscount: bundleDiscountTotal,
+      appliedPromo: appliedPromo ? { code: appliedPromo.code, discountAmount: promoDiscount } : null,
+      status: paymentIntent.status,
+      items: itemData.map(d => ({
+        listingId: d.listing._id,
+        title: d.listing.title,
+        price: d.salePrice,
+        quantity: d.quantity,
+        sellerId: d.seller._id,
+        sellerName: d.seller.name,
+        currency: d.listing.currency || 'USD',
+        thumbnail: d.listing.images?.[0] || '',
+        weight: d.listing.weight || 0.5,
+        sellerCountry: d.sellerCountry,
+        isNegotiated: d.isNegotiated,
+      })),
     });
   } catch (error) {
     console.error('Create intent error:', error);
@@ -129,8 +252,8 @@ router.post('/create-intent', auth, async (req, res) => {
   }
 });
 
-// STEP 2 (Batch): Fulfill batch orders then capture payment
-// STEP 2 (Batch): ALL-OR-NOTHING transactional checkout
+// STEP 2 (Batch): Fulfill batch orders then capture payment  
+// ALL-OR-NOTHING transactional checkout
 // Phase 1: Validate all items + generate all labels (no DB writes)
 // Phase 2: Only if ALL succeeded → create all transactions, update inventory, payouts
 // Phase 3: If anything fails → full refund + no partial state
@@ -163,7 +286,6 @@ router.post('/confirm-batch', auth, async (req, res) => {
     }
 
     // ========== PHASE 1: Validate + Build (NO DB WRITES) ==========
-    // This phase must succeed completely or we abort with no side effects
     const { generateLabel, getPreferredCarrier } = require('../config/shipping');
     const orderPlans = [];
 
@@ -180,7 +302,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       const sellerCountry = seller?.country || listing.shipsFrom || 'US';
       const toCountry = shippingAddress?.country || req.user.country || 'US';
       
-      // CRITICAL: Offer price validation (v14.0)
+      // Offer price validation
       let salePrice = listing.price;
       let offer = null;
       let isNegotiated = false;
@@ -199,10 +321,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
         if (offer.status !== 'accepted') {
           return res.status(400).json({ message: `Offer is not accepted. Status: ${offer.status}`, failedItem: item.listingId });
         }
-        salePrice = offer.acceptedPrice;
+        salePrice = offer.acceptedPrice || offer.counterAmount || offer.amount;
         isNegotiated = true;
-        if (item.negotiatedPrice && Math.abs(item.negotiatedPrice - offer.acceptedPrice) > 0.01) {
-          return res.status(400).json({ message: `Price mismatch. Expected ${offer.acceptedPrice}`, failedItem: item.listingId });
+        if (item.negotiatedPrice && Math.abs(item.negotiatedPrice - salePrice) > 0.01) {
+          return res.status(400).json({ message: `Price mismatch. Expected ${salePrice}`, failedItem: item.listingId });
         }
       } else if (item.negotiatedPrice) {
         salePrice = item.negotiatedPrice;
@@ -232,7 +354,6 @@ router.post('/confirm-batch', auth, async (req, res) => {
     }
 
     // ========== PHASE 2: Capture Payment ==========
-    // Only after ALL labels generated successfully
     let captureResult = null;
     if (paymentIntent.status === 'requires_capture') {
       captureResult = await capturePaymentIntent(paymentIntentId);
@@ -242,7 +363,6 @@ router.post('/confirm-batch', auth, async (req, res) => {
     captured = true;
 
     // ========== PHASE 3: Commit all writes ==========
-    // All DB writes happen here. If ANY fails, we refund and rollback.
     for (const plan of orderPlans) {
       const { listing, seller, toCountry, salePrice, breakdown, label, offer, isNegotiated } = plan;
 
@@ -287,7 +407,6 @@ router.post('/confirm-batch', auth, async (req, res) => {
         status: 'shipped',
         payout: { status: 'pending', transactionId: paymentIntentId },
         autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
-        // CRITICAL: Link offer to transaction (v14.0)
         offer: offer ? offer._id : null,
         negotiatedPrice: isNegotiated ? salePrice : null,
         isNegotiated: isNegotiated,
@@ -295,14 +414,12 @@ router.post('/confirm-batch', auth, async (req, res) => {
 
       createdTransactions.push(txn);
       
-      // CRITICAL: Mark offer as completed and link to transaction (v14.0)
       if (offer) {
         offer.status = 'completed';
         offer.transaction = txn._id;
         await offer.save();
       }
 
-      // Update inventory
       const wasLastOne = listing.quantity === 1;
       const updated = await Listing.findOneAndUpdate(
         { _id: listing._id, quantity: { $gt: 0 } },
@@ -311,7 +428,6 @@ router.post('/confirm-batch', auth, async (req, res) => {
       );
       inventoryChanges.push({ listingId: listing._id, updated });
 
-      // Create payout record
       const payout = await Payout.create({
         seller: listing.seller,
         transaction: txn._id,
@@ -324,7 +440,6 @@ router.post('/confirm-batch', auth, async (req, res) => {
       });
       createdPayouts.push(payout);
 
-      // Prepare seller balance update
       sellerBalanceUpdates.push({
         sellerDoc: seller,
         earnings: breakdown.seller.sellerEarnings,
@@ -335,7 +450,6 @@ router.post('/confirm-batch', auth, async (req, res) => {
     }
 
     // ========== PHASE 4: Update seller balances + notifications ==========
-    // All transactions succeeded — now update seller state
     for (const update of sellerBalanceUpdates) {
       const { sellerDoc, earnings, listingId, transactionId, sellerCurrency } = update;
       if (sellerDoc) {
@@ -356,6 +470,19 @@ router.post('/confirm-batch', auth, async (req, res) => {
       await txn.populate(['buyer', 'seller', 'listing']);
     }
 
+    // ===== Apply promo code usage if present =====
+    if (paymentIntent.metadata?.appliedPromoId) {
+      try {
+        const promo = await Promo.findById(paymentIntent.metadata.appliedPromoId);
+        if (promo) {
+          promo.usageCount = (promo.usageCount || 0) + 1;
+          await promo.save();
+        }
+      } catch (e) {
+        console.error('Failed to increment promo usage:', e.message);
+      }
+    }
+
     res.json({
       transactions: createdTransactions,
       captureResult: { id: captureResult.id, status: captureResult.status },
@@ -364,27 +491,22 @@ router.post('/confirm-batch', auth, async (req, res) => {
   } catch (error) {
     console.error('Confirm batch payment error:', error);
 
-    // ========== ROLLBACK: Full cleanup ==========
-    // If payment was captured, issue a full refund
+    // Rollback
     if (captured && req.body.paymentIntentId) {
       try { await issueRefund(req.body.paymentIntentId); } catch (e) { console.error('Refund rollback failed:', e.message); }
     }
-    // If payment was only authorized (not yet captured), release it
     if (!captured && req.body.paymentIntentId) {
       try { await releaseAuthorization(req.body.paymentIntentId); } catch (e) { console.error('Release rollback failed:', e.message); }
     }
 
-    // Cleanup all partial DB writes (reverse order)
     for (const payout of createdPayouts) {
       try { await Payout.findByIdAndDelete(payout._id); } catch (e) {}
     }
     for (const txn of createdTransactions) {
       try { await Transaction.findByIdAndDelete(txn._id); } catch (e) {}
     }
-    // Restore inventory
     for (const change of inventoryChanges) {
       if (!change.updated) {
-        // Item was marked as sold but wasn't updated — restore quantity
         try {
           await Listing.findOneAndUpdate(
             { _id: change.listingId },
@@ -399,12 +521,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
   }
 });
 
-// STEP 2: Fulfill order then capture payment (single item)
-// 1. Verify authorization succeeded
-// 2. Generate shipping label
-// 3. Create transaction record
-// 4. Capture the payment (money moves now)
-// 5. Update inventory + seller stats
+// STEP 2: Single item confirm + capture
 router.post('/confirm', auth, async (req, res) => {
   let createdTransaction = null;
   let captured = false;
@@ -414,8 +531,6 @@ router.post('/confirm', auth, async (req, res) => {
 
     if (!paymentIntentId) return res.status(400).json({ message: 'Missing paymentIntentId' });
 
-    // Verify payment status from Stripe
-    // With automatic capture, status is 'succeeded' after client confirms
     const paymentIntent = await retrievePaymentIntent(paymentIntentId);
     const VALID_STATUSES = ['succeeded', 'requires_capture'];
     if (!VALID_STATUSES.includes(paymentIntent.status)) {
@@ -424,7 +539,6 @@ router.post('/confirm', auth, async (req, res) => {
       });
     }
 
-    // Deduplicate - check if already processed
     const existingTxn = await Transaction.findOne({ 'payout.transactionId': paymentIntentId });
     if (existingTxn) {
       return res.json({ message: 'Order already exists for this payment', transaction: existingTxn });
@@ -443,8 +557,6 @@ router.post('/confirm', auth, async (req, res) => {
     const toCountry = shippingAddress?.country || req.user.country || 'US';
     const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
 
-    // ---------- FULFILLMENT (Label Generation) ----------
-    // Generate shipping label BEFORE capturing payment
     const { generateLabel, getPreferredCarrier } = require('../config/shipping');
     const sellerAddress = seller?.shippingAddress ? {
       street1: seller.shippingAddress.street1,
@@ -456,15 +568,11 @@ router.post('/confirm', auth, async (req, res) => {
 
     const carrierCode = getPreferredCarrier(toCountry, sellerCountry === toCountry);
     const label = generateLabel({
-      shippingAddress: {
-        fullName: shippingAddress?.fullName || req.user.name,
-        ...shippingAddress,
-      },
+      shippingAddress: { fullName: shippingAddress?.fullName || req.user.name, ...shippingAddress },
       sellerAddress,
       weight: listing.weight || 0.5,
     }, carrierCode);
 
-    // ---------- CREATE TRANSACTION ----------
     createdTransaction = await Transaction.create({
       listing: listingId,
       buyer: req.user._id,
@@ -504,36 +612,21 @@ router.post('/confirm', auth, async (req, res) => {
         trackingHistory: label.statusHistory,
       },
       status: 'shipped',
-      payout: {
-        status: 'pending',
-        transactionId: paymentIntentId,
-      },
-      autoTracking: {
-        enabled: true,
-        lastChecked: new Date(),
-        nextCheck: new Date(Date.now() + 86400000),
-        attempts: 0,
-      },
+      payout: { status: 'pending', transactionId: paymentIntentId },
+      autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
     });
 
-    // ---------- NOW CAPTURE PAYMENT (money moves) ----------
     const captureResult = await capturePaymentIntent(paymentIntentId);
     captured = true;
 
-    // ---------- UPDATE INVENTORY (only after capture success) ----------
     const wasLastOne = listing.quantity === 1;
     const inventoryUpdate = await Listing.findOneAndUpdate(
       { _id: listingId, quantity: { $gt: 0 } },
-      {
-        $inc: { quantity: -1, quantitySold: 1 },
-        $set: wasLastOne ? { sold: true, available: false } : {},
-      },
+      { $inc: { quantity: -1, quantitySold: 1 }, $set: wasLastOne ? { sold: true, available: false } : {} },
       { new: true }
     );
 
     if (!inventoryUpdate) {
-      // Extremely rare: someone bought between our check and capture
-      // Money is captured - issue refund
       await issueRefund(paymentIntentId);
       createdTransaction.status = 'refunded';
       createdTransaction.payout.status = 'refunded';
@@ -541,10 +634,8 @@ router.post('/confirm', auth, async (req, res) => {
       return res.status(400).json({ message: 'Item sold out between authorization and capture. Full refund issued.' });
     }
 
-    // ---------- UPDATE SELLER BALANCE (pending until order completes) ----------
     if (seller) {
       seller.balance.pending = (seller.balance.pending || 0) + breakdown.seller.sellerEarnings;
-      // NOTE: totalSales is incremented in orderLifecycle.js when order auto-completes
       seller.notifications.unshift({
         type: 'sale',
         from: req.user._id,
@@ -555,25 +646,17 @@ router.post('/confirm', auth, async (req, res) => {
       await seller.save();
     }
 
-    // NOTE: totalPurchases is incremented in orderLifecycle.js when order auto-completes
-
-    // ---------- AUTO-CREATE PAYOUT RECORD ----------
-    // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
-    // salePrice = item price only (shipping + buyer protection are pass-through fees)
     try {
       const existingPayout = await Payout.findOne({ transaction: createdTransaction._id });
       if (!existingPayout) {
-        const itemPrice = breakdown.buyer.itemPrice || listing.price || 0;
-        const commissionAmount = breakdown.seller.platformFee;
-        const payoutAmount = breakdown.seller.sellerEarnings;
         await Payout.create({
           seller: listing.seller,
           transaction: createdTransaction._id,
           listing: listingId,
-          salePrice: itemPrice,
+          salePrice: breakdown.buyer.itemPrice,
           commissionRate: breakdown.seller.platformFeePercent / 100,
-          commissionAmount,
-          payoutAmount,
+          commissionAmount: breakdown.seller.platformFee,
+          payoutAmount: breakdown.seller.sellerEarnings,
           status: 'pending',
         });
       }
@@ -596,17 +679,12 @@ router.post('/confirm', auth, async (req, res) => {
   } catch (error) {
     console.error('Confirm payment error:', error);
 
-    // Rollback: Release authorization if we never captured
     if (!captured && req.body.paymentIntentId) {
       try { await releaseAuthorization(req.body.paymentIntentId); } catch (e) {}
     }
-
-    // Rollback: If we captured but something else failed, issue refund
     if (captured && req.body.paymentIntentId) {
       try { await issueRefund(req.body.paymentIntentId); } catch (e) {}
     }
-
-    // Rollback: Delete partial transaction if created
     if (createdTransaction && !captured) {
       try { await Transaction.findByIdAndDelete(createdTransaction._id); } catch (e) {}
     }

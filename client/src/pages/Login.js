@@ -1,225 +1,183 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
-import api from '../services/api';
-import { FaGoogle, FaEnvelope, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { FaEnvelope, FaLock, FaEye, FaEyeSlash, FaGoogle, FaSpinner, FaExclamationCircle } from 'react-icons/fa';
 
 const Login = () => {
-  const { user, login } = useAuth();
-  const navigate = useNavigate();
-  const [formData, setFormData] = useState({ email: '', password: '' });
-  const [loading, setLoading] = useState(false);
-  const [needsVerification, setNeedsVerification] = useState(false);
-  const [verificationEmail, setVerificationEmail] = useState('');
+  const [form, setForm] = useState({ email: '', password: '' });
+  const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
-  const googleBtnRef = useRef(null);
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const { login, loginWithGoogle, user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
+  // Redirect if already logged in
   useEffect(() => {
-    if (user) navigate('/');
-  }, [user, navigate]);
-
-  // Load Google Identity Services client
-  useEffect(() => {
-    const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
-    if (!clientId || typeof window.google === 'undefined') {
-      // Dynamically load the GIS script if not present
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      document.body.appendChild(script);
+    if (user) {
+      const from = location.state?.from || '/feed';
+      navigate(from, { replace: true });
     }
-  }, []);
+  }, [user, navigate, location]);
 
-  const handleGoogleLogin = async () => {
-    const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      toast.error('Google login is not configured. Please use email login.');
-      return;
+  const validate = () => {
+    const errs = {};
+    if (!form.email.trim()) {
+      errs.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      errs.email = 'Please enter a valid email address';
     }
-    try {
-      // Use Google Identity Services
-      const { google } = window;
-      if (!google || !google.accounts) {
-        toast.error('Google Sign-In is still loading. Please try again.');
-        return;
-      }
-      
-      const credential = await new Promise((resolve, reject) => {
-        const client = google.accounts.id;
-        client.initialize({
-          client_id: clientId,
-          callback: (response) => {
-            if (response.credential) {
-              resolve(response.credential);
-            } else {
-              reject(new Error('No credential returned'));
-            }
-          },
-        });
-        client.prompt(); // Show One Tap prompt
-        // Also render button fallback
-        if (googleBtnRef.current) {
-          client.renderButton(googleBtnRef.current, {
-            type: 'standard',
-            theme: 'outline',
-            size: 'large',
-            text: 'signin_with',
-          });
-        }
-      });
-
-      // Decode the JWT to get user info
-      const payload = JSON.parse(atob(credential.split('.')[1]));
-      
-      // Send to backend
-      const res = await api.post('/auth/google', {
-        idToken: credential,
-        email: payload.email,
-        name: payload.name,
-        avatar: payload.picture,
-      });
-      
-      if (res.data.token) {
-        localStorage.setItem('token', res.data.token);
-        toast.success('Signed in with Google!');
-        window.location.href = '/';
-      }
-    } catch (error) {
-      console.error('Google login error:', error);
-      toast.error(error.response?.data?.message || 'Google login failed');
+    if (!form.password.trim()) {
+      errs.password = 'Password is required';
+    } else if (form.password.length < 8) {
+      errs.password = 'Password must be at least 8 characters';
     }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.email || !formData.password) {
-      toast.error('Please fill in all fields');
-      return;
-    }
+    if (!validate()) return;
     setLoading(true);
     try {
-      const data = await login(formData.email, formData.password);
-      if (data.needsVerification) {
-        setNeedsVerification(true);
-        setVerificationEmail(formData.email);
-        toast.info('Please verify your email before logging in');
-      } else if (data.token) {
-        toast.success('Welcome back!');
-        navigate('/');
-      }
+      await login(form.email, form.password);
+      toast.success('Welcome back! 🎉');
+      const from = location.state?.from || '/feed';
+      navigate(from, { replace: true });
     } catch (error) {
-      const msg = error.response?.data?.message || 'Login failed';
+      const msg = error.response?.data?.message || 'Invalid email or password';
       toast.error(msg);
-      if (msg.toLowerCase().includes('verify') || error.response?.status === 403) {
-        setNeedsVerification(true);
-        setVerificationEmail(formData.email);
+      if (msg.toLowerCase().includes('email')) {
+        setErrors(prev => ({ ...prev, email: msg }));
+      } else {
+        setErrors(prev => ({ ...prev, password: msg }));
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResendVerification = async () => {
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
     try {
-      await api.post('/auth/resend-verification', { email: verificationEmail });
-      toast.success('Verification email resent!');
+      await loginWithGoogle();
     } catch (error) {
-      toast.error('Failed to resend verification email');
+      toast.error('Google login failed. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleChange = (field) => (e) => {
+    setForm(prev => ({ ...prev, [field]: e.target.value }));
+    // Clear field error on change
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
   return (
     <div className="auth-page">
-      <div className="auth-container" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-        {needsVerification ? (
-          <>
-            <div style={{ textAlign: 'center', marginBottom: 24 }}>
-              <div className="empty-state-icon" style={{ fontSize: 48 }}>📧</div>
-              <h1>Verify Your Email</h1>
-              <p className="auth-subtitle">
-                We sent a verification email to <strong>{verificationEmail}</strong>
+      <div className="auth-card glass-card">
+        <h1>Welcome Back</h1>
+        <p className="auth-subtitle">Sign in to continue shopping and selling.</p>
+
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="form-group">
+            <label htmlFor="email">Email Address</label>
+            <div style={{ position: 'relative' }}>
+              <FaEnvelope style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', fontSize: 14, pointerEvents: 'none' }} aria-hidden="true" />
+              <input
+                id="email"
+                type="email"
+                className={`form-input ${errors.email ? 'form-input-error' : ''}`}
+                style={{ paddingLeft: 36 }}
+                placeholder="you@example.com"
+                value={form.email}
+                onChange={handleChange('email')}
+                autoComplete="email"
+                autoFocus
+                aria-describedby={errors.email ? 'email-error' : undefined}
+                aria-invalid={!!errors.email}
+              />
+            </div>
+            {errors.email && (
+              <p id="email-error" className="form-error" role="alert">
+                <FaExclamationCircle size={12} style={{ marginRight: 4 }} />
+                {errors.email}
               </p>
-            </div>
-            <button className="btn btn-primary btn-block" onClick={handleResendVerification}>
-              Resend Verification Email
-            </button>
-            <button className="btn btn-ghost btn-block" style={{ marginTop: 12 }} onClick={() => setNeedsVerification(false)}>
-              Back to Login
-            </button>
-          </>
-        ) : (
-          <>
-            <div style={{ textAlign: 'center', marginBottom: 24 }}>
-              <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style={{ margin: '0 auto 12px' }}>
-                <circle cx="16" cy="16" r="16" fill="#FF385C"/>
-                <path d="M10 22V12l6-4 6 4v10H10z" fill="white" opacity="0.9"/>
-                <path d="M12 18h8v4h-8z" fill="white"/>
-              </svg>
-              <h1>Welcome Back</h1>
-              <p className="auth-subtitle">Sign in to continue shopping</p>
-            </div>
+            )}
+          </div>
 
-            <form className="auth-form" onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label className="form-label">Email</label>
-                <div style={{ position: 'relative' }}>
-                  <FaEnvelope style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
-                  <input
-                    type="email"
-                    className="form-input"
-                    placeholder="you@example.com"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    style={{ paddingLeft: 36 }}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Password</label>
-                <div style={{ position: 'relative' }}>
-                  <FaLock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    className="form-input"
-                    placeholder="Enter your password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    style={{ paddingLeft: 36, paddingRight: 36 }}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', background: 'none', border: 'none' }}
-                  >
-                    {showPassword ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
-                  </button>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <Link to="/forgot-password" style={{ fontSize: 13, color: 'var(--td-primary)', fontWeight: 600 }}>Forgot password?</Link>
-              </div>
-              <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading}>
-                {loading ? <><span className="spinner spinner-sm" /> Signing in...</> : 'Sign In'}
-              </button>
-            </form>
-
-            <div className="auth-divider">or continue with</div>
-
-            <div className="social-auth-buttons">
-              <button className="btn-social" onClick={handleGoogleLogin} ref={googleBtnRef}>
-                <FaGoogle /> Sign in with Google
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <div style={{ position: 'relative' }}>
+              <FaLock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', fontSize: 14, pointerEvents: 'none' }} aria-hidden="true" />
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                className={`form-input ${errors.password ? 'form-input-error' : ''}`}
+                style={{ paddingLeft: 36, paddingRight: 40 }}
+                placeholder="Enter your password"
+                value={form.password}
+                onChange={handleChange('password')}
+                autoComplete="current-password"
+                aria-describedby={errors.password ? 'password-error' : undefined}
+                aria-invalid={!!errors.password}
+              />
+              <button
+                type="button"
+                className="btn-icon btn-ghost"
+                style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, color: 'var(--td-text-tertiary)' }}
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                tabIndex={-1}
+              >
+                {showPassword ? <FaEyeSlash size={14} /> : <FaEye size={14} />}
               </button>
             </div>
+            {errors.password && (
+              <p id="password-error" className="form-error" role="alert">
+                <FaExclamationCircle size={12} style={{ marginRight: 4 }} />
+                {errors.password}
+              </p>
+            )}
+          </div>
 
-            <div className="auth-footer">
-              Don't have an account? <Link to="/register">Create one</Link>
-            </div>
-          </>
-        )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+            <Link to="/forgot-password" style={{ fontSize: 13, color: 'var(--td-primary)', fontWeight: 600 }}>
+              Forgot password?
+            </Link>
+          </div>
+
+          <button type="submit" className="btn btn-primary btn-lg" disabled={loading} style={{ width: '100%' }}>
+            {loading ? <><FaSpinner className="spinner-sm" /> Signing in...</> : 'Sign In'}
+          </button>
+        </form>
+
+        <div className="auth-divider">or continue with</div>
+
+        <button
+          className="btn btn-outline btn-lg"
+          onClick={handleGoogleLogin}
+          disabled={googleLoading}
+          style={{ width: '100%', marginBottom: 16 }}
+          aria-label="Sign in with Google"
+        >
+          {googleLoading ? (
+            <FaSpinner className="spinner-sm" />
+          ) : (
+            <FaGoogle style={{ color: '#4285F4' }} />
+          )}
+          {googleLoading ? 'Connecting...' : 'Google'}
+        </button>
+
+        <div className="auth-footer">
+          Don't have an account? <Link to="/register">Sign up</Link>
+        </div>
       </div>
     </div>
   );

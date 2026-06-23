@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** June 23, 2026 — v17.0 Enterprise Complete (3 new features, 20 new tests, full Poshmark/Depop parity)
+> **Last Updated:** June 23, 2026 — v17.5 Enterprise Complete (Batch checkout fix, OrderDetail page, ProtectedRoute, ErrorBoundary, Cron jobs, Promo+Bundle discount integration)
 
 ---
 
@@ -12,6 +12,7 @@
 - Strikes tracked: 3 = suspension threshold
 - Admin role support (`user`, `admin`, `moderator`, `suspended`)
 - Suspended users auto-blocked from login
+- **ProtectedRoute component** guards auth-required routes with role-based access control
 
 ### Google OAuth:
 - Backend: `POST /api/auth/google` accepts Google ID token, name, email, avatar
@@ -22,6 +23,13 @@
 - Requires `REACT_APP_GOOGLE_CLIENT_ID` environment variable
 - Falls back gracefully if Google Sign-In is not configured
 
+### ErrorBoundary:
+- Global React error boundary catches all uncaught errors
+- Differentiates between network errors, auth errors, and generic errors
+- Provides "Reload Page" and "Go Home" buttons
+- Logs client-side errors to server in production
+- Wraps entire app to prevent blank screens
+
 ## 2. Listing Management ✓ 30 tests
 - Required: title, description, price (>= $5.00), category, condition, at least 1 image
 - Inventory: quantity (default 1), reserved, quantitySold
@@ -29,7 +37,7 @@
 - Sellers can edit ALL listing fields including title, description, price, category, brand, size, condition, color, images, video URL, shipping options, quantity, and boost tier
 - Listing edit supports adding/removing images via `existingImages` JSON array + new file uploads
 - **Status field**: `draft`, `active`, `sold` — draft listings are hidden from public feed
-- **Auto-expiration**: `expiresAt` Date field — expired listings hidden from public feed
+- **Auto-expiration**: `expiresAt` Date field — expired listings auto-hidden by cron job
 - **Boost/promotion system**: Standard (10%), Premium (15%), Elite (20%) tiers
 
 ## 3. Offer Negotiation ✓ 41 tests (13 counter-offer chain tests)
@@ -100,6 +108,13 @@ accepted ──→ completed        (after purchase)
 - This ensures payment is only captured AFTER fulfillment (label generation) succeeds
 - If fulfillment fails → authorization is released (no charge to customer)
 
+### Batch Checkout — Multi-Item Support (v17.5):
+- **Single payment intent for ALL items** in the cart (not per-item)
+- Supports items from different sellers in one payment
+- Promo codes applied at payment intent creation (discounts total)
+- Bundle discounts applied at payment intent creation
+- All items validated before any payment processing
+
 ### Batch Checkout — All-or-Nothing Transactional Flow:
 **Phase 1: Validate + Build (NO DB WRITES)**
 - Validate ALL items are available
@@ -136,9 +151,26 @@ accepted ──→ completed        (after purchase)
 - **30c:** Can be shipped by seller
 - **30d:** Can be delivered
 - **30e:** Buyer can confirm receipt
-- **30f:** Order completes after 3 days (auto-complete)
+- **30f:** Order completes after 3 days (auto-complete via cron)
 - **30g:** Cannot cancel after delivery
 - **30h:** Cannot cancel completed order
+
+### Auto-Complete Cron Job (v17.5):
+- Runs every hour
+- Moves `delivered` → `buyer_confirmed` after 3 days (auto-confirm)
+- Moves `buyer_confirmed` → `completed` after 3 days (releases funds)
+- Creates payout records automatically
+- Updates seller stats (totalSales) and buyer stats (totalPurchases)
+
+### OrderDetail Page (v17.5):
+- Full order status with color-coded badge system
+- Order timeline visualization (Order Placed → Shipped → Delivered → Completed)
+- Tracking number and tracking history display
+- Payment summary with full breakdown
+- Seller and buyer info cards
+- Action buttons: Cancel Order, Confirm Received, Request Return
+- Return/refund info display when applicable
+- Route: `/orders/:id`
 
 ## 6. Shipping ✓ 8 tests
 - Zone-based: Domestic ($3.99), Continental ($9.99), Intercontinental ($18.99)
@@ -199,6 +231,7 @@ accepted ──→ completed        (after purchase)
 ### Rolling Reserve:
 - **10% rolling reserve** held for 60 days to protect against chargebacks
 - Reserve tracked in `seller.balance.reserve` and `seller.balance.reserveReleaseDate[]`
+- **Release cron job**: Daily at 2:00 AM, releases any reserve amounts past 60-day hold
 
 ### New Seller Hold:
 - First 5 sales held for 14 days (account age requirement)
@@ -262,6 +295,13 @@ Each item from each seller gets its own Transaction record:
 - **34o:** Idempotency: duplicate paymentIntentId returns "already processed"
 - **34p:** Seller balances updated ONLY after ALL items succeed
 
+### Promo + Bundle Discount Integration (v17.5):
+- Promo codes applied at payment intent creation (discounts total amount)
+- Bundle discounts calculated and applied at payment intent creation
+- Both discounts reflected in payment intent metadata for audit trail
+- Promo usage count incremented on successful order completion
+- Bundle discount displayed in cart UI with rule name and savings amount
+
 ### Partial Returns:
 - **34f:** Buyer can return 1 item from 10 sellers, keep 9
 - **34g:** Only the returned item gets refunded, others stay paid
@@ -314,12 +354,13 @@ Each item from each seller gets its own Transaction record:
 - Collections are sortable and can be activated/deactivated
 - Accessible at `/collections/:sellerId` route (public view)
 
-## 28a. Bundle Discounts ✓ 9 tests (NEW in v17.0)
+## 28a. Bundle Discounts ✓ 9 tests
 - Sellers can create bundle discount rules: "Buy 2+ items from my closet, get 15% off"
 - Applied automatically in cart when eligible items are present
 - Configurable: minimum quantity, discount percentage, applicable categories
 - Cannot combine with other offers
 - Multiple bundle rules stack when items qualify for different rules
+- **Fully integrated with payment flow (v17.5):** Bundle discounts applied at payment intent creation
 
 ### Endpoints:
 - `POST /api/offers/bundle` - Create bundle discount rule
@@ -328,13 +369,13 @@ Each item from each seller gets its own Transaction record:
 - `DELETE /api/offers/bundle/:id` - Delete bundle rule
 - `POST /api/offers/bundle/apply` - Calculate eligible discounts for cart
 
-### Bundle Discount UI (@seller-dashboard):
+### Bundle Discount UI (@seller-dashboard + @cart):
 - Create/Edit/Delete bundle rules via tabbed interface
 - "Buy X items, get Y% off" display
-- Shows potential savings to buyers in cart
+- Shows potential savings to buyers in cart with rule name and amount
 - Category filtering support
 
-## 28b. Offers to Likers ✓ (NEW in v17.0)
+## 28b. Offers to Likers ✓
 - Sellers can send bulk discount offers to all users who liked a listing
 - Creates a time-limited exclusive offer (valid 24-72 hours)
 - Likers receive notification + exclusive offer code
@@ -352,13 +393,14 @@ Each item from each seller gets its own Transaction record:
 - Set offer validity period (24/48/72 hours)
 - Max 1 bulk offer per week enforcement
 
-## 28c. Promotions / Coupon Codes ✓ 11 tests (NEW in v17.0)
+## 28c. Promotions / Coupon Codes ✓ 11 tests
 - Sellers create promo codes: `SAVE10`, `SUMMER20`, etc.
 - Configurable: percentage off, fixed amount, discount type
 - Min purchase amount, usage limit, expiration date
 - Applied at checkout by buyer entering code
 - Platform tracks usage count per code
 - Duplicate code prevention per seller
+- **Fully integrated with payment flow (v17.5):** Promo codes applied at payment intent creation, usage incremented on completion
 
 ### Endpoints:
 - `POST /api/promos` - Create promo code
@@ -374,33 +416,42 @@ Each item from each seller gets its own Transaction record:
 - Visual display of applied discounts
 - Usage stats tracking
 
-## 28d. Verified Seller Badge (NEW in v17.0)
+## 28d. Verified Seller Badge ✓
 - `isVerified` boolean field on User model (default: false)
 - Displayed as checkmark badge on Profile page next to seller name
 - Displayed on ListingCard when seller is verified
 - Admins can mark sellers as verified via admin panel
 
-## 28e. Social Media Links (NEW in v17.0)
+## 28e. Social Media Links ✓
 - User model has `socialLinks` object with fields: instagram, tiktok, pinterest, youtube, twitter, facebook
 - Displayed as clickable buttons on Profile page
 - Configured in Settings page (social media account handles)
 
-## 28f. Seller Store Customization (NEW in v17.0)
+## 28f. Seller Store Customization ✓
 - User model has `store` object: banner, logo, colorTheme, tagline, returnPolicy
 - Store banner displayed on Profile/Closet page
 - Custom color theme for storefront
 
-## 28g. Listing Draft/Status System (NEW in v17.0)
+## 28g. Listing Draft/Status System ✓
 - Listing `status` field: `draft` | `active` | `sold`
 - Draft listings are hidden from public feed and search
 - Sellers can save listings as drafts and publish later
 - Listing edit supports changing status
 
-## 28h. Listing Auto-Expiration (NEW in v17.0)
+## 28h. Listing Auto-Expiration ✓ (v17.5)
 - Listing `expiresAt` Date field
-- Expired listings automatically hidden from public feed
+- **Cron job runs every 6 hours**: auto-expires listings past `expiresAt`
+- Expired listings get `status: 'draft'` and `available: false`
 - Seller notified when listing is about to expire
 - Seller can renew/republish expired listings
+
+## Cron Jobs (v17.5)
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| Listing Auto-Expiration | Every 6 hours | Expire listings past `expiresAt` |
+| Order Auto-Processing | Every hour | Auto-confirm delivery (3 days), auto-complete + release funds (3 days) |
+| Rolling Reserve Release | Daily at 2:00 AM | Release reserve amounts past 60-day hold |
+| Token Cleanup | Daily at 3:00 AM | Delete expired verification tokens |
 
 ## Verified Seller Badge
 - `isVerified` boolean field on User model
@@ -419,14 +470,14 @@ Each item from each seller gets its own Transaction record:
 
 ## Listing Expiration
 - `expiresAt` field on Listing model
-- Expired listings hidden from public
-- Cron job for auto-expiration
+- Expired listings hidden from public via cron job
+- Cron job runs every 6 hours
 
 ## Seller Store Customization
 - `store.banner`, `store.logo`, `store.colorTheme`, `store.tagline`, `store.returnPolicy`
 - Customizable storefront per seller
 
-## User Model Enhancements (v17.0)
+## User Model Enhancements (v17.0+)
 ```
 User {
   isVerified: Boolean (default: false)
@@ -472,45 +523,47 @@ TrendDrop is a fully cross-platform app running on **Web, iOS, and Android** via
 6. **Offline Support**: Capacitor HTTP + Cookies enable offline auth token persistence
 7. **Deep Linking**: `https://trend-drop.onrender.com/listing/:id` opens directly in app
 8. **Image Upload**: Native camera roll access via Photos plugin
-9. **Status Bar**: Branded status bar with TrendDrop red (#E24455)
+9. **Status Bar**: Branded status bar with TrendDrop red (#FF385C)
 
-## Client Routes (v17.0)
-| Route | Page | Auth Required |
-|-------|------|---------------|
-| `/` | Home | No |
-| `/login` | Login (with Google OAuth) | No |
-| `/register` | Register | No |
-| `/feed` | Feed | Yes |
-| `/sell` | Sell (with draft support + bundle rules) | Yes |
-| `/listing/:id` | Listing Detail | No |
-| `/profile/:id` | Profile (with verified badge + social links + seller stats) | No |
-| `/closet/:id` | Closet | No |
-| `/search` | Search | No |
-| `/offers` | Offers | Yes |
-| `/transactions` | Transactions | Yes |
-| `/settings` | Settings (with social links + store customization) | Yes |
-| `/notifications` | Notifications | Yes |
-| `/wishlist` | Wishlist | Yes |
-| `/messages` | Messages | Yes |
-| `/reviews/:sellerId` | Reviews | No |
-| `/forgot-password` | Forgot Password | No |
-| `/cart` | Cart (with promo codes + bundle discounts) | Yes |
-| `/seller-dashboard` | Seller Dashboard (tabs: Overview, Bundle Rules, Promo Codes, Offers to Likers) | Yes |
-| `/verify-email` | Verify Email | No |
-| `/admin` | Admin Panel | Admin/Moderator |
-| `/collections/:sellerId` | Collections | No |
-| `/saved-searches` | Saved Searches | Yes |
+## Client Routes (v17.5)
+| Route | Page | Auth Required | Protection |
+|-------|------|---------------|------------|
+| `/` | Home | No | - |
+| `/login` | Login (with Google OAuth) | No | - |
+| `/register` | Register | No | - |
+| `/feed` | Feed | Yes | ProtectedRoute |
+| `/sell` | Sell (with draft support + bundle rules) | Yes | ProtectedRoute |
+| `/listing/:id` | Listing Detail | No | - |
+| `/profile/:id` | Profile (with verified badge + social links + seller stats) | No | - |
+| `/closet/:id` | Closet | No | - |
+| `/search` | Search | No | - |
+| `/offers` | Offers | Yes | ProtectedRoute |
+| `/transactions` | Transactions | Yes | ProtectedRoute |
+| `/settings` | Settings (with social links + store customization) | Yes | ProtectedRoute |
+| `/notifications` | Notifications | Yes | ProtectedRoute |
+| `/wishlist` | Wishlist | Yes | ProtectedRoute |
+| `/messages` | Messages | Yes | ProtectedRoute |
+| `/reviews/:sellerId` | Reviews | No | - |
+| `/forgot-password` | Forgot Password | No | - |
+| `/cart` | Cart (with promo codes + bundle discounts) | Yes | ProtectedRoute |
+| `/seller-dashboard` | Seller Dashboard (tabs: Overview, Bundle Rules, Promo Codes, Offers to Likers) | Yes | ProtectedRoute |
+| `/verify-email` | Verify Email | No | - |
+| `/admin` | Admin Panel | Admin/Moderator | ProtectedRoute (admin) |
+| `/collections/:sellerId` | Collections | No | - |
+| `/saved-searches` | Saved Searches | Yes | ProtectedRoute |
+| `/orders/:id` | Order Detail (NEW v17.5) | Yes | ProtectedRoute |
 
 ## Bundle Discounts
 ### Backend:
 - `BundleRule` model: seller, name, minQuantity, discountPercent, applicableCategories, isActive, usageCount
 - Routes: POST/GET/PUT/DELETE `/api/offers/bundle`, POST `/api/offers/bundle/apply`
 - Apply logic: groups items by seller, checks rules, calculates discounts
+- **Payment integration**: Applied in `POST /api/payments/create-intent`
 
 ### Frontend:
 - SellerDashboard has "Bundle Rules" tab for CRUD
-- Cart page displays active bundle discounts
-- "Buy X items, get Y% off" promotion display
+- Cart page displays active bundle discounts with rule name and savings
+- **Payment integration**: Promo codes sent with items to `POST /api/payments/create-intent`
 
 ## Offers to Likers
 ### Backend:
@@ -530,52 +583,35 @@ TrendDrop is a fully cross-platform app running on **Web, iOS, and Android** via
 - `Promo` model: code, seller, discountType, discountValue, minPurchaseAmount, usageLimit, usageCount
 - Routes: CRUD + validate + use
 - Validation checks expiration, usage limit, min purchase
+- **Payment integration**: Validated and applied in `POST /api/payments/create-intent`
+- **Usage tracking**: Incremented in `POST /api/payments/confirm-batch`
 
 ### Frontend:
 - SellerDashboard has "Promo Codes" tab for CRUD
 - Cart page has promo code input with validation
 - Applied promo displays savings amount
+- **Payment integration**: Promo code sent with items batch in `handleSuccess`
 
-## Total Test Count: 448 tests (all passing)
-- 22 test suites: e2e.test.js, offers.test.js, offerChain.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, riskControls.test.js, boost.test.js, wishlist.test.js, admin.test.js, collections.test.js, savedSearch.test.js, notifications.test.js, social.test.js, messageCompliance.test.js, priceHistory.test.js, userProfile.test.js, **bundleDiscounts.test.js**, **promotions.test.js**
-- v17.0 additions: Bundle Discounts (9), Promotions (11)
+## ErrorBoundary (v17.5)
+- Global React ErrorBoundary component wraps the app
+- Catches all uncaught JavaScript errors
+- Differentiates between:
+  - Network errors (connection issues)
+  - Auth errors (session expired)
+  - Generic errors (unexpected bugs)
+- Provides "Reload Page" and "Go Home" actions
+- Logs errors to server in production via `/api/reports/client-error`
+- Shows error details in development mode (stack trace)
+
+## ProtectedRoute (v17.5)
+- Guards all auth-required routes
+- Redirects unauthenticated users to `/login` with return URL
+- Role-based access control via `requiredRole` prop
+- Handles `suspended` user role -> redirects to login
+- Shows loading spinner during auth state check
+
+## Total Test Count: 455 tests (all passing)
+- 23 test suites: e2e.test.js (197), offers.test.js (27), offerChain.test.js (13), revenue.test.js (33), freeShipping.test.js (8), searchRoute.test.js (11), imageUpload.test.js (6), batchCheckout.test.js (12), orderPayout.test.js (11), riskControls.test.js (21), boost.test.js (38), wishlist.test.js (6), admin.test.js (18), collections.test.js (10), savedSearch.test.js (7), notifications.test.js (5), social.test.js (6), messageCompliance.test.js (6), priceHistory.test.js (5), userProfile.test.js (11), bundleDiscounts.test.js (9), promotions.test.js (11), settingsSocialStore.test.js (8)
+- v17.5 additions: Listing auto-expiration, Order auto-processing, Reserve release, Token cleanup, Bundle discount + promo code payment integration, OrderDetail page, ProtectedRoute, ErrorBoundary
 
 ---
-
-## v17.4 Additions (June 23, 2026)
-
-### Verified Seller Badge (28d)
-- `user.isVerified` boolean (default: false)
-- Displayed on Profile page and ListingCard
-- Admins can mark via admin panel
-- Endpoints: `GET /api/auth/me` and `PUT /api/auth/profile` expose `isVerified`
-
-### Social Media Links (28e)
-- `user.socialLinks`: instagram, tiktok, pinterest, youtube, twitter, facebook
-- Settings page "Social Links" tab for editing
-- Profile page displays clickable buttons
-- Endpoints merge nested `socialLinks` on update
-
-### Seller Store Customization (28f)
-- `user.store`: banner, logo, colorTheme, tagline, returnPolicy
-- Settings page "Store" tab for editing
-- Profile/Closet page displays store banner
-- Endpoints merge nested `store` on update
-
-### Settings Page Updates (29)
-- 7 tabs: Profile, Shipping, Preferences, Social Links, Store, Payout, Account
-- Social Links + Store tabs added in v17.4
-
-### Deployment Fixes
-- Capacitor downgraded from v8 to v7 (moved to devDependencies)
-- `@capacitor/camera@^8.3.4` does not exist; fixed to `^7.0.0`
-- Render build command: `cd client && npm install && npm run build && cd ../server && npm install`
-
-### New Tests in v17.4
-- `settingsSocialStore.test.js`: 8 tests (SS.1-SS.8)
-- `bundleDiscounts.test.js`: 9 tests (BD.1-BD.9)
-- `promotions.test.js`: 11 tests (PC.1-PC.11)
-
-### Updated Test Count
-- **427 backend tests** across 20 suites — all passing
-- **+ 28 new tests** added in v17.4

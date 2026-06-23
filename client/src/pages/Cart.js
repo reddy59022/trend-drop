@@ -38,7 +38,6 @@ const Cart = () => {
         if (configured && key && key.startsWith('pk_')) {
           setStripePromise(loadStripe(key));
         } else {
-          // Check status endpoint for debugging
           try {
             const statusRes = await api.get('/payments/status');
             console.log('Payment status:', statusRes.data);
@@ -92,17 +91,22 @@ const Cart = () => {
         currency: item.currency || 'USD'
       }));
 
-      // Step 1: Create payment intent
-      const firstItem = items[0];
+      // STEP 1: Create batch payment intent for ALL items (supports multi-seller, promo, bundle discounts)
+      let promoCodeValue = null;
+      if (appliedPromo) {
+        promoCodeValue = appliedPromo.code;
+      }
+
       const createRes = await api.post('/payments/create-intent', {
-        listingId: firstItem.listingId,
+        items,
         shippingAddress: shippingInfo,
-        buyerCountry: shippingInfo.country || 'US'
+        buyerCountry: shippingInfo.country || 'US',
+        promoCode: promoCodeValue,
       });
 
-      const { clientSecret: cs, paymentIntentId } = createRes.data;
+      const { clientSecret: cs, paymentIntentId, breakdowns } = createRes.data;
 
-      // Step 2: Confirm payment with Stripe
+      // STEP 2: Confirm payment with Stripe
       if (!stripePromise) throw new Error('Stripe not loaded');
       const stripe = await stripePromise;
       
@@ -113,12 +117,21 @@ const Cart = () => {
       if (confirmError) throw new Error(confirmError.message);
       if (paymentIntent.status !== 'succeeded') throw new Error(`Payment status: ${paymentIntent.status}`);
 
-      // Step 3: Confirm batch with all items
+      // STEP 3: Confirm batch with all items
       const confirmRes = await api.post('/payments/confirm-batch', {
         paymentIntentId,
         items,
-        shippingAddress: shippingInfo
+        shippingAddress: shippingInfo,
       });
+
+      // Use promo code if applied (mark usage)
+      if (appliedPromo) {
+        try {
+          await api.post(`/promos/${appliedPromo._id}/use`);
+        } catch (e) {
+          console.error('Failed to mark promo used:', e);
+        }
+      }
 
       clearCart();
       setShowForm(false);
@@ -136,6 +149,21 @@ const Cart = () => {
   };
 
   const [itemBreakdowns, setItemBreakdowns] = useState({});
+
+  const fetchBundleDiscounts = async () => {
+    if (cart.length === 0) return;
+    try {
+      const res = await applyBundleDiscount({
+        items: cart.map(i => ({ listingId: i.listingId, price: i.price, quantity: i.quantity }))
+      });
+      if (res.data.discounts) {
+        setBundleDiscounts(res.data.discounts);
+        setBundleDiscount(res.data.totalDiscount || 0);
+      }
+    } catch (e) {
+      // Bundle discounts may not be configured - this is non-critical
+    }
+  };
 
   useEffect(() => {
     const fetchBreakdowns = async () => {
@@ -164,7 +192,10 @@ const Cart = () => {
       }
       setItemBreakdowns(breakdowns);
     };
-    if (cart.length > 0) fetchBreakdowns();
+    if (cart.length > 0) {
+      fetchBreakdowns();
+      fetchBundleDiscounts();
+    }
   }, [cart, shippingInfo.country]);
 
   // Group cart items by seller for package display
@@ -205,6 +236,9 @@ const Cart = () => {
     totalProtection += pkg.protection;
     grandTotal += pkg.total;
   });
+
+  // Apply bundle discount (visual only - actual discount calculated server-side)
+  const displayTotal = bundleDiscount > 0 ? Math.max(0, grandTotal - bundleDiscount) : grandTotal;
 
   return (
     <div className="page-container">
@@ -335,6 +369,9 @@ const Cart = () => {
                     {d.ruleName}: -{formatPrice(d.discountAmount, 'USD')}
                   </div>
                 ))}
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--td-primary)', marginTop: 4 }}>
+                  Total Bundle Savings: -{formatPrice(bundleDiscount, 'USD')}
+                </div>
               </div>
             )}
 
@@ -357,10 +394,16 @@ const Cart = () => {
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaShieldAlt size={12} /> Buyer Protection</span>
                   <span>{formatPrice(totalProtection, 'USD')}</span>
                 </div>
+                {bundleDiscount > 0 && (
+                  <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-success)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaBoxes size={12} /> Bundle Savings</span>
+                    <span>-{formatPrice(bundleDiscount, 'USD')}</span>
+                  </div>
+                )}
                 <div style={{ borderTop: '1px solid var(--td-border)', margin: '4px 0', paddingTop: 12 }}>
                   <div className="flex-between">
                     <span style={{ fontWeight: 700, fontSize: 16 }}>Total</span>
-                    <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(grandTotal, cart[0]?.currency || 'USD')}</span>
+                    <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(displayTotal, cart[0]?.currency || 'USD')}</span>
                   </div>
                 </div>
               </div>
@@ -422,7 +465,7 @@ const Cart = () => {
                     <StripeCheckoutForm
                       items={cart}
                       shippingInfo={shippingInfo}
-                      totalAmount={formatPrice(grandTotal, 'USD')}
+                      totalAmount={formatPrice(displayTotal, 'USD')}
                       onSuccess={handleSuccess}
                       onCancel={() => setShowForm(false)}
                     />
