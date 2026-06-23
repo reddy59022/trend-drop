@@ -4,16 +4,7 @@
   "private": true,
   "proxy": "http://localhost:5001",
   "dependencies": {
-    "@capacitor/android": "^8.3.4",
-    "@capacitor/cli": "^8.3.4",
-    "@capacitor/core": "^8.3.4",
-    "@capacitor/ios": "^8.3.4",
-    "@capacitor/camera": "^8.3.4",
-    "@capacitor/share": "^8.3.4",
-    "@capacitor/local-notifications": "^8.3.4",
-    "@capacitor/push-notifications": "^8.3.4",
-    "@capacitor/haptics": "^8.3.4",
-    "@capacitor/status-bar": "^8.3.4",
+    "@capacitor/core": "^7.0.0",
     "@stripe/react-stripe-js": "^6.6.0",
     "@stripe/stripe-js": "^9.8.0",
     "axios": "^1.4.0",
@@ -26,6 +17,17 @@
     "react-router-dom": "^6.11.0",
     "react-scripts": "5.0.1",
     "react-toastify": "^9.1.3"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/ios": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/camera": "^7.0.0",
+    "@capacitor/share": "^7.0.0",
+    "@capacitor/local-notifications": "^7.0.0",
+    "@capacitor/push-notifications": "^7.0.0",
+    "@capacitor/haptics": "^7.0.0",
+    "@capacitor/status-bar": "^7.0.0"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -43,20 +45,10 @@
     "mobile:ios": "npm run build && npx cap sync && npx cap open ios"
   },
   "eslintConfig": {
-    "extends": [
-      "react-app"
-    ]
+    "extends": ["react-app"]
   },
   "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
   }
 }
