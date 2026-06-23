@@ -225,7 +225,7 @@ const MediaCarousel = ({ images = [], videoUrl }) => {
         )}
         <img
           src={currentItem.url}
-          alt={`Product image ${currentIndex + 1}`}
+          alt=""
           className="carousel-image"
           style={{ opacity: loaded[currentIndex] ? 1 : 0 }}
           onLoad={() => handleImageLoad(currentIndex)}

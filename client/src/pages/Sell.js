@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle, FaPlay, FaYoutube, FaInstagram, FaLink, FaRocket, FaStar, FaCrown, FaBolt } from 'react-icons/fa';
+import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle, FaPlay, FaYoutube, FaInstagram, FaLink, FaRocket, FaStar, FaCrown } from 'react-icons/fa';
 import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
 import { countries, formatPrice } from '../utils/helpers';
 
@@ -55,7 +55,6 @@ const Sell = () => {
   const [videoUrl, setVideoUrl] = useState('');
   const [videoPreview, setVideoPreview] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [boostConfig, setBoostConfig] = useState(null);
   
   // Boost selection state - default to 'premium' (middle tier)
   const [selectedBoostTier, setSelectedBoostTier] = useState('premium');
@@ -89,14 +88,13 @@ const Sell = () => {
     quantity: '1',
   });
 
-  // Fetch boost config on mount
+  // Fetch boost config on mount (for fee verification)
   useEffect(() => {
     const fetchBoostConfig = async () => {
       try {
-        const res = await api.get('/boost/config');
-        setBoostConfig(res.data);
+        await api.get('/boost/config');
       } catch (err) {
-        console.error('Failed to fetch boost config:', err);
+        console.error('Boost config unavailable:', err);
       }
     };
     fetchBoostConfig();

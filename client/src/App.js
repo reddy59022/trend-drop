@@ -27,6 +27,10 @@ const Reviews = lazy(() => import('./pages/Reviews'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const SellerDashboard = lazy(() => import('./pages/SellerDashboard'));
 const CartPage = lazy(() => import('./pages/Cart'));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
+const AdminPage = lazy(() => import('./pages/Admin'));
+const CollectionsPage = lazy(() => import('./pages/Collections'));
+const SavedSearchesPage = lazy(() => import('./pages/SavedSearches'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -74,6 +78,10 @@ function App() {
                 <Route path="/forgot-password" element={<ForgotPassword />} />
                 <Route path="/seller-dashboard" element={<SellerDashboard />} />
                 <Route path="/cart" element={<CartPage />} />
+                <Route path="/verify-email" element={<VerifyEmailPage />} />
+                <Route path="/admin" element={<AdminPage />} />
+                <Route path="/collections/:sellerId" element={<CollectionsPage />} />
+                <Route path="/saved-searches" element={<SavedSearchesPage />} />
               </Routes>
             </Suspense>
           </main>

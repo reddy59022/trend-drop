@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -13,20 +13,82 @@ const Login = () => {
   const [needsVerification, setNeedsVerification] = useState(false);
   const [verificationEmail, setVerificationEmail] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const googleBtnRef = useRef(null);
 
   useEffect(() => {
     if (user) navigate('/');
   }, [user, navigate]);
 
+  // Load Google Identity Services client
+  useEffect(() => {
+    const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+    if (!clientId || typeof window.google === 'undefined') {
+      // Dynamically load the GIS script if not present
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
   const handleGoogleLogin = async () => {
+    const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      toast.error('Google login is not configured. Please use email login.');
+      return;
+    }
     try {
-      const res = await api.post('/auth/google');
+      // Use Google Identity Services
+      const { google } = window;
+      if (!google || !google.accounts) {
+        toast.error('Google Sign-In is still loading. Please try again.');
+        return;
+      }
+      
+      const credential = await new Promise((resolve, reject) => {
+        const client = google.accounts.id;
+        client.initialize({
+          client_id: clientId,
+          callback: (response) => {
+            if (response.credential) {
+              resolve(response.credential);
+            } else {
+              reject(new Error('No credential returned'));
+            }
+          },
+        });
+        client.prompt(); // Show One Tap prompt
+        // Also render button fallback
+        if (googleBtnRef.current) {
+          client.renderButton(googleBtnRef.current, {
+            type: 'standard',
+            theme: 'outline',
+            size: 'large',
+            text: 'signin_with',
+          });
+        }
+      });
+
+      // Decode the JWT to get user info
+      const payload = JSON.parse(atob(credential.split('.')[1]));
+      
+      // Send to backend
+      const res = await api.post('/auth/google', {
+        idToken: credential,
+        email: payload.email,
+        name: payload.name,
+        avatar: payload.picture,
+      });
+      
       if (res.data.token) {
         localStorage.setItem('token', res.data.token);
+        toast.success('Signed in with Google!');
         window.location.href = '/';
       }
     } catch (error) {
-      toast.error('Google login failed');
+      console.error('Google login error:', error);
+      toast.error(error.response?.data?.message || 'Google login failed');
     }
   };
 
@@ -148,7 +210,7 @@ const Login = () => {
             <div className="auth-divider">or continue with</div>
 
             <div className="social-auth-buttons">
-              <button className="btn-social" onClick={handleGoogleLogin}>
+              <button className="btn-social" onClick={handleGoogleLogin} ref={googleBtnRef}>
                 <FaGoogle /> Sign in with Google
               </button>
             </div>

@@ -237,7 +237,7 @@ app.use((err, req, res, next) => {
 
   if (err.name === 'MulterError') {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ message: 'File is too large. Maximum size is 5MB' });
+      return res.status(400).json({ message: 'File is too large. Maximum size is 2MB' });
     }
     return res.status(400).json({ message: err.message });
   }
@@ -251,15 +251,12 @@ app.use((err, req, res, next) => {
 // The original default (5000) often remains bound after a test suite crashes,
 // causing the server to fail to start. Switching to 5001 provides a clear
 // separation and prevents `EADDRINUSE` errors.
-const DEFAULT_PORT = 5001;
-const PORT = process.env.PORT || DEFAULT_PORT;
+const PORT = process.env.PORT || 5001;
 
 // Only listen when not in test mode (tests import the app directly)
 if (process.env.NODE_ENV !== 'test') {
-  // Force the server to listen on the configured default port to avoid accidental overrides.
-  const LISTEN_PORT = DEFAULT_PORT;
-  app.listen(LISTEN_PORT, () => {
-    console.log(`Server running on port ${LISTEN_PORT}`);
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
   });
 }
 

@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
 import Pagination from '../components/Pagination';
-import { FaRss, FaFilter } from 'react-icons/fa';
+import { FaFilter } from 'react-icons/fa';
 
 const Feed = () => {
   const { user } = useAuth();

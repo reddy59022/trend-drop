@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** June 22, 2026 — v15.0 (Bug fixes, Admin Panel, Saved Searches, Seller Collections/Storefront)
+> **Last Updated:** June 23, 2026 — v16.0 (Admin UI, Saved Searches UI, Collections UI, Google OAuth, 35 new tests, Bug fixes)
 
 ---
 
@@ -10,8 +10,17 @@
 - Password minimum 8 characters, email must be unique with verification
 - JWT token auth, 401 auto-redirects to /login
 - Strikes tracked: 3 = suspension threshold
-- **New:** Admin role support (`user`, `admin`, `moderator`, `suspended`)
-- **New:** Suspended users auto-blocked from login
+- Admin role support (`user`, `admin`, `moderator`, `suspended`)
+- Suspended users auto-blocked from login
+
+### Google OAuth (NEW in v16.0):
+- Backend: `POST /api/auth/google` accepts Google ID token, name, email, avatar
+- Uses Google Identity Services library (`google-auth-library`) to verify ID tokens
+- Creates new user or links Google account to existing email
+- Google-authenticated users have `emailVerified: true` and `authProvider: 'google'`
+- Frontend: Login page loads Google Identity Services script dynamically
+- Requires `REACT_APP_GOOGLE_CLIENT_ID` environment variable
+- Falls back gracefully if Google Sign-In is not configured
 
 ## 2. Listing Management ✓ 28 tests
 - Required: title, description, price (>= $5.00), category, condition, at least 1 image
@@ -295,8 +304,8 @@ Order completed → Payout record updated (status: 'completed', paidAt: now)
 Order returned → Payout record updated (status: 'refunded')
 ```
 
-## 26. Admin Panel ✓ NEW
-### Endpoints (all require adminAuth middleware):
+## 26. Admin Panel ✓ 18 tests (NEW in v16.0)
+### Backend Endpoints (all require adminAuth middleware):
 - `GET /api/admin/dashboard` - Platform overview metrics (users, listings, revenue, reports)
 - `GET /api/admin/users` - List users with search/filter/role
 - `GET /api/admin/users/:id` - User details with listing/transaction counts
@@ -311,17 +320,34 @@ Order returned → Payout record updated (status: 'refunded')
 - `POST /api/admin/transactions/:id/refund` - Force refund (admin)
 - `POST /api/admin/auto-suspend` - Auto-suspend users with 3+ strikes
 
+### Admin Panel UI (NEW in v16.0):
+- Tab-based interface: Dashboard, Users, Listings, Reports, Transactions
+- Dashboard: Stats cards (users, listings, transactions, reports, commission) + recent transactions + pending reports
+- Users: Search/filter table with role dropdown, suspend/unsuspend buttons
+- Listings: Table with admin delete capability
+- Reports: Table with resolve/dismiss actions
+- Transactions: Table with force refund (admin only)
+- Auto-suspend button for bulk strike enforcement
+- Accessible at `/admin` route, role-restricted (admin/moderator only)
+
 ### User Roles:
 - `user` - Standard platform user
 - `admin` - Full platform access
 - `moderator` - Limited admin (reports, listings)
 - `suspended` - Account locked, cannot log in
 
-## 27. Saved Searches ✓ NEW
+## 27. Saved Searches ✓ 7 tests (NEW in v16.0)
 - Users can save search criteria and get future results
 - Maximum 50 saved searches per user
 - Notification frequency: instant, daily, weekly, never
 - Results endpoint re-executes the saved search query against current listings
+
+### Saved Searches UI (NEW in v16.0):
+- Accessible at `/saved-searches` route (auth required)
+- Sidebar list of saved searches with inline edit/delete
+- Results panel shows matching listings from re-executed query
+- Create form with name, query, and notification frequency selector
+- Link to full search results page
 
 ### Endpoints:
 - `POST /api/saved-searches` - Save a search with filters + notification preferences
@@ -330,11 +356,18 @@ Order returned → Payout record updated (status: 'refunded')
 - `PUT /api/saved-searches/:id` - Update saved search
 - `DELETE /api/saved-searches/:id` - Delete saved search
 
-## 28. Seller Collections / Storefront ✓ NEW
+## 28. Seller Collections / Storefront ✓ 10 tests (NEW in v16.0)
 - Sellers can organize listings into named collections (max 20)
 - Collections are displayed on the seller's storefront
 - Each collection can hold multiple listings (seller's own only)
 - Collections are sortable and can be activated/deactivated
+
+### Collections UI (NEW in v16.0):
+- Accessible at `/collections/:sellerId` route (public view)
+- Sidebar lists all collections for the seller
+- Main panel shows selected collection's listings as grid
+- Owner gets inline create/edit/delete controls
+- Owner can remove listings from collections
 
 ### Endpoints:
 - `POST /api/collections` - Create collection (name, description, image)
@@ -345,6 +378,38 @@ Order returned → Payout record updated (status: 'refunded')
 - `DELETE /api/collections/:id/listings/:listingId` - Remove listing from collection
 - `DELETE /api/collections/:id` - Delete collection
 
+## Bug Fixes (v16.0)
+- **LISTEN_PORT bug fixed**: Server now respects `PORT` environment variable instead of hardcoding to 5001
+- **Extra space in listings.js** catch block fixed
+- **Multer error message mismatch**: Error handler now correctly says "2MB" (matching upload.js config)
+
+## Client Routes (v16.0)
+| Route | Page | Auth Required |
+|-------|------|---------------|
+| `/` | Home | No |
+| `/login` | Login (with Google OAuth) | No |
+| `/register` | Register | No |
+| `/feed` | Feed | Yes |
+| `/sell` | Sell | Yes |
+| `/listing/:id` | Listing Detail | No |
+| `/profile/:id` | Profile | No |
+| `/closet/:id` | Closet | No |
+| `/search` | Search | No |
+| `/offers` | Offers | Yes |
+| `/transactions` | Transactions | Yes |
+| `/settings` | Settings | Yes |
+| `/notifications` | Notifications | Yes |
+| `/wishlist` | Wishlist | Yes |
+| `/messages` | Messages | Yes |
+| `/reviews/:sellerId` | Reviews | No |
+| `/forgot-password` | Forgot Password | No |
+| `/cart` | Cart | Yes |
+| `/seller-dashboard` | Seller Dashboard | Yes |
+| `/verify-email` | Verify Email | No |
+| `/admin` | Admin Panel | Admin/Moderator |
+| `/collections/:sellerId` | Collections | No |
+| `/saved-searches` | Saved Searches | Yes |
+
 ## Transaction Schema Fields (v14.1)
 The Transaction model stores:
 - `offer` (ObjectId ref to Offer) - linked accepted offer
@@ -353,6 +418,7 @@ The Transaction model stores:
 - `paymentBreakdown.boostFee` (Number) - boost fee deducted
 - `paymentBreakdown.boostTier` (String) - boost tier name
 
-## Total Test Count: 374 tests (all passing)
+## Total Test Count: 416 tests (all passing)
+- 17 test suites: e2e.test.js, offers.test.js, offerChain.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, riskControls.test.js, boost.test.js, wishlist.test.js, **admin.test.js**, **collections.test.js**, **savedSearch.test.js**, **notifications.test.js**, **social.test.js**
 - All pass against real MongoDB database
-- 12 test suites: e2e.test.js, offers.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, offerChain.test.js, riskControls.test.js, **boost.test.js**, **wishlist.test.js**
+- v16.0 additions: Admin Panel (18), Collections (10), Saved Searches (7), Notifications (4), Social Sharing (3)

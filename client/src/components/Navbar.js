@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
@@ -23,7 +23,6 @@ import {
   FaExchangeAlt,
   FaStar,
   FaShieldAlt,
-  FaQuestionCircle,
   FaPlusCircle,
 } from 'react-icons/fa';
 
@@ -56,7 +55,7 @@ const languages = [
 const Navbar = () => {
   const { user, logout } = useAuth();
   const { cart } = useCart();
-  const { theme, toggleTheme, language, changeLanguage, currency, changeCurrency, dir } = useTheme();
+  const { theme, toggleTheme, language, changeLanguage, currency, changeCurrency } = useTheme();
   const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0);
   const navigate = useNavigate();
   const location = useLocation();

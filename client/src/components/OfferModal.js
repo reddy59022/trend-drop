@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaTimes, FaSpinner, FaGavel, FaMoneyBillWave, FaPlay, FaHistory, FaCheck, FaArrowRight, FaUser, FaStore } from 'react-icons/fa';
+import { FaTimes, FaSpinner, FaGavel, FaMoneyBillWave, FaHistory, FaCheck, FaArrowRight, FaUser, FaStore } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -32,7 +32,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
       // Fetch buyer's offer for this listing
       fetchBuyerOffer();
     }
-  }, [existingOffer, listing?._id, user]);
+  }, [existingOffer, listing?._id]);
 
   const fetchBuyerOffer = async () => {
     try {

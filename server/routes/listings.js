@@ -63,7 +63,7 @@ router.get('/', optionalAuth, async (req, res) => {
       listings: result.docs,
       ...result.pagination,
     });
-  }  catch (error) {
+  } catch (error) {
     // Return a clear 400 response when Mongoose validation fails (e.g., missing title).
     console.error(error);
     if (error.name === 'ValidationError') {

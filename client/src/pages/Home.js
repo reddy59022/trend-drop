@@ -7,7 +7,7 @@ import ListingCard from '../components/ListingCard';
 const Home = () => {
   const [trending, setTrending] = useState([]);
   const [newArrivals, setNewArrivals] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {

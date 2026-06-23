@@ -91,7 +91,7 @@ export const checkInWishlist = (listingId) => api.get(`/wishlist/check/${listing
 // Reports
 export const reportListing = (data) => api.post('/reports', data);
 export const getReports = () => api.get('/reports');
-export const updateReportStatus = (id, status) => api.patch(`/reports/${id}/status`, { status });
+export const resolveReport = (id, status) => api.patch(`/reports/${id}/status`, { status });
 
 // Price History
 export const trackPrice = (data) => api.post('/pricehistory', data);
@@ -128,5 +128,36 @@ export const boostListing = (listingId, data) => api.post(`/listings/${listingId
 export const deactivateBoost = (listingId) => api.post(`/listings/${listingId}/deactivate-boost`);
 // New: fetch boost configuration (tiers, fees, limits)
 export const getBoostConfig = () => api.get('/boost/config');
+
+// ====== Saved Searches ======
+export const saveSearch = (data) => api.post('/saved-searches', data);
+export const getSavedSearches = () => api.get('/saved-searches');
+export const getSavedSearchResults = (id) => api.get(`/saved-searches/${id}/results`);
+export const updateSavedSearch = (id, data) => api.put(`/saved-searches/${id}`, data);
+export const deleteSavedSearch = (id) => api.delete(`/saved-searches/${id}`);
+
+// ====== Collections / Storefront ======
+export const createCollection = (data) => api.post('/collections', data);
+export const getSellerCollections = (sellerId) => api.get(`/collections/seller/${sellerId}`);
+export const getCollection = (id) => api.get(`/collections/${id}`);
+export const updateCollection = (id, data) => api.put(`/collections/${id}`, data);
+export const addToListingToCollection = (id, data) => api.post(`/collections/${id}/listings`, data);
+export const removeListingFromCollection = (id, listingId) => api.delete(`/collections/${id}/listings/${listingId}`);
+export const deleteCollection = (id) => api.delete(`/collections/${id}`);
+
+// ====== Admin Panel ======
+export const getAdminDashboard = () => api.get('/admin/dashboard');
+export const getAdminUsers = (params) => api.get('/admin/users', { params });
+export const getAdminUser = (id) => api.get(`/admin/users/${id}`);
+export const updateUserRole = (id, role) => api.put(`/admin/users/${id}/role`, { role });
+export const suspendUser = (id) => api.post(`/admin/users/${id}/suspend`);
+export const unsuspendUser = (id) => api.post(`/admin/users/${id}/unsuspend`);
+export const getAdminListings = (params) => api.get('/admin/listings', { params });
+export const deleteAdminListing = (id) => api.delete(`/admin/listings/${id}`);
+export const getAdminReports = (params) => api.get('/admin/reports', { params });
+export const updateAdminReportStatus = (id, status) => api.put(`/admin/reports/${id}/status`, { status });
+export const getAdminTransactions = (params) => api.get('/admin/transactions', { params });
+export const adminRefundTransaction = (id) => api.post(`/admin/transactions/${id}/refund`);
+export const autoSuspendUsers = () => api.post('/admin/auto-suspend');
 
 export default api;

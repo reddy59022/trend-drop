@@ -15,8 +15,6 @@ const MobileTabBar = () => {
   const { user } = useAuth();
   const { cart } = useCart();
   const location = useLocation();
-  const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0);
-
   const tabs = user ? [
     { path: '/', icon: <FaHome />, label: 'Home' },
     { path: '/feed', icon: <FaCompass />, label: 'Feed' },
