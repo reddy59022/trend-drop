@@ -112,12 +112,15 @@ router.post('/batch', auth, async (req, res) => {
 
     // Determine if there is an accepted offer for this buyer and listing (any accepted status).
     // If present, use its negotiated price instead of the listing's default price.
+    // Also link the offer to the transaction for tracking.
     const existingOffer = await Offer.findOne({
       listing: listingId,
       buyer: req.user._id,
       status: 'accepted',
     });
     const finalPrice = existingOffer ? (existingOffer.counterAmount || existingOffer.amount) : listing.price;
+    const isNegotiated = !!existingOffer;
+    const negotiatedPrice = isNegotiated ? (existingOffer.counterAmount || existingOffer.amount) : null;
 
       // Get seller info for country
       const seller = await User.findById(listing.seller);
@@ -173,6 +176,9 @@ router.post('/batch', auth, async (req, res) => {
         country: buyerShipCountry,
         phone: shippingAddress?.phone,
       },
+      offer: isNegotiated ? existingOffer._id : null,
+      negotiatedPrice,
+      isNegotiated,
       sellerAddress,
       shipping: {
         weight: weightKg,
@@ -293,6 +299,9 @@ router.post('/offer/:offerId', auth, async (req, res) => {
         fullName: req.user.name,
         country: buyerCountry,
       },
+      offer: offer._id,
+      negotiatedPrice: finalPrice,
+      isNegotiated: true,
       status: 'paid',
       payout: { status: 'pending' },
       autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },

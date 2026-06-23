@@ -109,6 +109,20 @@ const transactionSchema = new mongoose.Schema({
     processedAt: { type: Date },
     transactionId: { type: String, default: '' },
   },
+  // Offer negotiation linking
+  offer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Offer',
+    default: null,
+  },
+  negotiatedPrice: {
+    type: Number,
+    default: null,
+  },
+  isNegotiated: {
+    type: Boolean,
+    default: false,
+  },
   // Auto-tracking
   autoTracking: {
     enabled: { type: Boolean, default: true },

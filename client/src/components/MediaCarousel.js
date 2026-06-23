@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 import { FaChevronLeft, FaChevronRight, FaExpand, FaPlay, FaYoutube, FaInstagram, FaFacebook } from 'react-icons/fa';
 import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
 import { defaultAvatar } from '../utils/helpers';

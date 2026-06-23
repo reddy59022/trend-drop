@@ -23,7 +23,7 @@ const payoutSchema = new mongoose.Schema({
   },
   commissionRate: {
     type: Number,
-    default: 0.05, // 5% - much lower than Poshmark's 20%
+    default: 0.08, // 8% platform fee
   },
   commissionAmount: {
     type: Number,

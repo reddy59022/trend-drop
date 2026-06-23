@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** June 1, 2026 — v14.0 (Full counter-offer chain, offer-transaction linking, 296 tests passing)
+> **Last Updated:** June 22, 2026 — v15.0 (Bug fixes, Admin Panel, Saved Searches, Seller Collections/Storefront)
 
 ---
 
@@ -10,15 +10,19 @@
 - Password minimum 8 characters, email must be unique with verification
 - JWT token auth, 401 auto-redirects to /login
 - Strikes tracked: 3 = suspension threshold
+- **New:** Admin role support (`user`, `admin`, `moderator`, `suspended`)
+- **New:** Suspended users auto-blocked from login
 
 ## 2. Listing Management ✓ 28 tests
 - Required: title, description, price (>= $5.00), category, condition, at least 1 image
 - Inventory: quantity (default 1), reserved, quantitySold
 - Sold listings hidden from public feed
+- Sellers can edit ALL listing fields including title, description, price, category, brand, size, condition, color, images, video URL, shipping options, quantity, and boost tier
+- Listing edit supports adding/removing images via `existingImages` JSON array + new file uploads
 
-## 3. Offer Negotiation ✓ 41 tests (13 new counter-offer chain tests)
+## 3. Offer Negotiation ✓ 41 tests (13 counter-offer chain tests)
 
-### Offer State Machine (v14.0 - Full Counter-Offer Chain):
+### Offer State Machine (v15.0):
 ```
 pending ──→ accepted          (seller accepts original offer)
 pending ──→ countered         (seller counters)
@@ -50,11 +54,12 @@ accepted ──→ completed        (after purchase)
 - From `pending`: Must be higher than buyer's offer, cannot exceed listing price
 - From `buyer_countered`: Must be higher than buyer's counter
 
-### Offer-Transaction Linking:
+### Offer-Transaction Linking (v14.1):
 - When buyer purchases at accepted price, offer is linked to transaction
+- Transaction stores `offer` reference (ObjectId), `negotiatedPrice`, and `isNegotiated` (Boolean)
 - Offer status changes to `completed` after purchase
-- Transaction stores `offer` reference and `negotiatedPrice`
 - Payment validation ensures offer price matches transaction price
+- Both POST `/api/transactions` and POST `/api/transactions/offer/:offerId` link the offer
 
 ### Offer Visibility Rules:
 - Negotiated price ONLY when offer status is `accepted`
@@ -62,7 +67,7 @@ accepted ──→ completed        (after purchase)
 - Each buyer-seller pair has independent offers
 
 ## 4. Payment Flow ✓ 26 tests
-- 8% platform fee (uniform global rate, max $150)
+- **8% platform fee** (uniform global rate, maximum $500 on high-value items)
 - Commission on item price ONLY (never on totalPaid)
 - Payment deduction only on order placement
 - Cancelled orders get full refund via Stripe
@@ -142,9 +147,10 @@ accepted ──→ completed        (after purchase)
 - States: chargeback_open → chargeback_won / chargeback_lost
 
 ## 9. Payout & Commission ✓ 12 tests + 11 payout flow tests
-- 8% commission, dashboard shows ALL sales (pending + completed)
+- **8% commission** (uniform global rate), dashboard shows ALL sales (pending + completed)
 - Seller payout methods: Stripe, PayPal
 - **Payout timing: Seller gets paid ONLY after order is delivered and completed**
+- Payout model defaults: commissionRate = 0.08 (8%)
 
 ### Seller Payout Flow (Delivery-Based):
 **CRITICAL: Seller CANNOT withdraw funds until order is completed**
@@ -170,12 +176,21 @@ accepted ──→ completed        (after purchase)
 - Seller can NOW withdraw funds
 - Payout record created with status `completed`
 
+### Rolling Reserve:
+- **10% rolling reserve** held for 60 days to protect against chargebacks
+- Reserve tracked in `seller.balance.reserve` and `seller.balance.reserveReleaseDate[]`
+
+### New Seller Hold:
+- First 5 sales held for 14 days (account age requirement)
+- Controlled by `timeWindows.NEW_SELLER_THRESHOLD` (5 sales) and `timeWindows.NEW_SELLER_HOLD` (14 days)
+
 ### Example Timeline:
 ```
 Day 0: Order placed → seller.balance.pending += $92
 Day 3: Order delivered → funds still pending
 Day 6: Buyer confirms (or auto-confirms) → funds still pending
-Day 9: Auto-complete → seller.balance.available += $92 (NOW withdrawable)
+Day 9: Auto-complete → seller.balance.available += $82.80 (92% after 10% reserve)
+       seller.balance.reserve += $9.20 (held for 60 days)
 ```
 
 ### Edge Cases:
@@ -183,7 +198,7 @@ Day 9: Auto-complete → seller.balance.available += $92 (NOW withdrawable)
 - **Returned order**: Pending funds removed, full refund to buyer
 - **Disputed order**: Funds held until dispute resolved
 
-## 10. Boost System ✓ 27 tests (NEW - Complete Implementation)
+## 10. Boost System ✓ 27 tests
 
 ### Boost Tiers:
 | Tier | Fee | Priority | Features |
@@ -196,7 +211,7 @@ Day 9: Auto-complete → seller.balance.available += $92 (NOW withdrawable)
 - **Duration**: 7-30 days (default: 14 days)
 - **Max active boosts per seller**: 10
 - **Fee calculation**: `(listingPrice × feePercent / 100 / 14) × durationDays`
-- **Fee is deducted from seller earnings when item sells**
+- **Fee is deducted from seller earnings when item sells** (NOT charged upfront)
 
 ### Revenue Split with Boost:
 ```
@@ -207,37 +222,14 @@ Example: $100 item with Premium Boost (15%)
 └── Total Platform Revenue: $8 + $15 = $23
 ```
 
-### Boost Selection During Listing Creation:
-- Sellers can select boost tier when creating a listing
-- **Default selection: Premium (middle tier)**
-- Clear fee breakdown shown to seller before publishing
-- Boost can be added, changed, or removed via listing edit
-
 ### Boost API Endpoints:
 - `GET /api/boost/config` - Returns boost configuration (tiers, limits, pricing)
 - `POST /api/listings/:id/boost` - Activate boost on existing listing
 - `POST /api/listings/:id/deactivate-boost` - Deactivate boost
-- `PUT /api/listings/:id` - Edit listing (can add/change/remove boost)
-
-### Listing Edit Capabilities:
-Sellers can edit ANY field on their listings:
-- Title, Description, Price, Category, Brand, Size, Condition, Color
-- Images (add new, remove existing)
-- Video URL (YouTube, Instagram, Facebook, TikTok, direct)
-- Shipping options (domestic, international, free shipping, cost)
-- Weight, dimensions, ships from country
-- Quantity
-- **Boost tier** (add, change, or remove)
-- Boost fee is automatically recalculated if price changes
-
-### Boost Fee Rules:
-- Fee is ONLY charged when the item sells
-- If item doesn't sell, no boost fee is charged
-- Fee is deducted from seller's pending balance
-- Platform receives boost fee IN ADDITION to standard 8% platform fee
 
 ## 11. Wishlist ✓ 6 tests
 - Add/remove/view, seller cannot wishlist own, auth required
+- Like toggle also updates wishlist
 
 ## 12. Follow Seller & Feed ✓ 6 tests
 - Follow/unfollow, cannot follow self, feed shows listings
@@ -270,7 +262,7 @@ Each item from each seller gets its own Transaction record:
 - **34d:** Each item has its own shipping fee (based on seller's country)
 - **34e:** Each seller gets correct payout (92% of their item price)
 
-### Batch Checkout — All-or-Nothing (NEW):
+### Batch Checkout — All-or-Nothing:
 - **34k:** ALL items must be available or entire batch fails
 - **34l:** ALL shipping labels must generate or entire batch fails
 - **34m:** Payment captured ONLY after all validations pass
@@ -278,35 +270,20 @@ Each item from each seller gets its own Transaction record:
 - **34o:** Idempotency: duplicate paymentIntentId returns "already processed"
 - **34p:** Seller balances updated ONLY after ALL items succeed
 
-### Partial Returns (Enterprise Feature):
+### Partial Returns:
 - **34f:** Buyer can return 1 item from 10 sellers, keep 9
 - **34g:** Only the returned item gets refunded, others stay paid
 - **34h:** Only the returned item's seller loses earnings
 - **34i:** Multiple partial returns from same batch order
 - **34j:** Complete lifecycle with correct per-seller payouts
 
-### Example: 10 Items from 10 Sellers
-```
-Buyer purchases:
-  Item A from Seller 1 ($100 + $3.99 shipping)
-  Item B from Seller 2 ($150 + $9.99 shipping)
-  Item C from Seller 3 ($200 + $18.99 shipping)
-  ... (10 items total, 10 separate transactions)
-
-Buyer returns Item B only:
-  ✓ Item B refunded → Seller 2 loses earnings
-  ✓ Items A, C kept → Seller 1 and 3 keep earnings
-  ✓ Each seller sees only their transactions
-  ✓ Buyer sees all 10 transactions
-```
-
-## 25. Order Payout Flow ✓ 11 tests (NEW)
+## 25. Order Payout Flow ✓ 11 tests
 
 ### Seller Gets Paid ONLY After Delivery:
 - **35a:** Order placed → seller.balance.pending += earnings (NOT available)
 - **35b:** Order delivered → funds still in pending
 - **35c:** Buyer confirms → funds still in pending (3-day return window)
-- **35d:** Auto-complete after 3 days → funds move to available
+- **35d:** Auto-complete after 3 days → funds move to available (minus 10% rolling reserve)
 - **35e:** Seller CANNOT withdraw until order is completed
 - **35f:** Cancelled order → pending funds removed
 - **35g:** Returned order → pending funds removed + refund to buyer
@@ -318,6 +295,64 @@ Order completed → Payout record updated (status: 'completed', paidAt: now)
 Order returned → Payout record updated (status: 'refunded')
 ```
 
-## Total Test Count: 323 tests (all passing)
+## 26. Admin Panel ✓ NEW
+### Endpoints (all require adminAuth middleware):
+- `GET /api/admin/dashboard` - Platform overview metrics (users, listings, revenue, reports)
+- `GET /api/admin/users` - List users with search/filter/role
+- `GET /api/admin/users/:id` - User details with listing/transaction counts
+- `PUT /api/admin/users/:id/role` - Update user role
+- `POST /api/admin/users/:id/suspend` - Suspend user (3 strikes, suspended role)
+- `POST /api/admin/users/:id/unsuspend` - Unsuspend user (reset strikes)
+- `GET /api/admin/listings` - List all listings
+- `DELETE /api/admin/listings/:id` - Remove listing (admin override)
+- `GET /api/admin/reports` - List reports with status filter
+- `PUT /api/admin/reports/:id/status` - Resolve/dismiss reports
+- `GET /api/admin/transactions` - List all transactions
+- `POST /api/admin/transactions/:id/refund` - Force refund (admin)
+- `POST /api/admin/auto-suspend` - Auto-suspend users with 3+ strikes
+
+### User Roles:
+- `user` - Standard platform user
+- `admin` - Full platform access
+- `moderator` - Limited admin (reports, listings)
+- `suspended` - Account locked, cannot log in
+
+## 27. Saved Searches ✓ NEW
+- Users can save search criteria and get future results
+- Maximum 50 saved searches per user
+- Notification frequency: instant, daily, weekly, never
+- Results endpoint re-executes the saved search query against current listings
+
+### Endpoints:
+- `POST /api/saved-searches` - Save a search with filters + notification preferences
+- `GET /api/saved-searches` - List user's saved searches
+- `GET /api/saved-searches/:id/results` - Execute saved search and return current results
+- `PUT /api/saved-searches/:id` - Update saved search
+- `DELETE /api/saved-searches/:id` - Delete saved search
+
+## 28. Seller Collections / Storefront ✓ NEW
+- Sellers can organize listings into named collections (max 20)
+- Collections are displayed on the seller's storefront
+- Each collection can hold multiple listings (seller's own only)
+- Collections are sortable and can be activated/deactivated
+
+### Endpoints:
+- `POST /api/collections` - Create collection (name, description, image)
+- `GET /api/collections/seller/:sellerId` - Public: get seller's active collections
+- `GET /api/collections/:id` - Public: get collection with listings
+- `PUT /api/collections/:id` - Update collection metadata
+- `POST /api/collections/:id/listings` - Add listing to collection
+- `DELETE /api/collections/:id/listings/:listingId` - Remove listing from collection
+- `DELETE /api/collections/:id` - Delete collection
+
+## Transaction Schema Fields (v14.1)
+The Transaction model stores:
+- `offer` (ObjectId ref to Offer) - linked accepted offer
+- `negotiatedPrice` (Number) - the final negotiated price if offer-linked
+- `isNegotiated` (Boolean) - whether transaction was from an accepted offer
+- `paymentBreakdown.boostFee` (Number) - boost fee deducted
+- `paymentBreakdown.boostTier` (String) - boost tier name
+
+## Total Test Count: 374 tests (all passing)
 - All pass against real MongoDB database
-- 10 test suites: e2e.test.js, offers.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, offerChain.test.js, riskControls.test.js, **boost.test.js (NEW)**
+- 12 test suites: e2e.test.js, offers.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, offerChain.test.js, riskControls.test.js, **boost.test.js**, **wishlist.test.js**

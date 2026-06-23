@@ -135,6 +135,14 @@ app.use('/api/payouts', require('./routes/payouts'));
 app.use('/api/shipping', require('./routes/shipping'));
 // Boost configuration endpoint (client needs to fetch tier info, fees, etc.)
 app.use('/api/boost', require('./routes/boost'));
+// Admin routes (user management, platform oversight)
+app.use('/api/admin', require('./routes/admin'));
+// Saved search routes
+app.use('/api/saved-searches', require('./routes/savedSearch'));
+// Collection / storefront routes
+app.use('/api/collections', require('./routes/collections'));
+// Size guide routes
+app.use('/api/size-guides', require('./routes/sizeGuides'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)

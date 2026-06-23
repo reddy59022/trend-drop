@@ -37,6 +37,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  role: {
+    type: String,
+    enum: ['user', 'admin', 'moderator', 'suspended'],
+    default: 'user',
+  },
   authProvider: {
     type: String,
     enum: ['email', 'google'],

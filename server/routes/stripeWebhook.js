@@ -7,8 +7,14 @@ const Listing = require('../models/Listing');
 // Stripe webhook endpoint - handles chargeback events
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
   try {
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
     const sig = req.headers['stripe-signature'];
+    
+    if (!process.env.STRIPE_SECRET_KEY) {
+      console.error('Stripe not configured - webhook disabled');
+      return res.status(400).send('Webhook Error: Stripe not configured');
+    }
+    
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
     let event;
 
     try {
