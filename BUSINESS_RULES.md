@@ -383,6 +383,78 @@ Order returned → Payout record updated (status: 'refunded')
 - **Extra space in listings.js** catch block fixed
 - **Multer error message mismatch**: Error handler now correctly says "2MB" (matching upload.js config)
 
+## Capacitor Mobile Implementation ✓ (v16.0)
+TrendDrop is a fully cross-platform app running on **Web, iOS, and Android** via Capacitor 8.
+
+### Capacitor Configuration
+- **App ID**: `com.trenddrop.app`
+- **Web Directory**: `build` (production React build)
+- **Production Server**: `https://trend-drop.onrender.com` (Render deployment)
+- **Development**: Proxied to `localhost:5001` via React proxy + Capacitor live reload
+
+### Native Plugins Installed & Configured
+| Plugin | Purpose | Platforms |
+|--------|---------|-----------|
+| `@capacitor/camera` | Take photos/videos for listings | iOS, Android |
+| `@capacitor/share` | Native share sheet (Facebook, Twitter, Pinterest, etc.) | iOS, Android |
+| `@capacitor/local-notifications` | Scheduled notifications (saved search alerts, offer updates) | iOS, Android |
+| `@capacitor/push-notifications` | Push notifications (new offers, messages, sales) | iOS, Android |
+| `@capacitor/haptics` | Haptic feedback (like, add to cart, purchase confirmation) | iOS, Android |
+| `@capacitor/status-bar` | Status bar styling (brand color #E24455) | iOS, Android |
+| `@capacitor/splash-screen` | Branded splash screen on app launch | iOS, Android |
+| `@capacitor/cookies` | Cookie persistence for JWT auth across app restarts | iOS, Android |
+| `@capacitor/http` | Native HTTP requests bypassing CORS | iOS, Android |
+
+### iOS Configuration (`ios/` folder)
+- Content inset: automatic (safe area handling)
+- Background color: #ffffff
+- Preferred content mode: mobile
+- Status bar style: DEFAULT with brand background
+- Splash screen: 2s duration, #E24455 background
+
+### Android Configuration (`android/` folder)
+- Background color: #ffffff
+- Allow mixed content: true (for local dev with http)
+- Build options: keystore configured for production signing
+- Android scheme: https (for deep linking)
+
+### Mobile-Specific Features
+1. **In-App Camera**: Native camera integration for listing photos (via Camera plugin)
+2. **Native Share Sheet**: OS-level share dialog for listings (via Share plugin)
+3. **Push Notifications**: Real-time alerts for offers, messages, sales (via PushNotifications)
+4. **Local Notifications**: Scheduled reminders for saved searches (via LocalNotifications)
+5. **Haptic Feedback**: Tactile response on interactions (via Haptics)
+6. **Offline Support**: Capacitor HTTP + Cookies enable offline auth token persistence
+7. **Deep Linking**: `https://trend-drop.onrender.com/listing/:id` opens directly in app
+8. **Image Upload**: Native camera roll access via Photos plugin
+9. **Status Bar**: Branded status bar with TrendDrop red (#E24455)
+
+### Build Commands
+```bash
+# Web (development)
+npm start
+
+# Web (production)
+npm run build
+
+# Mobile (build + sync)
+npm run mobile:build
+
+# Open Android Studio
+npm run mobile:android
+
+# Open Xcode
+npm run mobile:ios
+```
+
+### Cross-Platform Compatibility
+- **Responsive Design**: All pages use CSS Grid/Flexbox with mobile-first breakpoints
+- **Touch Targets**: Minimum 44x44px for all interactive elements (iOS/Android HIG)
+- **Safe Areas**: iOS notch/home indicator handled via `contentInset: 'automatic'`
+- **Network Handling**: API base URL auto-detects native vs web platform
+- **Auth Persistence**: JWT stored in localStorage (web) + Capacitor Cookies (native)
+- **Image Optimization**: Cloudinary transforms work identically on all platforms
+
 ## Client Routes (v16.0)
 | Route | Page | Auth Required |
 |-------|------|---------------|

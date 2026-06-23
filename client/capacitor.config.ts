@@ -22,6 +22,32 @@ const config: CapacitorConfig = {
     CapacitorHttp: {
       enabled: true,
     },
+    Camera: {
+      permissions: ['camera', 'photos'],
+    },
+    Photos: {
+      permissions: ['photos'],
+    },
+    Share: {
+      enabled: true,
+    },
+    LocalNotifications: {
+      permissions: {
+        alert: true,
+        badge: true,
+        sound: true,
+      },
+    },
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
+    Haptics: {
+      enabled: true,
+    },
+    StatusBar: {
+      style: 'DEFAULT',
+      backgroundColor: '#E24455',
+    },
   },
   ios: {
     contentInset: 'automatic',
