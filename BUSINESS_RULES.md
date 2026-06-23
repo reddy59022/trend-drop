@@ -539,3 +539,43 @@ TrendDrop is a fully cross-platform app running on **Web, iOS, and Android** via
 ## Total Test Count: 448 tests (all passing)
 - 22 test suites: e2e.test.js, offers.test.js, offerChain.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, riskControls.test.js, boost.test.js, wishlist.test.js, admin.test.js, collections.test.js, savedSearch.test.js, notifications.test.js, social.test.js, messageCompliance.test.js, priceHistory.test.js, userProfile.test.js, **bundleDiscounts.test.js**, **promotions.test.js**
 - v17.0 additions: Bundle Discounts (9), Promotions (11)
+
+---
+
+## v17.4 Additions (June 23, 2026)
+
+### Verified Seller Badge (28d)
+- `user.isVerified` boolean (default: false)
+- Displayed on Profile page and ListingCard
+- Admins can mark via admin panel
+- Endpoints: `GET /api/auth/me` and `PUT /api/auth/profile` expose `isVerified`
+
+### Social Media Links (28e)
+- `user.socialLinks`: instagram, tiktok, pinterest, youtube, twitter, facebook
+- Settings page "Social Links" tab for editing
+- Profile page displays clickable buttons
+- Endpoints merge nested `socialLinks` on update
+
+### Seller Store Customization (28f)
+- `user.store`: banner, logo, colorTheme, tagline, returnPolicy
+- Settings page "Store" tab for editing
+- Profile/Closet page displays store banner
+- Endpoints merge nested `store` on update
+
+### Settings Page Updates (29)
+- 7 tabs: Profile, Shipping, Preferences, Social Links, Store, Payout, Account
+- Social Links + Store tabs added in v17.4
+
+### Deployment Fixes
+- Capacitor downgraded from v8 to v7 (moved to devDependencies)
+- `@capacitor/camera@^8.3.4` does not exist; fixed to `^7.0.0`
+- Render build command: `cd client && npm install && npm run build && cd ../server && npm install`
+
+### New Tests in v17.4
+- `settingsSocialStore.test.js`: 8 tests (SS.1-SS.8)
+- `bundleDiscounts.test.js`: 9 tests (BD.1-BD.9)
+- `promotions.test.js`: 11 tests (PC.1-PC.11)
+
+### Updated Test Count
+- **427 backend tests** across 20 suites — all passing
+- **+ 28 new tests** added in v17.4

@@ -39,6 +39,9 @@ const userResponse = (user, token) => ({
     emailVerified: user.emailVerified,
     authProvider: user.authProvider,
     googleId: user.googleId,
+    isVerified: user.isVerified,
+    socialLinks: user.socialLinks,
+    store: user.store,
   },
 });
 
@@ -434,6 +437,9 @@ router.get('/me', auth, async (req, res) => {
       emailVerified: user.emailVerified,
       authProvider: user.authProvider,
       googleId: user.googleId,
+      isVerified: user.isVerified,
+      socialLinks: user.socialLinks,
+      store: user.store,
     });
   } catch (error) {
     console.error(error);
@@ -446,13 +452,29 @@ router.get('/me', auth, async (req, res) => {
 // ============================================================
 router.put('/profile', auth, async (req, res) => {
   try {
-    const updates = {};
-    const allowed = ['name', 'bio', 'country', 'currency', 'language', 'phone', 'phoneCode', 'closetName', 'location', 'shippingAddress'];
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const allowed = ['name', 'bio', 'country', 'currency', 'language', 'phone', 'phoneCode', 'closetName', 'location', 'shippingAddress', 'isVerified'];
+
     allowed.forEach(field => {
-      if (req.body[field] !== undefined) updates[field] = req.body[field];
+      if (req.body[field] !== undefined) {
+        user[field] = req.body[field];
+      }
     });
 
-    const user = await User.findByIdAndUpdate(req.user._id, { $set: updates }, { new: true });
+    // Merge nested objects (socialLinks, store, payoutMethod) instead of replacing
+    if (req.body.socialLinks && typeof req.body.socialLinks === 'object') {
+      user.socialLinks = { ...(user.socialLinks || {}), ...req.body.socialLinks };
+    }
+    if (req.body.store && typeof req.body.store === 'object') {
+      user.store = { ...(user.store || {}), ...req.body.store };
+    }
+    if (req.body.payoutMethod && typeof req.body.payoutMethod === 'object') {
+      user.payoutMethod = { ...(user.payoutMethod || {}), ...req.body.payoutMethod };
+    }
+
+    await user.save();
     res.json(user);
   } catch (error) {
     console.error(error);
