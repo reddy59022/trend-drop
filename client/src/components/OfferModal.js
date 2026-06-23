@@ -32,7 +32,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
       // Fetch buyer's offer for this listing
       fetchBuyerOffer();
     }
-  }, [existingOffer, listing?._id]);
+  }, [existingOffer, listing?._id, user]); // eslint-disable-line
 
   const fetchBuyerOffer = async () => {
     try {
@@ -59,7 +59,6 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
   // Determine what actions are available
   const canMakeOffer = !offer || offer.status === 'declined' || offer.status === 'expired';
   const canCounter = offer?.status === 'countered' && isBuyer; // Buyer can counter seller's counter
-  const canAcceptCounter = offer?.status === 'countered' && isBuyer; // Buyer can accept seller's counter
   const isWaitingForSeller = offer?.status === 'pending' || offer?.status === 'buyer_countered';
   const isAccepted = offer?.status === 'accepted';
   const isCompleted = offer?.status === 'completed';

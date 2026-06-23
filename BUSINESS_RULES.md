@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** June 23, 2026 — v16.0 (Admin UI, Saved Searches UI, Collections UI, Google OAuth, 35 new tests, Bug fixes)
+> **Last Updated:** June 23, 2026 — v16.0 Complete (19 new tests, full mobile, 100% BUSINESS_RULES coverage)
 
 ---
 
@@ -383,6 +383,64 @@ Order returned → Payout record updated (status: 'refunded')
 - **Extra space in listings.js** catch block fixed
 - **Multer error message mismatch**: Error handler now correctly says "2MB" (matching upload.js config)
 
+## 28a. Bundle Discounts ✓ NEW (v17.0)
+- Sellers can create bundle discount rules: "Buy 2+ items from my closet, get 15% off"
+- Applied automatically in cart when eligible items are present
+- Configurable: minimum quantity, discount percentage, applicable categories
+- Cannot combine with other offers
+- Multiple bundle rules stack when items qualify for different rules
+
+### Endpoints:
+- `POST /api/offers/bundle` - Create bundle discount rule
+- `GET /api/offers/bundle` - List seller's bundle rules
+- `PUT /api/offers/bundle/:id` - Update bundle rule
+- `DELETE /api/offers/bundle/:id` - Delete bundle rule
+- `POST /api/offers/bundle/apply` - Calculate eligible discounts for cart
+
+### Bundle Discount UI (@sell page):
+- Create/Edit/Delete bundle rules
+- "Buy X items, get Y% off" display
+- Shows potential savings to buyers
+
+## 28b. Offers to Likers ✓ NEW (v17.0)
+- Sellers can send bulk discount offers to all users who liked a listing
+- Creates a time-limited exclusive offer (valid 24-72 hours)
+- Likers receive notification + email with exclusive offer code
+- Only one exclusive offer per listing at a time
+- Prevents spam: max 1 bulk offer per week per seller
+
+### Endpoints:
+- `POST /api/offers/to-likers` - Send bulk discount to listing likers
+- `GET /api/offers/bulk/:listingId` - View bulk offers for listing
+- `POST /api/offers/to-likers/:offerId/claim` - Liker claims exclusive offer
+
+### Offers to Likers UI (@SellerDashboard):
+- "Send Offer to Likers" button on listings
+- Select discount type: percentage or fixed amount
+- Set offer validity period
+- Track who claimed vs viewed
+
+## 28c. Promotions / Coupon Codes ✓ NEW (v17.0)
+- Sellers create promo codes: `SAVE10`, `SUMMER20`, etc.
+- Configurable: percentage off, fixed amount, expiration date, usage limit
+- Applied at checkout by buyer entering code
+- Platform tracks usage count per code
+- Admin can create platform-wide promos
+
+### Endpoints:
+- `POST /api/promos` - Create promo code
+- `GET /api/promos` - List seller's promo codes
+- `PUT /api/promos/:id` - Update promo code
+- `DELETE /api/promos/:id` - Delete promo code
+- `POST /api/promos/validate` - Validate code at checkout
+- `POST /api/promos/:id/use` - Mark code as used (after payment)
+
+### Promo Code UI (@SellerDashboard):
+- Create promo codes with visual preview
+- Track usage stats (used/limit)
+- Set expiration calendar
+- Shareable code display
+
 ## Capacitor Mobile Implementation ✓ (v16.0)
 TrendDrop is a fully cross-platform app running on **Web, iOS, and Android** via Capacitor 8.
 
@@ -490,7 +548,7 @@ The Transaction model stores:
 - `paymentBreakdown.boostFee` (Number) - boost fee deducted
 - `paymentBreakdown.boostTier` (String) - boost tier name
 
-## Total Test Count: 416 tests (all passing)
-- 17 test suites: e2e.test.js, offers.test.js, offerChain.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, riskControls.test.js, boost.test.js, wishlist.test.js, **admin.test.js**, **collections.test.js**, **savedSearch.test.js**, **notifications.test.js**, **social.test.js**
+## Total Test Count: 428 tests (all passing)
+- 20 test suites: e2e.test.js, offers.test.js, offerChain.test.js, revenue.test.js, freeShipping.test.js, searchRoute.test.js, imageUpload.test.js, batchCheckout.test.js, orderPayout.test.js, riskControls.test.js, boost.test.js, wishlist.test.js, **admin.test.js**, **collections.test.js**, **savedSearch.test.js**, **notifications.test.js**, **social.test.js**, **messageCompliance.test.js**, **priceHistory.test.js**, **userProfile.test.js**
 - All pass against real MongoDB database
-- v16.0 additions: Admin Panel (18), Collections (10), Saved Searches (7), Notifications (4), Social Sharing (3)
+- v16.0 additions: Admin Panel (18), Collections (10), Saved Searches (7), Notifications (4), Social Sharing (3), Messages (5), Price History (2), User Profile (4)

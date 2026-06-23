@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useCart } from '../context/CartContext';
 import { 
   FaHome, 
   FaCompass, 
@@ -13,7 +12,6 @@ import {
 
 const MobileTabBar = () => {
   const { user } = useAuth();
-  const { cart } = useCart();
   const location = useLocation();
   const tabs = user ? [
     { path: '/', icon: <FaHome />, label: 'Home' },

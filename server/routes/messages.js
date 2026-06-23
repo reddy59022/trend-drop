@@ -8,6 +8,9 @@ router.post('/', auth, async (req, res) => {
   try {
     const { listingId, sellerId, text } = req.body;
     if (!text) return res.status(400).json({ message: 'Message text is required' });
+    if (req.user._id.toString() === sellerId) {
+      return res.status(400).json({ message: 'Cannot message yourself' });
+    }
     let conversation = await Message.findOne({
       participants: { $all: [req.user._id, sellerId] },
       listing: listingId,
