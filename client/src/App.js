@@ -7,6 +7,7 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import MobileTabBar from './components/MobileTabBar';
 import ErrorBoundary from './components/ErrorBoundary';
+import ProtectedRoute from './components/ProtectedRoute';
 
 // Performance: Lazy load pages - they only load when navigated to
 const Home = lazy(() => import('./pages/Home'));
@@ -62,30 +63,35 @@ function App() {
           <main className="main-content">
             <Suspense fallback={<PageLoader />}>
               <Routes>
+                {/* Public routes */}
                 <Route path="/" element={<Home />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
-                <Route path="/feed" element={<Feed />} />
-                <Route path="/sell" element={<Sell />} />
                 <Route path="/listing/:id" element={<ListingDetail />} />
                 <Route path="/profile/:id" element={<Profile />} />
                 <Route path="/closet/:id" element={<Closet />} />
                 <Route path="/search" element={<Search />} />
-                <Route path="/offers" element={<Offers />} />
-                <Route path="/transactions" element={<Transactions />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/notifications" element={<Notifications />} />
-                <Route path="/wishlist" element={<Wishlist />} />
-                <Route path="/messages" element={<Messages />} />
                 <Route path="/reviews/:sellerId" element={<Reviews />} />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
-                <Route path="/seller-dashboard" element={<SellerDashboard />} />
-                <Route path="/cart" element={<CartPage />} />
                 <Route path="/verify-email" element={<VerifyEmailPage />} />
-                <Route path="/admin" element={<AdminPage />} />
                 <Route path="/collections/:sellerId" element={<CollectionsPage />} />
-                <Route path="/saved-searches" element={<SavedSearchesPage />} />
-                <Route path="/orders/:id" element={<OrderDetailPage />} />
+
+                {/* Auth-required routes */}
+                <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
+                <Route path="/sell" element={<ProtectedRoute><Sell /></ProtectedRoute>} />
+                <Route path="/offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />
+                <Route path="/transactions" element={<ProtectedRoute><Transactions /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+                <Route path="/wishlist" element={<ProtectedRoute><Wishlist /></ProtectedRoute>} />
+                <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+                <Route path="/cart" element={<ProtectedRoute><CartPage /></ProtectedRoute>} />
+                <Route path="/seller-dashboard" element={<ProtectedRoute><SellerDashboard /></ProtectedRoute>} />
+                <Route path="/saved-searches" element={<ProtectedRoute><SavedSearchesPage /></ProtectedRoute>} />
+                <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
+
+                {/* Admin-only routes */}
+                <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>} />
               </Routes>
             </Suspense>
           </main>

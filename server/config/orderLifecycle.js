@@ -26,6 +26,7 @@ const orderStates = {
 
 // Strict state machine: only these transitions are allowed
 const allowedTransitions = {
+  [orderStates.PENDING]: [orderStates.PAID],
   [orderStates.PAID]: [orderStates.PROCESSING, orderStates.CANCELLED_BY_BUYER, orderStates.CANCELLED_BY_SELLER],
   [orderStates.PROCESSING]: [orderStates.SHIPPED, orderStates.CANCELLED_BY_SELLER],
   [orderStates.SHIPPED]: [orderStates.IN_TRANSIT],

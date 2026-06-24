@@ -94,12 +94,42 @@ async function autoProcessOrders() {
       if (now - confirmTime >= timeWindows.AUTO_COMPLETE) {
         const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
 
-        // Release funds to seller
+        // Release funds to seller with 10% rolling reserve + new seller hold
         const seller = await User.findById(txn.seller);
         if (seller && sellerEarnings > 0) {
-          seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-          seller.balance.available = (seller.balance.available || 0) + sellerEarnings;
-          seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
+          const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
+          let canRelease = true;
+          
+          if (isNewSeller) {
+            const accountAge = Date.now() - new Date(seller.createdAt).getTime();
+            if (accountAge < timeWindows.NEW_SELLER_HOLD) {
+              canRelease = false;
+            }
+          }
+          
+          if (canRelease) {
+            // Apply 10% rolling reserve
+            const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
+            const availableAmount = sellerEarnings - reserveAmount;
+            
+            seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
+            seller.balance.available = (seller.balance.available || 0) + availableAmount;
+            seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
+            
+            // Track reserve
+            if (!seller.balance.reserve) seller.balance.reserve = 0;
+            if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
+            seller.balance.reserve += reserveAmount;
+            seller.balance.reserveReleaseDate.push({
+              amount: reserveAmount,
+              releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+              transactionId: txn._id,
+            });
+          } else {
+            // New seller hold - funds stay in pending
+            console.log(`[CRON] New seller hold active for seller ${seller._id}`);
+          }
+          
           seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
           await seller.save();
         }
@@ -190,7 +220,89 @@ async function releaseReserves() {
 }
 
 // ──────────────────────────────────────────────
-// JOB 4: Clean Expired Verification Tokens (Daily)
+// JOB 5: Auto-Process Return Requests (Every hour)
+// ──────────────────────────────────────────────
+// 5a. Auto-reject returns where seller hasn't responded after 3 days
+// 5b. Auto-refund where buyer hasn't shipped return after 7 days of acceptance
+async function autoProcessReturns() {
+  try {
+    const now = Date.now();
+    let autoRejected = 0;
+    let autoRefunded = 0;
+
+    // 5a. Auto-reject: return_requested + seller no response after 3 days
+    const pendingReturns = await Transaction.find({
+      status: 'return_requested',
+      'payout.status': { $ne: 'refunded' },
+    });
+
+    for (const txn of pendingReturns) {
+      const requestedAt = txn.returnDetails?.requestedAt 
+        ? new Date(txn.returnDetails.requestedAt).getTime() 
+        : new Date(txn.updatedAt).getTime();
+      
+      if (now - requestedAt >= timeWindows.SELLER_RESPOND_RETURN) {
+        // Auto-reject: seller didn't respond in time
+        txn.status = 'return_rejected';
+        txn.returnDetails = {
+          ...txn.returnDetails,
+          rejectionReason: 'Auto-rejected: Seller did not respond within 3 days',
+          autoRejected: true,
+          autoRejectedAt: new Date(),
+        };
+        
+        // Notify buyer
+        const buyer = await User.findById(txn.buyer);
+        if (buyer) {
+          buyer.notifications.unshift({
+            type: 'sale',
+            listing: txn.listing,
+            transaction: txn._id,
+            message: 'Return request auto-rejected. Seller did not respond within 3 days.',
+          });
+          await buyer.save();
+        }
+        
+        await txn.save();
+        autoRejected++;
+      }
+    }
+
+    // 5b. Auto-refund: return_accepted + buyer hasn't shipped after 7 days
+    const acceptedReturns = await Transaction.find({
+      status: 'return_accepted',
+      'payout.status': { $ne: 'refunded' },
+    });
+
+    for (const txn of acceptedReturns) {
+      const acceptedAt = txn.returnDetails?.acceptedAt 
+        ? new Date(txn.returnDetails.acceptedAt).getTime() 
+        : new Date(txn.updatedAt).getTime();
+      
+      if (now - acceptedAt >= timeWindows.RETURN_SHIP_WINDOW) {
+        // Auto-refund: buyer didn't ship in time, restore order to completed
+        txn.status = 'completed';
+        txn.returnDetails = {
+          ...txn.returnDetails,
+          autoExpired: true,
+          autoExpiredAt: new Date(),
+        };
+        
+        await txn.save();
+        autoRefunded++;
+      }
+    }
+
+    if (autoRejected > 0 || autoRefunded > 0) {
+      console.log(`[CRON] Auto-processed returns: ${autoRejected} rejected, ${autoRefunded} expired`);
+    }
+  } catch (error) {
+    console.error('[CRON] Error auto-processing returns:', error.message);
+  }
+}
+
+// ──────────────────────────────────────────────
+// JOB 4 (renumbered): Clean Expired Verification Tokens (Daily)
 // ──────────────────────────────────────────────
 async function cleanExpiredTokens() {
   try {
@@ -243,12 +355,20 @@ function initCronJobs() {
     cleanExpiredTokens();
   });
   console.log('[CRON] Token cleanup scheduled (daily at 3:00 AM)');
+
+  // Job 5: Auto-process returns every hour
+  // '30 * * * *' = at minute 30 of every hour (staggered from Job 2)
+  cron.schedule('30 * * * *', () => {
+    autoProcessReturns();
+  });
+  console.log('[CRON] Return auto-processing scheduled (every hour)');
 }
 
 module.exports = {
   initCronJobs,
   expireListings,
   autoProcessOrders,
+  autoProcessReturns,
   releaseReserves,
   cleanExpiredTokens,
 };

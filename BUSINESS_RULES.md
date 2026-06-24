@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** June 23, 2026 — v17.5 Enterprise Complete (Batch checkout fix, OrderDetail page, ProtectedRoute, ErrorBoundary, Cron jobs, Promo+Bundle discount integration)
+> **Last Updated:** June 23, 2026 — v18.0 Enterprise Complete (Multi-currency payout tests, PENDING→PAID state fix, auto-process reserve, boost in batch, route protection, return claw-back consolidation, 5-currency test suite)
 
 ---
 
@@ -610,8 +610,33 @@ TrendDrop is a fully cross-platform app running on **Web, iOS, and Android** via
 - Handles `suspended` user role -> redirects to login
 - Shows loading spinner during auth state check
 
-## Total Test Count: 455 tests (all passing)
-- 23 test suites: e2e.test.js (197), offers.test.js (27), offerChain.test.js (13), revenue.test.js (33), freeShipping.test.js (8), searchRoute.test.js (11), imageUpload.test.js (6), batchCheckout.test.js (12), orderPayout.test.js (11), riskControls.test.js (21), boost.test.js (38), wishlist.test.js (6), admin.test.js (18), collections.test.js (10), savedSearch.test.js (7), notifications.test.js (5), social.test.js (6), messageCompliance.test.js (6), priceHistory.test.js (5), userProfile.test.js (11), bundleDiscounts.test.js (9), promotions.test.js (11), settingsSocialStore.test.js (8)
+## Total Test Count: 487 tests (all passing)
+- 28 test suites: e2e.test.js (177), offers.test.js (27), offerChain.test.js (13), revenue.test.js (33), freeShipping.test.js (8), searchRoute.test.js (11), imageUpload.test.js (6), batchCheckout.test.js (12), orderPayout.test.js (11), riskControls.test.js (21), boost.test.js (38), wishlist.test.js (6), admin.test.js (18), collections.test.js (10), savedSearch.test.js (7), notifications.test.js (5), social.test.js (6), messageCompliance.test.js (6), priceHistory.test.js (5), userProfile.test.js (11), bundleDiscounts.test.js (9), promotions.test.js (11), settingsSocialStore.test.js (8), multiCurrencyPayout.test.js (11), listingAutoExpiration.test.js (5), draftListings.test.js (6), concurrentPurchase.test.js (2), balanceLedger.test.js (5)
 - v17.5 additions: Listing auto-expiration, Order auto-processing, Reserve release, Token cleanup, Bundle discount + promo code payment integration, OrderDetail page, ProtectedRoute, ErrorBoundary
+- **v18.0 additions:** PENDING→PAID state machine fix, 10% rolling reserve in auto-process (cron + orders), boost fee deduction in batch checkout, duplicate return endpoint consolidated with robust claw-back, route protection on ALL client routes, multi-currency payout test suite (11 tests), return auto-process cron, Cart quantity decrement bug fix, 4 new test suites (21 tests)
+
+---
+
+## v18.0 Changelog (June 23, 2026)
+
+### Critical Bug Fixes
+1. **PENDING→PAID State Machine Transition**: Added `[orderStates.PENDING]: [orderStates.PAID]` to `allowedTransitions` in `server/config/orderLifecycle.js` — the very first transition was missing, causing all `isValidTransition()` calls from pending to return `false`.
+2. **Batch Checkout Payment Ordering**: Refactored `POST /api/transactions/batch` to authorize payment FIRST before creating any transactions. Previously transactions were created before payment authorization, leaving orphaned records on payment failure.
+3. **Auto-Process Rolling Reserve**: Fixed `POST /api/orders/auto-process` AND `cron.js autoProcessOrders()` to deduct 10% rolling reserve from seller earnings before moving to `balance.available`, matching the manual auto-complete endpoint behavior.
+4. **Boost Fee in Batch Checkout**: Added `boostFee` and `boostTier` to batch checkout transaction payment breakdown, with boost fee deducted from seller earnings (same as single-item flow).
+5. **Return Claw-Back Consolidation**: Updated `POST /api/orders/process-return` to use robust claw-back logic (deduct from available first, then pending) matching `confirm-return-received` behavior.
+6. **Route Protection**: Wrapped all auth-required routes with `<ProtectedRoute>` component and admin route with `<ProtectedRoute requiredRole="admin">`.
+7. **Duplicate Requires Cleanup**: Moved all `require()` calls to top of files in `transactions.js`, `orderLifecycle.js`, and `payments.js`.
+8. **Cart Quantity Decrement Bug**: Fixed decrement button that allowed quantity to go below 1 — now disabled with visual feedback when quantity <= 1.
+
+### New Business Logic: Return Auto-Processing (Cron Job 5)
+- **Auto-reject returns**: After 3 days of seller no response (`SELLER_RESPOND_RETURN`), system auto-rejects the return
+- **Auto-expire accepted returns**: After 7 days of buyer not shipping (`RETURN_SHIP_WINDOW`), system restores order to `completed`
+
+### New Test Suites (21 tests)
+1. **`listingAutoExpiration.test.js`** (5 tests): Active listing stays active, expireListings expires past-due listings, future expiration preserved, expired hidden from feed, seller sees own expired listings
+2. **`draftListings.test.js`** (6 tests): Create draft listing, hidden from feed, hidden from search, seller can view own draft, buyer cannot view draft by ID, publish draft to active
+3. **`concurrentPurchase.test.js`** (2 tests): Single-qty race condition (1 succeeds, 1 fails), multi-qty oversell prevention (3 attempts for 2 qty = 2 succeed)
+4. **`balanceLedger.test.js`** (5 tests): Order placed → pending increases, cancelled → pending decreases, completed → pending→available (minus 10% reserve), returned → claw-back from available/pending, payout record created on completion not return
 
 ---

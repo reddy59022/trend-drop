@@ -297,7 +297,8 @@ const Cart = () => {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button className="btn btn-icon btn-ghost" onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
-                        style={{ width: 28, height: 28 }}><FaMinus size={10} /></button>
+                        disabled={item.quantity <= 1}
+                        style={{ width: 28, height: 28, opacity: item.quantity <= 1 ? 0.4 : 1 }}><FaMinus size={10} /></button>
                       <span style={{ fontWeight: 700, minWidth: 24, textAlign: 'center', fontSize: 14 }}>{item.quantity}</span>
                       <button className="btn btn-icon btn-ghost" onClick={() => {
                         if (item.quantity < (item.available || Infinity)) updateQuantity(item.listingId, item.quantity + 1);

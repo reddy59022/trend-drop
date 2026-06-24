@@ -366,6 +366,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
     for (const plan of orderPlans) {
       const { listing, seller, toCountry, salePrice, breakdown, label, offer, isNegotiated } = plan;
 
+      // Deduct boost fee if item is boosted
+      const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? listing.boost.fee : 0;
+      const sellerEarningsWithBoost = breakdown.seller.sellerEarnings - boostFee;
+
       const txn = await Transaction.create({
         listing: listing._id,
         buyer: req.user._id,
@@ -382,7 +386,9 @@ router.post('/confirm-batch', auth, async (req, res) => {
           platformFee: breakdown.seller.platformFee,
           platformFeePercent: breakdown.seller.platformFeePercent,
           shippingPayout: breakdown.seller.shippingPayout,
-          sellerEarnings: breakdown.seller.sellerEarnings,
+          sellerEarnings: sellerEarningsWithBoost,
+          boostFee,
+          boostTier: listing.boost?.tier || '',
         },
         shippingAddress: {
           fullName: shippingAddress?.fullName || req.user.name,
@@ -435,14 +441,14 @@ router.post('/confirm-batch', auth, async (req, res) => {
         salePrice: breakdown.buyer.itemPrice,
         commissionRate: breakdown.seller.platformFeePercent / 100,
         commissionAmount: breakdown.seller.platformFee,
-        payoutAmount: breakdown.seller.sellerEarnings,
+        payoutAmount: sellerEarningsWithBoost,
         status: 'pending',
       });
       createdPayouts.push(payout);
 
       sellerBalanceUpdates.push({
         sellerDoc: seller,
-        earnings: breakdown.seller.sellerEarnings,
+        earnings: sellerEarningsWithBoost,
         listingId: listing._id,
         transactionId: txn._id,
         sellerCurrency: breakdown.sellerCurrency,

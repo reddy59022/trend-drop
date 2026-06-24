@@ -345,6 +345,8 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
     if (color !== undefined) updateData.color = color;
     if (videoUrl !== undefined) updateData.videoUrl = videoUrl;
     if (quantity) updateData.quantity = Number(quantity);
+    if (status) updateData.status = status;
+    if (available !== undefined) updateData.available = available;
 
     // Update price with validation
     if (price) {

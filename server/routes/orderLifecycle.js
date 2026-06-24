@@ -482,6 +482,54 @@ router.post('/:transactionId/accept-return', auth, validateOrderAccess, async (r
   }
 });
 
+// POST /api/orders/:transactionId/return-shipped
+// Buyer marks the return item as shipped back to seller
+router.post('/:transactionId/return-shipped', auth, validateOrderAccess, async (req, res) => {
+  try {
+    const txn = req.transaction;
+
+    if (req.orderRole !== 'buyer') {
+      return res.status(403).json({ message: 'Only buyer can mark return as shipped' });
+    }
+
+    if (!isValidTransition(txn.status, orderStates.RETURN_IN_TRANSIT)) {
+      return res.status(400).json({ message: 'Cannot mark return as shipped in current status' });
+    }
+
+    const { trackingNumber, carrier } = req.body;
+
+    txn.status = orderStates.RETURN_IN_TRANSIT;
+    txn.returnDetails = {
+      ...txn.returnDetails,
+      buyerShippedAt: new Date(),
+      buyerTrackingNumber: trackingNumber,
+      buyerCarrier: carrier,
+    };
+
+    // Notify seller
+    const seller = await User.findById(txn.seller);
+    if (seller) {
+      seller.notifications.unshift({
+        type: 'sale',
+        listing: txn.listing,
+        transaction: txn._id,
+        message: `Buyer shipped return item. Tracking: ${trackingNumber || 'N/A'}`,
+      });
+      await seller.save();
+    }
+
+    await txn.save();
+
+    res.json({
+      message: 'Return marked as shipped. Seller will confirm receipt.',
+      transaction: txn,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // POST /api/orders/:transactionId/reject-return
 router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (req, res) => {
   try {
@@ -582,10 +630,23 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
       await buyer.save();
     }
 
-    // Remove from seller's pending balance
+    // ROBUST: Claw back from available or pending balance
     const seller = await User.findById(txn.seller);
     if (seller) {
-      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
+      const available = seller.balance.available || 0;
+      const pending = seller.balance.pending || 0;
+      let remaining = sellerEarnings;
+      if (available >= remaining) {
+        seller.balance.available = available - remaining;
+        remaining = 0;
+      } else {
+        seller.balance.available = 0;
+        remaining = remaining - available;
+      }
+      if (remaining > 0) {
+        seller.balance.pending = Math.max(0, pending - remaining);
+      }
+      seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - sellerEarnings);
       seller.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
@@ -619,7 +680,8 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
 });
 
 // POST /api/orders/:transactionId/process-return
-// Alias for confirm-return-received - processes the refund
+// Alias: Redirects to confirm-return-received logic (uses robust claw-back)
+// Kept for backward compatibility - delegates to the robust implementation
 router.post('/:transactionId/process-return', auth, validateOrderAccess, async (req, res) => {
   try {
     const txn = req.transaction;
@@ -628,6 +690,7 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
       return res.status(403).json({ message: 'Only seller can process return' });
     }
 
+    // Validate transition: process-return works from return_delivered
     if (!isValidTransition(txn.status, orderStates.REFUNDED)) {
       return res.status(400).json({ message: 'Cannot process return in current status' });
     }
@@ -673,10 +736,23 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
       await buyer.save();
     }
 
-    // Remove from seller's pending balance
+    // ROBUST: Claw back from available or pending balance (same as confirm-return-received)
     const seller = await User.findById(txn.seller);
     if (seller) {
-      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
+      const available = seller.balance.available || 0;
+      const pending = seller.balance.pending || 0;
+      let remaining = sellerEarnings;
+      if (available >= remaining) {
+        seller.balance.available = available - remaining;
+        remaining = 0;
+      } else {
+        seller.balance.available = 0;
+        remaining = remaining - available;
+      }
+      if (remaining > 0) {
+        seller.balance.pending = Math.max(0, pending - remaining);
+      }
+      seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - sellerEarnings);
       seller.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
@@ -804,12 +880,47 @@ router.post('/auto-process', async (req, res) => {
       if (now - confirmTime >= timeWindows.AUTO_COMPLETE) {
         const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
 
-        // Release funds to seller
+        // Release funds to seller with 10% rolling reserve
         const seller = await User.findById(txn.seller);
         if (seller) {
-          seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-          seller.balance.available = (seller.balance.available || 0) + sellerEarnings;
-          seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
+          // CRITICAL: Apply 10% rolling reserve and new seller hold checks
+          const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
+          let canRelease = true;
+          
+          if (isNewSeller) {
+            const accountAge = Date.now() - new Date(seller.createdAt).getTime();
+            if (accountAge < timeWindows.NEW_SELLER_HOLD) {
+              canRelease = false;
+            }
+          }
+          
+          if (canRelease) {
+            const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
+            const availableAmount = sellerEarnings - reserveAmount;
+            
+            seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
+            seller.balance.available = (seller.balance.available || 0) + availableAmount;
+            seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
+            
+            // Track reserve
+            if (!seller.balance.reserve) seller.balance.reserve = 0;
+            if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
+            seller.balance.reserve += reserveAmount;
+            seller.balance.reserveReleaseDate.push({
+              amount: reserveAmount,
+              releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+              transactionId: txn._id,
+            });
+          } else {
+            // New seller hold - funds stay in pending
+            seller.notifications.unshift({
+              type: 'sale',
+              listing: txn.listing,
+              transaction: txn._id,
+              message: `Payment held: New seller hold active until account is 14 days old.`,
+            });
+          }
+          
           seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
           await seller.save();
         }
