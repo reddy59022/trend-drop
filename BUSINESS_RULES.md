@@ -2,7 +2,28 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** July 2, 2026 — v22.0 Sales Analytics Dashboard (684/684 tests passing)
+> **Last Updated:** July 2, 2026 — v22.0 Socket.io Fix + Sales Analytics Dashboard (684/684 tests passing)
+
+---
+
+## Critical Bug Fixes (v22.0)
+
+### Socket.io Initialization Fix
+**Issue**: Server failed to start with error:
+```
+Error: You are trying to attach socket.io to an express request handler function. 
+Please pass a http.Server instance.
+```
+
+**Root Cause**: `initializeWebSocket(app)` was passing Express app instead of HTTP server
+
+**Fix**: 
+- Created HTTP server: `const server = http.createServer(app)`
+- Passed server to Socket.io: `initializeWebSocket(server)`
+- Server now listens on HTTP server: `server.listen(PORT)`
+- Location: `server/server.js`
+
+**Result**: Server starts successfully on port 5001
 
 ---
 
@@ -81,6 +102,7 @@
 
 ## 30. Real-Time Notifications ✓ 11 tests
 - WebSocket server with Socket.io
+- **FIXED**: Socket.io now properly initialized with http.Server instance
 
 ## 31. Tax Calculation Engine ✓ 40 tests
 - 100+ countries, VAT/GST/Sales Tax
@@ -99,7 +121,7 @@
 - 5-step guided onboarding
 - Tips, progress tracking, checklist, reset
 
-## 36. Sales Analytics Dashboard ✓ 27 tests (v22.0) - NEW
+## 36. Sales Analytics Dashboard ✓ 27 tests (v22.0)
 
 ### Analytics Endpoints:
 - `GET /api/users/me/analytics/overview` - Dashboard overview with key metrics
@@ -149,23 +171,34 @@
 
 ## Total Test Count: 684 tests (target: all passing)
 - 36 test suites
-- **v22.0 additions:** Sales Analytics Dashboard (27 tests)
+- **v22.0 additions:** 
+  - Sales Analytics Dashboard (27 tests)
+  - Socket.io initialization fix (critical bug fix)
 
 ---
 
-## v21.0 Changelog (July 2, 2026)
-### New Features
-1. **Seller Onboarding Flow (23 tests)**: 5-step guided onboarding with tips, progress tracking, checklist, and reset capability
+## Version History
 
-## v22.0 Changelog (July 2, 2026)
-### New Features
-1. **Sales Analytics Dashboard (27 tests)**: 
-   - Overview metrics (revenue, sales, views, conversion rate)
-   - Revenue time-series with day/week/month/year granularity
-   - Top performing listings by revenue
-   - Traffic sources and audience demographics
-   - Period filters (7d, 30d, 90d, 1y)
-   - Auth-protected, sub-second response time
+### v18.0 (June 23, 2026)
+- Critical bug fixes (8 fixes)
+- New test suites (21 tests)
+
+### v18.1 (July 2, 2026)
+- Critical bug fixes (5 fixes)
+- New features (4 features)
+
+### v19.0 (July 2, 2026)
+- Guest Checkout, Shipping Labels, WebSockets, Tax, i18n, Accessibility
+
+### v20.0 (July 2, 2026)
+- Advanced Search Filters (32 tests)
+
+### v21.0 (July 2, 2026)
+- Seller Onboarding Flow (23 tests)
+
+### v22.0 (July 2, 2026)
+- **Sales Analytics Dashboard (27 tests)**
+- **Socket.io initialization fix** - Server now starts successfully
 
 ---
 
