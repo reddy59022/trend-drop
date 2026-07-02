@@ -16,6 +16,7 @@ if (process.env.NODE_ENV !== 'production') {
 const connectDB = require('./config/db');
 const { initCronJobs } = require('./config/cron');
 const { initializeWebSocket } = require('./websocket');
+const http = require('http');
 
 // Connect to MongoDB
 connectDB();
@@ -24,6 +25,9 @@ connectDB();
 initCronJobs();
 
 const app = express();
+
+// Create HTTP server for Socket.io (must be before route mounting)
+const server = http.createServer(app);
 
 // Trust proxy for rate limiting behind reverse proxies (Render, Heroku, etc.)
 app.set('trust proxy', 1);
@@ -126,6 +130,8 @@ app.use('/api', (req, res, next) => {
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/listings', require('./routes/listings'));
+// Analytics routes MUST be mounted before /api/users/:id to avoid conflict
+app.use('/api/users/me', require('./routes/analytics'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/offers', require('./routes/offers'));
 app.use('/api/transactions', require('./routes/transactions'));
@@ -150,6 +156,9 @@ app.use('/api/collections', require('./routes/collections'));
 app.use('/api/size-guides', require('./routes/sizeGuides'));
 // Promo / coupon code routes
 app.use('/api/promos', require('./routes/promos'));
+// Onboarding routes (mounted twice for different base paths)
+app.use('/api/onboarding', require('./routes/onboarding'));
+app.use('/api/users/me', require('./routes/onboarding'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)
@@ -262,12 +271,12 @@ const PORT = process.env.PORT || 5001;
 
 // Initialize WebSocket server (only in production/development, not test)
 if (process.env.NODE_ENV !== 'test') {
-  initializeWebSocket(app);
+  initializeWebSocket(server);
 }
 
 // Only listen when not in test mode (tests import the app directly)
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
 }

@@ -111,6 +111,19 @@ const userSchema = new mongoose.Schema({
     country: { type: String, default: 'US' },
     phone: { type: String, default: '' },
   },
+  // Seller onboarding tracking (v21.0)
+  onboarding: {
+    completed: { type: Boolean, default: false },
+    currentStep: { type: Number, default: 0 },
+    completedAt: { type: Date, default: null },
+    steps: {
+      profileSetup: { completed: { type: Boolean, default: false }, completedAt: { type: Date, default: null } },
+      firstListing: { completed: { type: Boolean, default: false }, completedAt: { type: Date, default: null } },
+      shippingSetup: { completed: { type: Boolean, default: false }, completedAt: { type: Date, default: null } },
+      paymentSetup: { completed: { type: Boolean, default: false }, completedAt: { type: Date, default: null } },
+      tipsReview: { completed: { type: Boolean, default: false }, completedAt: { type: Date, default: null } },
+    },
+  },
   // Seller balance / payout info
   balance: {
     available: { type: Number, default: 0 },
