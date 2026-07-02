@@ -86,7 +86,7 @@ router.post('/calculate', (req, res) => {
 // POST /api/shipping/calculate-breakdown - Full transparent payment breakdown
 router.post('/calculate-breakdown', (req, res) => {
   try {
-    const { itemPrice, fromCountry, toCountry, weightKg, currency, platformFeePercent, buyerProtectionPercent } = req.body;
+    const { itemPrice, fromCountry, toCountry, toState, weightKg, currency, platformFeePercent, buyerProtectionPercent } = req.body;
 
     const sellerCountry = fromCountry || 'US';
     const buyerCountry = toCountry || 'US';
@@ -104,10 +104,15 @@ router.post('/calculate-breakdown', (req, res) => {
     const bpPercent = buyerProtectionPercent || 5;
     const buyerProtectionFee = Math.round(price * (bpPercent / 100) * 100) / 100;
 
-    // Buyer total
-    const totalPaid = Math.round((price + shippingCost + buyerProtectionFee) * 100) / 100;
+    // Calculate tax (VAT/GST/Sales Tax) based on buyer location
+    const { calculateTax } = require('../config/tax');
+    const taxResult = calculateTax(buyerCountry, toState, price, shippingCost);
+    const taxAmount = taxResult.taxAmount;
 
-    // Seller earnings
+    // Buyer total (includes tax)
+    const totalPaid = Math.round((price + shippingCost + buyerProtectionFee + taxAmount) * 100) / 100;
+
+    // Seller earnings (does NOT include tax - tax is remitted to government)
     const sellerEarnings = Math.round((price - platformFee + shippingCost) * 100) / 100;
 
     // Convert to local currency if needed
@@ -135,6 +140,7 @@ router.post('/calculate-breakdown', (req, res) => {
         shippingCost,
         buyerProtectionFee,
         buyerProtectionPercent: bpPercent,
+        tax: taxResult,
         totalPaid,
       },
       // What the seller receives (USD)
