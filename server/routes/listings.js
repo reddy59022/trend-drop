@@ -6,24 +6,16 @@ const { auth, optionalAuth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { paginate } = require('../utils/pagination');
 
-// Performance: Select only needed fields for list queries
-const LISTING_LIST_FIELDS = 'title price originalPrice images videoUrl seller category brand size condition likes sold createdAt';
+const LISTING_LIST_FIELDS = 'title price originalPrice images videoUrl seller category brand size condition likes sold createdAt status';
 const USER_PUBLIC_FIELDS = 'name avatar';
 
-// GET /api/listings - Get all listings with filters
 router.get('/', optionalAuth, async (req, res) => {
   try {
-    const {
-      category, brand, size, condition,
-      minPrice, maxPrice, search, sort,
-      page = 1, limit = 20
-    } = req.query;
-
-    // Clamp pagination for performance
+    const { category, brand, size, condition, minPrice, maxPrice, search, sort, page = 1, limit = 20 } = req.query;
     const pageNum = Math.max(1, Math.min(Number(page) || 1, 100));
     const limitNum = Math.max(1, Math.min(Number(limit) || 20, 50));
 
-    let query = { available: true, sold: false, quantity: { $gt: 0 } };
+    let query = { available: true, sold: false, quantity: { $gt: 0 }, status: 'active' };
 
     if (category) query.category = category;
     if (brand) query.brand = { $regex: brand, $options: 'i' };
@@ -47,7 +39,6 @@ router.get('/', optionalAuth, async (req, res) => {
     else if (sort === 'price_high') sortOption = { price: -1 };
     else if (sort === 'popular') sortOption = { 'likes.length': -1 };
 
-    // Performance: lean() returns plain JS objects (faster, less memory)
     const result = await paginate(Listing, {
       page: pageNum,
       limit: limitNum,
@@ -59,12 +50,8 @@ router.get('/', optionalAuth, async (req, res) => {
       lean: true,
     });
 
-    res.json({
-      listings: result.docs,
-      ...result.pagination,
-    });
+    res.json({ listings: result.docs, ...result.pagination });
   } catch (error) {
-    // Return a clear 400 response when Mongoose validation fails (e.g., missing title).
     console.error(error);
     if (error.name === 'ValidationError') {
       return res.status(400).json({ message: error.message });
@@ -73,15 +60,14 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
-// GET /api/listings/search - Search listings with legacy `q` parameter
 router.get('/search', optionalAuth, async (req, res) => {
   try {
     const { q, limit = 20, page = 1 } = req.query;
-    const search = q; // map legacy `q` to internal `search`
+    const search = q;
     const pageNum = Math.max(1, Math.min(Number(page) || 1, 100));
     const limitNum = Math.max(1, Math.min(Number(limit) || 20, 50));
 
-    let query = { available: true, sold: false, quantity: { $gt: 0 } };
+    let query = { available: true, sold: false, quantity: { $gt: 0 }, status: 'active' };
     if (search) {
       query.$or = [
         { title: { $regex: search, $options: 'i' } },
@@ -107,7 +93,6 @@ router.get('/search', optionalAuth, async (req, res) => {
   }
 });
 
-// GET /api/listings/user/:userId - Get listings by user
 router.get('/user/:userId', async (req, res) => {
   try {
     const { sort, page = 1, limit = 20 } = req.query;
@@ -115,19 +100,13 @@ router.get('/user/:userId', async (req, res) => {
     if (sort === 'price_low') sortOption = { price: 1 };
     else if (sort === 'price_high') sortOption = { price: -1 };
 
-    const listings = await Listing.find({
-      seller: req.params.userId,
-      sold: false,
-    })
+    const listings = await Listing.find({ seller: req.params.userId, sold: false })
       .populate('seller', 'name avatar')
       .sort(sortOption)
       .limit(Number(limit))
       .skip((Number(page) - 1) * Number(limit));
 
-    const total = await Listing.countDocuments({
-      seller: req.params.userId,
-      sold: false,
-    });
+    const total = await Listing.countDocuments({ seller: req.params.userId, sold: false });
 
     res.json({
       listings,
@@ -136,8 +115,6 @@ router.get('/user/:userId', async (req, res) => {
       total,
     });
   } catch (error) {
-    // Handle Mongoose validation errors (e.g., missing required fields like title)
-    // so the client receives a 400 Bad Request instead of a generic 500.
     console.error(error);
     if (error.name === 'ValidationError') {
       return res.status(400).json({ message: error.message });
@@ -146,7 +123,6 @@ router.get('/user/:userId', async (req, res) => {
   }
 });
 
-// GET /api/listings/:id - Get single listing
 router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id)
@@ -157,19 +133,22 @@ router.get('/:id', optionalAuth, async (req, res) => {
       return res.status(404).json({ message: 'Listing not found' });
     }
 
-    // Get similar listings
+    if (listing.status === 'draft' && (!req.user || listing.seller._id.toString() !== req.user._id.toString())) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+
     const similar = await Listing.find({
       _id: { $ne: listing._id },
       category: listing.category,
       available: true,
       sold: false,
+      status: 'active',
     })
       .populate('seller', 'name avatar')
       .limit(6);
 
     res.json({ listing, similar });
   } catch (error) {
-    // Return a clear 400 response for validation failures (e.g., missing required fields).
     console.error(error);
     if (error.name === 'ValidationError') {
       return res.status(400).json({ message: error.message });
@@ -178,16 +157,14 @@ router.get('/:id', optionalAuth, async (req, res) => {
   }
 });
 
-// POST /api/listings - Create listing
 router.post('/', auth, upload.array('images', 10), async (req, res) => {
   try {
     const {
       title, description, price, originalPrice,
       category, brand, size, condition, color,
-      weight, weightUnit, shipsFrom,
+      weight, weightUnit, shipsFrom, currency,
       domesticShipping, internationalShipping, freeShipping, shippingCost,
       quantity, videoUrl, status,
-      // Boost fields
       boostTier, boostDuration,
     } = req.body;
 
@@ -206,25 +183,16 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       }
     }
 
-    // Minimum price: $5 to prevent low-value orders losing money after Stripe fees
     if (Number(price) < 5) {
       return res.status(400).json({ message: 'Minimum listing price is $5.00' });
     }
 
-    // Calculate boost fee if boost tier is selected
-    let boostData = {
-      active: false,
-      tier: '',
-      durationDays: 14,
-      fee: 0,
-      priorityScore: 0,
-    };
+    let boostData = { active: false, tier: '', durationDays: 14, fee: 0, priorityScore: 0 };
 
     if (boostTier && ['standard', 'premium', 'elite'].includes(boostTier)) {
       const { calculateBoostFee } = require('../config/boost');
       const duration = boostDuration ? Number(boostDuration) : 14;
       const boostInfo = calculateBoostFee(Number(price), boostTier, duration);
-      
       boostData = {
         active: true,
         tier: boostTier,
@@ -236,12 +204,14 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       };
     }
 
+    const isDraft = status === 'draft';
     const listing = await Listing.create({
       seller: req.user._id,
       title,
       description,
       price: Number(price),
       originalPrice: originalPrice ? Number(originalPrice) : undefined,
+      currency: currency || 'USD',
       images: imageUrls,
       videoUrl: videoUrl || '',
       category,
@@ -258,15 +228,15 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
         freeShipping: freeShipping === 'true' || freeShipping === true,
         shippingCost: shippingCost ? Number(shippingCost) : 0,
       },
-      status: status === 'draft' ? 'draft' : 'active',
+      status: isDraft ? 'draft' : 'active',
+      available: !isDraft,
       quantity: quantity ? Number(quantity) : 1,
       boost: boostData,
     });
 
     await listing.populate('seller', 'name avatar');
-    res.status(201).json(listing);
+    res.status(201).json({ listing });
   } catch (error) {
-    // Return a clear 400 response when Mongoose validation fails (e.g., missing title).
     console.error(error);
     if (error.name === 'ValidationError') {
       return res.status(400).json({ message: error.message });
@@ -275,8 +245,19 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
   }
 });
 
-// PUT /api/listings/:id - Update listing (full edit capability)
-router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
+// Helper to process the PUT request body handling both multipart and JSON
+router.put('/:id', auth, (req, res, next) => {
+  // Check if content type is multipart/form-data (has file uploads)
+  if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+    upload.array('images', 10)(req, res, (err) => {
+      if (err) return res.status(400).json({ message: err.message });
+      next();
+    });
+  } else {
+    // JSON body - skip multer
+    next();
+  }
+}, async (req, res) => {
   try {
     let listing = await Listing.findById(req.params.id);
     if (!listing) {
@@ -292,31 +273,25 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
       category, brand, size, condition, color,
       weight, weightUnit, shipsFrom,
       domesticShipping, internationalShipping, freeShipping, shippingCost,
-      quantity, videoUrl,
-      // Boost fields
+      quantity, videoUrl, status, available,
       boostTier, boostDuration, removeBoost,
-      // Image management
-      existingImages, // JSON array of images to keep
+      existingImages,
     } = req.body;
 
     const updateData = {};
 
-    // Handle images - combine existing images to keep with new uploads
     let imageUrls = [];
-    
-    // Parse existingImages if provided (images to keep from original listing)
     if (existingImages) {
       try {
-        const imagesToKeep = JSON.parse(existingImages);
+        const imagesToKeep = typeof existingImages === 'string' ? JSON.parse(existingImages) : existingImages;
         if (Array.isArray(imagesToKeep)) {
           imageUrls = [...imagesToKeep];
         }
       } catch (e) {
-        // If parsing fails, ignore
+        // ignore parse error
       }
     }
 
-    // Add new uploaded images
     if (req.files && req.files.length > 0) {
       const { cloudinary } = require('../config/cloudinary');
       for (const file of req.files) {
@@ -330,12 +305,10 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
       }
     }
 
-    // Only update images if we have new ones or explicitly provided existingImages
     if (imageUrls.length > 0 || existingImages !== undefined) {
       updateData.images = imageUrls;
     }
 
-    // Update basic fields if provided
     if (title) updateData.title = title;
     if (description) updateData.description = description;
     if (category) updateData.category = category;
@@ -345,10 +318,13 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
     if (color !== undefined) updateData.color = color;
     if (videoUrl !== undefined) updateData.videoUrl = videoUrl;
     if (quantity) updateData.quantity = Number(quantity);
-    if (status) updateData.status = status;
-    if (available !== undefined) updateData.available = available;
+    if (status) {
+      updateData.status = status;
+      if (status === 'active') updateData.available = true;
+      if (status === 'draft') updateData.available = false;
+    }
+    if (available !== undefined) updateData.available = Boolean(available);
 
-    // Update price with validation
     if (price) {
       updateData.price = Number(price);
       if (updateData.price < 5) {
@@ -357,12 +333,10 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
     }
     if (originalPrice) updateData.originalPrice = Number(originalPrice);
 
-    // Update weight and shipping
     if (weight) updateData.weight = Number(weight);
     if (weightUnit) updateData.weightUnit = weightUnit;
     if (shipsFrom) updateData.shipsFrom = shipsFrom;
 
-    // Update shipping options
     const shippingUpdate = {};
     if (domesticShipping !== undefined) shippingUpdate.domestic = domesticShipping === 'true' || domesticShipping === true;
     if (internationalShipping !== undefined) shippingUpdate.international = internationalShipping === 'true' || internationalShipping === true;
@@ -370,26 +344,17 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
     if (shippingCost !== undefined) shippingUpdate.shippingCost = Number(shippingCost);
     
     if (Object.keys(shippingUpdate).length > 0) {
-      updateData.shipping = { ...listing.shipping.toObject(), ...shippingUpdate };
+      updateData.shipping = { ...(listing.shipping ? listing.shipping.toObject() : {}), ...shippingUpdate };
     }
 
-    // Handle boost updates
+    // Boost handling
     if (removeBoost === 'true' || removeBoost === true) {
-      // Remove boost entirely
-      updateData.boost = {
-        active: false,
-        tier: '',
-        durationDays: 14,
-        fee: 0,
-        priorityScore: 0,
-      };
+      updateData.boost = { active: false, tier: '', durationDays: 14, fee: 0, priorityScore: 0 };
     } else if (boostTier && ['standard', 'premium', 'elite'].includes(boostTier)) {
-      // Update or add boost
       const { calculateBoostFee } = require('../config/boost');
       const listingPrice = updateData.price || listing.price;
       const duration = boostDuration ? Number(boostDuration) : 14;
       const boostInfo = calculateBoostFee(listingPrice, boostTier, duration);
-      
       updateData.boost = {
         active: true,
         tier: boostTier,
@@ -399,30 +364,22 @@ router.put('/:id', auth, upload.array('images', 10), async (req, res) => {
         fee: boostInfo.fee,
         priorityScore: boostInfo.priorityScore,
       };
-    } else if (updateData.price && listing.boost?.active) {
-      // Recalculate boost fee if price changed and listing has active boost
+    } else if (updateData.price && listing.boost && listing.boost.active) {
       const { calculateBoostFee } = require('../config/boost');
       const boostInfo = calculateBoostFee(updateData.price, listing.boost.tier, listing.boost.durationDays || 14);
-      updateData.boost = {
-        ...listing.boost.toObject(),
-        fee: boostInfo.fee,
-      };
+      const boostObj = listing.boost.toObject ? listing.boost.toObject() : listing.boost;
+      updateData.boost = { ...boostObj, fee: boostInfo.fee };
     }
 
-    listing = await Listing.findByIdAndUpdate(
-      req.params.id,
-      { $set: updateData },
-      { new: true }
-    ).populate('seller', 'name avatar');
+    listing = await Listing.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true }).populate('seller', 'name avatar');
 
-    res.json(listing);
+    res.json({ listing });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// DELETE /api/listings/:id - Delete listing + cleanup Cloudinary images
 router.delete('/:id', auth, async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id);
@@ -433,12 +390,10 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    // Auto-delete images from Cloudinary
     if (listing.images && listing.images.length > 0) {
       try {
         const { cloudinary } = require('../config/cloudinary');
         for (const imageUrl of listing.images) {
-          // Extract public_id from Cloudinary URL
           const parts = imageUrl.split('/');
           const folderIdx = parts.findIndex(p => p === 'trend-drop');
           if (folderIdx > -1) {
@@ -448,7 +403,6 @@ router.delete('/:id', auth, async (req, res) => {
         }
       } catch (imgErr) {
         console.error('Image cleanup error:', imgErr);
-        // Don't fail the deletion if image cleanup fails
       }
     }
 
@@ -460,8 +414,6 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
- // POST /api/listings/:id/boost - Boost a listing
- // Fee is applied when the boosted item is sold (deducted from seller's pending earnings)
 router.post('/:id/boost', auth, async (req, res) => {
   try {
     const { tier, durationDays } = req.body;
@@ -479,7 +431,6 @@ router.post('/:id/boost', auth, async (req, res) => {
     const { calculateBoostFee } = require('../config/boost');
     const boostInfo = calculateBoostFee(listing.price, tier || 'standard', durationDays || 14);
 
-    // Activate boost (fee will be deducted when the item is sold)
     listing.boost = {
       active: true,
       tier: tier || 'standard',
@@ -503,7 +454,6 @@ router.post('/:id/boost', auth, async (req, res) => {
   }
 });
 
-// POST /api/listings/:id/deactivate-boost - Deactivate boost
 router.post('/:id/deactivate-boost', auth, async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id);
@@ -524,7 +474,6 @@ router.post('/:id/deactivate-boost', auth, async (req, res) => {
   }
 });
 
-// POST /api/listings/:id/like - Toggle like (also adds/removes from wishlist)
 router.post('/:id/like', auth, async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id);
@@ -537,22 +486,18 @@ router.post('/:id/like', auth, async (req, res) => {
     let liked = false;
     
     if (index > -1) {
-      // Unlike - remove from likes and wishlist
       listing.likes.splice(index, 1);
       liked = false;
       
-      // Remove from wishlist
       let wishlist = await Wishlist.findOne({ user: req.user._id });
       if (wishlist) {
         wishlist.items = wishlist.items.filter(i => i.listing.toString() !== req.params.id);
         await wishlist.save();
       }
     } else {
-      // Like - add to likes and wishlist
       listing.likes.push(req.user._id);
       liked = true;
 
-      // Add to wishlist
       let wishlist = await Wishlist.findOne({ user: req.user._id });
       if (!wishlist) {
         wishlist = await Wishlist.create({ user: req.user._id, items: [{ listing: req.params.id }] });
@@ -564,7 +509,6 @@ router.post('/:id/like', auth, async (req, res) => {
         }
       }
 
-      // Add notification to seller
       if (listing.seller.toString() !== req.user._id.toString()) {
         const seller = await User.findById(listing.seller);
         if (seller) {
@@ -587,7 +531,6 @@ router.post('/:id/like', auth, async (req, res) => {
   }
 });
 
-// POST /api/listings/:id/comment - Add comment
 router.post('/:id/comment', auth, async (req, res) => {
   try {
     const { text } = req.body;
@@ -600,13 +543,9 @@ router.post('/:id/comment', auth, async (req, res) => {
       return res.status(404).json({ message: 'Listing not found' });
     }
 
-    listing.comments.unshift({
-      user: req.user._id,
-      text,
-    });
+    listing.comments.unshift({ user: req.user._id, text });
     await listing.save();
 
-    // Add notification
     if (listing.seller.toString() !== req.user._id.toString()) {
       const seller = await User.findById(listing.seller);
       if (seller) {
@@ -630,7 +569,6 @@ router.post('/:id/comment', auth, async (req, res) => {
   }
 });
 
-// DELETE /api/listings/:id/comments/:commentId
 router.delete('/:id/comments/:commentId', auth, async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id);
@@ -657,7 +595,6 @@ router.delete('/:id/comments/:commentId', auth, async (req, res) => {
   }
 });
 
-// POST /api/listings/:id/share - Share listing
 router.post('/:id/share', auth, async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id);
@@ -677,10 +614,7 @@ router.post('/:id/share', auth, async (req, res) => {
   }
 });
 
-// PATCH /api/listings/:id/sold - Mark as sold
-// PATCH /api/listings/:id/sold - Manual mark as sold is now disabled.
 router.patch('/:id/sold', auth, async (req, res) => {
-  // This endpoint is retained for backward compatibility but will always reject the request.
   return res.status(400).json({ message: 'Manual marking as sold is disabled. Sales are recorded via transaction flow.' });
 });
 

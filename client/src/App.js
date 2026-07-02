@@ -34,6 +34,7 @@ const AdminPage = lazy(() => import('./pages/Admin'));
 const CollectionsPage = lazy(() => import('./pages/Collections'));
 const SavedSearchesPage = lazy(() => import('./pages/SavedSearches'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetail'));
+const NotFoundPage = lazy(() => import('./pages/NotFound'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -92,6 +93,9 @@ function App() {
 
                 {/* Admin-only routes */}
                 <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>} />
+
+                {/* 404 catch-all */}
+                <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </Suspense>
           </main>

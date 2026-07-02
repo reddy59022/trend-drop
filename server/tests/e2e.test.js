@@ -138,7 +138,7 @@ describe('RULE 2: Listings', () => {
       .field('title', 'E2E Test Nike').field('description', 'Desc').field('price', '120')
       .field('category', 'Men').field('condition', 'New with tags').field('brand', 'Nike')
       .field('size', '10').field('color', 'White').field('weight', '1').field('shipsFrom', 'US').field('quantity', '5');
-    expect(r.status).toBe(201); expect(r.body.price).toBe(120); listingId = r.body._id;
+    expect(r.status).toBe(201); expect(r.body.listing.price).toBe(120); listingId = r.body.listing._id;
   });
   test('2b Rejects price < $5', async () => {
     const r = await request(app).post('/api/listings').set('Authorization', `Bearer ${sellerToken}`)
@@ -174,7 +174,7 @@ describe('RULE 2: Listings', () => {
   test('2i Default qty 1', async () => {
     const r = await request(app).post('/api/listings').set('Authorization', `Bearer ${sellerToken}`)
       .field('title', 'E2E Test Q1').field('description', 'D').field('price', '50').field('category', 'Kids').field('condition', 'Good');
-    expect(r.body.quantity).toBe(1);
+    expect(r.body.listing.quantity).toBe(1);
   });
   test('2j Sold hidden from public', async () => {
     const l = await Listing.findById(listingId); l.sold = true; l.available = false; await l.save();
@@ -497,8 +497,8 @@ describe('RULE 2: Listing Edit', () => {
     const r = await request(app).put(`/api/listings/${editListing._id}`).set('Authorization', `Bearer ${sellerToken}`)
       .field('price', '250').field('description', 'Updated desc');
     expect(r.status).toBe(200);
-    expect(r.body.price).toBe(250);
-    expect(r.body.description).toBe('Updated desc');
+    expect(r.body.listing.price).toBe(250);
+    expect(r.body.listing.description).toBe('Updated desc');
   });
 
   test('Ed.2 Buyer cannot edit seller listing', async () => {
@@ -576,7 +576,7 @@ describe('RULE 21: Shipping Fee', () => {
       .field('category', 'Men').field('condition', 'Good').field('shippingCost', '7.99')
       .field('shipsFrom', 'US').field('weight', '1');
     expect(r.status).toBe(201);
-    expect(r.body.shipping.shippingCost).toBe(7.99);
+    expect(r.body.listing.shipping.shippingCost).toBe(7.99);
   });
 
   test('21b Domestic vs international shipping costs differ', async () => {
@@ -590,7 +590,7 @@ describe('RULE 21: Shipping Fee', () => {
       .field('title', 'E2E Test FreeShip').field('description', 'D').field('price', '30')
       .field('category', 'Women').field('condition', 'Good').field('freeShipping', 'true');
     expect(r.status).toBe(201);
-    expect(r.body.shipping.freeShipping).toBe(true);
+    expect(r.body.listing.shipping.freeShipping).toBe(true);
   });
 });
 
@@ -1054,25 +1054,25 @@ describe('RULE 28: Listing Creation Validations', () => {
   test('28h Default quantity is 1', async () => {
     const r = await request(app).post('/api/listings').set('Authorization', `Bearer ${sellerToken}`)
       .field('title', 'E2E Test Qty').field('description', 'D').field('price', '50').field('category', 'Men').field('condition', 'Good');
-    expect(r.body.quantity).toBe(1);
+    expect(r.body.listing.quantity).toBe(1);
   });
 
   test('28i Custom quantity works', async () => {
     const r = await request(app).post('/api/listings').set('Authorization', `Bearer ${sellerToken}`)
       .field('title', 'E2E Test Qty2').field('description', 'D').field('price', '50').field('category', 'Men').field('condition', 'Good').field('quantity', '10');
-    expect(r.body.quantity).toBe(10);
+    expect(r.body.listing.quantity).toBe(10);
   });
 
   test('28j Ships from defaults to US', async () => {
     const r = await request(app).post('/api/listings').set('Authorization', `Bearer ${sellerToken}`)
       .field('title', 'E2E Test Ship').field('description', 'D').field('price', '50').field('category', 'Men').field('condition', 'Good');
-    expect(r.body.shipsFrom).toBe('US');
+    expect(r.body.listing.shipsFrom).toBe('US');
   });
 
   test('28k Weight defaults to 0.5', async () => {
     const r = await request(app).post('/api/listings').set('Authorization', `Bearer ${sellerToken}`)
       .field('title', 'E2E Test Weight').field('description', 'D').field('price', '50').field('category', 'Men').field('condition', 'Good');
-    expect(r.body.weight).toBe(0.5);
+    expect(r.body.listing.weight).toBe(0.5);
   });
 
   test('28l Listing with all optional fields', async () => {
@@ -1082,10 +1082,10 @@ describe('RULE 28: Listing Creation Validations', () => {
       .field('size', 'M').field('color', 'Black').field('weight', '2').field('shipsFrom', 'US')
       .field('quantity', '3').field('shippingCost', '9.99');
     expect(r.status).toBe(201);
-    expect(r.body.brand).toBe('Gucci');
-    expect(r.body.size).toBe('M');
-    expect(r.body.color).toBe('Black');
-    expect(r.body.shipping.shippingCost).toBe(9.99);
+    expect(r.body.listing.brand).toBe('Gucci');
+    expect(r.body.listing.size).toBe('M');
+    expect(r.body.listing.color).toBe('Black');
+    expect(r.body.listing.shipping.shippingCost).toBe(9.99);
   });
 
   test('28m Unauthenticated cannot create listing', async () => {
@@ -1099,7 +1099,7 @@ describe('RULE 28: Listing Creation Validations', () => {
     const r = await request(app).put(`/api/listings/${l._id}`).set('Authorization', `Bearer ${sellerToken}`)
       .field('price', '120').field('description', 'Updated');
     expect(r.status).toBe(200);
-    expect(r.body.price).toBe(120);
+    expect(r.body.listing.price).toBe(120);
   });
 
   test('28o Buyer cannot edit seller listing', async () => {

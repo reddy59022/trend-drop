@@ -191,13 +191,13 @@ describe('Listing Creation with Boost', () => {
     });
     
     expect(res.status).toBe(201);
-    expect(res.body.boost).toBeDefined();
-    expect(res.body.boost.active).toBe(true);
-    expect(res.body.boost.tier).toBe('standard');
-    expect(res.body.boost.fee).toBe(10);
-    expect(res.body.boost.durationDays).toBe(14);
-    expect(res.body.boost.startDate).toBeDefined();
-    expect(res.body.boost.endDate).toBeDefined();
+    expect(res.body.listing.boost).toBeDefined();
+    expect(res.body.listing.boost.active).toBe(true);
+    expect(res.body.listing.boost.tier).toBe('standard');
+    expect(res.body.listing.boost.fee).toBe(10);
+    expect(res.body.listing.boost.durationDays).toBe(14);
+    expect(res.body.listing.boost.startDate).toBeDefined();
+    expect(res.body.listing.boost.endDate).toBeDefined();
   });
 
   test('LC.2 Create listing with premium boost (default recommended)', async () => {
@@ -209,9 +209,9 @@ describe('Listing Creation with Boost', () => {
     });
     
     expect(res.status).toBe(201);
-    expect(res.body.boost.active).toBe(true);
-    expect(res.body.boost.tier).toBe('premium');
-    expect(res.body.boost.fee).toBe(30); // 15% of $200
+    expect(res.body.listing.boost.active).toBe(true);
+    expect(res.body.listing.boost.tier).toBe('premium');
+    expect(res.body.listing.boost.fee).toBe(30); // 15% of $200
   });
 
   test('LC.3 Create listing with elite boost', async () => {
@@ -223,9 +223,9 @@ describe('Listing Creation with Boost', () => {
     });
     
     expect(res.status).toBe(201);
-    expect(res.body.boost.active).toBe(true);
-    expect(res.body.boost.tier).toBe('elite');
-    expect(res.body.boost.fee).toBe(100); // 20% of $500
+    expect(res.body.listing.boost.active).toBe(true);
+    expect(res.body.listing.boost.tier).toBe('elite');
+    expect(res.body.listing.boost.fee).toBe(100); // 20% of $500
   });
 
   test('LC.4 Create listing without boost', async () => {
@@ -235,9 +235,9 @@ describe('Listing Creation with Boost', () => {
     });
     
     expect(res.status).toBe(201);
-    expect(res.body.boost.active).toBe(false);
-    expect(res.body.boost.tier).toBe('');
-    expect(res.body.boost.fee).toBe(0);
+    expect(res.body.listing.boost.active).toBe(false);
+    expect(res.body.listing.boost.tier).toBe('');
+    expect(res.body.listing.boost.fee).toBe(0);
   });
 
   test('LC.5 Invalid boost tier is ignored', async () => {
@@ -248,7 +248,7 @@ describe('Listing Creation with Boost', () => {
     });
     
     expect(res.status).toBe(201);
-    expect(res.body.boost.active).toBe(false);
+    expect(res.body.listing.boost.active).toBe(false);
   });
 });
 
@@ -265,7 +265,7 @@ describe('Revenue Split with Boost', () => {
       quantity: 5,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     // Buy the item
     const buyRes = await request(app)
@@ -305,7 +305,7 @@ describe('Revenue Split with Boost', () => {
       quantity: 5,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     const buyRes = await request(app)
       .post('/api/transactions')
@@ -339,7 +339,7 @@ describe('Revenue Split with Boost', () => {
       quantity: 5,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     const buyRes = await request(app)
       .post('/api/transactions')
@@ -372,7 +372,7 @@ describe('Revenue Split with Boost', () => {
       quantity: 5,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     const buyRes = await request(app)
       .post('/api/transactions')
@@ -402,7 +402,7 @@ describe('Boost API Endpoints', () => {
       price: 100,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     // Activate boost via API
     const boostRes = await request(app)
@@ -423,7 +423,7 @@ describe('Boost API Endpoints', () => {
       boostTier: 'standard',
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     const boostRes = await request(app)
       .post(`/api/listings/${listingId}/boost`)
@@ -441,7 +441,7 @@ describe('Boost API Endpoints', () => {
       boostTier: 'premium',
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     const deactivateRes = await request(app)
       .post(`/api/listings/${listingId}/deactivate-boost`)
@@ -460,7 +460,7 @@ describe('Boost API Endpoints', () => {
       price: 100,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     // Try to boost with buyer's token
     const boostRes = await request(app)
@@ -483,7 +483,7 @@ describe('Listing Edit with Boost', () => {
       price: 100,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     // Edit to add boost
     const editRes = await request(app)
@@ -493,9 +493,9 @@ describe('Listing Edit with Boost', () => {
       .field('boostDuration', '14');
     
     expect(editRes.status).toBe(200);
-    expect(editRes.body.boost.active).toBe(true);
-    expect(editRes.body.boost.tier).toBe('premium');
-    expect(editRes.body.boost.fee).toBe(15);
+    expect(editRes.body.listing.boost.active).toBe(true);
+    expect(editRes.body.listing.boost.tier).toBe('premium');
+    expect(editRes.body.listing.boost.fee).toBe(15);
   });
 
   test('LE.2 Edit listing to change boost tier', async () => {
@@ -505,7 +505,7 @@ describe('Listing Edit with Boost', () => {
       boostTier: 'standard',
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     // Change to elite
     const editRes = await request(app)
@@ -515,8 +515,8 @@ describe('Listing Edit with Boost', () => {
       .field('boostDuration', '14');
     
     expect(editRes.status).toBe(200);
-    expect(editRes.body.boost.tier).toBe('elite');
-    expect(editRes.body.boost.fee).toBe(20);
+    expect(editRes.body.listing.boost.tier).toBe('elite');
+    expect(editRes.body.listing.boost.fee).toBe(20);
   });
 
   test('LE.3 Edit listing to remove boost', async () => {
@@ -526,7 +526,7 @@ describe('Listing Edit with Boost', () => {
       boostTier: 'premium',
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     // Remove boost
     const editRes = await request(app)
@@ -535,8 +535,8 @@ describe('Listing Edit with Boost', () => {
       .field('removeBoost', 'true');
     
     expect(editRes.status).toBe(200);
-    expect(editRes.body.boost.active).toBe(false);
-    expect(editRes.body.boost.fee).toBe(0);
+    expect(editRes.body.listing.boost.active).toBe(false);
+    expect(editRes.body.listing.boost.fee).toBe(0);
   });
 
   test('LE.4 Edit listing price recalculates boost fee', async () => {
@@ -546,7 +546,7 @@ describe('Listing Edit with Boost', () => {
       boostTier: 'standard',
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     // Change price to $200
     const editRes = await request(app)
@@ -555,9 +555,9 @@ describe('Listing Edit with Boost', () => {
       .field('price', '200');
     
     expect(editRes.status).toBe(200);
-    expect(editRes.body.price).toBe(200);
+    expect(editRes.body.listing.price).toBe(200);
     // Boost fee should be recalculated: 10% of $200 = $20
-    expect(editRes.body.boost.fee).toBe(20);
+    expect(editRes.body.listing.boost.fee).toBe(20);
   });
 
   test('LE.5 Edit all listing fields including videoUrl', async () => {
@@ -566,7 +566,7 @@ describe('Listing Edit with Boost', () => {
       price: 100,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     const editRes = await request(app)
       .put(`/api/listings/${listingId}`)
@@ -583,16 +583,16 @@ describe('Listing Edit with Boost', () => {
       .field('quantity', '10');
     
     expect(editRes.status).toBe(200);
-    expect(editRes.body.title).toBe('Updated Title');
-    expect(editRes.body.description).toBe('Updated description');
-    expect(editRes.body.price).toBe(150);
-    expect(editRes.body.category).toBe('Men');
-    expect(editRes.body.brand).toBe('Nike');
-    expect(editRes.body.size).toBe('L');
-    expect(editRes.body.condition).toBe('Good');
-    expect(editRes.body.color).toBe('Blue');
-    expect(editRes.body.videoUrl).toBe('https://youtube.com/watch?v=test');
-    expect(editRes.body.quantity).toBe(10);
+    expect(editRes.body.listing.title).toBe('Updated Title');
+    expect(editRes.body.listing.description).toBe('Updated description');
+    expect(editRes.body.listing.price).toBe(150);
+    expect(editRes.body.listing.category).toBe('Men');
+    expect(editRes.body.listing.brand).toBe('Nike');
+    expect(editRes.body.listing.size).toBe('L');
+    expect(editRes.body.listing.condition).toBe('Good');
+    expect(editRes.body.listing.color).toBe('Blue');
+    expect(editRes.body.listing.videoUrl).toBe('https://youtube.com/watch?v=test');
+    expect(editRes.body.listing.quantity).toBe(10);
   });
 });
 
@@ -613,7 +613,7 @@ describe('Seller Balance with Boost', () => {
       quantity: 1,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     await request(app)
       .post('/api/transactions')
@@ -683,7 +683,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing1Res.body._id,
+        listingId: listing1Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -692,7 +692,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing2Res.body._id,
+        listingId: listing2Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -701,7 +701,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing3Res.body._id,
+        listingId: listing3Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -760,7 +760,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing1Res.body._id,
+        listingId: listing1Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -769,7 +769,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing2Res.body._id,
+        listingId: listing2Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -816,7 +816,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing1Res.body._id,
+        listingId: listing1Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -825,7 +825,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing2Res.body._id,
+        listingId: listing2Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -856,7 +856,7 @@ describe('Returns and Refunds with Boost', () => {
       quantity: 5,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     
     // Buy the item
     const buyRes = await request(app)
@@ -894,7 +894,7 @@ describe('Returns and Refunds with Boost', () => {
       quantity: 5,
     });
     
-    const listingId = listingRes.body._id;
+    const listingId = listingRes.body.listing._id;
     const sellerBefore = await User.findById(sellerId);
     
     // Buy the item
@@ -954,7 +954,7 @@ describe('Returns and Refunds with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing1Res.body._id,
+        listingId: listing1Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -963,7 +963,7 @@ describe('Returns and Refunds with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing2Res.body._id,
+        listingId: listing2Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -972,7 +972,7 @@ describe('Returns and Refunds with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listing3Res.body._id,
+        listingId: listing3Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -1023,7 +1023,7 @@ describe('Platform Revenue Verification', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        listingId: listingRes.body._id,
+        listingId: listingRes.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
@@ -1067,7 +1067,7 @@ describe('Platform Revenue Verification', () => {
         .post('/api/transactions')
         .set('Authorization', `Bearer ${buyerToken}`)
         .send({
-          listingId: listingRes.body._id,
+          listingId: listingRes.body.listing._id,
           shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
           buyerCountry: 'US',
         });

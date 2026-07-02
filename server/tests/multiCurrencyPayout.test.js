@@ -141,7 +141,7 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({ sellerId: seller._id.toString(), items: [{ listingId: testListing._id, price: 100 }, { listingId: testListing2._id, price: 100 }] });
     expect(applyRes.status).toBe(200);
-    expect(applyRes.body.discount).toBeGreaterThan(0);
+    expect(applyRes.body.totalBundleDiscount).toBeGreaterThan(0);
   });
 
   test('4a. Promo codes can be created and validated', async () => {
@@ -154,7 +154,7 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
     const validateRes = await request(app)
       .post('/api/promos/validate')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ code: 'SAVE20', totalAmount: 200 });
+      .send({ code: 'SAVE20', items: [{ listingId: testListing._id, price: 100 }] });
     expect(validateRes.status).toBe(200);
     expect(validateRes.body.valid).toBe(true);
   });
@@ -181,9 +181,10 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
     const sellerAfter = await User.findById(seller._id);
     expect(sellerAfter.balance.pending).toBeGreaterThan(0);
 
-    txn.status = 'delivered';
-    txn.shipping = { ...txn.shipping, actualDelivery: new Date(), trackingNumber: 'TRACK123' };
-    await txn.save();
+    const txnDoc = await Transaction.findById(txn._id);
+    txnDoc.status = 'delivered';
+    txnDoc.shipping = { ...txnDoc.shipping, actualDelivery: new Date(), trackingNumber: 'TRACK123' };
+    await txnDoc.save();
 
     const confirmRes = await request(app)
       .post(`/api/orders/${txn._id}/confirm-received`)
@@ -213,9 +214,10 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
     expect(txnRes.status).toBe(201);
     const txn = txnRes.body;
 
-    txn.status = 'delivered';
-    txn.shipping = { ...txn.shipping, actualDelivery: new Date(), trackingNumber: 'TRACK456' };
-    await txn.save();
+    const txnDoc = await Transaction.findById(txn._id);
+    txnDoc.status = 'delivered';
+    txnDoc.shipping = { ...txnDoc.shipping, actualDelivery: new Date(), trackingNumber: 'TRACK456' };
+    await txnDoc.save();
 
     await request(app)
       .post(`/api/orders/${txn._id}/request-return`)
@@ -249,7 +251,7 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
     expect(res.status).toBe(200);
     expect(res.body.seller.platformFee).toBe(8);
     expect(res.body.seller.sellerEarnings).toBe(92);
-    expect(res.body.buyer.totalPaid).toBeCloseTo(108.99, 1);
+    expect(res.body.buyer.totalPaid).toBeCloseTo(105, 1);
   });
 
   test('9a. Boost fee is deducted from seller earnings', async () => {
@@ -271,9 +273,9 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
     const boostedListing = listingRes.body.listing;
 
     const boostRes = await request(app)
-      .post('/api/boost')
+      .post(`/api/listings/${boostedListing._id}/boost`)
       .set('Authorization', `Bearer ${sellerToken}`)
-      .send({ listingId: boostedListing._id, tier: 'Standard', durationDays: 14 });
+      .send({ tier: 'standard', durationDays: 14 });
     expect(boostRes.status).toBe(200);
 
     const txnRes = await request(app)

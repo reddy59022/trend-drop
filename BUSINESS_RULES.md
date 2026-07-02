@@ -610,10 +610,11 @@ TrendDrop is a fully cross-platform app running on **Web, iOS, and Android** via
 - Handles `suspended` user role -> redirects to login
 - Shows loading spinner during auth state check
 
-## Total Test Count: 487 tests (all passing)
-- 28 test suites: e2e.test.js (177), offers.test.js (27), offerChain.test.js (13), revenue.test.js (33), freeShipping.test.js (8), searchRoute.test.js (11), imageUpload.test.js (6), batchCheckout.test.js (12), orderPayout.test.js (11), riskControls.test.js (21), boost.test.js (38), wishlist.test.js (6), admin.test.js (18), collections.test.js (10), savedSearch.test.js (7), notifications.test.js (5), social.test.js (6), messageCompliance.test.js (6), priceHistory.test.js (5), userProfile.test.js (11), bundleDiscounts.test.js (9), promotions.test.js (11), settingsSocialStore.test.js (8), multiCurrencyPayout.test.js (11), listingAutoExpiration.test.js (5), draftListings.test.js (6), concurrentPurchase.test.js (2), balanceLedger.test.js (5)
+## Total Test Count: 474+ tests (target: all passing)
+- 27 test suites: e2e.test.js (177), offers.test.js (27), offerChain.test.js (13), revenue.test.js (33), freeShipping.test.js (8), searchRoute.test.js (11), imageUpload.test.js (6), batchCheckout.test.js (12), orderPayout.test.js (11), riskControls.test.js (21), boost.test.js (38), wishlist.test.js (6), admin.test.js (18), collections.test.js (10), savedSearch.test.js (7), notifications.test.js (5), social.test.js (6), messageCompliance.test.js (6), priceHistory.test.js (5), userProfile.test.js (11), bundleDiscounts.test.js (9), promotions.test.js (11), settingsSocialStore.test.js (8), multiCurrencyPayout.test.js (11), listingAutoExpiration.test.js (5), draftListings.test.js (6), concurrentPurchase.test.js (2), balanceLedger.test.js (5)
 - v17.5 additions: Listing auto-expiration, Order auto-processing, Reserve release, Token cleanup, Bundle discount + promo code payment integration, OrderDetail page, ProtectedRoute, ErrorBoundary
 - **v18.0 additions:** PENDING→PAID state machine fix, 10% rolling reserve in auto-process (cron + orders), boost fee deduction in batch checkout, duplicate return endpoint consolidated with robust claw-back, route protection on ALL client routes, multi-currency payout test suite (11 tests), return auto-process cron, Cart quantity decrement bug fix, 4 new test suites (21 tests)
+- **v18.1 additions:** Listing edit multer/JSON fix, draft listing visibility fix, chargeback state machine, DISPUTE_RESOLVED dead-end fix, 404 catch-all route, NotFound page, platform-specific CSS, safe-area-inset support, cart bundle discount server-side integration
 
 ---
 
@@ -638,5 +639,57 @@ TrendDrop is a fully cross-platform app running on **Web, iOS, and Android** via
 2. **`draftListings.test.js`** (6 tests): Create draft listing, hidden from feed, hidden from search, seller can view own draft, buyer cannot view draft by ID, publish draft to active
 3. **`concurrentPurchase.test.js`** (2 tests): Single-qty race condition (1 succeeds, 1 fails), multi-qty oversell prevention (3 attempts for 2 qty = 2 succeed)
 4. **`balanceLedger.test.js`** (5 tests): Order placed → pending increases, cancelled → pending decreases, completed → pending→available (minus 10% reserve), returned → claw-back from available/pending, payout record created on completion not return
+
+---
+
+## v18.1 Changelog (July 2, 2026)
+
+### Critical Bug Fixes
+1. **Listing Edit 500 Error (multer/JSON conflict)**: Fixed `PUT /api/listings/:id` to handle both `multipart/form-data` (with file uploads) and `application/json` bodies. Previously, `upload.array('images', 10)` middleware would fail when tests sent JSON body without files, causing 500 errors. Now uses conditional middleware that skips multer for non-multipart requests.
+2. **Draft Listing Visibility in Search**: Added `status: 'active'` filter to public listing list and search endpoints. Previously, draft listings were returned in search results and accessible by ID for non-owner users. Now draft listings are properly hidden from public.
+3. **Chargeback State Machine Integration**: Added `chargeback_open`, `chargeback_won`, `chargeback_lost` states to `orderLifecycle.js` with proper transitions: `delivered/buyer_confirmed/completed → chargeback_open → chargeback_won → completed` and `chargeback_open → chargeback_lost → refunded`.
+4. **DISPUTE_RESOLVED Dead-End Fix**: Added outgoing transitions from `DISPUTE_RESOLVED` to `REFUNDED` and `COMPLETED`, preventing orders from being stuck in a terminal state.
+5. **404 Catch-All Route**: Added `<Route path="*" element={<NotFoundPage />} />` to React Router in `App.js` with a user-friendly NotFound page component.
+
+### New Features
+1. **NotFound Page**: Created `client/src/pages/NotFound.js` with branded 404 page, "Go Home" and "Browse Listings" action buttons.
+2. **Platform-Specific CSS Classes**: Added `.platform-ios`, `.platform-android`, `.platform-web` CSS classes for cross-platform styling.
+3. **Safe-Area-Insert Support**: Added `env(safe-area-inset-*)` padding to `globals.css` for iOS notch and home indicator support.
+4. **Cart Bundle Discount Server-Side Integration**: Bundle discounts now properly applied at payment intent creation (server-side) rather than being visual-only on the client.
+
+### Updated Business Rules
+- **Section 8 (Chargeback)**: States now fully integrated into order lifecycle state machine
+- **Section 28g (Draft Listings)**: Clarified that draft listings are hidden from public search and feed
+- **Section 2 (Listing Management)**: Added `status` field to listing list fields for proper filtering
+
+---
+
+## Next Enhancements (Planned for v19.0+)
+
+### High Priority
+1. **Real Shipping Label Generation**: Replace mock label generator with real carrier API integration (ShipEngine/EasyPost/Shippo) for actual shipping label creation and tracking.
+2. **Real-Time Notifications (WebSockets)**: Implement Socket.io for real-time push notifications on offers, messages, sales, and order updates instead of polling.
+3. **Guest Checkout**: Allow users to purchase without registering. Capture email for order tracking and send account creation invitation post-purchase.
+4. **Tax Calculation**: Add sales tax/VAT/GST calculation per country/region based on seller and buyer locations.
+5. **Multi-Language Support (i18n)**: Implement react-i18next for at least 5 languages (English, Spanish, French, German, Japanese).
+
+### Medium Priority
+6. **Accessibility (WCAG 2.1 AA)**: Add aria-labels, skip-to-content links, keyboard navigation, focus trapping in modals, proper color contrast ratios.
+7. **Advanced Search Filters**: Add filter panel for condition, brand, size, price range, color, and location on search page.
+8. **Seller Onboarding Flow**: Guided step-by-step onboarding for new sellers with tips on photography, pricing, and shipping.
+9. **Sales Analytics Dashboard**: Charts and graphs for seller revenue, views, likes, conversion rates over time.
+10. **Bulk Listing Management**: CSV import for listings, bulk price editing, bulk boost activation.
+
+### Low Priority
+11. **Social Login Expansion**: Add Apple Sign-In and Facebook Login beyond existing Google OAuth.
+12. **Advanced Fraud Detection**: IP geolocation, device fingerprinting, velocity checks for high-risk transactions.
+13. **Escrow Service**: For high-value items (>$500), hold funds in escrow until both parties confirm satisfaction.
+14. **Auction/Bidding System**: Allow sellers to list items as auctions with timed bidding.
+15. **Price Suggestion AI**: ML-based price recommendations based on similar sold listings, market trends, and seasonality.
+16. **Abandoned Cart Recovery**: Email/SMS reminders for users who added items to cart but didn't complete purchase.
+17. **Referral Program**: Track referrals with unique codes, reward referrers with platform credits.
+18. **Seller Shipping Insurance**: Optional shipping insurance for high-value items.
+19. **Size Recommendation Engine**: AI-powered size matching based on brand, item measurements, and user history.
+20. **Automated Return Labels**: Generate pre-paid return labels automatically when return is accepted.
 
 ---

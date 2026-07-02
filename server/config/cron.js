@@ -41,6 +41,7 @@ async function expireListings() {
     if (result.modifiedCount > 0) {
       console.log(`[CRON] Auto-expired ${result.modifiedCount} listings`);
     }
+    return result.modifiedCount;
   } catch (error) {
     console.error('[CRON] Error expiring listings:', error.message);
   }

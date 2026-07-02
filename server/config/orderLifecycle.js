@@ -22,6 +22,9 @@ const orderStates = {
   REFUNDED: 'refunded',
   DISPUTED: 'disputed',
   DISPUTE_RESOLVED: 'dispute_resolved',
+  CHARGEBACK_OPEN: 'chargeback_open',
+  CHARGEBACK_WON: 'chargeback_won',
+  CHARGEBACK_LOST: 'chargeback_lost',
 };
 
 // Strict state machine: only these transitions are allowed
@@ -32,14 +35,18 @@ const allowedTransitions = {
   [orderStates.SHIPPED]: [orderStates.IN_TRANSIT],
   [orderStates.IN_TRANSIT]: [orderStates.OUT_FOR_DELIVERY, orderStates.DELIVERED],
   [orderStates.OUT_FOR_DELIVERY]: [orderStates.DELIVERED],
-  [orderStates.DELIVERED]: [orderStates.BUYER_CONFIRMED, orderStates.RETURN_REQUESTED, orderStates.DISPUTED],
-  [orderStates.BUYER_CONFIRMED]: [orderStates.COMPLETED, orderStates.RETURN_REQUESTED],
-  [orderStates.COMPLETED]: [orderStates.RETURN_REQUESTED, orderStates.DISPUTED],
+  [orderStates.DELIVERED]: [orderStates.BUYER_CONFIRMED, orderStates.RETURN_REQUESTED, orderStates.DISPUTED, orderStates.CHARGEBACK_OPEN],
+  [orderStates.BUYER_CONFIRMED]: [orderStates.COMPLETED, orderStates.RETURN_REQUESTED, orderStates.CHARGEBACK_OPEN],
+  [orderStates.COMPLETED]: [orderStates.RETURN_REQUESTED, orderStates.DISPUTED, orderStates.CHARGEBACK_OPEN],
   [orderStates.RETURN_REQUESTED]: [orderStates.RETURN_ACCEPTED, orderStates.RETURN_REJECTED],
   [orderStates.RETURN_ACCEPTED]: [orderStates.RETURN_IN_TRANSIT],
   [orderStates.RETURN_IN_TRANSIT]: [orderStates.RETURN_DELIVERED],
   [orderStates.RETURN_DELIVERED]: [orderStates.REFUNDED, orderStates.DISPUTED],
   [orderStates.DISPUTED]: [orderStates.DISPUTE_RESOLVED, orderStates.REFUNDED],
+  [orderStates.DISPUTE_RESOLVED]: [orderStates.REFUNDED, orderStates.COMPLETED],
+  [orderStates.CHARGEBACK_OPEN]: [orderStates.CHARGEBACK_WON, orderStates.CHARGEBACK_LOST],
+  [orderStates.CHARGEBACK_WON]: [orderStates.COMPLETED],
+  [orderStates.CHARGEBACK_LOST]: [orderStates.REFUNDED],
 };
 
 // Time windows (milliseconds)
