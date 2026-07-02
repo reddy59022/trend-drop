@@ -7,6 +7,7 @@ const { currencies, convertPrice, formatPrice } = require('../config/currencies'
 const { countries, getCountry } = require('../config/countries');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
+const Listing = require('../models/Listing');
 const { generateLabelBuffer } = require('../config/labelGenerator');
 
 // GET /api/shipping/carriers - Get all carriers
@@ -163,6 +164,144 @@ router.post('/calculate-breakdown', (req, res) => {
   }
 });
 
+// POST /api/shipping/label/:transactionId - Create/generate shipping label for transaction
+router.post('/label/:transactionId', auth, async (req, res) => {
+  try {
+    const transaction = await Transaction.findById(req.params.transactionId)
+      .populate('buyer', 'name email shippingAddress')
+      .populate('seller', 'name email shippingAddress')
+      .populate('listing', 'title weight');
+
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+
+    const sellerId = typeof transaction.seller === 'object' && transaction.seller._id 
+      ? transaction.seller._id.toString() : transaction.seller.toString();
+
+    if (sellerId !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the seller can generate shipping labels' });
+    }
+
+    if (transaction.shipping?.trackingNumber) {
+      return res.status(400).json({ message: 'Label already generated for this transaction' });
+    }
+
+    const sellerCountry = transaction.shippingAddress?.country || 'US';
+    const toCountry = transaction.shippingAddress?.country || 'US';
+    const carrierCode = getPreferredCarrier(toCountry, sellerCountry === toCountry);
+    const label = generateLabel({
+      shippingAddress: transaction.shippingAddress,
+      sellerAddress: transaction.sellerAddress,
+      weight: transaction.shipping?.weight || 0.5,
+    }, carrierCode);
+
+    transaction.shipping = {
+      ...transaction.shipping,
+      ...label,
+      labelCreated: true,
+      labelCreatedDate: new Date(),
+    };
+    transaction.status = 'shipped';
+    await transaction.save();
+
+    const transactionId = req.params.transactionId;
+    res.json({
+      ...label,
+      toAddress: transaction.shippingAddress,
+      fromAddress: transaction.sellerAddress,
+      labelPdfUrl: `${req.protocol}://${req.get('host')}/api/shipping/label/${transactionId}`,
+    });
+  } catch (error) {
+    console.error('Label creation error:', error);
+    res.status(500).json({ message: 'Error creating label' });
+  }
+});
+
+// POST /api/shipping/void/:transactionId - Void shipping label and refund
+router.post('/void/:transactionId', auth, async (req, res) => {
+  try {
+    const transaction = await Transaction.findById(req.params.transactionId)
+      .populate('seller', 'name balance');
+
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+
+    const sellerId = typeof transaction.seller === 'object' && transaction.seller._id 
+      ? transaction.seller._id.toString() : transaction.seller.toString();
+
+    if (sellerId !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the seller can void labels' });
+    }
+
+    // Cannot void delivered orders
+    const deliveredStatuses = ['delivered', 'completed', 'refunded'];
+    if (deliveredStatuses.includes(transaction.status)) {
+      return res.status(400).json({ message: `Cannot void label for ${transaction.status} order` });
+    }
+
+    // Cannot void if no label exists
+    if (!transaction.shipping?.trackingNumber) {
+      return res.status(400).json({ message: 'No label to void' });
+    }
+
+    // Calculate shipping refund
+    const shippingCost = transaction.paymentBreakdown?.shippingCost || transaction.shipping?.cost || 0;
+    const refundAmount = shippingCost;
+
+    // Update transaction
+    transaction.status = 'cancelled';
+    transaction.shipping = {
+      ...transaction.shipping,
+      voided: true,
+      voidedAt: new Date(),
+      voidedBy: req.user._id,
+    };
+    await transaction.save();
+
+    // Restore inventory
+    await Listing.findByIdAndUpdate(transaction.listing, {
+      $inc: { quantity: 1, quantitySold: -1 },
+      $set: { available: true, sold: false },
+    });
+
+    // Refund shipping cost to buyer (in production, process via payment provider)
+    // For now, record the refund
+    if (refundAmount > 0) {
+      const seller = typeof transaction.seller === 'object' ? transaction.seller : await User.findById(transaction.seller);
+      if (seller && seller.balance) {
+        seller.balance.pending = (seller.balance.pending || 0) - (transaction.paymentBreakdown?.sellerEarnings || 0);
+        seller.balance.totalPaidOut = (seller.balance.totalPaidOut || 0) + refundAmount;
+        await seller.save();
+      }
+    }
+
+    // Create refund record
+    const Payout = require('../models/Payout');
+    await Payout.create({
+      seller: transaction.seller,
+      transaction: transaction._id,
+      listing: transaction.listing,
+      salePrice: refundAmount,
+      commissionRate: 0,
+      commissionAmount: 0,
+      payoutAmount: -refundAmount,
+      status: 'refunded',
+      type: 'label_void_refund',
+    });
+
+    res.json({
+      refunded: true,
+      refundAmount,
+      message: 'Label voided successfully. Shipping cost refunded.',
+    });
+  } catch (error) {
+    console.error('Label void error:', error);
+    res.status(500).json({ message: 'Error voiding label' });
+  }
+});
+
 // GET /api/shipping/label/:transactionId - Download shipping label as PDF
 router.get('/label/:transactionId', auth, async (req, res) => {
   try {
@@ -313,6 +452,12 @@ router.post('/generate-label', auth, async (req, res) => {
     console.error(error);
     res.status(500).json({ message: 'Error generating label' });
   }
+});
+
+// GET /api/shipping/track/:transactionId - Get tracking info (alias)
+router.get('/track/:transactionId', auth, async (req, res, next) => {
+  req.url = `/tracking/${req.params.transactionId}`;
+  next();
 });
 
 // GET /api/shipping/tracking/:transactionId - Get tracking info

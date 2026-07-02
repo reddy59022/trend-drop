@@ -44,7 +44,7 @@ const userSchema = new mongoose.Schema({
   },
   authProvider: {
     type: String,
-    enum: ['email', 'google'],
+    enum: ['email', 'google', 'guest'],
     default: 'email',
   },
   avatar: {

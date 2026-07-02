@@ -36,7 +36,7 @@ const payoutSchema = new mongoose.Schema({
   // Payout status
   status: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'failed'],
+    enum: ['pending', 'processing', 'completed', 'failed', 'refunded'],
     default: 'pending',
   },
   // Payment method info (placeholder for Stripe Connect, PayPal, etc.)

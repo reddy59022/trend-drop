@@ -15,6 +15,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 const connectDB = require('./config/db');
 const { initCronJobs } = require('./config/cron');
+const { initializeWebSocket } = require('./websocket');
 
 // Connect to MongoDB
 connectDB();
@@ -258,6 +259,11 @@ app.use((err, req, res, next) => {
 // causing the server to fail to start. Switching to 5001 provides a clear
 // separation and prevents `EADDRINUSE` errors.
 const PORT = process.env.PORT || 5001;
+
+// Initialize WebSocket server (only in production/development, not test)
+if (process.env.NODE_ENV !== 'test') {
+  initializeWebSocket(app);
+}
 
 // Only listen when not in test mode (tests import the app directly)
 if (process.env.NODE_ENV !== 'test') {

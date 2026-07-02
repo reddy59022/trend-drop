@@ -66,7 +66,168 @@ router.post('/batch', auth, async (req, res) => {
 });
 
 // POST /api/transactions - Create transaction (purchase) with full payment breakdown
-  router.post('/', auth, async (req, res) => {
+  // POST /api/transactions/guest - Allow guest checkout without authentication
+router.post('/guest', async (req, res) => {
+  try {
+    const { listingId, buyerEmail, buyerName, buyerPhone, shippingAddress, buyerCountry } = req.body;
+
+    // Validate required fields
+    if (!listingId || !buyerEmail || !buyerName || !shippingAddress) {
+      return res.status(400).json({ message: 'Missing required fields: listingId, buyerEmail, buyerName, shippingAddress' });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(buyerEmail)) {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+
+    // Validate shipping address
+    if (!shippingAddress.fullName || !shippingAddress.street1 || !shippingAddress.city || 
+        !shippingAddress.state || !shippingAddress.postalCode || !shippingAddress.country) {
+      return res.status(400).json({ message: 'Complete shipping address is required' });
+    }
+
+    const listing = await Listing.findById(listingId);
+    if (!listing) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+
+    if (listing.seller.toString() === buyerEmail) {
+      return res.status(400).json({ message: 'Cannot purchase your own listing' });
+    }
+
+    if (!listing.available || listing.sold) {
+      return res.status(400).json({ message: 'Listing is no longer available' });
+    }
+    if (listing.quantity <= 0) {
+      return res.status(400).json({ message: 'Out of stock' });
+    }
+
+    // Create or find guest user
+    let guestUser = await User.findOne({ email: buyerEmail.toLowerCase() });
+    if (!guestUser) {
+      guestUser = await User.create({
+        name: buyerName,
+        email: buyerEmail.toLowerCase(),
+        password: null,
+        emailVerified: true,
+        authProvider: 'guest',
+        country: shippingAddress.country || buyerCountry || 'US',
+        currency: 'USD',
+        shippingAddress: {
+          fullName: buyerName,
+          street1: shippingAddress.street1,
+          street2: shippingAddress.street2 || '',
+          city: shippingAddress.city,
+          state: shippingAddress.state,
+          postalCode: shippingAddress.postalCode,
+          country: shippingAddress.country,
+          phone: buyerPhone || shippingAddress.phone || '',
+        },
+        balance: { available: 0, pending: 0, totalEarned: 0, totalPaidOut: 0, currency: 'USD' },
+        stats: { totalSales: 0, totalPurchases: 0, strikes: 0 },
+      });
+    }
+
+    const seller = await User.findById(listing.seller);
+    const sellerCountry = seller?.country || listing.shipsFrom || 'US';
+    const buyerShipCountry = shippingAddress.country || buyerCountry || 'US';
+    const weightKg = listing.weight || 0.5;
+
+    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, buyerShipCountry, weightKg);
+    const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? listing.boost.fee : 0;
+
+    const sellerAddress = seller?.shippingAddress ? {
+      street1: seller.shippingAddress.street1,
+      street2: seller.shippingAddress.street2,
+      city: seller.shippingAddress.city,
+      state: seller.shippingAddress.state,
+      postalCode: seller.shippingAddress.postalCode,
+      country: seller.shippingAddress.country || sellerCountry,
+    } : { country: sellerCountry };
+
+    const transaction = await Transaction.create({
+      listing: listingId,
+      buyer: guestUser._id,
+      seller: listing.seller,
+      itemPrice: listing.price,
+      currency: listing.currency || 'USD',
+      paymentBreakdown: {
+        subtotal: breakdown.buyer.itemPrice,
+        shippingCost: breakdown.buyer.shippingCost,
+        buyerProtectionFee: breakdown.buyer.buyerProtectionFee,
+        buyerProtectionPercent: breakdown.buyer.buyerProtectionPercent,
+        tax: 0,
+        totalPaid: breakdown.buyer.totalPaid,
+        platformFee: breakdown.seller.platformFee,
+        platformFeePercent: breakdown.seller.platformFeePercent,
+        shippingPayout: breakdown.seller.shippingPayout,
+        sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
+        boostFee,
+        boostTier: listing.boost?.tier || '',
+      },
+      shippingAddress: {
+        fullName: shippingAddress.fullName,
+        street1: shippingAddress.street1,
+        street2: shippingAddress.street2 || '',
+        city: shippingAddress.city,
+        state: shippingAddress.state,
+        postalCode: shippingAddress.postalCode,
+        country: buyerShipCountry,
+        phone: buyerPhone || shippingAddress.phone || '',
+      },
+      sellerAddress,
+      shipping: {
+        weight: weightKg,
+        carrier: getPreferredCarrier(buyerShipCountry, sellerCountry === buyerShipCountry),
+        estimatedDelivery: new Date(Date.now() + (breakdown.shipping?.estimatedDays?.max || 7) * 24 * 60 * 60 * 1000),
+      },
+      payout: { status: 'pending' },
+      autoTracking: {
+        enabled: true,
+        lastChecked: new Date(),
+        nextCheck: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        attempts: 0,
+      },
+      status: 'paid',
+    });
+
+    // Atomic inventory update
+    const wasLastOne = listing.quantity === 1;
+    await Listing.findOneAndUpdate(
+      { _id: listingId, quantity: { $gte: 1 } },
+      { 
+        $inc: { quantity: -1, quantitySold: 1 },
+        $set: {
+          available: listing.quantity > 1,
+          sold: wasLastOne,
+        }
+      },
+      { new: true }
+    );
+
+    // Update seller pending balance
+    await User.findByIdAndUpdate(listing.seller, {
+      $inc: { 'balance.pending': breakdown.seller.sellerEarnings - boostFee }
+    });
+
+    res.status(201).json({
+      ...transaction.toObject(),
+      buyer: {
+        _id: guestUser._id,
+        name: guestUser.name,
+        email: guestUser.email,
+        authProvider: guestUser.authProvider,
+      },
+    });
+  } catch (error) {
+    console.error('Guest transaction error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+});
+
+router.post('/', auth, async (req, res) => {
     try {
       const { listingId, shippingAddress, buyerCountry } = req.body;
 
