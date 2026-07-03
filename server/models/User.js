@@ -32,11 +32,21 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
-  // Google OAuth
-  googleId: {
-    type: String,
-    default: null,
-  },
+// Google OAuth
+   googleId: {
+     type: String,
+     default: null,
+   },
+   // Apple Sign-In
+   appleId: {
+     type: String,
+     default: null,
+   },
+   // Facebook Login
+   facebookId: {
+     type: String,
+     default: null,
+   },
   role: {
     type: String,
     enum: ['user', 'admin', 'moderator', 'suspended'],
@@ -44,7 +54,7 @@ const userSchema = new mongoose.Schema({
   },
   authProvider: {
     type: String,
-    enum: ['email', 'google', 'guest'],
+    enum: ['email', 'google', 'apple', 'facebook', 'guest'],
     default: 'email',
   },
   avatar: {

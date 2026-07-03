@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
-import { FaEnvelope, FaLock, FaEye, FaEyeSlash, FaGoogle, FaSpinner, FaExclamationCircle } from 'react-icons/fa';
+import { FaEnvelope, FaLock, FaEye, FaEyeSlash, FaGoogle, FaApple, FaFacebook, FaSpinner, FaExclamationCircle } from 'react-icons/fa';
 
 const Login = () => {
   const [form, setForm] = useState({ email: '', password: '' });
@@ -10,7 +10,9 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const { login, loginWithGoogle, user } = useAuth();
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [facebookLoading, setFacebookLoading] = useState(false);
+  const { login, loginWithGoogle, loginWithApple, loginWithFacebook, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -68,6 +70,28 @@ const Login = () => {
       toast.error('Google login failed. Please try again.');
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    setAppleLoading(true);
+    try {
+      await loginWithApple();
+    } catch (error) {
+      toast.error('Apple login failed. Please try again.');
+    } finally {
+      setAppleLoading(false);
+    }
+  };
+
+  const handleFacebookLogin = async () => {
+    setFacebookLoading(true);
+    try {
+      await loginWithFacebook();
+    } catch (error) {
+      toast.error('Facebook login failed. Please try again.');
+    } finally {
+      setFacebookLoading(false);
     }
   };
 
@@ -164,7 +188,7 @@ const Login = () => {
           className="btn btn-outline btn-lg"
           onClick={handleGoogleLogin}
           disabled={googleLoading}
-          style={{ width: '100%', marginBottom: 16 }}
+          style={{ width: '100%', marginBottom: 8 }}
           aria-label="Sign in with Google"
         >
           {googleLoading ? (
@@ -173,6 +197,36 @@ const Login = () => {
             <FaGoogle style={{ color: '#4285F4' }} />
           )}
           {googleLoading ? 'Connecting...' : 'Google'}
+        </button>
+
+        <button
+          className="btn btn-outline btn-lg"
+          onClick={handleAppleLogin}
+          disabled={appleLoading}
+          style={{ width: '100%', marginBottom: 8, backgroundColor: '#000', color: '#fff' }}
+          aria-label="Sign in with Apple"
+        >
+          {appleLoading ? (
+            <FaSpinner className="spinner-sm" />
+          ) : (
+            <FaApple />
+          )}
+          {appleLoading ? 'Connecting...' : 'Apple'}
+        </button>
+
+        <button
+          className="btn btn-outline btn-lg"
+          onClick={handleFacebookLogin}
+          disabled={facebookLoading}
+          style={{ width: '100%', marginBottom: 16, backgroundColor: '#1877F2', color: '#fff' }}
+          aria-label="Sign in with Facebook"
+        >
+          {facebookLoading ? (
+            <FaSpinner className="spinner-sm" />
+          ) : (
+            <FaFacebook />
+          )}
+          {facebookLoading ? 'Connecting...' : 'Facebook'}
         </button>
 
         <div className="auth-footer">

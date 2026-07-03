@@ -66,8 +66,27 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  const loginWithGoogle = async () => {
+    // Google login is handled via redirect to Google OAuth
+    // Frontend receives callback and exchanges code for token
+    const redirectUri = `${window.location.origin}/auth/google/callback`;
+    window.location.href = `/api/auth/google?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  };
+
+  const loginWithApple = async () => {
+    // Apple Sign-In uses OAuth flow
+    const redirectUri = `${window.location.origin}/auth/apple/callback`;
+    window.location.href = `/api/auth/apple?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  };
+
+  const loginWithFacebook = async () => {
+    // Facebook login uses OAuth flow
+    const redirectUri = `${window.location.origin}/auth/facebook/callback`;
+    window.location.href = `/api/auth/facebook?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateProfile, updateAvatar }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateProfile, updateAvatar, loginWithGoogle, loginWithApple, loginWithFacebook }}>
       {children}
     </AuthContext.Provider>
   );

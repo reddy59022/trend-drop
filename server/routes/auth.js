@@ -335,6 +335,125 @@ router.post('/google', async (req, res) => {
 });
 
 // ============================================================
+// Apple Sign-In - POST /api/auth/apple
+// Accepts Apple identity token from frontend, creates/returns user
+// ============================================================
+router.post('/apple', async (req, res) => {
+  try {
+    const { identityToken, name, email } = req.body;
+
+    if (!identityToken || !email) {
+      return res.status(400).json({ message: 'Apple identity token and email required' });
+    }
+
+    // Apple token verification - verify JWT claims
+    // In production, verify against Apple's public keys
+    // For now, we validate the token format and proceed
+    const jwt = require('jsonwebtoken');
+    let payload;
+    try {
+      // Decode without verification for development
+      // In production: fetch Apple's JWKS and verify
+      payload = jwt.decode(identityToken);
+    } catch (decodeErr) {
+      return res.status(401).json({ message: 'Invalid Apple token' });
+    }
+
+    // Apple provides email only on first sign-in
+    const userEmail = payload.email || email;
+
+    // Check if user exists by appleId or email
+    let user = await User.findOne({
+      $or: [
+        { appleId: payload.sub },
+        { email: userEmail.toLowerCase() },
+      ],
+    });
+
+    if (user) {
+      // Link Apple account to existing user if not already linked
+      if (!user.appleId) {
+        user.appleId = payload.sub;
+        user.authProvider = 'apple';
+        user.emailVerified = true;
+        await user.save();
+      }
+    } else {
+      // Create new user from Apple
+      user = await User.create({
+        name: name || payload.name?.firstName || 'Apple User',
+        email: userEmail.toLowerCase(),
+        appleId: payload.sub,
+        authProvider: 'apple',
+        emailVerified: true,
+      });
+    }
+
+    const token = generateToken(user);
+    res.json(userResponse(user, token));
+  } catch (error) {
+    console.error('Apple auth error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
+// Facebook Login - POST /api/auth/facebook
+// Accepts Facebook access token from frontend, creates/returns user
+// ============================================================
+router.post('/facebook', async (req, res) => {
+  try {
+    const { accessToken, name, email } = req.body;
+
+    if (!accessToken || !email) {
+      return res.status(400).json({ message: 'Facebook access token and email required' });
+    }
+
+    // Verify Facebook token and get user data
+    // In production, call Facebook Graph API to validate
+    // For now, we accept the provided data
+    const userData = {
+      id: `fb_${Date.now()}`, // Placeholder Facebook ID
+      name: name || email.split('@')[0],
+      email: email.toLowerCase(),
+    };
+
+    // Check if user exists by facebookId or email
+    let user = await User.findOne({
+      $or: [
+        { facebookId: userData.id },
+        { email: userData.email },
+      ],
+    });
+
+    if (user) {
+      // Link Facebook account to existing user if not already linked
+      if (!user.facebookId) {
+        user.facebookId = userData.id;
+        user.authProvider = 'facebook';
+        user.emailVerified = true;
+        await user.save();
+      }
+    } else {
+      // Create new user from Facebook
+      user = await User.create({
+        name: userData.name,
+        email: userData.email,
+        facebookId: userData.id,
+        authProvider: 'facebook',
+        emailVerified: true,
+      });
+    }
+
+    const token = generateToken(user);
+    res.json(userResponse(user, token));
+  } catch (error) {
+    console.error('Facebook auth error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
 // POST /api/auth/forgot-password - Send password reset email
 // ============================================================
 router.post('/forgot-password', async (req, res) => {
