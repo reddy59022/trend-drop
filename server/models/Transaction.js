@@ -1,6 +1,14 @@
 const mongoose = require('mongoose');
 
 const transactionSchema = new mongoose.Schema({
+  // Fraud detection flag
+  fraudFlag: {
+    flagged: { type: Boolean, default: false },
+    reason: { type: String, default: '' },
+    notes: { type: String, default: '' },
+    flaggedAt: { type: Date, default: null },
+    flaggedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  },
   listing: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Listing',
@@ -165,6 +173,27 @@ const transactionSchema = new mongoose.Schema({
     reason: String,
     cancelledAt: Date,
     refundAmount: Number,
+  },
+  // Escrow info for high-value transactions (>$500)
+  escrow: {
+    status: { type: String, enum: ['inactive', 'active', 'released', 'disputed', 'resolved'], default: 'inactive' },
+    amount: { type: Number, default: 0 },
+    initiatedAt: { type: Date, default: null },
+    releasedAt: { type: Date, default: null },
+    resolvedAt: { type: Date, default: null },
+    resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    releaseConditions: {
+      buyerConfirmed: { type: Boolean, default: false },
+      sellerConfirmed: { type: Boolean, default: false },
+      inspectionPeriodDays: { type: Number, default: 7 },
+    },
+    dispute: {
+      reason: String,
+      evidence: [String],
+      disputedAt: { type: Date, default: null },
+      disputedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    },
+    resolution: { type: String, default: '' },
   },
 }, { timestamps: true });
 

@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** July 2, 2026 — v24.0 Social Login Expansion (702/702 tests passing)
+> **Last Updated:** July 2, 2026 — v26.0 Escrow Service (725/725 tests passing)
 
 ## Critical Bug Fixes (v22.0)
 
@@ -167,12 +167,69 @@ Please pass a http.Server instance.
 - Handles no-data gracefully (returns zeros/empty arrays)
 - Sub-second response time
 
-## Total Test Count: 702 tests (target: all passing)
-- 38 test suites
+## 37. Advanced Fraud Detection ✓ 6 tests (v25.0)
+
+### Fraud Detection Endpoints:
+- `POST /api/fraud/check` - Check transaction for fraud risk before payment
+- `GET /api/fraud/settings` - Get platform risk thresholds and settings
+- `POST /api/fraud/flag` - Flag a transaction for manual review
+
+### Risk Detection Checks:
+- **High Value**: Transactions over $500 flagged (threshold configurable)
+- **Velocity**: More than 5 transactions per hour flagged (rate limiting)
+- **New Account High Value**: Accounts less than 7 days old + high value purchases
+- **Invalid Listing**: Check for listing existence/validity
+- **IP Geolocation**: Track IP addresses for risk assessment (placeholder for production)
+
+### Risk Scoring:
+- **Low Risk**: score 0-24
+- **Medium Risk**: score 25-49 (manual review recommended)
+- **High Risk**: score 50+ (additional verification required)
+
+### Enterprise Standards:
+- Auth required for all endpoints
+- Risk score calculation based on multiple factors
+- Transaction flagging with audit trail
+- Admin can flag any transaction, users can flag own transactions
+
+## 38. Escrow Service ✓ 17 tests (v26.0)
+
+### Escrow Endpoints:
+- `POST /api/escrow/initiate` - Initiate escrow for high-value transaction (>$500)
+- `POST /api/escrow/confirm-buyer` - Buyer confirms satisfaction
+- `POST /api/escrow/confirm-seller` - Seller confirms satisfaction
+- `POST /api/escrow/dispute` - File dispute during escrow period
+- `POST /api/escrow/resolve-dispute` - Admin resolves escrow dispute
+- `GET /api/escrow/settings` - Get escrow configuration
+
+### Escrow States:
+- **inactive**: Default state, no escrow
+- **active**: Escrow initiated, waiting for confirmation
+- **released**: Both parties confirmed, funds released to seller
+- **disputed**: Buyer filed dispute, awaiting resolution
+- **resolved**: Admin resolved dispute
+
+### Release Conditions:
+- Both buyer and seller must confirm satisfaction
+- 7-day inspection period for high-value items
+- Admin resolution for disputed transactions
+
+### Enterprise Standards:
+- Auth required for all endpoints
+- Buyer initiates escrow, seller receives notifications
+- Funds released with normal platform fee and 10% rolling reserve
+- Admin-only dispute resolution
+
+## Total Test Count: 725 tests (target: all passing)
+- 40 test suites
 - **v23.0 additions:** 
   - Bulk Listing Management (12 tests)
 - **v24.0 additions:**
   - Social Login - Apple & Facebook (6 tests)
+- **v25.0 additions:**
+  - Advanced Fraud Detection (6 tests)
+- **v26.0 additions:**
+  - Escrow Service (17 tests)
 
 ---
 
@@ -217,20 +274,29 @@ Please pass a http.Server instance.
 - **Account Linking**: Link social accounts to existing email accounts
 - **6 tests** covering Apple and Facebook authentication
 
+### v25.0 (July 2, 2026) - Advanced Fraud Detection
+- **Fraud Risk Check API**: Real-time risk scoring before transactions
+- **Threshold Management**: Configurable risk thresholds ($500 value, 5/hr velocity)
+- **Transaction Flagging**: Audit trail for flagged transactions
+- **6 tests** covering fraud detection endpoints
+
+### v26.0 (July 2, 2026) - Escrow Service
+- **Escrow for High-Value Transactions**: Automatic escrow for items >$500
+- **Dual Confirmation**: Both buyer and seller must confirm satisfaction
+- **Dispute Resolution**: Admin-mediated dispute handling
+- **17 tests** covering all escrow operations
+
 ---
 
-## Next Enhancements (Planned for v25.0+)
+## Next Enhancements (Planned for v27.0+)
 
 ### Medium Priority
-1. **Advanced Fraud Detection**: IP geolocation, device fingerprinting, velocity checks for high-risk transactions.
-2. **Escrow Service**: For high-value items (>$500), hold funds in escrow until both parties confirm satisfaction.
-3. **Auction/Bidding System**: Allow sellers to list items as auctions with timed bidding.
+1. **Auction/Bidding System**: Allow sellers to list items as auctions with timed bidding.
 
 ### Low Priority
-4. **Price Suggestion AI**: ML-based price recommendations based on similar sold listings, market trends, and seasonality.
-5. **Abandoned Cart Recovery**: Email/SMS reminders for users who added items to cart but didn't complete purchase.
-6. **Referral Program**: Track referrals with unique codes, reward referrers with platform credits.
-7. **Seller Shipping Insurance**: Optional shipping insurance for high-value items.
-8. **Size Recommendation Engine**: AI-powered size matching based on brand, item measurements, and user history.
-9. **Automated Return Labels**: Generate pre-paid return labels automatically when return is accepted.
-
+2. **Price Suggestion AI**: ML-based price recommendations based on similar sold listings, market trends, and seasonality.
+3. **Abandoned Cart Recovery**: Email/SMS reminders for users who added items to cart but didn't complete purchase.
+4. **Referral Program**: Track referrals with unique codes, reward referrers with platform credits.
+5. **Seller Shipping Insurance**: Optional shipping insurance for high-value items.
+6. **Size Recommendation Engine**: AI-powered size matching based on brand, item measurements, and user history.
+7. **Automated Return Labels**: Generate pre-paid return labels automatically when return is accepted.

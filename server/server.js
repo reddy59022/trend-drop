@@ -158,6 +158,10 @@ app.use('/api/collections', require('./routes/collections'));
 app.use('/api/size-guides', require('./routes/sizeGuides'));
 // Promo / coupon code routes
 app.use('/api/promos', require('./routes/promos'));
+// Fraud detection routes
+app.use('/api/fraud', require('./routes/fraudDetection'));
+// Escrow service routes (v26.0)
+app.use('/api/escrow', require('./routes/escrow'));
 // Onboarding routes (mounted twice for different base paths)
 app.use('/api/onboarding', require('./routes/onboarding'));
 app.use('/api/users/me', require('./routes/onboarding'));
