@@ -2,9 +2,8 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** July 2, 2026 — v22.0 Socket.io Fix + Sales Analytics Dashboard (684/684 tests passing)
+> **Last Updated:** July 2, 2026 — v23.0 Bulk Listing Management (696/696 tests passing)
 
----
 
 ## Critical Bug Fixes (v22.0)
 
@@ -169,11 +168,10 @@ Please pass a http.Server instance.
 - Handles no-data gracefully (returns zeros/empty arrays)
 - Sub-second response time
 
-## Total Test Count: 684 tests (target: all passing)
-- 36 test suites
-- **v22.0 additions:** 
-  - Sales Analytics Dashboard (27 tests)
-  - Socket.io initialization fix (critical bug fix)
+## Total Test Count: 696 tests (target: all passing)
+- 37 test suites
+- **v23.0 additions:** 
+  - Bulk Listing Management (12 tests)
 
 ---
 
@@ -200,25 +198,34 @@ Please pass a http.Server instance.
 - **Sales Analytics Dashboard (27 tests)**
 - **Socket.io initialization fix** - Server now starts successfully
 
+### v22.1 (July 2, 2026)
+- **Render deployment fix**: Moved socket.io to dependencies
+
 ---
 
-## Next Enhancements (Planned for v23.0+)
+### v23.0 (July 2, 2026) - Bulk Listing Management
+- **CSV Import/Export**: Create and export listings via CSV files
+- **Bulk Status Update**: Update multiple listings to active/draft/sold
+- **Bulk Price Update**: Set same price across selected listings (min $5)
+- **Bulk Delete**: Remove multiple listings (excludes sold items)
+- **Bulk Boost Activation**: Activate boost on multiple listings with tier selection
+- **12 tests** covering all bulk operations
 
-### High Priority
-1. **Bulk Listing Management**: CSV import for listings, bulk price editing, bulk boost activation.
+---
+
+## Next Enhancements (Planned for v24.0+)
 
 ### Medium Priority
-2. **Social Login Expansion**: Add Apple Sign-In and Facebook Login beyond existing Google OAuth.
-3. **Advanced Fraud Detection**: IP geolocation, device fingerprinting, velocity checks for high-risk transactions.
-4. **Escrow Service**: For high-value items (>$500), hold funds in escrow until both parties confirm satisfaction.
-5. **Auction/Bidding System**: Allow sellers to list items as auctions with timed bidding.
+1. **Social Login Expansion**: Add Apple Sign-In and Facebook Login beyond existing Google OAuth.
+2. **Advanced Fraud Detection**: IP geolocation, device fingerprinting, velocity checks for high-risk transactions.
+3. **Escrow Service**: For high-value items (>$500), hold funds in escrow until both parties confirm satisfaction.
+4. **Auction/Bidding System**: Allow sellers to list items as auctions with timed bidding.
 
 ### Low Priority
-6. **Price Suggestion AI**: ML-based price recommendations based on similar sold listings, market trends, and seasonality.
-7. **Abandoned Cart Recovery**: Email/SMS reminders for users who added items to cart but didn't complete purchase.
-8. **Referral Program**: Track referrals with unique codes, reward referrers with platform credits.
-9. **Seller Shipping Insurance**: Optional shipping insurance for high-value items.
-10. **Size Recommendation Engine**: AI-powered size matching based on brand, item measurements, and user history.
-11. **Automated Return Labels**: Generate pre-paid return labels automatically when return is accepted.
+5. **Price Suggestion AI**: ML-based price recommendations based on similar sold listings, market trends, and seasonality.
+6. **Abandoned Cart Recovery**: Email/SMS reminders for users who added items to cart but didn't complete purchase.
+7. **Referral Program**: Track referrals with unique codes, reward referrers with platform credits.
+8. **Seller Shipping Insurance**: Optional shipping insurance for high-value items.
+9. **Size Recommendation Engine**: AI-powered size matching based on brand, item measurements, and user history.
+10. **Automated Return Labels**: Generate pre-paid return labels automatically when return is accepted.
 
----

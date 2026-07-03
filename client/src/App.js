@@ -28,7 +28,10 @@ const Messages = lazy(() => import('./pages/Messages'));
 const Reviews = lazy(() => import('./pages/Reviews'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const SellerDashboard = lazy(() => import('./pages/SellerDashboard'));
+const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'));
+const SellerAnalytics = lazy(() => import('./pages/SellerAnalytics'));
 const CartPage = lazy(() => import('./pages/Cart'));
+const BulkListingManager = lazy(() => import('./pages/BulkListingManager'));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
 const AdminPage = lazy(() => import('./pages/Admin'));
 const CollectionsPage = lazy(() => import('./pages/Collections'));
@@ -88,6 +91,9 @@ function App() {
                 <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
                 <Route path="/cart" element={<ProtectedRoute><CartPage /></ProtectedRoute>} />
                 <Route path="/seller-dashboard" element={<ProtectedRoute><SellerDashboard /></ProtectedRoute>} />
+                <Route path="/seller/onboarding" element={<ProtectedRoute><SellerOnboarding /></ProtectedRoute>} />
+                <Route path="/seller/analytics" element={<ProtectedRoute><SellerAnalytics /></ProtectedRoute>} />
+                <Route path="/seller/listings/bulk" element={<ProtectedRoute><BulkListingManager /></ProtectedRoute>} />
                 <Route path="/saved-searches" element={<ProtectedRoute><SavedSearchesPage /></ProtectedRoute>} />
                 <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
 

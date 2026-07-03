@@ -129,6 +129,8 @@ app.use('/api', (req, res, next) => {
 
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
+// Bulk listing management routes MUST be mounted before main listings route to avoid ID conflict
+app.use('/api/listings', require('./routes/bulkListings'));
 app.use('/api/listings', require('./routes/listings'));
 // Analytics routes MUST be mounted before /api/users/:id to avoid conflict
 app.use('/api/users/me', require('./routes/analytics'));
