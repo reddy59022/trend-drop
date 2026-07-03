@@ -2,7 +2,6 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** July 3, 2026 — v31.0 Seller Shipping Insurance (769/769 tests passing)
 
 ## Critical Bug Fixes (v22.0)
 
@@ -204,8 +203,28 @@ Please pass a http.Server instance.
 - Premium: Up to $2000 coverage (1.5% premium)
 - Minimum premium: $2
 
-## Total Test Count: 769 tests (target: all passing)
-- 45 test suites
+## 44. Payment Currency Validation ✓ 8 tests (v34.0)
+
+### Currency Tests:
+- **v34.1**: Payment breakdown uses correct currency from listing
+- **v34.2**: Multi-currency listing creates transaction with correct currency (EUR)
+- **v34.3**: USD transactions use proper formatting
+- **v34.4**: JPY (zero-decimal) currency handled correctly
+- **v34.5**: Payment breakdown returns buyer amounts
+- **v34.6**: Free shipping items show zero shipping cost
+- **v34.7**: All cart items must use same currency for checkout
+- **v34.8**: Multi-currency cart would require separate checkouts
+
+### Currency Features:
+- Supported currencies: 50+ currencies (USD, EUR, JPY, GBP, CAD, AUD, etc.)
+- Multi-currency transactions via `/api/transactions/guest` endpoint
+- Payment breakdown calculates shipping, buyer protection (5%), and taxes
+- Zero-decimal currencies (JPY) handled correctly
+
+---
+
+## Total Test Count: 777 tests (all passing)
+- 46 test suites
 
 ---
 
@@ -234,7 +253,7 @@ Please pass a http.Server instance.
 
 ## All Features Implemented ✓
 
-All 45 test suites have been implemented and pass (769/769 tests):
+All 46 test suites have been implemented and pass (777/777 tests):
 - v23.0 Bulk Listing Management (12 tests)
 - v24.0 Social Login Expansion (6 tests)
 - v25.0 Advanced Fraud Detection (6 tests)
@@ -244,3 +263,4 @@ All 45 test suites have been implemented and pass (769/769 tests):
 - v29.0 Abandoned Cart Recovery (7 tests)
 - v30.0 Referral Program (8 tests)
 - v31.0 Seller Shipping Insurance (9 tests)
+- v34.0 Payment Currency Validation (8 tests)

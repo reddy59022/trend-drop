@@ -2,13 +2,17 @@ import React, { useState } from 'react';
 import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { FaSpinner, FaCheckCircle, FaCreditCard, FaLock } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import { formatPrice } from '../utils/helpers';
 
-const StripeCheckoutForm = ({ amount, currency, onSuccess, onError, buttonText, items, shippingInfo }) => {
+const StripeCheckoutForm = ({ amount, currency, totalAmount, onSuccess, onError, buttonText, items, shippingInfo }) => {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
   const [cardError, setCardError] = useState(null);
   const [success, setSuccess] = useState(false);
+
+  // Support both totalAmount (formatted string) and amount/currency (number) props
+  const displayAmount = totalAmount || formatPrice(amount, currency || 'USD');
 
   const CARD_ELEMENT_OPTIONS = {
     style: {
@@ -81,7 +85,7 @@ const StripeCheckoutForm = ({ amount, currency, onSuccess, onError, buttonText, 
         </div>
         <h3 style={{ marginBottom: 8 }}>Payment Successful!</h3>
         <p style={{ color: 'var(--td-text-secondary)', fontSize: 14 }}>
-          Your payment of ${amount} has been processed.
+          {displayAmount} has been processed.
         </p>
       </div>
     );
@@ -129,7 +133,7 @@ const StripeCheckoutForm = ({ amount, currency, onSuccess, onError, buttonText, 
         {processing ? (
           <><FaSpinner className="spinner-sm" /> Processing...</>
         ) : (
-          buttonText || `Pay $${amount}`
+          buttonText || `Pay ${displayAmount}`
         )}
       </button>
 
