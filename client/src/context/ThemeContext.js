@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { getCurrencyByCountry } from '../utils/helpers';
 
 const ThemeContext = createContext(null);
 
@@ -14,8 +15,37 @@ export const ThemeProvider = ({ children }) => {
   });
 
   const [currency, setCurrency] = useState(() => {
-    return localStorage.getItem('currency') || 'USD';
+    const saved = localStorage.getItem('currency');
+    if (saved) return saved;
+    // Default to USD, will be updated by useCurrencyDetection effect
+    return 'USD';
   });
+
+  // Auto-detect currency based on user location
+  useEffect(() => {
+    const detectCurrency = async () => {
+      try {
+        // Try to get user's location-based currency
+        const res = await fetch('https://ipapi.co/json/').catch(() => null);
+        if (res) {
+          const data = await res.json().catch(() => null);
+          if (data && data.country) {
+            const userCurrency = getCurrencyByCountry(data.country);
+            if (userCurrency && userCurrency !== currency) {
+              setCurrency(userCurrency);
+            }
+          }
+        }
+      } catch (e) {
+        // Keep USD as default
+      }
+    };
+    
+    // Only auto-detect if no saved preference
+    if (!localStorage.getItem('currency')) {
+      detectCurrency();
+    }
+  }, []);
 
   const [dir, setDir] = useState(() => {
     // RTL languages

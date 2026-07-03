@@ -122,19 +122,32 @@ const convertPrice = (usdAmount, targetCurrency) => {
 };
 
 // Format price with currency symbol using Intl.NumberFormat
-const formatPrice = (amount, currencyCode = 'USD') => {
+// If fromCurrency is provided, converts from that currency to target currency
+const formatPrice = (amount, currencyCode = 'USD', fromCurrency = null) => {
   const curr = currencies[currencyCode];
   if (!curr) return '$' + Number(amount).toFixed(2);
+  
+  // Convert from another currency if provided
+  let finalAmount = amount;
+  if (fromCurrency && fromCurrency !== currencyCode) {
+    const fromCurr = currencies[fromCurrency];
+    if (fromCurr) {
+      // Convert: fromCurrency -> USD -> targetCurrency
+      const usdAmount = amount / fromCurr.rate;
+      finalAmount = usdAmount * curr.rate;
+    }
+  }
+  
   try {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currencyCode,
       minimumFractionDigits: curr.decimals,
       maximumFractionDigits: curr.decimals,
-    }).format(amount);
+    }).format(finalAmount);
   } catch (e) {
     const dec = curr.decimals || 2;
-    return curr.symbol + Number(amount).toFixed(dec);
+    return curr.symbol + Number(finalAmount).toFixed(dec);
   }
 };
 

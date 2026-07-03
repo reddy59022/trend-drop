@@ -239,9 +239,30 @@ Please pass a http.Server instance.
 - Weight and weight unit configuration (kg, lb, oz)
 - Draft/active status management
 
+## 46. Currency Conversion System ✓ 10 tests (v36.0)
+
+### Currency Conversion Tests:
+- **v36.1**: Currency rates defined for major currencies
+- **v36.2**: Zero-decimal currencies (JPY, KRW) handled correctly
+- **v36.3**: Country-currency mapping works
+- **v36.4**: Price conversion works correctly
+- **v36.5**: Price formatting with correct symbols
+- **v36.6**: Currency helper functions exported for frontend use
+- **v36.7**: Cross-currency conversion works (EUR to USD)
+- **v36.8**: Zero-decimal JPY and KRW formatting
+
+### Currency Features:
+- 50+ currencies supported with exchange rates
+- Automatic currency detection based on user country via ipapi.co API
+- `convertPrice()` for USD to target currency conversion
+- `formatPrice()` with proper symbol and decimal handling, supports currency conversion
+- `getCurrencyByCountry()` for location-based currency selection
+- Frontend ListingCard.js displays prices in user's selected currency with auto-conversion
+- Currency persists in localStorage and auto-detects on first visit
+
 ---
 
-## Total Test Count: 783 tests (all passing)
+## Total Test Count: 793 tests (all passing)
 
 ---
 
@@ -270,7 +291,7 @@ Please pass a http.Server instance.
 
 ## All Features Implemented ✓
 
-All 47 test suites have been implemented and pass (783/783 tests):
+All 48 test suites have been implemented and pass (789/789 tests):
 - v23.0 Bulk Listing Management (12 tests)
 - v24.0 Social Login Expansion (6 tests)
 - v25.0 Advanced Fraud Detection (6 tests)
@@ -282,3 +303,4 @@ All 47 test suites have been implemented and pass (783/783 tests):
 - v31.0 Seller Shipping Insurance (9 tests)
 - v34.0 Payment Currency Validation (8 tests)
 - v35.0 Edit Listing Full Field Update (6 tests)
+- v36.0 Currency Conversion System (6 tests)

@@ -3,9 +3,50 @@ import moment from 'moment';
 // Default avatar
 export const defaultAvatar = 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#e0e0e0"/><circle cx="50" cy="38" r="16" fill="#bdbdbd"/><ellipse cx="50" cy="75" rx="28" ry="22" fill="#bdbdbd"/></svg>`);
 
-// Currency formatting
-export const formatPrice = (amount, currencyCode = 'USD') => {
-  if (amount == null) return '$0.00';
+// Currency data with rates (mirrors server config/currencies.js)
+const currencies = {
+  USD: { symbol: '$', name: 'US Dollar', country: 'US', rate: 1, decimals: 2 },
+  CAD: { symbol: 'C$', name: 'Canadian Dollar', country: 'CA', rate: 1.36, decimals: 2 },
+  EUR: { symbol: '€', name: 'Euro', country: 'EU', rate: 0.92, decimals: 2 },
+  GBP: { symbol: '£', name: 'British Pound', country: 'GB', rate: 0.79, decimals: 2 },
+  AUD: { symbol: 'A$', name: 'Australian Dollar', country: 'AU', rate: 1.53, decimals: 2 },
+  JPY: { symbol: '¥', name: 'Japanese Yen', country: 'JP', rate: 149.5, decimals: 0 },
+  INR: { symbol: '₹', name: 'Indian Rupee', country: 'IN', rate: 83.12, decimals: 2 },
+  MXN: { symbol: 'MX$', name: 'Mexican Peso', country: 'MX', rate: 17.15, decimals: 2 },
+  BRL: { symbol: 'R$', name: 'Brazilian Real', country: 'BR', rate: 4.97, decimals: 2 },
+  KRW: { symbol: '₩', name: 'South Korean Won', country: 'KR', rate: 1328, decimals: 0 },
+  CNY: { symbol: '¥', name: 'Chinese Yuan', country: 'CN', rate: 7.24, decimals: 2 },
+  SGD: { symbol: 'S$', name: 'Singapore Dollar', country: 'SG', rate: 1.34, decimals: 2 },
+  HKD: { symbol: 'HK$', name: 'Hong Kong Dollar', country: 'HK', rate: 7.83, decimals: 2 },
+  THB: { symbol: '฿', name: 'Thai Baht', country: 'TH', rate: 35.2, decimals: 2 },
+  ZAR: { symbol: 'R', name: 'South African Rand', country: 'ZA', rate: 18.92, decimals: 2 },
+  AED: { symbol: 'AED', name: 'UAE Dirham', country: 'AE', rate: 3.67, decimals: 2 },
+  SAR: { symbol: 'SAR', name: 'Saudi Riyal', country: 'SA', rate: 3.75, decimals: 2 },
+  TRY: { symbol: 'TL', name: 'Turkish Lira', country: 'TR', rate: 28.9, decimals: 2 },
+  ILS: { symbol: 'ILS', name: 'Israeli Shekel', country: 'IL', rate: 3.72, decimals: 2 },
+};
+
+// Currency formatting - formats amount in the specified currency
+// If fromCurrency is provided, converts from that currency to target currency
+export const formatPrice = (amount, currencyCode = 'USD', fromCurrency = null) => {
+  if (amount == null) {
+    const curr = currencies[currencyCode] || currencies.USD;
+    return curr.symbol + '0.' + '0'.repeat(curr.decimals || 2);
+  }
+  
+  // If we need to convert from another currency
+  let finalAmount = amount;
+  if (fromCurrency && fromCurrency !== currencyCode) {
+    // Convert from fromCurrency to currencyCode
+    const fromCurr = currencies[fromCurrency];
+    const toCurr = currencies[currencyCode];
+    if (fromCurr && toCurr) {
+      // First convert to USD, then to target
+      const usdAmount = amount / fromCurr.rate;
+      finalAmount = usdAmount * toCurr.rate;
+    }
+  }
+  
   try {
     const curr = currencies[currencyCode] || currencies.USD;
     const decimals = curr.decimals != null ? curr.decimals : 2;
@@ -14,29 +55,55 @@ export const formatPrice = (amount, currencyCode = 'USD') => {
       currency: currencyCode,
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
-    }).format(amount);
+    }).format(finalAmount);
   } catch (e) {
-    return `$${Number(amount).toFixed(2)}`;
+    const curr = currencies[currencyCode] || currencies.USD;
+    const decimals = curr.decimals || 2;
+    return curr.symbol + Number(finalAmount).toFixed(decimals);
   }
 };
 
-// Minimal currency data (full data is on backend)
-const currencies = {
-  USD: { symbol: '$', decimals: 2 }, EUR: { symbol: '€', decimals: 2 }, GBP: { symbol: '£', decimals: 2 },
-  CAD: { symbol: 'C$', decimals: 2 }, AUD: { symbol: 'A$', decimals: 2 }, JPY: { symbol: '¥', decimals: 0 },
-  INR: { symbol: '₹', decimals: 2 }, MXN: { symbol: 'MX$', decimals: 2 }, BRL: { symbol: 'R$', decimals: 2 },
-  KRW: { symbol: '₩', decimals: 0 }, CNY: { symbol: '¥', decimals: 2 }, CHF: { symbol: 'CHF', decimals: 2 },
-  SEK: { symbol: 'kr', decimals: 2 }, NOK: { symbol: 'kr', decimals: 2 }, DKK: { symbol: 'kr', decimals: 2 },
-  NZD: { symbol: 'NZ$', decimals: 2 }, SGD: { symbol: 'S$', decimals: 2 }, HKD: { symbol: 'HK$', decimals: 2 },
-  THB: { symbol: '฿', decimals: 2 }, ZAR: { symbol: 'R', decimals: 2 }, AED: { symbol: 'AED', decimals: 2 },
-  SAR: { symbol: 'SAR', decimals: 2 }, PLN: { symbol: 'zl', decimals: 2 }, TRY: { symbol: 'TL', decimals: 2 },
-  RUB: { symbol: 'RUB', decimals: 2 }, NGN: { symbol: 'NGN', decimals: 2 }, EGP: { symbol: 'EGP', decimals: 2 },
-  KES: { symbol: 'KES', decimals: 2 }, PHP: { symbol: 'PHP', decimals: 2 }, IDR: { symbol: 'Rp', decimals: 0 },
-  MYR: { symbol: 'RM', decimals: 2 }, VND: { symbol: 'VND', decimals: 0 }, TWD: { symbol: 'NT$', decimals: 2 },
-  PKR: { symbol: 'PKR', decimals: 2 }, BDT: { symbol: 'BDT', decimals: 2 }, COP: { symbol: 'COL$', decimals: 0 },
-  ARS: { symbol: 'AR$', decimals: 2 }, CLP: { symbol: 'CL$', decimals: 0 }, PEN: { symbol: 'PEN', decimals: 2 },
-  UAH: { symbol: 'hrn', decimals: 2 }, CZK: { symbol: 'Kc', decimals: 2 }, HUF: { symbol: 'Ft', decimals: 0 },
-  RON: { symbol: 'lei', decimals: 2 }, ILS: { symbol: 'ILS', decimals: 2 },
+// Convert USD amount to target currency
+export const convertFromUSDTo = (usdAmount, targetCurrency) => {
+  const curr = currencies[targetCurrency];
+  if (!curr) return usdAmount;
+  const converted = usdAmount / curr.rate;
+  return Math.round(converted * 100) / 100;
+};
+
+// Convert any amount to USD (base currency)
+export const convertToUSD = (amount, fromCurrency) => {
+  const curr = currencies[fromCurrency];
+  if (!curr) return amount;
+  const converted = amount * curr.rate;
+  return Math.round(converted * 100) / 100;
+};
+
+// Convert any amount from one currency to another
+export const convertBetweenCurrencies = (amount, fromCurrency, toCurrency) => {
+  if (!fromCurrency || !toCurrency || fromCurrency === toCurrency) return amount;
+  const fromCurr = currencies[fromCurrency];
+  const toCurr = currencies[toCurrency];
+  if (!fromCurr || !toCurr) return amount;
+  const usdAmount = amount / fromCurr.rate;
+  return Math.round(usdAmount * toCurr.rate * 100) / 100;
+};
+
+// Get currency by country code
+export const getCurrencyByCountry = (countryCode) => {
+  const countryMap = {
+    US: 'USD', CA: 'CAD', MX: 'MXN', GB: 'GBP', DE: 'EUR', FR: 'EUR', IT: 'EUR',
+    ES: 'EUR', NL: 'EUR', AU: 'AUD', JP: 'JPY', IN: 'INR', SG: 'SGD', BR: 'BRL',
+    AE: 'AED', SA: 'SAR', ZA: 'ZAR', NG: 'NG', EG: 'EGP', KE: 'KES', TR: 'TRY',
+  };
+  return countryMap[countryCode] || 'USD';
+};
+
+// Convert price using exchange rates (same as server)
+export const convertPrice = (usdAmount, targetCurrency) => {
+  const curr = currencies[targetCurrency];
+  if (!curr) return usdAmount;
+  return Math.round(usdAmount * curr.rate * 100) / 100;
 };
 
 // Time helpers

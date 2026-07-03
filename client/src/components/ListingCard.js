@@ -4,13 +4,20 @@ import { FaHeart, FaShoppingBag, FaCheckCircle, FaBolt, FaPlay } from 'react-ico
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useTheme } from '../context/ThemeContext';
 import { toast } from 'react-toastify';
 import { parseVideoUrl } from '../utils/videoEmbed';
-import { defaultAvatar, getConditionColor } from '../utils/helpers';
+import { defaultAvatar, getConditionColor, formatPrice } from '../utils/helpers';
 
 const ListingCard = ({ listing }) => {
   const { user } = useAuth();
   const { addToCart } = useCart();
+  const { currency } = useTheme();
+  
+  // User's preferred currency (from context) and item's original currency
+  const userCurrency = currency || 'USD';
+  const listingCurrency = listing.currency || 'USD';
+  
   const [liked, setLiked] = useState(
     listing.likes?.includes(user?.id || user?._id) || false
   );
@@ -182,10 +189,10 @@ const ListingCard = ({ listing }) => {
 
         <div className="listing-card-price">
           <span className="current-price">
-            ${listing.price.toFixed(2)}
+            {formatPrice(listing.price, userCurrency, listingCurrency)}
           </span>
           {listing.originalPrice && (
-            <span className="original-price">${listing.originalPrice.toFixed(2)}</span>
+            <span className="original-price">{formatPrice(listing.originalPrice, userCurrency, listingCurrency)}</span>
           )}
         </div>
 
