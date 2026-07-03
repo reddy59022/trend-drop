@@ -160,6 +160,14 @@ app.use('/api/size-guides', require('./routes/sizeGuides'));
 app.use('/api/promos', require('./routes/promos'));
 // Auction/Bidding System routes (v27.0)
 app.use('/api/auctions', require('./routes/auctions'));
+// Price Suggestion AI routes (v28.0)
+app.use('/api/price-suggestions', require('./routes/priceSuggestions'));
+// Cart / Abandoned Cart Recovery routes (v29.0)
+app.use('/api/cart', require('./routes/cart'));
+// Referral Program routes (v30.0)
+app.use('/api/referrals', require('./routes/referrals'));
+// Shipping Insurance routes (v31.0)
+app.use('/api/shipping-insurance', require('./routes/shippingInsurance'));
 // Fraud detection routes
 app.use('/api/fraud', require('./routes/fraudDetection'));
 // Escrow service routes (v26.0)
