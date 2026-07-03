@@ -1,7 +1,7 @@
 import { defaultAvatar, formatPrice, getConditionColor } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag } from 'react-icons/fa';
+import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit } from 'react-icons/fa';
 import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -544,6 +544,11 @@ const ListingDetail = () => {
               <button className={`btn btn-sm ${isFollowing ? 'btn-outline' : 'btn-primary'}`} onClick={handleFollow}>
                 {isFollowing ? 'Following' : 'Follow'}
               </button>
+            )}
+            {isOwner && (
+              <Link to={`/listing/${id}/edit`} className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }}>
+                <FaEdit /> Edit Listing
+              </Link>
             )}
           </div>
 

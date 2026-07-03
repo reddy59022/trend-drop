@@ -32,6 +32,7 @@ const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'));
 const SellerAnalytics = lazy(() => import('./pages/SellerAnalytics'));
 const CartPage = lazy(() => import('./pages/Cart'));
 const BulkListingManager = lazy(() => import('./pages/BulkListingManager'));
+const EditListing = lazy(() => import('./pages/EditListing'));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmail'));
 const AdminPage = lazy(() => import('./pages/Admin'));
 const CollectionsPage = lazy(() => import('./pages/Collections'));
@@ -72,6 +73,7 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
                 <Route path="/listing/:id" element={<ListingDetail />} />
+                <Route path="/listing/:id/edit" element={<ProtectedRoute><EditListing /></ProtectedRoute>} />
                 <Route path="/profile/:id" element={<Profile />} />
                 <Route path="/closet/:id" element={<Closet />} />
                 <Route path="/search" element={<Search />} />

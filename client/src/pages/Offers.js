@@ -6,6 +6,7 @@ import moment from 'moment';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FaExchangeAlt, FaArrowUp, FaCheck, FaTimes, FaGavel } from 'react-icons/fa';
+import { io } from 'socket.io-client';
 
 const Offers = () => {
   const { user } = useAuth();
@@ -14,9 +15,30 @@ const Offers = () => {
   const [sentOffers, setSentOffers] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Socket.io for real-time offer notifications
   useEffect(() => {
     if (!user) return;
     fetchOffers();
+
+    // Connect to socket for real-time updates
+    const token = localStorage.getItem('token');
+    if (token) {
+      const socket = io('/', {
+        auth: { token },
+      });
+
+      // Listen for offer updates
+      socket.on('notification:new', (notification) => {
+        if (notification.type === 'offer') {
+          fetchOffers();
+          toast.info(`New offer update: ${notification.message}`);
+        }
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    }
   }, [user]); // eslint-disable-line
 
   const fetchOffers = async () => {
@@ -73,8 +95,8 @@ const Offers = () => {
         <h4>{offer.listing?.title}</h4>
         <p style={{ color: 'var(--td-text-secondary)' }}>{type === 'received' ? `From: ${offer.buyer?.name}` : `To: ${offer.seller?.name}`}</p>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8 }}>
-          <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Offered</span><br /><strong style={{ fontSize: 16, color: 'var(--td-primary)' }}>{formatPrice(offer.amount)}</strong></div>
-          {offer.counterAmount && <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Counter</span><br /><strong style={{ fontSize: 16 }}>{formatPrice(offer.counterAmount)}</strong></div>}
+          <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Offered</span><br /><strong style={{ fontSize: 16, color: 'var(--td-primary)' }}>{formatPrice(offer.amount, offer.currency || 'USD')}</strong></div>
+          {offer.counterAmount && <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Counter</span><br /><strong style={{ fontSize: 16 }}>{formatPrice(offer.counterAmount, offer.currency || 'USD')}</strong></div>}
         </div>
         <span className={`offer-status ${getStatusColor(offer.status)}`} style={{ marginTop: 8 }}>{getStatusLabel(offer.status)}</span>
         <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>

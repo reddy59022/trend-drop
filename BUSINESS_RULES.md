@@ -209,9 +209,26 @@ Please pass a http.Server instance.
 
 ---
 
+## Additional UI Fixes (v32.0)
+
+### Listing Edit Functionality
+- **Issue**: Sellers could not edit their own listings after creation
+- **Fix**: Created `EditListing.js` page with image management, form editing
+- **Route**: `/listing/:id/edit` (protected route)
+- **Features**: Photo upload/removal, title/price/description/category editing, status changes
+
+### Offer Visibility Improvements (v32.0)
+- **Issue**: Buyer/seller couldn't see offers in real-time after sending/accepting
+- **Fix**: Added Socket.io real-time notifications to Offers page
+- **Implementation**: Client connects to WebSocket server and listens for `notification:new` events
+- **Auto-refresh**: Offers list automatically updates when new notifications arrive
+- **Note**: Offers auto-refresh after actions (accept/decline/counter)
+
+---
+
 ## All Features Implemented ✓
 
-All planned features have been implemented:
+All 45 test suites have been implemented and pass (769/769 tests):
 - v23.0 Bulk Listing Management (12 tests)
 - v24.0 Social Login Expansion (6 tests)
 - v25.0 Advanced Fraud Detection (6 tests)
