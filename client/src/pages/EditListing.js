@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle, FaArrowLeft, FaPlay, FaYoutube, FaInstagram, FaLink, FaRocket } from 'react-icons/fa';
 import imageCompression from 'browser-image-compression';
 import { countries, formatPrice } from '../utils/helpers';
+import { useTheme } from '../context/ThemeContext';
 import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
 
 // Boost tier configuration (same as Sell.js)
@@ -27,6 +28,7 @@ const EditListing = () => {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { currency } = useTheme();
   const fileInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -404,9 +406,9 @@ const EditListing = () => {
                 </label>
               </div>
               <div className="form-group full-width">
-                <label className="form-label">Shipping Fee ({user?.currency || 'USD'})</label>
+                <label className="form-label">Shipping Fee ({currency || 'USD'})</label>
                 <input type="number" name="shippingCost" value={formData.shippingCost} onChange={handleChange} min="0" step="0.01" className="form-input" />
-                <p className="form-hint">Default for {formData.shipsFrom}: {formatPrice(defaultShippingFees[formData.shipsFrom] || 3.99, user?.currency)}</p>
+                <p className="form-hint">Default for {formData.shipsFrom}: {formatPrice(defaultShippingFees[formData.shipsFrom] || 3.99, currency || 'USD')}</p>
               </div>
             </div>
           </div>
@@ -416,9 +418,9 @@ const EditListing = () => {
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Pricing</h2>
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">Price * ({user?.currency || 'USD'})</label>
+                <label className="form-label">Price * ({currency || 'USD'})</label>
                 <input type="number" name="price" value={formData.price} onChange={handleChange} min="5" step="0.01" required className="form-input" />
-                {formData.price > 0 && <p className="form-hint">You'll earn ~{formatPrice(sellerEarnings, user?.currency)} after fees</p>}
+                {formData.price > 0 && <p className="form-hint">You'll earn ~{formatPrice(sellerEarnings, currency || 'USD')} after fees</p>}
               </div>
               <div className="form-group">
                 <label className="form-label">Original Price</label>
@@ -493,7 +495,7 @@ const EditListing = () => {
                   <div style={{ padding: 'var(--td-space-md)', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)', border: '1px solid var(--td-border)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: 'var(--td-success)' }}>
                       <span>You'll Earn:</span>
-                      <span>{formatPrice(sellerEarnings, user?.currency)}</span>
+                      <span>{formatPrice(sellerEarnings, currency || 'USD')}</span>
                     </div>
                   </div>
                 )}

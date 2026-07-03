@@ -8,6 +8,7 @@ import { toast } from 'react-toastify';
 import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle, FaPlay, FaYoutube, FaInstagram, FaLink, FaRocket, FaStar, FaCrown } from 'react-icons/fa';
 import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
 import { countries, formatPrice } from '../utils/helpers';
+import { useTheme } from '../context/ThemeContext';
 
 const steps = [
   { id: 'photos', label: 'Photos', icon: FaCamera },
@@ -48,6 +49,7 @@ const BOOST_TIERS = {
 const Sell = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { currency } = useTheme();
   const fileInputRef = useRef(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [images, setImages] = useState([]);
@@ -362,7 +364,7 @@ const Sell = () => {
               <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="internationalShipping" checked={formData.internationalShipping} onChange={e => setFormData(prev => ({ ...prev, internationalShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> International</label></div>
                <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="freeShipping" checked={formData.freeShipping} onChange={e => setFormData(prev => ({ ...prev, freeShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> Free Shipping</label></div>
                <div className="form-group full-width">
-                 <label className="form-label">Shipping Fee ({user?.currency || 'USD'})</label>
+                 <label className="form-label">Shipping Fee ({currency || 'USD'})</label>
                  <input
                    type="number"
                    name="shippingCost"
@@ -374,7 +376,7 @@ const Sell = () => {
                    placeholder={defaultShippingFees[formData.shipsFrom] || '3.99'}
                  />
                  <p className="form-hint" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                   <FaTruck size={12} /> Default for {formData.shipsFrom}: {formatPrice(defaultShippingFees[formData.shipsFrom] || 3.99, user?.currency)} ({defaultShippingLabels[formData.shipsFrom] || 'International'})
+                   <FaTruck size={12} /> Default for {formData.shipsFrom}: {formatPrice(defaultShippingFees[formData.shipsFrom] || 3.99, currency || 'USD')} ({defaultShippingLabels[formData.shipsFrom] || 'International'})
                  </p>
                  <p className="form-hint" style={{ marginTop: 4, fontSize: 11, color: 'var(--td-error)' }}>
                    ⚠️ If actual shipping cost exceeds this amount, the difference will be deducted from your payout.
@@ -393,7 +395,7 @@ const Sell = () => {
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Pricing</h2>
             <div className="form-grid">
-              <div className="form-group"><label className="form-label">Listing Price * ({user?.currency || 'USD'})</label><input type="number" name="price" value={formData.price} onChange={handleChange} placeholder="0.00" min="0" step="0.01" required className="form-input" />{formData.price > 0 && <p className="form-hint">You'll earn ~{formatPrice(formData.price * 0.9, user?.currency)} after 10% fee</p>}</div>
+              <div className="form-group"><label className="form-label">Listing Price * ({currency || 'USD'})</label><input type="number" name="price" value={formData.price} onChange={handleChange} placeholder="0.00" min="0" step="0.01" required className="form-input" />{formData.price > 0 && <p className="form-hint">You'll earn ~{formatPrice(formData.price * 0.9, currency || 'USD')} after 10% fee</p>}</div>
               <div className="form-group"><label className="form-label">Original Price</label><input type="number" name="originalPrice" value={formData.originalPrice} onChange={handleChange} placeholder="0.00" min="0" step="0.01" className="form-input" /></div>
             </div>
             <div style={{ display: 'flex', gap: 12, marginTop: 'var(--td-space-lg)' }}>
@@ -515,7 +517,7 @@ const Sell = () => {
                             fontWeight: 600,
                             color: tier.color,
                           }}>
-                            Fee: {formatPrice(fee, user?.currency)}
+                            Fee: {formatPrice(fee, currency || 'USD')}
                           </div>
                         )}
                       </div>
@@ -551,16 +553,16 @@ const Sell = () => {
                     <div style={{ display: 'grid', gap: 8, fontSize: 13 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--td-text-tertiary)' }}>Listing Price:</span>
-                        <span style={{ fontWeight: 600 }}>{formatPrice(listingPrice, user?.currency)}</span>
+                        <span style={{ fontWeight: 600 }}>{formatPrice(listingPrice, currency || 'USD')}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--td-text-tertiary)' }}>Platform Fee (8%):</span>
-                        <span style={{ fontWeight: 600, color: 'var(--td-error)' }}>-{formatPrice(platformFee, user?.currency)}</span>
+                        <span style={{ fontWeight: 600, color: 'var(--td-error)' }}>-{formatPrice(platformFee, currency || 'USD')}</span>
                       </div>
                       {enableBoost && (
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span style={{ color: 'var(--td-text-tertiary)' }}>Boost Fee ({BOOST_TIERS[selectedBoostTier]?.feePercent}%):</span>
-                          <span style={{ fontWeight: 600, color: 'var(--td-error)' }}>-{formatPrice(boostFee, user?.currency)}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--td-error)' }}>-{formatPrice(boostFee, currency || 'USD')}</span>
                         </div>
                       )}
                       <div style={{ 
@@ -571,7 +573,7 @@ const Sell = () => {
                         fontWeight: 700,
                       }}>
                         <span>You'll Earn:</span>
-                        <span style={{ color: 'var(--td-success)', fontSize: 16 }}>{formatPrice(sellerEarnings, user?.currency)}</span>
+                        <span style={{ color: 'var(--td-success)', fontSize: 16 }}>{formatPrice(sellerEarnings, currency || 'USD')}</span>
                       </div>
                     </div>
                   </div>

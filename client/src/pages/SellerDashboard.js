@@ -4,12 +4,14 @@ import { useNavigate, Link } from 'react-router-dom';
 import { getPayoutDashboard, getCommissionInfo, getRatingsBySeller, getBundleRules, createBundleRule, updateBundleRule, deleteBundleRule, getPromos, createPromo, updatePromo, deletePromo, sendOfferToLikers, getBulkOffers } from '../services/api';
 import StarRating from '../components/StarRating';
 import { formatPrice } from '../utils/helpers';
+import { useTheme } from '../context/ThemeContext';
 import { FaStore, FaDollarSign, FaChartLine, FaHistory, FaRocket, FaQuestionCircle, FaTags, FaBoxes, FaBullhorn, FaTrash, FaPlus, FaEdit, FaTimes, FaCheckCircle, FaSpinner } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 
 const SellerDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { currency } = useTheme();
   const [dashboard, setDashboard] = useState(null);
   const [commissionInfo, setCommissionInfo] = useState(null);
   const [reviews, setReviews] = useState(null);
@@ -171,10 +173,10 @@ const SellerDashboard = () => {
   if (!dashboard) return <div className="page-container"><div className="empty-state"><h2>Failed to load</h2></div></div>;
 
   const stats = [
-    { label: 'Total Sales', value: formatPrice(dashboard.totalSales || 0, user?.currency), color: 'var(--td-primary)', icon: <FaDollarSign /> },
-    { label: 'Your Earnings', value: formatPrice(dashboard.totalEarnings || 0, user?.currency), color: 'var(--td-success)', icon: <FaChartLine /> },
-    { label: 'Commission', value: formatPrice(dashboard.totalCommission || 0, user?.currency), color: 'var(--td-error)', icon: <FaDollarSign /> },
-    { label: 'Pending Payout', value: formatPrice(dashboard.pendingAmount || 0, user?.currency), color: 'var(--td-warning)', icon: <FaHistory /> },
+    { label: 'Total Sales', value: formatPrice(dashboard.totalSales || 0, currency || 'USD'), color: 'var(--td-primary)', icon: <FaDollarSign /> },
+    { label: 'Your Earnings', value: formatPrice(dashboard.totalEarnings || 0, currency || 'USD'), color: 'var(--td-success)', icon: <FaChartLine /> },
+    { label: 'Commission', value: formatPrice(dashboard.totalCommission || 0, currency || 'USD'), color: 'var(--td-error)', icon: <FaDollarSign /> },
+    { label: 'Pending Payout', value: formatPrice(dashboard.pendingAmount || 0, currency || 'USD'), color: 'var(--td-warning)', icon: <FaHistory /> },
   ];
 
   const tabs = [
@@ -264,10 +266,10 @@ const SellerDashboard = () => {
                 <div key={i} style={{ padding: 'var(--td-space-md) var(--td-space-lg)', borderBottom: i < dashboard.payoutHistory.length - 1 ? '1px solid var(--td-border-light)' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{p.listing?.title || 'Sale'}</div>
-                    <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Sale: {formatPrice(p.salePrice)} • Fee: {formatPrice(p.commissionAmount)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Sale: {formatPrice(p.salePrice, p.currency || currency)} • Fee: {formatPrice(p.commissionAmount, p.currency || currency)}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 700, color: 'var(--td-success)', fontSize: 16 }}>+{formatPrice(p.payoutAmount)}</div>
+                    <div style={{ fontWeight: 700, color: 'var(--td-success)', fontSize: 16 }}>+{formatPrice(p.payoutAmount, p.currency || currency)}</div>
                     <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>{p.paidAt ? new Date(p.paidAt).toLocaleDateString() : ''}</div>
                   </div>
                 </div>

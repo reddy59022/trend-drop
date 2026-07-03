@@ -239,7 +239,7 @@ Please pass a http.Server instance.
 - Weight and weight unit configuration (kg, lb, oz)
 - Draft/active status management
 
-## 46. Currency Conversion System ✓ 10 tests (v36.0)
+## 46. Currency Conversion System ✓ 9 tests (v36.0)
 
 ### Currency Conversion Tests:
 - **v36.1**: Currency rates defined for major currencies
@@ -258,7 +258,9 @@ Please pass a http.Server instance.
 - `formatPrice()` with proper symbol and decimal handling, supports currency conversion
 - `getCurrencyByCountry()` for location-based currency selection
 - Frontend ListingCard.js displays prices in user's selected currency with auto-conversion
-- Currency persists in localStorage and auto-detects on first visit
+- SellerDashboard.js stats and payouts use user's selected currency
+- Sell.js listing creation uses selected currency for all price displays (shipping fee, listing price, platform fee, boost fee, seller earnings)
+- EditListing.js uses selected currency for all price displays
 
 ---
 
@@ -291,7 +293,7 @@ Please pass a http.Server instance.
 
 ## All Features Implemented ✓
 
-All 48 test suites have been implemented and pass (789/789 tests):
+All 48 test suites have been implemented and pass (793/793 tests):
 - v23.0 Bulk Listing Management (12 tests)
 - v24.0 Social Login Expansion (6 tests)
 - v25.0 Advanced Fraud Detection (6 tests)
@@ -303,4 +305,4 @@ All 48 test suites have been implemented and pass (789/789 tests):
 - v31.0 Seller Shipping Insurance (9 tests)
 - v34.0 Payment Currency Validation (8 tests)
 - v35.0 Edit Listing Full Field Update (6 tests)
-- v36.0 Currency Conversion System (6 tests)
+- v36.0 Currency Conversion System (9 tests)
