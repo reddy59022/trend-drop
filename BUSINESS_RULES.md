@@ -224,6 +224,12 @@ Please pass a http.Server instance.
 - **Auto-refresh**: Offers list automatically updates when new notifications arrive
 - **Note**: Offers auto-refresh after actions (accept/decline/counter)
 
+### Offer Expiration Rules (v33.0)
+- **24-hour window**: When an offer is accepted (by either party), it expires after 24 hours
+- **Expiration field**: `acceptedUntil` timestamp tracks when accepted offers expire
+- **UI handling**: Accepted offers show countdown timer, expired offers show "make a new offer" message
+- **State machine**: Terminal states (completed, declined, expired) hide all action buttons
+
 ---
 
 ## All Features Implemented ✓

@@ -440,6 +440,8 @@ router.patch('/:id/accept', auth, async (req, res) => {
     offer.acceptedPrice = offer.amount; // The buyer's original offer amount
     offer.acceptedAt = new Date();
     offer.acceptedBy = 'seller';
+    // 24-hour window for accepted offers to purchase
+    offer.acceptedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await offer.save();
 
     // Notify buyer
@@ -648,6 +650,8 @@ router.patch('/:id/accept-counter', auth, async (req, res) => {
     offer.acceptedPrice = offer.counterAmount; // The seller's counter amount
     offer.acceptedAt = new Date();
     offer.acceptedBy = 'buyer';
+    // 24-hour window for accepted offers to purchase
+    offer.acceptedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await offer.save();
 
     // Notify seller
@@ -694,6 +698,8 @@ router.patch('/:id/seller-accept-buyer-counter', auth, async (req, res) => {
     offer.acceptedPrice = offer.counterAmount; // The buyer's counter amount
     offer.acceptedAt = new Date();
     offer.acceptedBy = 'seller';
+    // 24-hour window for accepted offers to purchase
+    offer.acceptedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await offer.save();
 
     // Notify buyer

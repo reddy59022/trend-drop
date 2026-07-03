@@ -58,6 +58,10 @@ const offerSchema = new mongoose.Schema({
   acceptedAt: {
     type: Date,
   },
+  // 24-hour window for accepted offers to purchase
+  acceptedUntil: {
+    type: Date,
+  },
   // Who accepted the offer (buyer accepted seller's counter, or seller accepted buyer's offer/counter)
   acceptedBy: {
     type: String,

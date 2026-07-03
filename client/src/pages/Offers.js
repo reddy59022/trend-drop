@@ -84,9 +84,20 @@ const Offers = () => {
     return map[status] || 'status-pending';
   };
 
-  const getStatusLabel = (s) => ({ pending: '⏳ Pending', accepted: '✅ Accepted', declined: '❌ Declined', countered: '🔄 Countered', buyer_countered: '🔄 Countered', completed: '✅ Completed', expired: '⏰ Expired' }[s] || s);
+  const getStatusLabel = (s) => ({ pending: '⏳ Pending', accepted: '✅ Accepted', declined: '❌ Declined', countered: '🔄 Countered', buyer_countered: '🔄 You Countered', completed: '✅ Completed', expired: '⏰ Expired' }[s] || s);
 
-  const renderOfferCard = (offer, type) => (
+const isOfferExpired = (offer) => {
+  if (offer.status === 'accepted' && offer.acceptedUntil) {
+    return new Date() > new Date(offer.acceptedUntil);
+  }
+  return false;
+};
+
+const renderOfferCard = (offer, type) => {
+  // If offer is completed/declined/expired, no action buttons
+  const isTerminalState = offer.status === 'completed' || offer.status === 'declined' || offer.status === 'expired' || isOfferExpired(offer);
+  
+  return (
     <div key={offer._id} className="offer-card" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
       <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
         <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
@@ -96,32 +107,51 @@ const Offers = () => {
         <p style={{ color: 'var(--td-text-secondary)' }}>{type === 'received' ? `From: ${offer.buyer?.name}` : `To: ${offer.seller?.name}`}</p>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8 }}>
           <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Offered</span><br /><strong style={{ fontSize: 16, color: 'var(--td-primary)' }}>{formatPrice(offer.amount, offer.currency || 'USD')}</strong></div>
-          {offer.counterAmount && <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Counter</span><br /><strong style={{ fontSize: 16 }}>{formatPrice(offer.counterAmount, offer.currency || 'USD')}</strong></div>}
+          {offer.counterAmount && offer.status !== 'accepted' && (
+            <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Counter</span><br /><strong style={{ fontSize: 16 }}>{formatPrice(offer.counterAmount, offer.currency || 'USD')}</strong></div>
+          )}
+          {offer.status === 'accepted' && offer.acceptedPrice && (
+            <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Accepted Price</span><br /><strong style={{ fontSize: 16, color: 'var(--td-success)' }}>{formatPrice(offer.acceptedPrice, offer.currency || 'USD')}</strong></div>
+          )}
         </div>
         <span className={`offer-status ${getStatusColor(offer.status)}`} style={{ marginTop: 8 }}>{getStatusLabel(offer.status)}</span>
+        {offer.status === 'accepted' && offer.acceptedUntil && (
+          <p style={{ fontSize: 11, color: isOfferExpired(offer) ? 'var(--td-error)' : 'var(--td-text-secondary)', marginTop: 4 }}>
+            {isOfferExpired(offer) ? '⏰ Offer expired - make a new offer' : `⏳ Valid for ${Math.max(0, Math.floor((new Date(offer.acceptedUntil) - new Date()) / (1000 * 60 * 60)))}h`}
+          </p>
+        )}
         <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
       </div>
       {/* Actions */}
       {/* Received offers - seller actions */}
-      {type === 'received' && offer.status === 'pending' && (
+      {type === 'received' && !isTerminalState && offer.status === 'pending' && (
         <div className="offer-actions">
           <button className="btn btn-primary btn-sm" onClick={() => handleAccept(offer._id)}><FaCheck size={12} /> Accept</button>
           <button className="btn btn-outline btn-sm" onClick={() => handleSellerCounter(offer)}><FaExchangeAlt size={12} /> Counter</button>
           <button className="btn btn-sm" onClick={() => handleDecline(offer._id)} style={{ color: 'var(--td-error)' }}><FaTimes size={12} /> Decline</button>
         </div>
       )}
-      {type === 'received' && offer.status === 'buyer_countered' && (
+      {type === 'received' && !isTerminalState && offer.status === 'buyer_countered' && (
         <div className="offer-actions">
           <button className="btn btn-primary btn-sm" onClick={() => handleSellerAcceptBuyerCounter(offer._id)}><FaCheck size={12} /> Accept Counter</button>
           <button className="btn btn-outline btn-sm" onClick={() => handleSellerCounter(offer)}><FaExchangeAlt size={12} /> Counter Again</button>
           <button className="btn btn-sm" onClick={() => handleDecline(offer._id)} style={{ color: 'var(--td-error)' }}><FaTimes size={12} /> Decline</button>
         </div>
       )}
-      {/* Sent offers - buyer actions */}
-      {type === 'sent' && offer.status === 'countered' && (
+      {type === 'received' && offer.status === 'accepted' && (
         <div className="offer-actions">
-          <button className="btn btn-primary btn-sm" onClick={async (e) => { 
-            e.currentTarget.disabled = true;
+          <span className="offer-status status-success" style={{ padding: '4px 12px' }}>✅ Accepted - Waiting for buyer</span>
+        </div>
+      )}
+      {type === 'received' && offer.status === 'countered' && (
+        <div className="offer-actions">
+          <span className="offer-status status-countered" style={{ padding: '4px 12px' }}>Awaiting buyer response...</span>
+        </div>
+      )}
+      {/* Sent offers - buyer actions */}
+      {type === 'sent' && !isTerminalState && offer.status === 'countered' && (
+        <div className="offer-actions">
+          <button className="btn btn-primary btn-sm" onClick={async () => { 
             try { await api.patch(`/offers/${offer._id}/accept-counter`); toast.success('Counter accepted!'); fetchOffers(); } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
           }}>
             <FaCheck size={12} /> Accept
@@ -137,22 +167,27 @@ const Offers = () => {
           </button>
         </div>
       )}
-      {type === 'sent' && offer.status === 'buyer_countered' && (
+      {type === 'sent' && offer.status === 'buyer_countered' && !isTerminalState && (
         <div className="offer-actions">
           <span className="offer-status status-countered" style={{ padding: '4px 12px' }}>Awaiting seller response...</span>
-          {/* Buyer cannot accept their own counter - wait for seller */}
         </div>
       )}
       {/* Accepted offers - show purchase action for buyer */}
-      {type === 'sent' && offer.status === 'accepted' && (
+      {type === 'sent' && offer.status === 'accepted' && !isOfferExpired(offer) && (
         <div className="offer-actions">
           <Link to={`/listing/${offer.listing?._id}`} className="btn btn-primary btn-sm">
             Proceed to Purchase
           </Link>
         </div>
       )}
+      {type === 'sent' && isOfferExpired(offer) && (
+        <div className="offer-actions">
+          <span className="offer-status status-expired" style={{ padding: '4px 12px' }}>⏰ Offer expired - make a new offer</span>
+        </div>
+      )}
     </div>
   );
+};
 
   return (
     <div className="page-container">
