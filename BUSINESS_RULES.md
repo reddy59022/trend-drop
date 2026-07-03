@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the single source of truth and **exact codebase reflection**.
 > Every rule here is verified by E2E tests.
-> **Last Updated:** July 2, 2026 — v26.0 Escrow Service (725/725 tests passing)
+> **Last Updated:** July 2, 2026 — v27.0 Auction/Bidding System (738/738 tests passing)
 
 ## Critical Bug Fixes (v22.0)
 
@@ -220,8 +220,36 @@ Please pass a http.Server instance.
 - Funds released with normal platform fee and 10% rolling reserve
 - Admin-only dispute resolution
 
-## Total Test Count: 725 tests (target: all passing)
-- 40 test suites
+## 39. Auction/Bidding System ✓ 13 tests (v27.0)
+
+### Auction Endpoints:
+- `POST /api/auctions` - Create auction for a listing
+- `GET /api/auctions` - List auctions with optional filtering
+- `GET /api/auctions/:id` - Get single auction details
+- `GET /api/auctions/settings` - Get auction configuration
+- `POST /api/auctions/:id/bids` - Place bid on auction
+- `POST /api/auctions/:id/close` - Close expired auction
+
+### Auction States:
+- **scheduled**: Auction created but not started
+- **active**: Auction accepting bids
+- **closed**: Auction ended, winner determined
+- **cancelled**: Auction cancelled by seller
+
+### Auction Features:
+- **Reserve Price**: Minimum bid to win
+- **Timed Bidding**: Automatic start/end times
+- **Bid History**: Track all bids with timestamps
+- **Winner Selection**: Highest bid meeting reserve wins
+
+### Enterprise Standards:
+- Auth required for creating bids
+- Only seller can create auction for their listing
+- Only seller or admin can close auction
+- Bids must exceed current bid and meet reserve
+
+## Total Test Count: 738 tests (target: all passing)
+- 41 test suites
 - **v23.0 additions:** 
   - Bulk Listing Management (12 tests)
 - **v24.0 additions:**
@@ -230,6 +258,8 @@ Please pass a http.Server instance.
   - Advanced Fraud Detection (6 tests)
 - **v26.0 additions:**
   - Escrow Service (17 tests)
+- **v27.0 additions:**
+  - Auction/Bidding System (13 tests)
 
 ---
 
@@ -286,17 +316,23 @@ Please pass a http.Server instance.
 - **Dispute Resolution**: Admin-mediated dispute handling
 - **17 tests** covering all escrow operations
 
+### v27.0 (July 2, 2026) - Auction/Bidding System
+- **Timed Auctions**: Scheduled start/end times for listings
+- **Reserve Price Support**: Minimum winning bid configuration
+- **Bid Tracking**: Full history of all bids during auction
+- **Auto-Close Logic**: Auction closure with winner determination
+- **13 tests** covering all auction operations
+
 ---
 
-## Next Enhancements (Planned for v27.0+)
+## Next Enhancements (Planned for v28.0+)
 
 ### Medium Priority
-1. **Auction/Bidding System**: Allow sellers to list items as auctions with timed bidding.
+1. **Price Suggestion AI**: ML-based price recommendations based on similar sold listings, market trends, and seasonality.
 
 ### Low Priority
-2. **Price Suggestion AI**: ML-based price recommendations based on similar sold listings, market trends, and seasonality.
-3. **Abandoned Cart Recovery**: Email/SMS reminders for users who added items to cart but didn't complete purchase.
-4. **Referral Program**: Track referrals with unique codes, reward referrers with platform credits.
-5. **Seller Shipping Insurance**: Optional shipping insurance for high-value items.
-6. **Size Recommendation Engine**: AI-powered size matching based on brand, item measurements, and user history.
-7. **Automated Return Labels**: Generate pre-paid return labels automatically when return is accepted.
+2. **Abandoned Cart Recovery**: Email/SMS reminders for users who added items to cart but didn't complete purchase.
+3. **Referral Program**: Track referrals with unique codes, reward referrers with platform credits.
+4. **Seller Shipping Insurance**: Optional shipping insurance for high-value items.
+5. **Size Recommendation Engine**: AI-powered size matching based on brand, item measurements, and user history.
+6. **Automated Return Labels**: Generate pre-paid return labels automatically when return is accepted.

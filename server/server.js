@@ -158,6 +158,8 @@ app.use('/api/collections', require('./routes/collections'));
 app.use('/api/size-guides', require('./routes/sizeGuides'));
 // Promo / coupon code routes
 app.use('/api/promos', require('./routes/promos'));
+// Auction/Bidding System routes (v27.0)
+app.use('/api/auctions', require('./routes/auctions'));
 // Fraud detection routes
 app.use('/api/fraud', require('./routes/fraudDetection'));
 // Escrow service routes (v26.0)
