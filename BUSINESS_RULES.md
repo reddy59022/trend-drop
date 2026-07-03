@@ -221,10 +221,27 @@ Please pass a http.Server instance.
 - Payment breakdown calculates shipping, buyer protection (5%), and taxes
 - Zero-decimal currencies (JPY) handled correctly
 
+## 45. Edit Listing Full Field Update ✓ 6 tests (v35.0)
+
+### Edit Listing Tests:
+- **v35.1**: Update all listing fields (title, description, price, category, brand, size, condition, color, weight, shipping, etc.)
+- **v35.2**: Update to draft status hides listing from public feed
+- **v35.3**: Add boost promotion when editing listing
+- **v35.4**: Remove boost when editing listing
+- **v35.5**: Update video URL
+- **v35.6**: Authorization check prevents non-owner from editing
+
+### Edit Listing Features:
+- Full edit capability matching create listing functionality
+- Video URL support (YouTube, Instagram Reel, Facebook, TikTok)
+- Boost tier selection (Standard 10%, Premium 15%, Elite 20%)
+- Domestic/International shipping toggles
+- Weight and weight unit configuration (kg, lb, oz)
+- Draft/active status management
+
 ---
 
-## Total Test Count: 777 tests (all passing)
-- 46 test suites
+## Total Test Count: 783 tests (all passing)
 
 ---
 
@@ -253,7 +270,7 @@ Please pass a http.Server instance.
 
 ## All Features Implemented ✓
 
-All 46 test suites have been implemented and pass (777/777 tests):
+All 47 test suites have been implemented and pass (783/783 tests):
 - v23.0 Bulk Listing Management (12 tests)
 - v24.0 Social Login Expansion (6 tests)
 - v25.0 Advanced Fraud Detection (6 tests)
@@ -264,3 +281,4 @@ All 46 test suites have been implemented and pass (777/777 tests):
 - v30.0 Referral Program (8 tests)
 - v31.0 Seller Shipping Insurance (9 tests)
 - v34.0 Payment Currency Validation (8 tests)
+- v35.0 Edit Listing Full Field Update (6 tests)
