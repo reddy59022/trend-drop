@@ -180,6 +180,10 @@ const listingSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  // Track when offers were shared to likers
+  offerSharedAt: {
+    type: Date,
+  },
 }, { timestamps: true });
 
 // Performance indexes

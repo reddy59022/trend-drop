@@ -187,6 +187,10 @@ app.use('/api/virtual-try-on', require('./routes/virtualTryOn'));
 app.use('/api/mobile', require('./routes/mobile'));
 // Community comments routes (v43.0)
 app.use('/api/comments', require('./routes/comments'));
+// Advanced Search routes (v44.0)
+app.use('/api/search', require('./routes/search'));
+// Offer Sharing routes (v45.0)
+app.use('/api/offer-sharing', require('./routes/offerSharing'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)

@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { FaFilter, FaTimes, FaSlidersH } from 'react-icons/fa';
-import api from '../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { FaFilter, FaTimes, FaSlidersH, FaChevronDown, FaSave, FaTag } from 'react-icons/fa';
+import api, { getSearchBrands, getSearchColors, getSearchSizes, saveSearchFilter, getSavedSearchFilters, shareOfferToLikers } from '../services/api';
 import ListingCard from '../components/ListingCard';
 import Pagination from '../components/Pagination';
 
 const Search = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState(null);
@@ -23,9 +24,37 @@ const Search = () => {
     sort: searchParams.get('sort') || 'newest',
   });
 
+  const [brandSuggestions, setBrandSuggestions] = useState([]);
+  const [colorSuggestions, setColorSuggestions] = useState([]);
+  const [sizeSuggestions, setSizeSuggestions] = useState([]);
+  const [showBrandDropdown, setShowBrandDropdown] = useState(false);
+  const [showColorDropdown, setShowColorDropdown] = useState(false);
+  const [showSaveSearch, setShowSaveSearch] = useState(false);
+
   const query = searchParams.get('q') || '';
 
   useEffect(() => { fetchListings(); }, [query, filters, page]); // eslint-disable-line
+
+  // Load autocomplete suggestions
+  useEffect(() => {
+    const loadSuggestions = async () => {
+      try {
+        const brandsRes = await getSearchBrands();
+        setBrandSuggestions(brandsRes.data?.slice(0, 20) || []);
+        
+        if (filters.category) {
+          const colorsRes = await getSearchColors(filters.category);
+          setColorSuggestions(colorsRes.data?.slice(0, 15) || []);
+          
+          const sizesRes = await getSearchSizes(filters.category);
+          setSizeSuggestions(sizesRes.data?.slice(0, 20).map(s => s.size) || []);
+        }
+      } catch (error) {
+        console.error('Error loading suggestions:', error);
+      }
+    };
+    loadSuggestions();
+  }, [filters.category]); // eslint-disable-line
 
   const fetchListings = async () => {
     setLoading(true);
@@ -52,6 +81,21 @@ const Search = () => {
 
   // Active filter chips
   const activeFilters = Object.entries(filters).filter(([k, v]) => v && k !== 'sort');
+
+  // Save search functionality
+  const handleSaveSearch = async () => {
+    try {
+      await saveSearchFilter({
+        query,
+        filters,
+        name: `${filters.category || 'All'} Search`,
+      });
+      setShowSaveSearch(false);
+      alert('Search saved! You can find it in Saved Searches.');
+    } catch (error) {
+      console.error('Error saving search:', error);
+    }
+  };
 
   return (
     <div className="page-container">
@@ -104,6 +148,106 @@ const Search = () => {
             ))}
           </div>
 
+          {/* Brand Autocomplete */}
+          <div className="filter-group" style={{ position: 'relative' }}>
+            <h4>Brand</h4>
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                placeholder="Search brands..."
+                value={filters.brand}
+                onChange={(e) => handleFilterChange('brand', e.target.value)}
+                onFocus={() => setShowBrandDropdown(true)}
+                onBlur={() => setTimeout(() => setShowBrandDropdown(false), 200)}
+                className="form-input"
+              />
+              {showBrandDropdown && brandSuggestions.length > 0 && (
+                <div className="glass-card" style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  maxHeight: 200,
+                  overflowY: 'auto',
+                  zIndex: 10,
+                  marginTop: 4,
+                }}>
+                  {brandSuggestions
+                    .filter(b => b.brand?.toLowerCase().includes(filters.brand.toLowerCase()))
+                    .slice(0, 10)
+                    .map((b, i) => (
+                      <div
+                        key={i}
+                        onClick={() => {
+                          handleFilterChange('brand', b.brand);
+                          setShowBrandDropdown(false);
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          borderBottom: i < 9 ? '1px solid var(--td-border-light)' : 'none',
+                        }}
+                        className="hover-bg"
+                      >
+                        <FaTag size={11} style={{ marginRight: 6, color: 'var(--td-text-tertiary)' }} />
+                        {b.brand}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Color Filter with Suggestions */}
+          <div className="filter-group">
+            <h4>Color</h4>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {colorSuggestions.length > 0 ? (
+                colorSuggestions.map((c, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleFilterChange('color', c.color)}
+                    className={`btn btn-sm ${filters.color === c.color ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ borderRadius: 'var(--td-radius-full)', padding: '4px 10px' }}
+                  >
+                    {c.color}
+                  </button>
+                ))
+              ) : (
+                <input
+                  type="text"
+                  placeholder="Enter color..."
+                  value={filters.color || ''}
+                  onChange={(e) => handleFilterChange('color', e.target.value)}
+                  className="form-input"
+                  style={{ flex: 1, minWidth: 120 }}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Size Filter with Dynamic Suggestions */}
+          <div className="filter-group">
+            <h4>Size</h4>
+            <div className="size-options">
+              {sizeSuggestions.length > 0 ? (
+                sizeSuggestions.map(size => (
+                  <button key={size} className={`size-btn ${filters.size === size ? 'active' : ''}`}
+                    onClick={() => handleFilterChange('size', filters.size === size ? '' : size)}>
+                    {size}
+                  </button>
+                ))
+              ) : (
+                sizes.map(size => (
+                  <button key={size} className={`size-btn ${filters.size === size ? 'active' : ''}`}
+                    onClick={() => handleFilterChange('size', filters.size === size ? '' : size)}>
+                    {size}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
           <div className="filter-group">
             <h4>Condition</h4>
             {conditions.map(cond => (
@@ -113,18 +257,6 @@ const Search = () => {
                 {cond}
               </label>
             ))}
-          </div>
-
-          <div className="filter-group">
-            <h4>Size</h4>
-            <div className="size-options">
-              {sizes.map(size => (
-                <button key={size} className={`size-btn ${filters.size === size ? 'active' : ''}`}
-                  onClick={() => handleFilterChange('size', filters.size === size ? '' : size)}>
-                  {size}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="filter-group">
@@ -138,10 +270,11 @@ const Search = () => {
             </div>
           </div>
 
+          {/* Save Search Button */}
           <div className="filter-group">
-            <h4>Brand</h4>
-            <input type="text" placeholder="Search brand..." value={filters.brand}
-              onChange={(e) => handleFilterChange('brand', e.target.value)} className="form-input" />
+            <button onClick={handleSaveSearch} className="btn btn-primary btn-block" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <FaSave size={14} /> Save This Search
+            </button>
           </div>
 
           {/* Mobile close button */}

@@ -172,6 +172,19 @@ export const sendOfferToLikers = (data) => api.post('/offers/to-likers', data);
 export const getBulkOffers = (listingId) => api.get(`/offers/bulk/${listingId}`);
 export const claimBulkOffer = (offerId) => api.post(`/offers/to-likers/${offerId}/claim`);
 
+// ====== Offer & Bundle Sharing (v45.0) ======
+export const getOfferSharingStats = () => api.get('/offer-sharing/stats');
+export const shareOfferToLikers = (listingId, data) => api.post(`/offer-sharing/to-likers/${listingId}`, data);
+export const createBundleOffer = (data) => api.post('/offer-sharing/bundle', data);
+export const shareOfferWithFriends = (offerId, data) => api.post(`/offer-sharing/share/${offerId}`, data);
+
+// ====== Advanced Search & Filtering (v44.0) ======
+export const getSearchBrands = () => api.get('/search/brands');
+export const getSearchColors = (category) => api.get(`/search/colors?category=${category}`);
+export const getSearchSizes = (category) => api.get(`/search/sizes?category=${category}`);
+export const saveSearchFilter = (data) => api.post('/search/save', data);
+export const getSavedSearchFilters = () => api.get('/search/saved');
+
 // ====== Promotions / Coupon Codes (Section 28c) ======
 export const createPromo = (data) => api.post('/promos', data);
 export const getPromos = () => api.get('/promos');

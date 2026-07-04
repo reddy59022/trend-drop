@@ -90,6 +90,12 @@ const offerSchema = new mongoose.Schema({
     discountValue: { type: Number },
     claimedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   },
+  // Offer Sharing fields (v45.0)
+  sharedWithLikers: { type: Boolean, default: false },
+  sharedFromOffer: { type: mongoose.Schema.Types.ObjectId, ref: 'Offer' },
+  isBundle: { type: Boolean, default: false },
+  bundleItems: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Listing' }],
+  likesCount: { type: Number, default: 0 },
 }, { timestamps: true });
 
 // Index for efficient queries
