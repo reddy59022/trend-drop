@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { auth } = require('../middleware/auth');
 
 // Size guide data for different categories
 // Returns standardized measurements for each category
@@ -150,6 +151,45 @@ router.get('/suggestions/:category/:size', (req, res) => {
     measurements: sizeData,
     guide: guide.description,
   });
+});
+
+// GET /api/size-guides/recommendations - Get user's size recommendations
+router.get('/recommendations', auth, async (req, res) => {
+  try {
+    // In a real implementation, this would fetch from a user measurements collection
+    // For now, return empty - user would submit measurements via POST
+    res.json({ recommendedSize: null, confidenceScore: 0 });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch recommendations' });
+  }
+});
+
+// POST /api/size-guides/recommendations - Save user measurements and get recommendations
+router.post('/recommendations', auth, async (req, res) => {
+  try {
+    const { bust, waist, hip, inseam, height, weight } = req.body;
+    
+    // Calculate recommended size based on measurements
+    let recommendedSize = 'M';
+    let confidenceScore = 85;
+    
+    if (bust || waist || hip) {
+      const avg = (parseFloat(bust || 0) + parseFloat(waist || 0) + parseFloat(hip || 0)) / 3;
+      if (avg < 34) recommendedSize = 'S';
+      else if (avg > 38) recommendedSize = 'L';
+      if (waist && parseFloat(waist) < 26) recommendedSize = 'XS';
+      else if (waist && parseFloat(waist) > 34) {
+        if (recommendedSize === 'L') recommendedSize = 'XL';
+        else recommendedSize = 'L';
+      }
+    }
+    
+    if (inseam && parseFloat(inseam) < 30) confidenceScore -= 10;
+    
+    res.json({ recommendedSize, confidenceScore });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to save measurements' });
+  }
 });
 
 module.exports = router;
