@@ -262,9 +262,42 @@ Please pass a http.Server instance.
 - Sell.js listing creation uses selected currency for all price displays (shipping fee, listing price, platform fee, boost fee, seller earnings)
 - EditListing.js uses selected currency for all price displays
 
----
+## 47. Social Sharing & Parties ✓ 12 tests (v37.0)
 
-## Total Test Count: 793 tests (all passing)
+### Party Endpoints:
+- `GET /api/parties` - List all parties with pagination
+- `GET /api/parties/:id` - Get single party details
+- `POST /api/parties` - Create a new party (authenticated)
+- `PUT /api/parties/:id` - Update party (host only)
+- `POST /api/parties/:id/share` - Share a party (increment share count)
+- `POST /api/parties/:id/join` - Join a party (increment participant count)
+- `DELETE /api/parties/:id` - Cancel a party (host only)
+
+### Party Features:
+- Party creation with title, description, category, start/end time, discount
+- Scheduled, active, ended, cancelled status states
+- Share and join functionality with counts
+- Host-only update/delete restrictions
+- Category-based filtering
+- Party listing page at /parties
+
+## 48. Recently Viewed Items ✓ 10 tests (v38.0)
+
+### Recently Viewed Endpoints:
+- `POST /api/recently-viewed/:listingId` - Record view (authenticated)
+- `GET /api/recently-viewed` - Get user's recently viewed listings
+- `DELETE /api/recently-viewed/clear` - Clear view history
+- `DELETE /api/recently-viewed/:listingId` - Remove specific item from history
+
+### Recently Viewed Features:
+- Auto-record views when user views a listing
+- Prevent duplicate views for same listing
+- Fetch with populated listing data
+- Limit and pagination support
+- Clear history functionality
+- Recently Viewed page at /recently-viewed
+
+## Total Test Count: 815 tests (all passing)
 
 ---
 
@@ -291,9 +324,95 @@ Please pass a http.Server instance.
 
 ---
 
+## Next Enhancements (Planned Features)
+
+The following features are planned to reach full Poshmark/Depop enterprise standards:
+
+### v39.0 Verified Badges & Seller Levels (Planned)
+**Feature**: Seller verification and tiered badges
+- **Issue**: Limited verification beyond basic check
+- **Fix**: Add verification tiers (Bronze, Silver, Gold, Platinum)
+- **Criteria**: Sales volume, ratings, response time, return rate
+- **Features**: Badge display, priority support, reduced fees
+
+### v40.0 Size Recommendation System (Planned)
+**Feature**: Size prediction based on user measurements
+- **Issue**: No size guidance integrated in listings
+- **Fix**: Add size profile and recommendation API
+- **Endpoints**: `GET /api/size-guides/recommendations`, `POST /api/users/me/measurements`
+- **Features**: Personal fit predictions, size confidence scores
+
+### v41.0 Virtual Try-On (Planned)
+**Feature**: AR-powered virtual try-on for apparel
+- **Issue**: No visual try-on experience
+- **Fix**: Integrate AR try-on API (WebXR compatible)
+- **Features**: Camera-based try-on, size overlay, fit simulation
+
+### v42.0 Enhanced Mobile Experience (Planned)
+**Feature**: Native mobile-specific enhancements
+- **Issue**: Web-first design lacks mobile optimizations
+- **Fix**: Add mobile-specific features
+- **Features**: 
+  - 3D touch previews on listings
+  - Push notifications for price drops
+  - Location-based shipping estimates
+  - Camera-first selling flow
+  - Biometric authentication
+
+### v43.0 Community Features (Planned)
+**Feature**: Enhanced social community
+- **Issue**: Limited social interaction beyond following
+- **Fix**: Add community-focused features
+- **Features**: 
+  - Comments on listings (not just messaging)
+  - Like/share counts on feed
+  - User-generated content hashtags
+  - Trending searches and hashtags
+
+### v44.0 Advanced Search & Filtering (Planned)
+**Feature**: Enhanced search with more filters
+- **Issue**: Missing advanced search capabilities
+- **Fix**: Add comprehensive filtering
+- **Features**:
+  - Brand-specific search with autocomplete
+  - Color filtering with swatches
+  - Size-specific filters
+  - Price range sliders with currency conversion
+  - Condition filtering with icons
+
+### v45.0 Offer & Bundle Sharing (Planned)
+**Feature**: Share offers and bundles with followers
+- **Issue**: Offers only visible to individual users
+- **Fix**: Add social offer broadcasting
+- **Features**: 
+  - "Offer to Likers" - notify all likers of special offers
+  - Bundle sharing with friends
+  - Group buying discounts
+
+---
+
+## Mobile Platform Support
+
+### iOS Support
+- Capacitor native wrapper configured
+- iOS-specific styling in App.css
+- App Store deployment ready via render.yaml
+
+### Android Support  
+- Capacitor native wrapper configured
+- Android-specific styling in App.css
+- Google Play deployment ready via render.yaml
+
+### Web Support
+- Responsive design for all screen sizes
+- Progressive Web App (PWA) capabilities
+- Desktop-optimized selling flow
+
+---
+
 ## All Features Implemented ✓
 
-All 48 test suites have been implemented and pass (793/793 tests):
+All 50 test suites have been implemented and pass (815/815 tests):
 - v23.0 Bulk Listing Management (12 tests)
 - v24.0 Social Login Expansion (6 tests)
 - v25.0 Advanced Fraud Detection (6 tests)
@@ -306,3 +425,5 @@ All 48 test suites have been implemented and pass (793/793 tests):
 - v34.0 Payment Currency Validation (8 tests)
 - v35.0 Edit Listing Full Field Update (6 tests)
 - v36.0 Currency Conversion System (9 tests)
+- v37.0 Social Sharing & Parties (12 tests)
+- v38.0 Recently Viewed Items (10 tests)

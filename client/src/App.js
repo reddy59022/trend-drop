@@ -39,6 +39,8 @@ const CollectionsPage = lazy(() => import('./pages/Collections'));
 const SavedSearchesPage = lazy(() => import('./pages/SavedSearches'));
 const OrderDetailPage = lazy(() => import('./pages/OrderDetail'));
 const NotFoundPage = lazy(() => import('./pages/NotFound'));
+const PartiesPage = lazy(() => import('./pages/Parties'));
+const RecentlyViewedPage = lazy(() => import('./pages/RecentlyViewed'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -97,6 +99,8 @@ function App() {
                 <Route path="/seller/analytics" element={<ProtectedRoute><SellerAnalytics /></ProtectedRoute>} />
                 <Route path="/seller/listings/bulk" element={<ProtectedRoute><BulkListingManager /></ProtectedRoute>} />
                 <Route path="/saved-searches" element={<ProtectedRoute><SavedSearchesPage /></ProtectedRoute>} />
+                <Route path="/parties" element={<ProtectedRoute><PartiesPage /></ProtectedRoute>} />
+                <Route path="/recently-viewed" element={<ProtectedRoute><RecentlyViewedPage /></ProtectedRoute>} />
                 <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
 
                 {/* Admin-only routes */}

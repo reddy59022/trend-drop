@@ -175,6 +175,12 @@ app.use('/api/escrow', require('./routes/escrow'));
 // Onboarding routes (mounted twice for different base paths)
 app.use('/api/onboarding', require('./routes/onboarding'));
 app.use('/api/users/me', require('./routes/onboarding'));
+// Parties / Social Selling Events routes (v37.0)
+app.use('/api/parties', require('./routes/parties'));
+// Recently Viewed Items routes (v38.0)
+app.use('/api/recently-viewed', require('./routes/recentlyViewed'));
+// Seller Badges / Verification routes (v39.0)
+app.use('/api/seller-badges', require('./routes/sellerBadges'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)
