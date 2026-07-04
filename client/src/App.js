@@ -42,6 +42,8 @@ const NotFoundPage = lazy(() => import('./pages/NotFound'));
 const PartiesPage = lazy(() => import('./pages/Parties'));
 const RecentlyViewedPage = lazy(() => import('./pages/RecentlyViewed'));
 const SizeRecommendationPage = lazy(() => import('./pages/SizeRecommendation'));
+const VirtualTryOnPage = lazy(() => import('./pages/VirtualTryOn'));
+const MobileSettingsPage = lazy(() => import('./pages/MobileSettings'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -103,7 +105,10 @@ function App() {
                 <Route path="/parties" element={<ProtectedRoute><PartiesPage /></ProtectedRoute>} />
 <Route path="/recently-viewed" element={<ProtectedRoute><RecentlyViewedPage /></ProtectedRoute>} />
                 <Route path="/size-recommendation" element={<ProtectedRoute><SizeRecommendationPage /></ProtectedRoute>} />
-                 <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
+                <Route path="/virtual-try-on" element={<ProtectedRoute><VirtualTryOnPage /></ProtectedRoute>} />
+<Route path="/virtual-try-on/:listingId" element={<ProtectedRoute><VirtualTryOnPage /></ProtectedRoute>} />
+<Route path="/mobile-settings" element={<ProtectedRoute><MobileSettingsPage /></ProtectedRoute>} />
+<Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
 
                 {/* Admin-only routes */}
                 <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>} />

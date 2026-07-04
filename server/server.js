@@ -181,6 +181,12 @@ app.use('/api/parties', require('./routes/parties'));
 app.use('/api/recently-viewed', require('./routes/recentlyViewed'));
 // Seller Badges / Verification routes (v39.0)
 app.use('/api/seller-badges', require('./routes/sellerBadges'));
+// Virtual Try-On routes (v41.0)
+app.use('/api/virtual-try-on', require('./routes/virtualTryOn'));
+// Mobile Experience routes (v42.0)
+app.use('/api/mobile', require('./routes/mobile'));
+// Community comments routes (v43.0)
+app.use('/api/comments', require('./routes/comments'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)
