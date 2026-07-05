@@ -51,6 +51,14 @@ const ARShowroomsPage = lazy(() => import('./pages/ARShowrooms'));
 const SocialCommercePage = lazy(() => import('./pages/SocialCommerce'));
 const SubscriptionsPage = lazy(() => import('./pages/Subscriptions'));
 const CrossBorderPage = lazy(() => import('./pages/CrossBorder'));
+const TrendForecastPage = lazy(() => import('./pages/TrendForecast'));
+const VideoShoppingPage = lazy(() => import('./pages/VideoShopping'));
+const SellerCommunitiesPage = lazy(() => import('./pages/SellerCommunities'));
+const InventoryManagementPage = lazy(() => import('./pages/InventoryManagement'));
+const LoyaltyProgramPage = lazy(() => import('./pages/LoyaltyProgram'));
+const VendorsPage = lazy(() => import('./pages/Vendors'));
+const AdvancedShippingPage = lazy(() => import('./pages/AdvancedShipping'));
+const EnterpriseApiPage = lazy(() => import('./pages/EnterpriseApi'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -122,7 +130,14 @@ function App() {
 <Route path="/social-commerce" element={<ProtectedRoute><SocialCommercePage /></ProtectedRoute>} />
 <Route path="/subscriptions" element={<ProtectedRoute><SubscriptionsPage /></ProtectedRoute>} />
 <Route path="/cross-border" element={<ProtectedRoute><CrossBorderPage /></ProtectedRoute>} />
-<Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
+<Route path="/trend-forecast" element={<ProtectedRoute><TrendForecastPage /></ProtectedRoute>} />
+<Route path="/video-shopping" element={<ProtectedRoute><VideoShoppingPage /></ProtectedRoute>} />
+<Route path="/seller-communities" element={<ProtectedRoute><SellerCommunitiesPage /></ProtectedRoute>} />
+<Route path="/inventory" element={<ProtectedRoute><InventoryManagementPage /></ProtectedRoute>} />
+<Route path="/loyalty" element={<ProtectedRoute><LoyaltyProgramPage /></ProtectedRoute>} />
+<Route path="/vendors" element={<ProtectedRoute><VendorsPage /></ProtectedRoute>} />
+<Route path="/advanced-shipping" element={<ProtectedRoute><AdvancedShippingPage /></ProtectedRoute>} />
+<Route path="/enterprise" element={<ProtectedRoute><EnterpriseApiPage /></ProtectedRoute>} />
 
                 {/* Admin-only routes */}
                 <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>} />

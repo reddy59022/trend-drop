@@ -205,6 +205,22 @@ app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
 // Cross-Border routes (v52.0)
 app.use('/api/cross-border', require('./routes/crossBorder'));
+// Trend Forecast routes (v53.0)
+app.use('/api/trend-forecast', require('./routes/trendForecast'));
+// Video Shopping routes (v54.0)
+app.use('/api/video-shopping', require('./routes/videoShopping'));
+// Seller Communities routes (v55.0)
+app.use('/api/seller-communities', require('./routes/sellerCommunities'));
+// Inventory Management routes (v56.0)
+app.use('/api/inventory', require('./routes/inventory'));
+// Loyalty Program routes (v57.0)
+app.use('/api/loyalty', require('./routes/loyalty'));
+// Vendors routes (v58.0)
+app.use('/api/vendors', require('./routes/vendors'));
+// Advanced Shipping routes (v59.0)
+app.use('/api/advanced-shipping', require('./routes/advancedShipping'));
+// Enterprise API routes (v60.0)
+app.use('/api/enterprise', require('./routes/enterpriseApi'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)
