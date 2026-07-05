@@ -193,6 +193,18 @@ app.use('/api/search', require('./routes/search'));
 app.use('/api/offer-sharing', require('./routes/offerSharing'));
 // AI Stylist routes (v46.0)
 app.use('/api/ai-stylist', require('./routes/aiStylist'));
+// Live Shopping Events routes (v47.0)
+app.use('/api/live-events', require('./routes/liveEvents'));
+// AR Showrooms routes (v48.0)
+app.use('/api/ar-showrooms', require('./routes/arShowrooms'));
+// Social Commerce routes (v49.0)
+app.use('/api/social-commerce', require('./routes/socialCommerce'));
+// Advanced Analytics routes (v50.0)
+app.use('/api/analytics', require('./routes/analytics'));
+// Subscription routes (v51.0)
+app.use('/api/subscriptions', require('./routes/subscriptions'));
+// Cross-Border routes (v52.0)
+app.use('/api/cross-border', require('./routes/crossBorder'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)

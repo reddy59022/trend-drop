@@ -46,6 +46,11 @@ const VirtualTryOnPage = lazy(() => import('./pages/VirtualTryOn'));
 const MobileSettingsPage = lazy(() => import('./pages/MobileSettings'));
 const OfferSharingPage = lazy(() => import('./pages/OfferSharing'));
 const AIStylistPage = lazy(() => import('./pages/AIStylist'));
+const LiveEventsPage = lazy(() => import('./pages/LiveEvents'));
+const ARShowroomsPage = lazy(() => import('./pages/ARShowrooms'));
+const SocialCommercePage = lazy(() => import('./pages/SocialCommerce'));
+const SubscriptionsPage = lazy(() => import('./pages/Subscriptions'));
+const CrossBorderPage = lazy(() => import('./pages/CrossBorder'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -112,6 +117,11 @@ function App() {
 <Route path="/mobile-settings" element={<ProtectedRoute><MobileSettingsPage /></ProtectedRoute>} />
 <Route path="/offer-sharing" element={<ProtectedRoute><OfferSharingPage /></ProtectedRoute>} />
 <Route path="/ai-stylist" element={<ProtectedRoute><AIStylistPage /></ProtectedRoute>} />
+<Route path="/live-events" element={<ProtectedRoute><LiveEventsPage /></ProtectedRoute>} />
+<Route path="/ar-showrooms" element={<ProtectedRoute><ARShowroomsPage /></ProtectedRoute>} />
+<Route path="/social-commerce" element={<ProtectedRoute><SocialCommercePage /></ProtectedRoute>} />
+<Route path="/subscriptions" element={<ProtectedRoute><SubscriptionsPage /></ProtectedRoute>} />
+<Route path="/cross-border" element={<ProtectedRoute><CrossBorderPage /></ProtectedRoute>} />
 <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
 
                 {/* Admin-only routes */}
