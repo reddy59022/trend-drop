@@ -179,6 +179,16 @@ export const createBundleOffer = (data) => api.post('/offer-sharing/bundle', dat
 export const shareOfferWithFriends = (offerId, data) => api.post(`/offer-sharing/share/${offerId}`, data);
 
 // ====== Advanced Search & Filtering (v44.0) ======
+
+// ====== AI Stylist Recommendations (v46.0) ======
+export const getAIPreferences = () => api.get('/ai-stylist/preferences');
+export const updateAIPreferences = (preferences) => api.put('/ai-stylist/preferences', { preferences });
+export const getAIRecommendations = () => api.get('/ai-stylist/recommendations');
+export const generateAIRecommendations = () => api.post('/ai-stylist/generate');
+export const getAITrends = () => api.get('/ai-stylist/trends');
+export const getOutfitSuggestions = (data) => api.post('/ai-stylist/outfit-suggestion', data);
+export const getUserOutfits = () => api.get('/ai-stylist/outfits');
+export const createOutfit = (data) => api.post('/ai-stylist/outfits', data);
 export const getSearchBrands = () => api.get('/search/brands');
 export const getSearchColors = (category) => api.get(`/search/colors?category=${category}`);
 export const getSearchSizes = (category) => api.get(`/search/sizes?category=${category}`);

@@ -191,6 +191,8 @@ app.use('/api/comments', require('./routes/comments'));
 app.use('/api/search', require('./routes/search'));
 // Offer Sharing routes (v45.0)
 app.use('/api/offer-sharing', require('./routes/offerSharing'));
+// AI Stylist routes (v46.0)
+app.use('/api/ai-stylist', require('./routes/aiStylist'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)

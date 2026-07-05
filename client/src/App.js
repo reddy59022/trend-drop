@@ -45,6 +45,7 @@ const SizeRecommendationPage = lazy(() => import('./pages/SizeRecommendation'));
 const VirtualTryOnPage = lazy(() => import('./pages/VirtualTryOn'));
 const MobileSettingsPage = lazy(() => import('./pages/MobileSettings'));
 const OfferSharingPage = lazy(() => import('./pages/OfferSharing'));
+const AIStylistPage = lazy(() => import('./pages/AIStylist'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -110,6 +111,7 @@ function App() {
 <Route path="/virtual-try-on/:listingId" element={<ProtectedRoute><VirtualTryOnPage /></ProtectedRoute>} />
 <Route path="/mobile-settings" element={<ProtectedRoute><MobileSettingsPage /></ProtectedRoute>} />
 <Route path="/offer-sharing" element={<ProtectedRoute><OfferSharingPage /></ProtectedRoute>} />
+<Route path="/ai-stylist" element={<ProtectedRoute><AIStylistPage /></ProtectedRoute>} />
 <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
 
                 {/* Admin-only routes */}
