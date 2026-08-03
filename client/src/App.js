@@ -150,6 +150,7 @@ function App() {
 <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
 <Route path="/auctions" element={<ProtectedRoute><AuctionPage /></ProtectedRoute>} />
 <Route path="/auctions/create" element={<ProtectedRoute><CreateAuctionPage /></ProtectedRoute>} />
+<Route path="/auctions/:id" element={<ProtectedRoute><AuctionDetail /></ProtectedRoute>} />
 <Route path="/seller-badges" element={<ProtectedRoute><SellerBadgesPage /></ProtectedRoute>} />
 <Route path="/fraud-protection" element={<ProtectedRoute><FraudProtectionPage /></ProtectedRoute>} />
 

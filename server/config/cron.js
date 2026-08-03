@@ -15,6 +15,7 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Payout = require('../models/Payout');
 const PendingUser = require('../models/PendingUser');
+const Auction = require('../models/Auction');
 const { orderStates, timeWindows } = require('./orderLifecycle');
 
 // ──────────────────────────────────────────────
@@ -320,6 +321,58 @@ async function cleanExpiredTokens() {
 }
 
 // ──────────────────────────────────────────────
+// JOB 6: Auto-Activate Scheduled Auctions (Every minute)
+// ──────────────────────────────────────────────
+// Scheduled auctions with startTime <= now become 'active'
+async function activateAuctions() {
+  try {
+    const now = new Date();
+    const result = await Auction.updateMany(
+      {
+        status: 'scheduled',
+        startTime: { $lte: now },
+      },
+      {
+        $set: { status: 'active' },
+      }
+    );
+    if (result.modifiedCount > 0) {
+      console.log(`[CRON] Activated ${result.modifiedCount} scheduled auctions`);
+    }
+    return result.modifiedCount;
+  } catch (error) {
+    console.error('[CRON] Error activating auctions:', error.message);
+  }
+}
+
+// ──────────────────────────────────────────────
+// JOB 7: Auto-Close Expired Auctions (Every minute)
+// ──────────────────────────────────────────────
+// Active auctions with endTime <= now become 'closed'
+async function closeAuctions() {
+  try {
+    const now = new Date();
+    const result = await Auction.updateMany(
+      {
+        status: 'active',
+        endTime: { $lte: now },
+      },
+      {
+        $set: { status: 'closed' },
+      }
+    );
+    if (result.modifiedCount > 0) {
+      console.log(`[CRON] Closed ${result.modifiedCount} expired auctions`);
+      // Winner determination happens in the close endpoint
+      // but we could also do it here for auto-closing
+    }
+    return result.modifiedCount;
+  } catch (error) {
+    console.error('[CRON] Error closing auctions:', error.message);
+  }
+}
+
+// ──────────────────────────────────────────────
 // Initialize all cron jobs
 // ──────────────────────────────────────────────
 function initCronJobs() {
@@ -363,6 +416,20 @@ function initCronJobs() {
     autoProcessReturns();
   });
   console.log('[CRON] Return auto-processing scheduled (every hour)');
+
+  // Job 6: Auto-activate scheduled auctions every minute
+  // '* * * * *' = every minute
+  cron.schedule('* * * * *', () => {
+    activateAuctions();
+  });
+  console.log('[CRON] Auction auto-activation scheduled (every minute)');
+
+  // Job 7: Auto-close expired auctions every minute
+  // '* * * * *' = every minute
+  cron.schedule('* * * * *', () => {
+    closeAuctions();
+  });
+  console.log('[CRON] Auction auto-close scheduled (every minute)');
 }
 
 module.exports = {
@@ -372,4 +439,6 @@ module.exports = {
   autoProcessReturns,
   releaseReserves,
   cleanExpiredTokens,
+  activateAuctions,
+  closeAuctions,
 };
