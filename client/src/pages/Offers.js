@@ -7,6 +7,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FaExchangeAlt, FaArrowUp, FaCheck, FaTimes, FaGavel } from 'react-icons/fa';
 import { io } from 'socket.io-client';
+import CounterOfferModal from '../components/CounterOfferModal';
 
 const Offers = () => {
   const { user } = useAuth();
@@ -14,6 +15,13 @@ const Offers = () => {
   const [receivedOffers, setReceivedOffers] = useState([]);
   const [sentOffers, setSentOffers] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Counter-offer modal state
+  const [counterOfferModal, setCounterOfferModal] = useState({
+    isOpen: false,
+    offer: null,
+    type: null // 'received' (seller) or 'sent' (buyer)
+  });
 
   // Socket.io for real-time offer notifications
   useEffect(() => {
@@ -50,15 +58,65 @@ const Offers = () => {
     setLoading(false);
   };
 
-  const handleAccept = async (offerId) => { try { await api.patch(`/offers/${offerId}/accept`); toast.success('Offer accepted!'); fetchOffers(); } catch (error) { toast.error(error.response?.data?.message || 'Failed to accept'); } };
-  const handleSellerAcceptBuyerCounter = async (offerId) => { try { await api.patch(`/offers/${offerId}/seller-accept-buyer-counter`); toast.success('Counter accepted!'); fetchOffers(); } catch (error) { toast.error(error.response?.data?.message || 'Failed to accept counter'); } };
-  const handleDecline = async (offerId) => { try { await api.patch(`/offers/${offerId}/decline`); toast.success('Offer declined'); fetchOffers(); } catch (error) { toast.error(error.response?.data?.message || 'Failed'); } };
-  const handleSellerCounter = async (offer) => {
-    const previous = offer.counterAmount || offer.amount;
-    const currency = offer.currency || 'USD';
-    const amount = prompt(`Counter offer amount (must be higher than ${currency} ${previous}):`);
-    if (!amount || isNaN(amount)) return;
-    try { await api.patch(`/offers/${offer._id}/counter`, { counterAmount: Number(amount) }); toast.success('Counter sent!'); fetchOffers(); } catch (error) { toast.error(error.response?.data?.message || 'Failed'); }
+  const handleAccept = async (offerId) => { 
+    try { 
+      await api.patch(`/offers/${offerId}/accept`); 
+      toast.success('Offer accepted!'); 
+      fetchOffers(); 
+    } catch (error) { 
+      toast.error(error.response?.data?.message || 'Failed to accept'); 
+    } 
+  };
+  
+  const handleSellerAcceptBuyerCounter = async (offerId) => { 
+    try { 
+      await api.patch(`/offers/${offerId}/seller-accept-buyer-counter`); 
+      toast.success('Counter accepted!'); 
+      fetchOffers(); 
+    } catch (error) { 
+      toast.error(error.response?.data?.message || 'Failed to accept counter'); 
+    } 
+  };
+  
+  const handleDecline = async (offerId) => { 
+    try { 
+      await api.patch(`/offers/${offerId}/decline`); 
+      toast.success('Offer declined'); 
+      fetchOffers(); 
+    } catch (error) { 
+      toast.error(error.response?.data?.message || 'Failed'); 
+    } 
+  };
+
+  // Open counter-offer modal for seller
+  const handleSellerCounter = (offer) => {
+    setCounterOfferModal({
+      isOpen: true,
+      offer,
+      type: 'received'
+    });
+  };
+
+  // Open counter-offer modal for buyer
+  const handleBuyerCounter = (offer) => {
+    setCounterOfferModal({
+      isOpen: true,
+      offer,
+      type: 'sent'
+    });
+  };
+
+  // Handle counter-offer submission from modal
+  const handleCounterSubmitted = () => {
+    fetchOffers();
+  };
+
+  const closeCounterModal = () => {
+    setCounterOfferModal({
+      isOpen: false,
+      offer: null,
+      type: null
+    });
   };
 
   if (!user) return (
@@ -86,108 +144,102 @@ const Offers = () => {
 
   const getStatusLabel = (s) => ({ pending: '⏳ Pending', accepted: '✅ Accepted', declined: '❌ Declined', countered: '🔄 Countered', buyer_countered: '🔄 You Countered', completed: '✅ Completed', expired: '⏰ Expired' }[s] || s);
 
-const isOfferExpired = (offer) => {
-  if (offer.status === 'accepted' && offer.acceptedUntil) {
-    return new Date() > new Date(offer.acceptedUntil);
-  }
-  return false;
-};
+  const isOfferExpired = (offer) => {
+    if (offer.status === 'accepted' && offer.acceptedUntil) {
+      return new Date() > new Date(offer.acceptedUntil);
+    }
+    return false;
+  };
 
-const renderOfferCard = (offer, type) => {
-  // If offer is completed/declined/expired, no action buttons
-  const isTerminalState = offer.status === 'completed' || offer.status === 'declined' || offer.status === 'expired' || isOfferExpired(offer);
-  
-  return (
-    <div key={offer._id} className="offer-card" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
-      <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
-        <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
-      </Link>
-      <div className="offer-details">
-        <h4>{offer.listing?.title}</h4>
-        <p style={{ color: 'var(--td-text-secondary)' }}>{type === 'received' ? `From: ${offer.buyer?.name}` : `To: ${offer.seller?.name}`}</p>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8 }}>
-          <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Offered</span><br /><strong style={{ fontSize: 16, color: 'var(--td-primary)' }}>{formatPrice(offer.amount, offer.currency || 'USD')}</strong></div>
-          {offer.counterAmount && offer.status !== 'accepted' && (
-            <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Counter</span><br /><strong style={{ fontSize: 16 }}>{formatPrice(offer.counterAmount, offer.currency || 'USD')}</strong></div>
+  const renderOfferCard = (offer, type) => {
+    // If offer is completed/declined/expired, no action buttons
+    const isTerminalState = offer.status === 'completed' || offer.status === 'declined' || offer.status === 'expired' || isOfferExpired(offer);
+
+    return (
+      <div key={offer._id} className="offer-card" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
+        <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
+          <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
+        </Link>
+        <div className="offer-details">
+          <h4>{offer.listing?.title}</h4>
+          <p style={{ color: 'var(--td-text-secondary)' }}>{type === 'received' ? `From: ${offer.buyer?.name}` : `To: ${offer.seller?.name}`}</p>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8 }}>
+            <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Offered</span><br /><strong style={{ fontSize: 16, color: 'var(--td-primary)' }}>{formatPrice(offer.amount, offer.currency || 'USD')}</strong></div>
+            {offer.counterAmount && offer.status !== 'accepted' && (
+              <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Counter</span><br /><strong style={{ fontSize: 16 }}>{formatPrice(offer.counterAmount, offer.currency || 'USD')}</strong></div>
+            )}
+            {offer.status === 'accepted' && offer.acceptedPrice && (
+              <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Accepted Price</span><br /><strong style={{ fontSize: 16, color: 'var(--td-success)' }}>{formatPrice(offer.acceptedPrice, offer.currency || 'USD')}</strong></div>
+            )}
+          </div>
+          <span className={`offer-status ${getStatusColor(offer.status)}`} style={{ marginTop: 8 }}>{getStatusLabel(offer.status)}</span>
+          {offer.status === 'accepted' && offer.acceptedUntil && (
+            <p style={{ fontSize: 11, color: isOfferExpired(offer) ? 'var(--td-error)' : 'var(--td-text-secondary)', marginTop: 4 }}>
+              {isOfferExpired(offer) ? '⏰ Offer expired - make a new offer' : `⏳ Valid for ${Math.max(0, Math.floor((new Date(offer.acceptedUntil) - new Date()) / (1000 * 60 * 60)))}h`}
+            </p>
           )}
-          {offer.status === 'accepted' && offer.acceptedPrice && (
-            <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Accepted Price</span><br /><strong style={{ fontSize: 16, color: 'var(--td-success)' }}>{formatPrice(offer.acceptedPrice, offer.currency || 'USD')}</strong></div>
-          )}
+          <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
         </div>
-        <span className={`offer-status ${getStatusColor(offer.status)}`} style={{ marginTop: 8 }}>{getStatusLabel(offer.status)}</span>
-        {offer.status === 'accepted' && offer.acceptedUntil && (
-          <p style={{ fontSize: 11, color: isOfferExpired(offer) ? 'var(--td-error)' : 'var(--td-text-secondary)', marginTop: 4 }}>
-            {isOfferExpired(offer) ? '⏰ Offer expired - make a new offer' : `⏳ Valid for ${Math.max(0, Math.floor((new Date(offer.acceptedUntil) - new Date()) / (1000 * 60 * 60)))}h`}
-          </p>
+        {/* Actions */}
+        {/* Received offers - seller actions */}
+        {type === 'received' && !isTerminalState && offer.status === 'pending' && (
+          <div className="offer-actions">
+            <button className="btn btn-primary btn-sm" onClick={() => handleAccept(offer._id)}><FaCheck size={12} /> Accept</button>
+            <button className="btn btn-outline btn-sm" onClick={() => handleSellerCounter(offer)}><FaExchangeAlt size={12} /> Counter</button>
+            <button className="btn btn-sm" onClick={() => handleDecline(offer._id)} style={{ color: 'var(--td-error)' }}><FaTimes size={12} /> Decline</button>
+          </div>
         )}
-        <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
+        {type === 'received' && !isTerminalState && offer.status === 'buyer_countered' && (
+          <div className="offer-actions">
+            <button className="btn btn-primary btn-sm" onClick={() => handleSellerAcceptBuyerCounter(offer._id)}><FaCheck size={12} /> Accept Counter</button>
+            <button className="btn btn-outline btn-sm" onClick={() => handleSellerCounter(offer)}><FaExchangeAlt size={12} /> Counter Again</button>
+            <button className="btn btn-sm" onClick={() => handleDecline(offer._id)} style={{ color: 'var(--td-error)' }}><FaTimes size={12} /> Decline</button>
+          </div>
+        )}
+        {type === 'received' && offer.status === 'accepted' && (
+          <div className="offer-actions">
+            <span className="offer-status status-success" style={{ padding: '4px 12px' }}>✅ Accepted - Waiting for buyer</span>
+          </div>
+        )}
+        {type === 'received' && offer.status === 'countered' && (
+          <div className="offer-actions">
+            <span className="offer-status status-countered" style={{ padding: '4px 12px' }}>Awaiting buyer response...</span>
+          </div>
+        )}
+        {/* Sent offers - buyer actions */}
+        {type === 'sent' && !isTerminalState && offer.status === 'countered' && (
+          <div className="offer-actions">
+            <button className="btn btn-primary btn-sm" onClick={async () => {
+              try { await api.patch(`/offers/${offer._id}/accept-counter`); toast.success('Counter accepted!'); fetchOffers(); } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
+            }}>
+              <FaCheck size={12} /> Accept
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={() => handleBuyerCounter(offer)}>
+              <FaArrowUp size={12} /> Counter
+            </button>
+          </div>
+        )}
+        {type === 'sent' && offer.status === 'buyer_countered' && !isTerminalState && (
+          <div className="offer-actions">
+            <span className="offer-status status-countered" style={{ padding: '4px 12px' }}>Awaiting seller response...</span>
+          </div>
+        )}
+        {/* Accepted offers - show purchase action for buyer */}
+        {type === 'sent' && offer.status === 'accepted' && !isOfferExpired(offer) && (
+          <div className="offer-actions">
+            <Link to={`/listing/${offer.listing?._id}`} className="btn btn-primary btn-sm">
+              Proceed to Purchase
+            </Link>
+          </div>
+        )}
+        {type === 'sent' && isOfferExpired(offer) && (
+          <div className="offer-actions">
+            <span className="offer-status status-expired" style={{ padding: '4px 12px' }}>⏰ Offer expired - make a new offer</span>
+          </div>
+        )}
       </div>
-      {/* Actions */}
-      {/* Received offers - seller actions */}
-      {type === 'received' && !isTerminalState && offer.status === 'pending' && (
-        <div className="offer-actions">
-          <button className="btn btn-primary btn-sm" onClick={() => handleAccept(offer._id)}><FaCheck size={12} /> Accept</button>
-          <button className="btn btn-outline btn-sm" onClick={() => handleSellerCounter(offer)}><FaExchangeAlt size={12} /> Counter</button>
-          <button className="btn btn-sm" onClick={() => handleDecline(offer._id)} style={{ color: 'var(--td-error)' }}><FaTimes size={12} /> Decline</button>
-        </div>
-      )}
-      {type === 'received' && !isTerminalState && offer.status === 'buyer_countered' && (
-        <div className="offer-actions">
-          <button className="btn btn-primary btn-sm" onClick={() => handleSellerAcceptBuyerCounter(offer._id)}><FaCheck size={12} /> Accept Counter</button>
-          <button className="btn btn-outline btn-sm" onClick={() => handleSellerCounter(offer)}><FaExchangeAlt size={12} /> Counter Again</button>
-          <button className="btn btn-sm" onClick={() => handleDecline(offer._id)} style={{ color: 'var(--td-error)' }}><FaTimes size={12} /> Decline</button>
-        </div>
-      )}
-      {type === 'received' && offer.status === 'accepted' && (
-        <div className="offer-actions">
-          <span className="offer-status status-success" style={{ padding: '4px 12px' }}>✅ Accepted - Waiting for buyer</span>
-        </div>
-      )}
-      {type === 'received' && offer.status === 'countered' && (
-        <div className="offer-actions">
-          <span className="offer-status status-countered" style={{ padding: '4px 12px' }}>Awaiting buyer response...</span>
-        </div>
-      )}
-      {/* Sent offers - buyer actions */}
-      {type === 'sent' && !isTerminalState && offer.status === 'countered' && (
-        <div className="offer-actions">
-          <button className="btn btn-primary btn-sm" onClick={async () => { 
-            try { await api.patch(`/offers/${offer._id}/accept-counter`); toast.success('Counter accepted!'); fetchOffers(); } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
-          }}>
-            <FaCheck size={12} /> Accept
-          </button>
-          <button className="btn btn-outline btn-sm" onClick={async () => { 
-            const p = offer.counterAmount || offer.amount; 
-            const currency = offer.currency || 'USD';
-            const amt = prompt(`Counter (higher than ${currency} ${p}):`); 
-            if (!amt || isNaN(amt)) return; 
-            try { await api.patch(`/offers/${offer._id}/buyer-counter`, { counterAmount: Number(amt) }); toast.success('Counter sent'); fetchOffers(); } catch (e) { toast.error('Failed'); } 
-          }}>
-            <FaArrowUp size={12} /> Counter
-          </button>
-        </div>
-      )}
-      {type === 'sent' && offer.status === 'buyer_countered' && !isTerminalState && (
-        <div className="offer-actions">
-          <span className="offer-status status-countered" style={{ padding: '4px 12px' }}>Awaiting seller response...</span>
-        </div>
-      )}
-      {/* Accepted offers - show purchase action for buyer */}
-      {type === 'sent' && offer.status === 'accepted' && !isOfferExpired(offer) && (
-        <div className="offer-actions">
-          <Link to={`/listing/${offer.listing?._id}`} className="btn btn-primary btn-sm">
-            Proceed to Purchase
-          </Link>
-        </div>
-      )}
-      {type === 'sent' && isOfferExpired(offer) && (
-        <div className="offer-actions">
-          <span className="offer-status status-expired" style={{ padding: '4px 12px' }}>⏰ Offer expired - make a new offer</span>
-        </div>
-      )}
-    </div>
-  );
-};
+    );
+  };
 
   return (
     <div className="page-container">
@@ -222,6 +274,15 @@ const renderOfferCard = (offer, type) => {
           ) : sentOffers.map(o => renderOfferCard(o, 'sent'))
         )}
       </div>
+
+      {/* Counter Offer Modal */}
+      <CounterOfferModal
+        isOpen={counterOfferModal.isOpen}
+        onClose={closeCounterModal}
+        offer={counterOfferModal.offer}
+        type={counterOfferModal.type}
+        onCounterSubmitted={handleCounterSubmitted}
+      />
     </div>
   );
 };

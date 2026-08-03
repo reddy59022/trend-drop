@@ -21,7 +21,7 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
 
     setSubmitting(true);
     try {
-      const res = await api.post(`/listings/${listingId}/comments`, {
+      const res = await api.post(`/comments/${listingId}`, {
         text: newComment.trim(),
       });
       onCommentsUpdate(res.data.comments || []);
@@ -38,7 +38,7 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
     if (!window.confirm('Delete this comment?')) return;
     setDeleting(commentId);
     try {
-      const res = await api.delete(`/listings/${listingId}/comments/${commentId}`);
+      const res = await api.delete(`/comments/${commentId}`);
       onCommentsUpdate(res.data.comments || []);
       toast.success('Comment deleted');
     } catch (error) {
