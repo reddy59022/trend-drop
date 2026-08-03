@@ -62,6 +62,7 @@ const EnterpriseApiPage = lazy(() => import('./pages/EnterpriseApi'));
 const ReferralsPage = lazy(() => import('./pages/Referrals'));
 const ReturnsCenterPage = lazy(() => import('./pages/ReturnsCenter'));
 const AuctionPage = lazy(() => import('./pages/AuctionPage'));
+const CreateAuctionPage = lazy(() => import('./pages/CreateAuction'));
 const PriceSuggestionPage = lazy(() => import('./pages/PriceSuggestion'));
 const SellerBadgesPage = lazy(() => import('./pages/SellerBadges'));
 const FraudProtectionPage = lazy(() => import('./pages/FraudProtection'));
@@ -148,7 +149,7 @@ function App() {
 <Route path="/returns" element={<ProtectedRoute><ReturnsCenterPage /></ProtectedRoute>} />
 <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
 <Route path="/auctions" element={<ProtectedRoute><AuctionPage /></ProtectedRoute>} />
-<Route path="/price-suggestion" element={<ProtectedRoute><PriceSuggestionPage /></ProtectedRoute>} />
+<Route path="/auctions/create" element={<ProtectedRoute><CreateAuctionPage /></ProtectedRoute>} />
 <Route path="/seller-badges" element={<ProtectedRoute><SellerBadgesPage /></ProtectedRoute>} />
 <Route path="/fraud-protection" element={<ProtectedRoute><FraudProtectionPage /></ProtectedRoute>} />
 

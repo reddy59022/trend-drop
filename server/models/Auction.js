@@ -57,6 +57,15 @@ const auctionSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  // Live video streaming info (client-side WebRTC, zero server load)
+  streamInfo: {
+    streamId: { type: String, default: null },
+    sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    startedAt: { type: Date, default: null },
+    endedAt: { type: Date, default: null },
+    isLive: { type: Boolean, default: false },
+    viewerCount: { type: Number, default: 0 },
+  },
 }, { timestamps: true });
 
 // Indexes

@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { FaGavel, FaPlus } from 'react-icons/fa';
+import { toast } from 'react-toastify';
 import './AuctionPage.css';
 
 const AuctionPage = () => {
+  const navigate = useNavigate();
   const [auctions, setAuctions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('active');
@@ -32,10 +35,10 @@ const AuctionPage = () => {
     try {
       const response = await api.post(`/auctions/${auctionId}/bids`, { amount: parseFloat(amount) });
       setAuctions(auctions.map(a => a._id === auctionId ? response.data.auction : a));
-      alert('Bid placed successfully!');
+      toast.success('Bid placed successfully!');
     } catch (error) {
       console.error('Error placing bid:', error);
-      alert(error.response?.data?.message || 'Failed to place bid');
+      toast.error(error.response?.data?.message || 'Failed to place bid');
     }
   };
 
@@ -46,11 +49,32 @@ const AuctionPage = () => {
     return `${hours}h ${minutes}m`;
   };
 
+  const handleCreateAuction = () => {
+    navigate('/auctions/create');
+  };
+
   return (
     <div className="auction-page">
       <div className="auction-header">
-        <h1>Auctions</h1>
-        <p>Bid on items with timed auctions and reserve prices</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--td-space-md)' }}>
+          <div>
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: 12, margin: 0 }}>
+              <FaGavel style={{ color: 'var(--td-primary)' }} />
+              Auctions
+            </h1>
+            <p style={{ margin: 'var(--td-space-xs) 0 0 0', color: 'var(--td-text-secondary)' }}>
+              Bid on items with timed auctions and reserve prices
+            </p>
+          </div>
+          <button 
+            onClick={handleCreateAuction}
+            className="btn btn-primary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 20px', fontSize: 14, fontWeight: 600 }}
+          >
+            <FaPlus size={18} />
+            Create Auction
+          </button>
+        </div>
       </div>
 
       <div className="auction-tabs">
@@ -141,8 +165,18 @@ const AuctionPage = () => {
       )}
 
       {!loading && auctions.length === 0 && (
-        <div className="no-auctions">
-          <p>No auctions found in this category.</p>
+        <div className="no-auctions glass-card" style={{ padding: 'var(--td-space-xl)', textAlign: 'center' }}>
+          <FaGavel size={48} style={{ color: 'var(--td-text-tertiary)', marginBottom: 'var(--td-space-md)' }} />
+          <p style={{ color: 'var(--td-text-secondary)', marginBottom: 'var(--td-space-lg)' }}>
+            No auctions found in this category.
+          </p>
+          <button 
+            onClick={handleCreateAuction}
+            className="btn btn-primary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+          >
+            <FaPlus /> Create Your First Auction
+          </button>
         </div>
       )}
     </div>
