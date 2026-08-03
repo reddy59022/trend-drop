@@ -28,6 +28,9 @@ const config: CapacitorConfig = {
     Photos: {
       permissions: ['photos'],
     },
+    Microphone: {
+      permissions: ['microphone'],
+    },
     Share: {
       enabled: true,
     },

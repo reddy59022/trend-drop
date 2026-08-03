@@ -373,7 +373,7 @@ router.post('/to-likers/:offerId/claim', auth, async (req, res) => {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
-});
+ });
 
 // GET /api/offers/:id - Get single offer with full history
 router.get('/:id', auth, async (req, res) => {

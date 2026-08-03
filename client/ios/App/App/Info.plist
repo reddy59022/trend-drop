@@ -51,7 +51,9 @@
 	<string>TrendDrop needs access to your camera to take photos of items you want to sell.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>TrendDrop needs access to your photo library to upload images of items you want to sell.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>TrendDrop needs access to save shipping labels and purchase receipts to your photo library.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>TrendDrop needs access to save shipping labels and purchase receipts to your photo library.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>TrendDrop needs access to your microphone for live video streaming during auctions.</string>
 </dict>
 </plist>

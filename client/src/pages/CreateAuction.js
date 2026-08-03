@@ -1,25 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FaGavel, FaClock, FaDollarSign, FaVideo, FaMicrophone, FaArrowLeft, FaInfoCircle, FaBroadcastTower, FaPlayCircle, FaStopCircle, FaEye, FaExclamationTriangle, FaImage } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaTimes, FaArrowLeft, FaGavel, FaClock, FaDollarSign, FaInfoCircle, FaSpinner, FaCheckCircle, FaVideo, FaSignal, FaWifi, FaExclamationTriangle, FaMobile, FaServer, FaShieldAlt, FaLock, FaChartLine, FaEye } from 'react-icons/fa';
 
 const CreateAuction = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [userListings, setUserListings] = useState([]);
-  const [selectedListing, setSelectedListing] = useState(null);
+
+  // Form state
   const [formData, setFormData] = useState({
     listingId: '',
     startTime: '',
     endTime: '',
     reservePrice: '',
+    enableLiveStream: false,
   });
+
   const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [userListings, setUserListings] = useState([]);
   const [showPreview, setShowPreview] = useState(false);
-  
+
   // Live video streaming state
   const [isStreaming, setIsStreaming] = useState(false);
   const [localStream, setLocalStream] = useState(null);
@@ -28,98 +31,48 @@ const CreateAuction = () => {
   const videoRef = useRef(null);
   const statsIntervalRef = useRef(null);
 
-  // Fetch user's unsold listings on mount
-  useEffect(() => {
-    const fetchListings = async () => {
+  // Live video streaming functions - defined early for useEffect cleanup
+  const stopStreaming = useCallback(() => {
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      setLocalStream(null);
+    }
+    setIsStreaming(false);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
+    setStreamStats({ bitrate: 0, fps: 0 });
+  }, [localStream]);
+
+  const startStatsMonitoring = useCallback((stream) => {
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+    }
+    
+    statsIntervalRef.current = setInterval(async () => {
       try {
-        const response = await api.get('/listings/my', { params: { sold: false } });
-        setUserListings(response.data.listings || []);
-      } catch (error) {
-        console.error('Error fetching listings:', error);
-        toast.error('Failed to load your listings');
+        if (videoRef.current && videoRef.current.srcObject) {
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+            const settings = videoTrack.getSettings();
+            const stats = {
+              bitrate: Math.round((settings.width * settings.height * settings.frameRate * 0.15) / 1000), // Approximate kbps
+              fps: settings.frameRate || 30,
+            };
+            setStreamStats(stats);
+          }
+        }
+      } catch (err) {
+        console.error('Stats error:', err);
       }
-    };
-    
-    if (user) {
-      fetchListings();
-    }
-  }, [user]);
+    }, 1000);
+  }, []);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopStreaming();
-      if (statsIntervalRef.current) {
-        clearInterval(statsIntervalRef.current);
-      }
-    };
-  }, [stopStreaming]);
-
-  const validateForm = () => {
-    const newErrors = {};
-    
-    if (!formData.listingId) {
-      newErrors.listingId = 'Please select a listing';
-    }
-    
-    if (!formData.startTime) {
-      newErrors.startTime = 'Start time is required';
-    }
-    
-    if (!formData.endTime) {
-      newErrors.endTime = 'End time is required';
-    } else if (new Date(formData.endTime) <= new Date(formData.startTime)) {
-      newErrors.endTime = 'End time must be after start time';
-    }
-    
-    if (!formData.reservePrice || parseFloat(formData.reservePrice) <= 0) {
-      newErrors.reservePrice = 'Reserve price must be greater than 0';
-    }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
-    
-    setLoading(true);
-    try {
-      const response = await api.post('/auctions', {
-        listingId: formData.listingId,
-        startTime: formData.startTime,
-        endTime: formData.endTime,
-        reservePrice: parseFloat(formData.reservePrice),
-      });
-      
-      toast.success('Auction created successfully!');
-      
-      // If streaming is enabled, start the live stream
-      if (isStreaming) {
-        await startLiveStream(response.data.auction._id);
-      }
-      
-      navigate('/auctions');
-    } catch (error) {
-      console.error('Create auction error:', error);
-      toast.error(error.response?.data?.message || 'Failed to create auction');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Live video streaming functions
-  const startStreaming = async () => {
+  const startStreaming = useCallback(async () => {
     try {
       setStreamError(null);
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -164,47 +117,34 @@ const CreateAuction = () => {
       setStreamError(errorMessage);
       toast.error(errorMessage);
     }
-  };
+  }, [startStatsMonitoring]);
 
-  const stopStreaming = () => {
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-      setLocalStream(null);
-    }
-    setIsStreaming(false);
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    if (statsIntervalRef.current) {
-      clearInterval(statsIntervalRef.current);
-      statsIntervalRef.current = null;
-    }
-    setStreamStats({ bitrate: 0, fps: 0 });
-  };
-
-  const startStatsMonitoring = (stream) => {
-    if (statsIntervalRef.current) {
-      clearInterval(statsIntervalRef.current);
-    }
-    
-    statsIntervalRef.current = setInterval(async () => {
+  // Fetch user's unsold listings on mount
+  useEffect(() => {
+    const fetchListings = async () => {
       try {
-        if (videoRef.current && videoRef.current.srcObject) {
-          const videoTrack = stream.getVideoTracks()[0];
-          if (videoTrack) {
-            const settings = videoTrack.getSettings();
-            const stats = {
-              bitrate: Math.round((settings.width * settings.height * settings.frameRate * 0.15) / 1000), // Approximate kbps
-              fps: settings.frameRate || 30,
-            };
-            setStreamStats(stats);
-          }
-        }
-      } catch (err) {
-        console.error('Stats error:', err);
+        const response = await api.get('/listings/my', { params: { sold: false } });
+        setUserListings(response.data.listings || []);
+      } catch (error) {
+        console.error('Error fetching listings:', error);
+        toast.error('Failed to load your listings');
       }
-    }, 1000);
-  };
+    };
+    
+    if (user) {
+      fetchListings();
+    }
+  }, [user]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopStreaming();
+      if (statsIntervalRef.current) {
+        clearInterval(statsIntervalRef.current);
+      }
+    };
+  }, [stopStreaming]);
 
   // Enterprise-grade WebRTC streaming to viewers (client-to-client via signaling server)
   const startLiveStream = async (auctionId) => {
@@ -260,6 +200,69 @@ const CreateAuction = () => {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleString();
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+    
+    if (!formData.listingId) {
+      newErrors.listingId = 'Please select a listing';
+    }
+    
+    if (!formData.startTime) {
+      newErrors.startTime = 'Start time is required';
+    }
+    
+    if (!formData.endTime) {
+      newErrors.endTime = 'End time is required';
+    } else if (new Date(formData.endTime) <= new Date(formData.startTime)) {
+      newErrors.endTime = 'End time must be after start time';
+    }
+    
+    if (!formData.reservePrice || parseFloat(formData.reservePrice) <= 0) {
+      newErrors.reservePrice = 'Reserve price must be greater than 0';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!validateForm()) return;
+    
+    setLoading(true);
+    try {
+      const response = await api.post('/auctions', {
+        listingId: formData.listingId,
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+        reservePrice: parseFloat(formData.reservePrice),
+      });
+      
+      toast.success('Auction created successfully!');
+      
+      // If streaming is enabled, start the live stream
+      if (isStreaming) {
+        await startLiveStream(response.data.auction._id);
+      }
+      
+      navigate('/auctions');
+    } catch (error) {
+      console.error('Create auction error:', error);
+      toast.error(error.response?.data?.message || 'Failed to create auction');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Set default times (start in 1 hour, end in 7 days)
@@ -324,388 +327,245 @@ const CreateAuction = () => {
                 <button
                   key={listing._id}
                   type="button"
-                  onClick={() => {
-                    setSelectedListing(listing);
-                    setFormData(prev => ({ ...prev, listingId: listing._id, reservePrice: listing.price }));
-                  }}
+                  onClick={() => handleChange({ target: { name: 'listingId', value: listing._id } })}
+                  className={`auction-listing-card ${formData.listingId === listing._id ? 'selected' : ''}`}
                   style={{
-                    padding: 'var(--td-space-md)',
-                    borderRadius: 'var(--td-radius-md)',
-                    border: `2px solid ${formData.listingId === listing._id ? 'var(--td-primary)' : 'var(--td-border)'}`,
-                    background: formData.listingId === listing._id ? 'rgba(255, 56, 92, 0.06)' : 'var(--td-surface)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    textAlign: 'left',
                     display: 'flex',
                     flexDirection: 'column',
+                    padding: 'var(--td-space-md)',
+                    border: formData.listingId === listing._id ? '2px solid var(--td-primary)' : '1px solid var(--td-border)',
+                    borderRadius: 'var(--td-radius-lg)',
+                    background: formData.listingId === listing._id ? 'rgba(var(--td-primary-rgb), 0.1)' : 'transparent',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    textAlign: 'left',
                   }}
                 >
-                  <div style={{ position: 'relative', aspectRatio: '1', borderRadius: 'var(--td-radius-sm)', overflow: 'hidden', marginBottom: 'var(--td-space-sm)' }}>
-                    <img
-                      src={listing.images?.[0] || '/placeholder.png'}
-                      alt={listing.title}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                    {formData.listingId === listing._id && (
-                      <div style={{ position: 'absolute', top: 8, right: 8, background: 'var(--td-primary)', color: '#fff', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
-                        Selected
+                  <div style={{ position: 'relative', aspectRatio: '1', borderRadius: 'var(--td-radius-md)', overflow: 'hidden', marginBottom: 'var(--td-space-sm)' }}>
+                    {listing.images && listing.images.length > 0 ? (
+                      <img 
+                        src={listing.images[0]} 
+                        alt={listing.title}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--td-bg-tertiary)', color: 'var(--td-text-tertiary)' }}>
+                        <FaImage size={32} />
                       </div>
                     )}
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {listing.title}
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--td-primary)' }}>
-                    ${listing.price}
-                  </div>
+                  </h4>
+                  <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--td-text-secondary)' }}>
+                    {listing.category}
+                  </p>
                 </button>
               ))}
             </div>
           )}
           
-          {errors.listingId && (
-            <p className="form-error" style={{ marginTop: 'var(--td-space-sm)', color: 'var(--td-error)', fontSize: 13 }}>
-              {errors.listingId}
-            </p>
-          )}
+          {errors.listingId && <p className="error-message" style={{ color: 'var(--td-error)', fontSize: 12, marginTop: 'var(--td-space-xs)' }}>{errors.listingId}</p>}
         </div>
 
-        {/* Step 2: Auction Settings */}
+        {/* Step 2: Auction Timing */}
         <div style={{ marginBottom: 'var(--td-space-xl)', paddingBottom: 'var(--td-space-lg)', borderBottom: '1px solid var(--td-border)' }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FaClock size={20} /> Step 2: Auction Schedule
+            <FaClock size={20} /> Step 2: Set Auction Schedule
           </h2>
-          <p className="form-hint">Set when the auction starts and ends</p>
           
-          <div className="form-grid">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'var(--td-space-md)' }}>
             <div className="form-group">
-              <label className="form-label">Start Time *</label>
+              <label htmlFor="startTime" className="form-label">
+                <FaPlayCircle size={16} style={{ verticalAlign: 'middle', marginRight: 6 }} /> Start Date & Time
+              </label>
               <input
                 type="datetime-local"
+                id="startTime"
                 name="startTime"
                 value={formData.startTime}
                 onChange={handleChange}
-                required
-                className="form-input"
-                min={new Date(Date.now() - 60000).toISOString().slice(0, 16)}
+                className={`form-input ${errors.startTime ? 'error' : ''}`}
+                min={new Date().toISOString().slice(0, 16)}
               />
+              {errors.startTime && <p className="error-message" style={{ color: 'var(--td-error)', fontSize: 12, marginTop: 'var(--td-space-xs)' }}>{errors.startTime}</p>}
             </div>
+            
             <div className="form-group">
-              <label className="form-label">End Time *</label>
+              <label htmlFor="endTime" className="form-label">
+                <FaStopCircle size={16} style={{ verticalAlign: 'middle', marginRight: 6 }} /> End Date & Time
+              </label>
               <input
                 type="datetime-local"
+                id="endTime"
                 name="endTime"
                 value={formData.endTime}
                 onChange={handleChange}
-                required
-                className="form-input"
-                min={formData.startTime || new Date(Date.now() - 60000).toISOString().slice(0, 16)}
+                className={`form-input ${errors.endTime ? 'error' : ''}`}
+                min={formData.startTime || new Date().toISOString().slice(0, 16)}
               />
+              {errors.endTime && <p className="error-message" style={{ color: 'var(--td-error)', fontSize: 12, marginTop: 'var(--td-space-xs)' }}>{errors.endTime}</p>}
             </div>
           </div>
           
-          {errors.startTime && <p className="form-error" style={{ color: 'var(--td-error)', fontSize: 13 }}>{errors.startTime}</p>}
-          {errors.endTime && <p className="form-error" style={{ color: 'var(--td-error)', fontSize: 13 }}>{errors.endTime}</p>}
-          
-          {formData.startTime && formData.endTime && (
-            <div className="glass-card" style={{ marginTop: 'var(--td-space-md)', padding: 'var(--td-space-md)' }}>
-              <div style={{ display: 'flex', gap: 'var(--td-space-lg)', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FaClock style={{ color: 'var(--td-primary)' }} />
-                  <div>
-                    <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Starts</div>
-                    <div style={{ fontWeight: 600 }}>{formatDateTime(formData.startTime)}</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FaClock style={{ color: 'var(--td-error)' }} />
-                  <div>
-                    <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Ends</div>
-                    <div style={{ fontWeight: 600 }}>{formatDateTime(formData.endTime)}</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FaDollarSign style={{ color: 'var(--td-success)' }} />
-                  <div>
-                    <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Reserve Price</div>
-                    <div style={{ fontWeight: 600 }}>${formData.reservePrice || '0'}</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FaInfoCircle style={{ color: 'var(--td-text-tertiary)' }} />
-                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
-                    Duration: {Math.round((new Date(formData.endTime) - new Date(formData.startTime)) / (1000 * 60 * 60 * 24))} days
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <p className="form-hint" style={{ marginTop: 'var(--td-space-sm)' }}>
+            Auction must run for at least 1 hour and maximum 30 days.
+          </p>
         </div>
 
         {/* Step 3: Reserve Price */}
         <div style={{ marginBottom: 'var(--td-space-xl)', paddingBottom: 'var(--td-space-lg)', borderBottom: '1px solid var(--td-border)' }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FaDollarSign size={20} /> Step 3: Reserve Price
+            <FaDollarSign size={20} /> Step 3: Set Reserve Price
           </h2>
-          <p className="form-hint">Minimum price you're willing to accept. The item won't sell if bids don't reach this price.</p>
           
-          <div className="form-group" style={{ maxWidth: 300 }}>
-            <label className="form-label">Reserve Price (USD) *</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--td-primary)' }}>$</span>
+          <div className="form-group">
+            <label htmlFor="reservePrice" className="form-label">Minimum Acceptable Bid (Reserve Price)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--td-text-primary)' }}>{formData.currency || 'USD'}</span>
               <input
                 type="number"
+                id="reservePrice"
                 name="reservePrice"
                 value={formData.reservePrice}
                 onChange={handleChange}
-                min="0.01"
+                className={`form-input ${errors.reservePrice ? 'error' : ''}`}
                 step="0.01"
-                required
-                className="form-input"
-                style={{ flex: 1 }}
+                min="0.01"
                 placeholder="0.00"
+                style={{ flex: 1 }}
               />
             </div>
+            {errors.reservePrice && <p className="error-message" style={{ color: 'var(--td-error)', fontSize: 12, marginTop: 'var(--td-space-xs)' }}>{errors.reservePrice}</p>}
+            <p className="form-hint">The auction will only be successful if bids meet or exceed this price.</p>
           </div>
-          
-          {errors.reservePrice && <p className="form-error" style={{ color: 'var(--td-error)', fontSize: 13 }}>{errors.reservePrice}</p>}
-          
-          {selectedListing && formData.reservePrice && (
-            <div className="glass-card" style={{ marginTop: 'var(--td-space-md)', padding: 'var(--td-space-md)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--td-space-sm)' }}>
-                <div>
-                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Listing Price</div>
-                  <div style={{ fontWeight: 600 }}>${selectedListing.price}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Reserve Price</div>
-                  <div style={{ fontWeight: 600, color: parseFloat(formData.reservePrice) > selectedListing.price ? 'var(--td-error)' : 'var(--td-success)' }}>
-                    ${formData.reservePrice}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Difference</div>
-                  <div style={{ fontWeight: 600, color: parseFloat(formData.reservePrice) > selectedListing.price ? 'var(--td-error)' : 'var(--td-success)' }}>
-                    {parseFloat(formData.reservePrice) > selectedListing.price ? '+' : ''}${(parseFloat(formData.reservePrice) - selectedListing.price).toFixed(2)}
-                  </div>
-                </div>
-                {parseFloat(formData.reservePrice) > selectedListing.price && (
-                  <FaExclamationTriangle style={{ color: 'var(--td-warning)' }} title="Reserve price is higher than listing price" />
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Step 4: Live Video Streaming */}
         <div style={{ marginBottom: 'var(--td-space-xl)' }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FaVideo size={20} /> Step 4: Live Video Streaming (Optional)
+            <FaBroadcastTower size={20} /> Step 4: Live Video Streaming (Optional)
           </h2>
-          <p className="form-hint">
-            Stream live video during the auction to show the item in real-time. 
-            <strong>Streaming is entirely client-side (P2P/WebRTC)</strong> - no server bandwidth used.
-            Works on web browsers, iOS, and Android apps.
-          </p>
           
-          <div className="glass-card" style={{ padding: 'var(--td-space-lg)' }}>
-            {!isStreaming ? (
-              <div style={{ textAlign: 'center', padding: 'var(--td-space-xl)' }}>
-                <FaVideo size={48} style={{ color: 'var(--td-text-tertiary)', marginBottom: 'var(--td-space-md)' }} />
-                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 'var(--td-space-sm)' }}>
-                  Enable Live Auction Streaming
+          <div className="form-group">
+            <label className="form-label checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                name="enableLiveStream"
+                checked={formData.enableLiveStream}
+                onChange={handleChange}
+                style={{ width: 20, height: 20, accentColor: 'var(--td-primary)' }}
+              />
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>Enable live video streaming during auction</span>
+                <span style={{ fontSize: 12, color: 'var(--td-text-tertiary)', fontWeight: 400 }}>
+                  Showcase your item in real-time to bidders with camera and microphone
+                </span>
+              </span>
+            </label>
+          </div>
+
+          {formData.enableLiveStream && (
+            <div className="glass-card" style={{ marginTop: 'var(--td-space-md)', padding: 'var(--td-space-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--td-space-md)' }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
+                  <FaVideo size={18} style={{ marginRight: 8 }} /> Live Preview
                 </h3>
-                <p style={{ color: 'var(--td-text-secondary)', marginBottom: 'var(--td-space-lg)', maxWidth: 500, margin: '0 auto var(--td-space-lg)' }}>
-                  Go live during your auction to show the item from all angles, answer bidder questions in real-time, and create urgency. 
-                  Streaming uses WebRTC for direct peer-to-peer connections - zero server load.
-                </p>
-                
-                <div style={{ display: 'flex', gap: 'var(--td-space-md)', justifyContent: 'center', flexWrap: 'wrap', marginBottom: 'var(--td-space-lg)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 'var(--td-space-sm) var(--td-space-md)', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)', border: '1px solid var(--td-border)' }}>
-                    <FaWifi style={{ color: 'var(--td-success)' }} />
-                    <span style={{ fontSize: 13 }}>P2P/WebRTC</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 'var(--td-space-sm) var(--td-space-md)', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)', border: '1px solid var(--td-border)' }}>
-                    <FaMobile style={{ color: 'var(--td-primary)' }} />
-                    <span style={{ fontSize: 13 }}>iOS & Android</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 'var(--td-space-sm) var(--td-space-md)', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)', border: '1px solid var(--td-border)' }}>
-                    <FaSignal style={{ color: 'var(--td-info)' }} />
-                    <span style={{ fontSize: 13 }}>Adaptive Bitrate</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 'var(--td-space-sm) var(--td-space-md)', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)', border: '1px solid var(--td-border)' }}>
-                    <FaServer style={{ color: 'var(--td-text-tertiary)' }} />
-                    <span style={{ fontSize: 13 }}>Zero Server Load</span>
-                  </div>
+                <div style={{ display: 'flex', gap: 'var(--td-space-sm)' }}>
+                  {isStreaming ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={stopStreaming}
+                        className="btn btn-outline"
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <FaVideo style={{ transform: 'scaleX(-1)' }} /> Stop Preview
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={startStreaming}
+                        className="btn btn-primary"
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                        disabled={isStreaming}
+                      >
+                        <FaVideo /> Start Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={togglePreview}
+                        className="btn btn-outline"
+                      >
+                        <FaEye /> {showPreview ? 'Hide' : 'Show'} Preview
+                      </button>
+                    </>
+                  )}
                 </div>
-                
-                <button
-                  type="button"
-                  className="btn btn-primary btn-lg"
-                  onClick={startStreaming}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-                  disabled={loading}
-                >
-                  <FaVideo /> Start Camera Preview
-                </button>
-                
-                {streamError && (
-                  <div style={{ marginTop: 'var(--td-space-md)', padding: 'var(--td-space-md)', background: 'rgba(255, 56, 92, 0.1)', borderRadius: 'var(--td-radius-sm)', border: '1px solid var(--td-error)', color: 'var(--td-error)', textAlign: 'left' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, marginBottom: 4 }}>
-                      <FaExclamationTriangle /> Camera Access Issue
-                    </div>
-                    <p style={{ fontSize: 13 }}>{streamError}</p>
-                    <p style={{ fontSize: 12, marginTop: 8, opacity: 0.8 }}>
-                      Please check browser permissions and ensure no other app is using the camera.
-                    </p>
-                  </div>
-                )}
               </div>
-            ) : (
-              <div>
-                {/* Live Preview */}
-                <div style={{ position: 'relative', marginBottom: 'var(--td-space-md)' }}>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    style={{
-                      width: '100%',
-                      maxHeight: 500,
-                      borderRadius: 'var(--td-radius-md)',
-                      background: '#000',
-                      objectFit: 'contain'
-                    }}
-                  />
-                  {streamStats.bitrate > 0 && (
-                    <div style={{ 
-                      position: 'absolute', 
-                      bottom: 12, 
-                      right: 12, 
-                      background: 'rgba(0,0,0,0.7)', 
-                      color: '#fff', 
-                      padding: '6px 12px', 
-                      borderRadius: 'var(--td-radius-sm)',
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                      display: 'flex',
-                      gap: 'var(--td-space-md)',
-                      alignItems: 'center'
-                    }}>
-                      <span><FaSignal /> ~{streamStats.bitrate} kbps</span>
-                      <span><FaVideo /> {streamStats.fps} fps</span>
-                      <span style={{ color: 'var(--td-success)' }}><FaCheckCircle /> LIVE</span>
+
+              {streamError && (
+                <div className="glass-card" style={{ padding: 'var(--td-space-md)', background: 'rgba(var(--td-error-rgb), 0.1)', border: '1px solid var(--td-error)', marginBottom: 'var(--td-space-md)' }}>
+                  <p style={{ margin: 0, color: 'var(--td-error)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <FaExclamationTriangle /> {streamError}
+                  </p>
+                </div>
+              )}
+
+              {showPreview && (
+                <div style={{ position: 'relative', borderRadius: 'var(--td-radius-lg)', overflow: 'hidden', background: 'var(--td-bg-tertiary)', minHeight: 300 }}>
+                  {isStreaming && localStream ? (
+                    <>
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        muted
+                        playsInline
+                        style={{ width: '100%', height: '100%', minHeight: 300, objectFit: 'cover' }}
+                      />
+                      <div style={{ position: 'absolute', bottom: 12, right: 12, display: 'flex', gap: 8, background: 'rgba(0,0,0,0.7)', padding: '8px 12', borderRadius: 'var(--td-radius-md)', color: 'white', fontSize: 12 }}>
+                        <span><FaBroadcastTower /> LIVE</span>
+                        <span>{streamStats.bitrate} kbps</span>
+                        <span>{streamStats.fps} fps</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ width: '100%', height: 300, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 'var(--td-space-md)', color: 'var(--td-text-tertiary)' }}>
+                      <FaVideo size={64} />
+                      <p>Click "Start Preview" to begin live video streaming</p>
+                      <p style={{ fontSize: 12 }}>Requires camera and microphone permissions</p>
                     </div>
                   )}
                 </div>
-                
-                {/* Stream Controls */}
-                <div style={{ display: 'flex', gap: 'var(--td-space-md)', justifyContent: 'center', flexWrap: 'wrap', marginBottom: 'var(--td-space-md)' }}>
-                  <button
-                    type="button"
-                    className="btn btn-outline"
-                    onClick={togglePreview}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-                  >
-                    <FaEye /> {showPreview ? 'Hide' : 'Show'} Preview
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-error"
-                    onClick={stopStreaming}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-                  >
-                    <FaTimes /> Stop Preview
-                  </button>
-                </div>
-                
-                {/* Stream Info */}
-                <div className="glass-card" style={{ padding: 'var(--td-space-md)' }}>
-                  <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 'var(--td-space-sm)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <FaInfoCircle style={{ color: 'var(--td-primary)' }} />
-                    How Live Streaming Works
-                  </h4>
-                  <ul style={{ fontSize: 13, color: 'var(--td-text-secondary)', lineHeight: 2, paddingLeft: 'var(--td-space-lg)' }}>
-                    <li>When auction goes live, click "Go Live" to start broadcasting to viewers</li>
-                    <li>Viewers watch via WebRTC - direct peer-to-peer, no server relay</li>
-                    <li>Supports 100+ concurrent viewers via SFU architecture (enterprise)</li>
-                    <li>Works on Chrome, Safari, Firefox, iOS Safari, Chrome Android</li>
-                    <li>Adaptive bitrate adjusts to viewer's connection automatically</li>
-                    <li>Audio/video can be toggled by viewers independently</li>
-                  </ul>
-                </div>
+              )}
+
+              <div className="form-hint" style={{ marginTop: 'var(--td-space-sm)' }}>
+                <strong>Mobile users:</strong> When using the TrendDrop app on iOS or Android, you'll be prompted to grant camera and microphone permissions. 
+                Make sure to allow these permissions for the best live auction experience.
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* Submit Buttons */}
-        <div style={{ display: 'flex', gap: 'var(--td-space-md)', justifyContent: 'flex-end', paddingTop: 'var(--td-space-lg)', borderTop: '1px solid var(--td-border)' }}>
+        {/* Submit */}
+        <div style={{ display: 'flex', gap: 'var(--td-space-md)', justifyContent: 'flex-end' }}>
           <button type="button" className="btn btn-outline" onClick={() => navigate('/auctions')}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary btn-lg" disabled={loading || !formData.listingId}>
+          <button type="submit" className="btn btn-primary" disabled={loading} style={{ minWidth: 180 }}>
             {loading ? (
               <>
-                <FaSpinner className="spinner-sm" />
-                Creating Auction...
+                <span className="spinner" style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid currentColor', borderRightColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginRight: 8 }}></span>
+                Creating...
               </>
             ) : (
-              <>
-                <FaGavel />
-                Create Auction
-              </>
+              'Create Auction'
             )}
           </button>
         </div>
       </form>
-
-      {/* Enterprise Features Info */}
-      <div className="glass-card" style={{ marginTop: 'var(--td-space-xl)', padding: 'var(--td-space-lg)' }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 'var(--td-space-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FaShieldAlt style={{ color: 'var(--td-primary)' }} />
-          Enterprise-Grade Features
-        </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'var(--td-space-md)' }}>
-          <div style={{ padding: 'var(--td-space-md)', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)' }}>
-            <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <FaLock style={{ color: 'var(--td-success)', fontSize: 12 }} />
-              Secure Bidding
-            </h4>
-            <p style={{ fontSize: 13, color: 'var(--td-text-secondary)' }}>
-              All bids processed server-side with validation, reserve price enforcement, and fraud detection
-            </p>
-          </div>
-          <div style={{ padding: 'var(--td-space-md)', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)' }}>
-            <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <FaVideo style={{ color: 'var(--td-primary)', fontSize: 12 }} />
-              Client-Side Streaming
-            </h4>
-            <p style={{ fontSize: 13, color: 'var(--td-text-secondary)' }}>
-              WebRTC P2P streaming - zero server bandwidth, works on web, iOS, Android
-            </p>
-          </div>
-          <div style={{ padding: 'var(--td-space-md)', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)' }}>
-            <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <FaGavel style={{ color: 'var(--td-warning)', fontSize: 12 }} />
-              Auto-Close & Settlement
-            </h4>
-            <p style={{ fontSize: 13, color: 'var(--td-text-secondary)' }}>
-              Automatic auction closing, winner determination, and order creation server-side
-            </p>
-          </div>
-          <div style={{ padding: 'var(--td-space-md)', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)' }}>
-            <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <FaChartLine style={{ color: 'var(--td-info)', fontSize: 12 }} />
-              Real-Time Analytics
-            </h4>
-            <p style={{ fontSize: 13, color: 'var(--td-text-secondary)' }}>
-              Live bid tracking, viewer counts, and streaming metrics
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
