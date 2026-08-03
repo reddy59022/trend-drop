@@ -178,18 +178,21 @@ const Navbar = () => {
       <div className="navbar-container">
         {/* Logo */}
         <Link to="/" className="navbar-logo" onClick={closeAllMenus}>
-          <svg className="logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="16" cy="16" r="16" fill="url(#logo-gradient)" />
-            <path d="M10 22V12l6-4 6 4v10H10z" fill="white" opacity="0.9" />
-            <path d="M12 18h8v4h-8z" fill="white" />
-            <defs>
-              <linearGradient id="logo-gradient" x1="0" y1="0" x2="32" y2="32">
-                <stop stopColor="#FF385C" />
-                <stop offset="1" stopColor="#FF6B81" />
-              </linearGradient>
-            </defs>
-          </svg>
-          <span className="logo-text">TrendDrop</span>
+          <span className="av-logo-mark">
+            <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="16" cy="16" r="16" fill="url(#logo-gradient)" />
+              <path d="M10 22V12l6-4 6 4v10H10z" fill="white" opacity="0.95" />
+              <path d="M12 18h8v4h-8z" fill="white" />
+              <defs>
+                <linearGradient id="logo-gradient" x1="0" y1="0" x2="32" y2="32">
+                  <stop stopColor="#6C3BFF" />
+                  <stop offset="0.55" stopColor="#8B5CFF" />
+                  <stop offset="1" stopColor="#FF6BC1" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </span>
+          <span className="logo-text">AURAVEST</span>
         </Link>
 
         {/* Search */}
@@ -300,7 +303,7 @@ const Navbar = () => {
                   aria-label="Profile menu"
                 >
                   <img
-                    src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'U')}&background=FF385C&color=fff&size=68`}
+                    src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'U')}&background=6C3BFF&color=fff&size=68`}
                     alt={user.name}
                     className="nav-avatar"
                   />

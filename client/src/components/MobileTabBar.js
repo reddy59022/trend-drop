@@ -37,27 +37,10 @@ const MobileTabBar = () => {
           <Link
             key={tab.path}
             to={tab.path}
-            className={`mobile-tab-item ${isActive ? 'active' : ''}`}
+            className={`mobile-tab-item ${tab.highlight ? 'mobile-tab-center' : ''} ${isActive ? 'active' : ''}`}
+            aria-label={tab.label}
           >
-            {tab.highlight ? (
-              <div style={{
-                width: 48,
-                height: 48,
-                borderRadius: '50%',
-                background: 'var(--td-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fff',
-                fontSize: 20,
-                marginTop: -12,
-                boxShadow: '0 4px 12px var(--td-primary-glow)',
-              }}>
-                {tab.icon}
-              </div>
-            ) : (
-              tab.icon
-            )}
+            {tab.icon}
             {!tab.highlight && <span>{tab.label}</span>}
           </Link>
         );

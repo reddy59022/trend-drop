@@ -12,15 +12,24 @@ const Footer = () => {
           {/* Brand */}
           <div className="footer-section">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-                <circle cx="16" cy="16" r="16" fill="#FF385C"/>
-                <path d="M10 22V12l6-4 6 4v10H10z" fill="white" opacity="0.9"/>
-                <path d="M12 18h8v4h-8z" fill="white"/>
-              </svg>
-              <span style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>TrendDrop</span>
+              <span className="av-logo-mark" style={{ width: 28, height: 28 }}>
+                <svg viewBox="0 0 32 32" fill="none">
+                  <circle cx="16" cy="16" r="16" fill="url(#footer-logo-gradient)"/>
+                  <path d="M10 22V12l6-4 6 4v10H10z" fill="white" opacity="0.95"/>
+                  <path d="M12 18h8v4h-8z" fill="white"/>
+                  <defs>
+                    <linearGradient id="footer-logo-gradient" x1="0" y1="0" x2="32" y2="32">
+                      <stop stopColor="#6C3BFF"/>
+                      <stop offset="0.55" stopColor="#8B5CFF"/>
+                      <stop offset="1" stopColor="#FF6BC1"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </span>
+              <span className="footer-brand-name">AURAVEST</span>
             </div>
             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, lineHeight: 1.7, marginBottom: 16 }}>
-              The world's most beautiful fashion marketplace. Buy, sell, and connect with fashion lovers across the globe.
+              Wear the Extraordinary. The world's most beautiful fashion marketplace — curated designers, verified authenticity, and a community that lives in style.
             </p>
             <div className="social-icons">
               <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
@@ -79,7 +88,7 @@ const Footer = () => {
 
         <div className="footer-bottom">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-            <span>© {currentYear} TrendDrop. All rights reserved.</span>
+            <span>© {currentYear} AURAVEST. All rights reserved.</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ opacity: 0.5 }}>🌍 Available in 85+ countries</span>
               <span style={{ opacity: 0.5 }}>|</span>

@@ -31,7 +31,7 @@ const Referrals = () => {
       setSettings(settingsRes.data);
       if (statsRes.data.stats.code) {
         const link = `${window.location.origin}/register?ref=${statsRes.data.stats.code}`;
-        setShareText(`Join me on TrendDrop and get $${statsRes.data.stats.rewardAmount || 10} off your first purchase! Use my code: ${statsRes.data.stats.code} 🛍️✨`);
+        setShareText(`Join me on AURAVEST and get $${statsRes.data.stats.rewardAmount || 10} off your first purchase! Use my code: ${statsRes.data.stats.code} 🛍️✨`);
       }
     } catch (error) {
       console.error(error);
@@ -45,7 +45,7 @@ const Referrals = () => {
       setReferral(res.data.referral);
       setStats(prev => ({ ...prev, code: res.data.referral.code, status: 'active', rewardAmount: res.data.referral.rewardAmount }));
       const link = `${window.location.origin}/register?ref=${res.data.referral.code}`;
-      setShareText(`Join me on TrendDrop and get $${res.data.referral.rewardAmount} off your first purchase! Use my code: ${res.data.referral.code} 🛍️✨`);
+      setShareText(`Join me on AURAVEST and get $${res.data.referral.rewardAmount} off your first purchase! Use my code: ${res.data.referral.code} 🛍️✨`);
       toast.success('Your referral code has been generated!');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to generate code');
@@ -128,7 +128,7 @@ const Referrals = () => {
         <div style={{ fontSize: 40, marginBottom: 12 }}>🎁</div>
         <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Give $10, Get $10</h2>
         <p style={{ opacity: 0.9, maxWidth: 480, margin: '0 auto 20px' }}>
-          Share your code with friends. When they join TrendDrop, you both earn ${(stats?.rewardAmount || settings?.rewardAmount || 10).toFixed(2)} in credit.
+          Share your code with friends. When they join AURAVEST, you both earn ${(stats?.rewardAmount || settings?.rewardAmount || 10).toFixed(2)} in credit.
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
           <div className="badge" style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 20, padding: '8px 16px', fontSize: 13 }}>
@@ -215,7 +215,7 @@ const Referrals = () => {
               </div>
               <div>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>2️⃣</div>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>They join TrendDrop</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>They join AURAVEST</div>
                 <div style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>Your friend signs up with your code and gets ${(stats?.rewardAmount || settings?.rewardAmount || 10).toFixed(2)} credit.</div>
               </div>
               <div>
@@ -233,7 +233,7 @@ const Referrals = () => {
                 <FaCheckCircle /> You earned ${formatPrice(earned, 'USD')}!
               </h3>
               <p style={{ fontSize: 14, color: 'var(--td-text-secondary)', marginBottom: 16 }}>
-                Claim your reward to add it to your TrendDrop balance.
+                Claim your reward to add it to your AURAVEST balance.
               </p>
               <button className="btn btn-success" onClick={claimReward}>
                 <FaDollarSign size={14} /> Claim ${formatPrice(earned, 'USD')}

@@ -91,22 +91,22 @@ const Home = () => {
 
   // Fixed commission display - matches actual 8% platform fee
   const commissionData = [
-    { platform: 'TrendDrop', rate: '8%', highlight: true, note: '+ 5% buyer protection' },
+    { platform: 'AURAVEST', rate: '8%', highlight: true, note: '+ 5% buyer protection' },
     { platform: 'Poshmark', rate: '20%', highlight: false, note: 'flat rate' },
     { platform: 'Mercari', rate: '10%', highlight: false, note: '+ payment fee' },
     { platform: 'Depop', rate: '10%', highlight: false, note: '+ PayPal fee' },
   ];
 
   return (
-    <div className="home-page" role="main" aria-label="TrendDrop Home">
+    <div className="home-page" role="main" aria-label="AURAVEST Home">
       {/* ===== Hero Section ===== */}
       <section className="hero" aria-label="Hero banner">
         <div className="hero-content">
           <div className="hero-badge">
-            <FaBolt aria-hidden="true" /> Global Fashion Marketplace
+            <FaBolt aria-hidden="true" /> The New Standard in Fashion
           </div>
-          <h1>Buy & Sell Fashion<br/>From Around the World</h1>
-          <p>Join millions of fashion lovers. Shop unique items, make offers, and sell your closet — all in one place.</p>
+          <h1>Wear the<br/><span className="av-serif">Extraordinary</span></h1>
+          <p>Discover designer pieces, vintage treasures, and verified luxury — curated by a global community that lives in style.</p>
           <div className="hero-actions">
             <Link to="/search" className="btn btn-primary btn-lg" aria-label="Start shopping">
               <FaSearch aria-hidden="true" /> Start Shopping
@@ -197,7 +197,7 @@ const Home = () => {
             <div className="commission-text">
               <span className="commission-badge">💎 Lowest Fees</span>
               <h2>Keep Up to 92% of Your Sales</h2>
-              <p>TrendDrop has one of the lowest commission rates — just 8%. More money in your pocket compared to other platforms.</p>
+              <p>AURAVEST has one of the lowest commission rates in fashion — just 8%. More money in your pocket, and more time in style.</p>
               <Link to="/seller-dashboard" className="btn btn-primary btn-lg" aria-label="Start selling, keep more">
                 Start Selling — Keep More 💰
               </Link>
@@ -244,9 +244,9 @@ const Home = () => {
       </section>
 
       {/* ===== Features ===== */}
-      <section className="section bg-light" aria-label="Why TrendDrop features">
+      <section className="section bg-light" aria-label="Why AURAVEST features">
         <div className="container">
-          <h2 className="section-title">Why TrendDrop?</h2>
+          <h2 className="section-title">The AURAVEST Difference</h2>
           <div className="features-grid">
             <div className="feature-card glass">
               <div className="feature-icon-wrap">
@@ -283,8 +283,8 @@ const Home = () => {
       {/* ===== CTA ===== */}
       <section className="cta-section" aria-label="Call to action">
         <div className="container">
-          <h2>Ready to Start Selling?</h2>
-          <p>Turn your closet into cash. Join millions of sellers worldwide.</p>
+          <h2>Your Closet Has a Story.</h2>
+          <p>Turn it into a masterpiece — and a paycheck. Join thousands of verified sellers worldwide.</p>
           <div className="cta-actions">
             <Link to="/register" className="btn btn-primary btn-xl" aria-label="Get started free">
               Get Started Free

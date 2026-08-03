@@ -98,7 +98,7 @@ const SellerOnboarding = () => {
     <div className="onboarding-page">
       <div className="container">
         <div className="onboarding-header">
-          <h1>Welcome to TrendDrop, {user?.name?.split(' ')[0]}!</h1>
+          <h1>Welcome to AURAVEST, {user?.name?.split(' ')[0]}!</h1>
           <p className="subtitle">Let's get you set up as a seller</p>
         </div>
 
