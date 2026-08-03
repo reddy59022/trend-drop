@@ -83,7 +83,13 @@ const Register = () => {
       <div className="auth-container" style={{ animation: 'fadeInUp 0.4s ease-out', maxWidth: 480 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style={{ margin: '0 auto 12px' }}>
-            <circle cx="16" cy="16" r="16" fill="#FF385C"/>
+            <defs>
+              <linearGradient id="avBrandIcon" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#6C3BFF"/>
+                <stop offset="100%" stopColor="#FF6B81"/>
+              </linearGradient>
+            </defs>
+            <circle cx="16" cy="16" r="16" fill="url(#avBrandIcon)"/>
             <path d="M10 22V12l6-4 6 4v10H10z" fill="white" opacity="0.9"/>
             <path d="M12 18h8v4h-8z" fill="white"/>
           </svg>
