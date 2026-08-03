@@ -63,6 +63,7 @@ const ReferralsPage = lazy(() => import('./pages/Referrals'));
 const ReturnsCenterPage = lazy(() => import('./pages/ReturnsCenter'));
 const AuctionPage = lazy(() => import('./pages/AuctionPage'));
 const CreateAuctionPage = lazy(() => import('./pages/CreateAuction'));
+const AuctionDetail = lazy(() => import('./pages/AuctionDetail'));
 const PriceSuggestionPage = lazy(() => import('./pages/PriceSuggestion'));
 const SellerBadgesPage = lazy(() => import('./pages/SellerBadges'));
 const FraudProtectionPage = lazy(() => import('./pages/FraudProtection'));
