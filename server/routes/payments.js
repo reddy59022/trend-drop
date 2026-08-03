@@ -434,7 +434,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
           service: label.service,
           trackingHistory: label.statusHistory,
         },
-        status: 'shipped',
+        // LIFECYCLE: born as 'paid' so buyer can cancel BEFORE shipment.
+        // Move to 'shipped' only when a seller dispatches (order/:id/ship).
+        // Label is auto-created but dispatch is manual — that is the cancel window.
+        status: 'paid',
         payout: { status: 'pending', transactionId: paymentIntentId },
         autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
         offer: offer ? offer._id : null,
@@ -472,6 +475,9 @@ router.post('/confirm-batch', auth, async (req, res) => {
         commissionAmount: plan.platformFeeTotal,
         payoutAmount: sellerEarningsWithBoost,
         status: 'pending',
+        // ZERO-LEAKAGE IDEMPOTENCY: store the payment intent so confirm-batch
+        // dedupe actually finds it (R1 critical fix — prevents double charge).
+        paymentIntentId,
       });
       createdPayouts.push(payout);
 
@@ -571,9 +577,11 @@ router.post('/confirm-batch', auth, async (req, res) => {
       }
 
       const totalHeld = Math.round((subtotalTotal + shippingTotal + protectionTotal) * 100) / 100;
-      const discountTotal = totalHeld - (paymentIntent.metadata?.promoDiscount
+      // ACTUAL discount total = promo + bundle. NEVER treat the held amount
+      // itself as a "discount" when no promo/bundle was applied.
+      const discountTotal = (paymentIntent.metadata?.promoDiscount
         ? Number(paymentIntent.metadata.promoDiscount) : 0)
-        - (paymentIntent.metadata?.bundleDiscount ? Number(paymentIntent.metadata.bundleDiscount) : 0);
+        + (paymentIntent.metadata?.bundleDiscount ? Number(paymentIntent.metadata.bundleDiscount) : 0);
 
       createdOrder = await Order.create({
         buyer: req.user._id,
@@ -586,7 +594,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
           shipping: shippingTotal,
           protectionFees: protectionTotal,
           discounts: Math.max(0, Math.round(discountTotal * 100) / 100),
-          total: totalHeld,
+          total: Math.max(0, Math.round((totalHeld - discountTotal) * 100) / 100),
         },
         payment: {
           paymentIntentId,
@@ -759,7 +767,8 @@ router.post('/confirm', auth, async (req, res) => {
         service: label.service,
         trackingHistory: label.statusHistory,
       },
-      status: 'shipped',
+      // LIFECYCLE: born as 'paid' for pre-shipment cancellation (R3 fix same as batch)
+      status: 'paid',
       payout: { status: 'pending', transactionId: paymentIntentId },
       autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
     });
@@ -806,6 +815,8 @@ router.post('/confirm', auth, async (req, res) => {
           commissionAmount: breakdown.seller.platformFee,
           payoutAmount: breakdown.seller.sellerEarnings,
           status: 'pending',
+          // R1 idempotency: tie payout to payment intent for dedupe
+          paymentIntentId,
         });
       }
     } catch (pErr) {

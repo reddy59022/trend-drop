@@ -34,10 +34,13 @@ app.set('trust proxy', 1);
 
 // ====== Production Security & Rate Limiting ======
 
-// General API rate limit: 100 requests per 15 minutes per IP
+// General API rate limit: 1000 requests per 15 minutes per IP (~1.1 req/s).
+// A marketplace SPA makes multiple API calls per page view (feed, listings,
+// notifications, search), so a 100/15min cap would throttle legitimate users.
+// 1000/15min still blocks scripted abuse while allowing normal browsing.
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 1000,
   message: { message: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,

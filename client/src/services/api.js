@@ -3,18 +3,31 @@ import { Capacitor } from '@capacitor/core';
 
 // Determine the API base URL based on platform
 const getBaseURL = () => {
+  // 1) Explicit build-time override — set REACT_APP_API_URL at build time
+  //    (e.g. REACT_APP_API_URL=https://trend-drop.onrender.com/api npm run build).
+  //    On native iOS/Android the WebView hostname is ALWAYS "localhost",
+  //    so a hostname check alone would send production phones to their own
+  //    localhost. This env var is the ONLY reliable way to point a release
+  //    build at the deployed backend.
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL.replace(/\/$/, '');
+  }
+
   const isNative = Capacitor.isNativePlatform();
 
   if (isNative) {
     // For native iOS/Android:
-    // - In local development (start.sh), point to local backend
-    // - In production, point to deployed Render backend
-    // When using Capacitor Live Reload with `npx cap run`, the app
-    // runs in a webview pointing to localhost, so use localhost
-  const isLocalDev = window.location.hostname === 'localhost'
-                   || window.location.hostname === '127.0.0.1';
+    // - Local development (Capacitor Live Reload / `npx cap run`) is served
+    //   from http://localhost:3000 (web) or capacitor://localhost (app).
+    // - A release build stores the app bundle locally and the hostname is
+    //   always "localhost", so we additionally require a non-HTTPS origin
+    //   before treating it as local dev. The deployed backend is always
+    //   HTTPS, so this cleanly separates the two.
+    const isLocalServer = window.location.protocol === 'http:'
+                       && (window.location.hostname === 'localhost'
+                        || window.location.hostname === '127.0.0.1');
 
-    if (isLocalDev) {
+    if (isLocalServer) {
       // Local development - point to local backend on the updated port 5001
       return 'http://localhost:5001/api';
     }

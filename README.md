@@ -90,14 +90,14 @@ cp .env.example .env
 # Edit .env with your values
 ```
 
-Required environment variables:
+Required environment variables (fill in your own values — NEVER commit real secrets):
 ```
 PORT=5000
 MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/trend-drop?retryWrites=true&w=majority
-JWT_SECRET=4QmypzuXr4jWuuQAa6hFuga0Mch4wT19Usj53CRxd14=
-CLOUDINARY_CLOUD_NAME=dhw3unh0e
-CLOUDINARY_API_KEY=536891899585567
-CLOUDINARY_API_SECRET=kxa47g-Rl846xNqfWU0kh3uTN0M
+JWT_SECRET=your-random-jwt-secret-here
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
 NODE_ENV=development
 ```
 
@@ -143,9 +143,9 @@ The web app will be available at `http://localhost:3000`
    - `NODE_ENV` = `production`
    - `MONGO_URI` = your MongoDB Atlas connection string
    - `JWT_SECRET` = generate a strong secret
-   - `CLOUDINARY_CLOUD_NAME` = dhw3unh0e
-   - `CLOUDINARY_API_KEY` = 536891899585567
-   - `CLOUDINARY_API_SECRET` = kxa47g-Rl846xNqfWU0kh3uTN0M
+   - `CLOUDINARY_CLOUD_NAME` = your cloud name
+   - `CLOUDINARY_API_KEY` = your API key
+   - `CLOUDINARY_API_SECRET` = your API secret
 7. Deploy!
 
 ### Alternative: Using render.yaml
@@ -241,12 +241,19 @@ This opens Xcode. From there:
 3. Click Run (▶)
 
 ### API Configuration for Mobile
-The mobile app automatically detects it's running on a native platform and points to:
-```
-https://trend-drop.onrender.com/api
-```
+The mobile app resolves the API base URL in this order (`client/src/services/api.js`):
+1. **`REACT_APP_API_URL` build-time env var** — set `https://trend-drop.onrender.com/api` for any production release build
+2. Native platform + non-secure origin (`http://localhost` / `http://127.0.0.1`) → local dev backend `http://localhost:5001/api`
+3. Native platform otherwise → `https://trend-drop.onrender.com/api`
+4. Web (browser) → relative `/api` (served by the Express backend)
 
-**IMPORTANT:** After deploying to Render, update the API URL in `client/src/services/api.js` with your actual Render deployment URL.
+**IMPORTANT:** The Capacitor WebView hostname is **always** `localhost` on iOS/Android, even in a release build. Hostname detection alone would therefore send production phones to the phone's own `localhost`. Always build production mobile bundles with an explicit override:
+
+```bash
+cd client
+REACT_APP_API_URL=https://trend-drop.onrender.com/api npm run build
+npx cap sync android   # or: npx cap sync ios
+```
 
 ### Capacitor Commands Reference
 | Command | Description |

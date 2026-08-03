@@ -35,8 +35,11 @@ router.get('/', auth, async (req, res) => {
     const enriched = orders.map((o) => {
       const isBuyer = o.buyer._id.toString() === userId;
       const role = isBuyer ? 'buyer' : 'seller';
+      const raw = o.toObject();
+      // G5 FIX: materialize the totalAmount virtual so the API never returns NaN
       return {
-        ...o.toObject(),
+        ...raw,
+        totalAmount: raw.totals && typeof raw.totals.total === 'number' ? raw.totals.total : 0,
         role,
         allowedActions: Order.getAllowedOrderActions(o, role, userId),
       };
@@ -96,8 +99,10 @@ router.post('/:id/ship', auth, async (req, res) => {
 
     const userId = req.user._id.toString();
     const role = order.buyer.toString() === userId ? 'buyer' : 'seller';
+    const raw = order.toObject();
     const payload = {
-      ...order.toObject(),
+      ...raw,
+      totalAmount: raw.totals && typeof raw.totals.total === 'number' ? raw.totals.total : 0,
       role,
       allowedActions: Order.getAllowedOrderActions(order, role, userId),
     };
@@ -249,9 +254,9 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
       await seller.save();
     }
 
-    // Restore listing inventory
+    // Restore listing inventory - ZERO-LEAKAGE: restore EXACT quantity bought
     await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: 1, quantitySold: -1 },
+      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
       $set: { sold: false, available: true },
     });
 
