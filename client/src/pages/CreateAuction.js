@@ -199,6 +199,12 @@ const CreateAuction = () => {
     setShowPreview(!showPreview);
   };
 
+  // Format date for datetime-local input (local timezone)
+  const formatForInput = (date) => {
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  };
+
   const formatDateTime = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -274,12 +280,6 @@ const CreateAuction = () => {
     const now = new Date();
     const startDefault = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
     const endDefault = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
-    
-    // Format for datetime-local input
-    const formatForInput = (date) => {
-      const offset = date.getTimezoneOffset() * 60000;
-      return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-    };
     
     setFormData(prev => ({
       ...prev,
@@ -390,7 +390,7 @@ const CreateAuction = () => {
                 value={formData.startTime}
                 onChange={handleChange}
                 className={`form-input ${errors.startTime ? 'error' : ''}`}
-                min={new Date().toISOString().slice(0, 16)}
+                min={formatForInput(new Date())}
               />
               {errors.startTime && <p className="error-message" style={{ color: 'var(--td-error)', fontSize: 12, marginTop: 'var(--td-space-xs)' }}>{errors.startTime}</p>}
             </div>
@@ -406,7 +406,7 @@ const CreateAuction = () => {
                 value={formData.endTime}
                 onChange={handleChange}
                 className={`form-input ${errors.endTime ? 'error' : ''}`}
-                min={formData.startTime || new Date().toISOString().slice(0, 16)}
+                min={formData.startTime || formatForInput(new Date())}
               />
               {errors.endTime && <p className="error-message" style={{ color: 'var(--td-error)', fontSize: 12, marginTop: 'var(--td-space-xs)' }}>{errors.endTime}</p>}
             </div>
