@@ -518,6 +518,11 @@ router.patch('/:id/counter', auth, async (req, res) => {
       }
     }
 
+    // Ensure counterHistory is initialized (for existing offers or bulk offers)
+    if (!offer.counterHistory) {
+      offer.counterHistory = [];
+    }
+    
     // Update offer
     offer.status = 'countered';
     offer.counterAmount = numericCounter;
@@ -592,6 +597,11 @@ router.patch('/:id/buyer-counter', auth, async (req, res) => {
       });
     }
 
+    // Ensure counterHistory is initialized (for existing offers or bulk offers)
+    if (!offer.counterHistory) {
+      offer.counterHistory = [];
+    }
+    
     // Update offer
     offer.status = 'buyer_countered';
     offer.counterAmount = numericCounter;

@@ -37,12 +37,15 @@ const offerSchema = new mongoose.Schema({
   },
   // CRITICAL: Full counter-offer history chain
   // Tracks every counter-offer with who made it and when
-  counterHistory: [{
-    amount: { type: Number, required: true },
-    counteredBy: { type: String, enum: ['buyer', 'seller'], required: true },
-    message: { type: String, default: '' },
-    createdAt: { type: Date, default: Date.now },
-  }],
+  counterHistory: {
+    type: [{
+      amount: { type: Number, required: true },
+      counteredBy: { type: String, enum: ['buyer', 'seller'], required: true },
+      message: { type: String, default: '' },
+      createdAt: { type: Date, default: Date.now },
+    }],
+    default: [],
+  },
   // Who made the last counter-offer (determines who can act next)
   lastCounterBy: {
     type: String,
