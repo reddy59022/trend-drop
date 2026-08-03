@@ -299,6 +299,15 @@ router.post('/confirm-batch', auth, async (req, res) => {
         });
       }
 
+      // ZERO-LEAKAGE QUANTITY FIX: validate requested qty against stock
+      const qty = Math.max(1, Math.floor(item.quantity || 1));
+      if (listing.quantity < qty) {
+        return res.status(400).json({
+          message: `Only ${listing.quantity} left of "${listing.title}"`,
+          failedItem: item.listingId,
+        });
+      }
+
       const seller = await User.findById(listing.seller);
       const sellerCountry = seller?.country || listing.shipsFrom || 'US';
       const toCountry = shippingAddress?.country || req.user.country || 'US';
@@ -331,7 +340,18 @@ router.post('/confirm-batch', auth, async (req, res) => {
         salePrice = item.negotiatedPrice;
       }
       
-      const breakdown = calculatePaymentBreakdown(salePrice, sellerCountry, toCountry, listing.weight || 0.5);
+      // ZERO-LEAKAGE QUANTITY FIX: one label for the whole quantity;
+      // breakdown computed on the COMBINED weight so shipping is correct,
+      // then platform fees scaled by qty.
+      const combinedWeight = Math.round(((listing.weight || 0.5) * qty) * 1000) / 1000;
+      const breakdown = calculatePaymentBreakdown(salePrice, sellerCountry, toCountry, combinedWeight);
+
+      const itemSubtotal = Math.round(salePrice * qty * 100) / 100;
+      const platformFeeTotal = Math.round(breakdown.seller.platformFee * qty * 100) / 100;
+      const protectionTotal = Math.round(breakdown.buyer.buyerProtectionFee * qty * 100) / 100;
+      const sellerEarningsTotal = Math.round(breakdown.seller.sellerEarnings * qty * 100) / 100;
+      const shippingCostTotal = Math.round(breakdown.buyer.shippingCost * 100) / 100;
+      const totalPaidTotal = Math.round((itemSubtotal + shippingCostTotal + protectionTotal) * 100) / 100;
 
       const sellerAddress = seller?.shippingAddress ? {
         street1: seller.shippingAddress.street1,
@@ -345,12 +365,14 @@ router.post('/confirm-batch', auth, async (req, res) => {
       const label = generateLabel({
         shippingAddress: { fullName: shippingAddress?.fullName || req.user.name, ...shippingAddress },
         sellerAddress,
-        weight: listing.weight || 0.5,
+        weight: combinedWeight,
       }, carrierCode);
 
       orderPlans.push({
         listing, seller, sellerCountry, toCountry, salePrice, breakdown, label,
         offer, isNegotiated,
+        qty, itemSubtotal, platformFeeTotal, protectionTotal,
+        sellerEarningsTotal, shippingCostTotal, totalPaidTotal,
       });
     }
 
@@ -367,26 +389,27 @@ router.post('/confirm-batch', auth, async (req, res) => {
     for (const plan of orderPlans) {
       const { listing, seller, toCountry, salePrice, breakdown, label, offer, isNegotiated } = plan;
 
-      // Deduct boost fee if item is boosted
-      const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? listing.boost.fee : 0;
-      const sellerEarningsWithBoost = breakdown.seller.sellerEarnings - boostFee;
+      // Deduct boost fee if item is boosted (scale by qty)
+      const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? Math.round(listing.boost.fee * plan.qty * 100) / 100 : 0;
+      const sellerEarningsWithBoost = Math.round((plan.sellerEarningsTotal - boostFee) * 100) / 100;
 
       const txn = await Transaction.create({
         listing: listing._id,
         buyer: req.user._id,
         seller: listing.seller,
-        itemPrice: salePrice,
+        quantity: plan.qty,
+        itemPrice: plan.itemSubtotal,
         currency: listing.currency || 'USD',
         paymentBreakdown: {
-          subtotal: breakdown.buyer.itemPrice,
-          shippingCost: breakdown.buyer.shippingCost,
-          buyerProtectionFee: breakdown.buyer.buyerProtectionFee,
+          subtotal: plan.itemSubtotal,
+          shippingCost: plan.shippingCostTotal,
+          buyerProtectionFee: plan.protectionTotal,
           buyerProtectionPercent: breakdown.buyer.buyerProtectionPercent,
           tax: 0,
-          totalPaid: breakdown.buyer.totalPaid,
-          platformFee: breakdown.seller.platformFee,
+          totalPaid: plan.totalPaidTotal,
+          platformFee: plan.platformFeeTotal,
           platformFeePercent: breakdown.seller.platformFeePercent,
-          shippingPayout: breakdown.seller.shippingPayout,
+          shippingPayout: plan.shippingCostTotal,
           sellerEarnings: sellerEarningsWithBoost,
           boostFee,
           boostTier: listing.boost?.tier || '',
@@ -427,10 +450,15 @@ router.post('/confirm-batch', auth, async (req, res) => {
         await offer.save();
       }
 
-      const wasLastOne = listing.quantity === 1;
+      // ZERO-LEAKAGE QUANTITY FIX: decrement by exact qty, mark sold
+      // only when ALL remaining stock is gone.
+      const remainingAfter = Math.max(0, listing.quantity - plan.qty);
       const updated = await Listing.findOneAndUpdate(
         { _id: listing._id, quantity: { $gt: 0 } },
-        { $inc: { quantity: -1, quantitySold: 1 }, $set: wasLastOne ? { sold: true, available: false } : {} },
+        {
+          $inc: { quantity: -plan.qty, quantitySold: plan.qty },
+          $set: remainingAfter === 0 ? { sold: true, available: false } : {},
+        },
         { new: true }
       );
       inventoryChanges.push({ listingId: listing._id, updated });
@@ -439,9 +467,9 @@ router.post('/confirm-batch', auth, async (req, res) => {
         seller: listing.seller,
         transaction: txn._id,
         listing: listing._id,
-        salePrice: breakdown.buyer.itemPrice,
+        salePrice: plan.itemSubtotal,
         commissionRate: breakdown.seller.platformFeePercent / 100,
-        commissionAmount: breakdown.seller.platformFee,
+        commissionAmount: plan.platformFeeTotal,
         payoutAmount: sellerEarningsWithBoost,
         status: 'pending',
       });
@@ -481,6 +509,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
     // One checkout = one Order. Each seller gets their own shipment.
     // Same-seller items are bundled into a single shipment with bundle
     // shipping pricing (max single-item shipping, free if all free).
+    let createdOrder = null;
     try {
       const sellerGroups = new Map();
       orderPlans.forEach((plan, i) => {
@@ -528,7 +557,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
             seller: t.seller._id || group.seller._id,
             title: l.title || '',
             price: t.itemPrice || 0,
-            quantity: 1,
+            quantity: t.quantity || 1,
             currency: t.currency || 'USD',
             image: (l.images && l.images[0]) || '',
             condition: l.condition || '',
@@ -546,7 +575,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
         ? Number(paymentIntent.metadata.promoDiscount) : 0)
         - (paymentIntent.metadata?.bundleDiscount ? Number(paymentIntent.metadata.bundleDiscount) : 0);
 
-      await Order.create({
+      createdOrder = await Order.create({
         buyer: req.user._id,
         sellers: [...sellerGroups.keys()],
         currency: 'USD',
@@ -604,6 +633,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
     res.json({
       transactions: createdTransactions,
       captureResult: { id: captureResult.id, status: captureResult.status },
+      orders: createdOrder ? [createdOrder] : [],
     });
 
   } catch (error) {

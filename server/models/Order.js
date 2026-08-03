@@ -114,6 +114,11 @@ function deriveStatus(shipments) {
 // Same-seller bundle shipping rule:
 //  - All free → 0
 //  - Otherwise → highest single-item shipping (one box, one label)
+// Virtual: `order.totalAmount` mirrors totals.total for client convenience
+orderSchema.virtual('totalAmount').get(function () {
+  return this.totals ? this.totals.total : 0;
+});
+
 orderSchema.statics.calculateBundleShipping = function (items) {
   const perItemOriginal = items.reduce((sum, i) => sum + (i.shippingCost || 0), 0);
   const allFree = items.length > 0 && items.every((i) => i.freeShipping);

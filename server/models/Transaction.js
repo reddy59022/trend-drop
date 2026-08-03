@@ -25,6 +25,11 @@ const transactionSchema = new mongoose.Schema({
     required: true,
   },
   // Pricing
+  quantity: {
+    type: Number,
+    default: 1,
+    min: 1,
+  },
   itemPrice: {
     type: Number,
     required: true,
