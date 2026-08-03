@@ -160,15 +160,19 @@ describe('Boost Fee Calculation', () => {
     expect(result.fee).toBe(75);
   });
 
-  test('BF.5 Fee scales with duration: $100 at standard for 7 days = $5', () => {
+  test('BF.5 Fee is FLAT per sale regardless of duration: $100 at standard for 7 days = $10', () => {
     const result = calculateBoostFee(100, 'standard', 7);
-    expect(result.fee).toBe(5);
+    // FLAT per-sale fee: 10% of price = $10 (duration does NOT change the fee;
+    // it only controls exposure length). Never charged upfront.
+    expect(result.fee).toBe(10);
+    expect(result.durationDays).toBe(7);
   });
 
-  test('BF.6 Fee scales with duration: $100 at standard for 30 days = $21.43', () => {
+  test('BF.6 Fee is FLAT per sale: $100 at standard for 30 days = $10', () => {
     const result = calculateBoostFee(100, 'standard', 30);
-    // Daily rate = $10/14 = $0.714, for 30 days = $21.43
-    expect(result.fee).toBeCloseTo(21.43, 1);
+    // FLAT per-sale fee: 10% of price = $10 regardless of 30-day duration.
+    expect(result.fee).toBe(10);
+    expect(result.durationDays).toBe(30);
   });
 
   test('BF.7 Invalid tier defaults to standard', () => {

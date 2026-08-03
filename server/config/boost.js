@@ -38,13 +38,17 @@ const boostConfig = {
 };
 
 // Calculate boost fee for a listing
+// fee = flat per-sale deduction (price × tier.feePercent / 100)
+// totalUpfrontCost = daily rate × duration (what seller pays upfront)
 const calculateBoostFee = (listingPrice, tier = 'standard', durationDays = 14) => {
   const boostTier = boostConfig.tiers[tier] || boostConfig.tiers.standard;
-  const dailyFee = listingPrice * (boostTier.feePercent / 100) / boostConfig.defaultDurationDays;
-  const totalFee = Math.round(dailyFee * durationDays * 100) / 100;
+  const fee = Math.round(listingPrice * (boostTier.feePercent / 100) * 100) / 100;
+  const dailyRate = Math.round(fee / boostConfig.defaultDurationDays * 100) / 100;
+  const totalUpfrontCost = Math.round(dailyRate * durationDays * 100) / 100;
   return {
-    fee: totalFee,
-    dailyRate: Math.round(dailyFee * 100) / 100,
+    fee,
+    dailyRate,
+    totalUpfrontCost,
     tier: boostTier.name,
     durationDays,
     features: boostTier.features,

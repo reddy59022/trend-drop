@@ -10,6 +10,53 @@ const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundR
 const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
 
 // ============================================================
+// ITEM-LEVEL BOOST FEE LEDGER (reversal/collection)
+// The boost fee is tracked on the LISTING that generated it.
+//   sale        → boost.feeLedger.owed  += fee   (in transactions/payments)
+//   completed   → boost.feeLedger.owed  -= fee;  collected += fee
+//   cancelled/  → boost.feeLedger.owed  -= fee;  reversed  += fee
+//   returned/refunded
+// Idempotent: only reverses if `owed` has the fee (guards double-run).
+// ============================================================
+const reverseBoostFeeOwed = async (listingId, boostFee) => {
+  if (!boostFee || boostFee <= 0) return null;
+  const fee = Math.round(boostFee * 100) / 100;
+  // Only reverse what is actually owed (never goes negative)
+  return Listing.findOneAndUpdate(
+    { _id: listingId, 'boost.feeLedger.owed': { $gte: fee } },
+    {
+      $inc: { 'boost.feeLedger.owed': -fee, 'boost.feeLedger.reversed': fee },
+    },
+    { new: true }
+  );
+};
+
+const collectBoostFeeOwed = async (listingId, boostFee) => {
+  if (!boostFee || boostFee <= 0) return null;
+  const fee = Math.round(boostFee * 100) / 100;
+  // Only collect what is actually owed (never goes negative)
+  return Listing.findOneAndUpdate(
+    { _id: listingId, 'boost.feeLedger.owed': { $gte: fee } },
+    {
+      $inc: { 'boost.feeLedger.owed': -fee, 'boost.feeLedger.collected': fee },
+    },
+    { new: true }
+  );
+};
+
+// ROLLBACK SAFETY: any time money reverts to the buyer, also
+// (1) reverse the listing-level boost fee, and
+// (2) mark the payout refunded so auto-complete can never release it.
+const markPayoutRefunded = async (txn) => {
+  try {
+    await Payout.updateMany(
+      { transaction: txn._id, status: { $ne: 'refunded' } },
+      { $set: { status: 'refunded', refundedAt: new Date() } }
+    );
+  } catch (e) { console.error('Failed to mark payout refunded:', e.message); }
+};
+
+// ============================================================
 // CRITICAL: Every state change is validated against the state machine.
 // No manual status updates allowed - only system transitions.
 // Money moves in this specific order:
@@ -260,6 +307,15 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
       $set: { sold: false, available: true },
     });
 
+    // ROBUST: Boost fee is never charged for a cancelled order.
+    // Reverse the listing-level boost fee (item-level, never cross-subsidized).
+    // Idempotent — only reverses what is actually owed.
+    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+
+    // ROBUST: Mark any payout records refunded so auto-complete /
+    // cron can never release funds for a cancelled order.
+    await markPayoutRefunded(txn);
+
     // Update transaction status
     txn.status = cancelState;
     txn.cancellation = {
@@ -430,6 +486,11 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
       buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
       await buyer.save();
     }
+
+    // ROBUST: Boost fee is now EARNED for a completed order.
+    // Finalize at the listing level: owed → collected.
+    // Platform revenue is booked ONLY for sales that completed.
+    await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
 
     txn.status = orderStates.COMPLETED;
     await txn.save();
@@ -690,11 +751,16 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
 
     const { condition, inspectionNotes, sellerPackingProof } = req.body;
 
-    // Restore listing inventory FIRST
+    // Restore listing inventory - EXACT quantity bought, never a fixed 1
     await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: 1, quantitySold: -1 },
+      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
       $set: { sold: false, available: true },
     });
+
+    // ROBUST: Boost fee is never charged for a returned order.
+    // Reverse the listing-level boost fee (item-level, never cross-subsidized).
+    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+    await markPayoutRefunded(txn);
 
     // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
     const refundAmount = txn.paymentBreakdown.totalPaid || 0;
@@ -796,11 +862,16 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
 
     const { condition, inspectionNotes, sellerPackingProof } = req.body;
 
-    // Restore listing inventory FIRST
+    // Restore listing inventory - EXACT quantity bought, never a fixed 1
     await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: 1, quantitySold: -1 },
+      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
       $set: { sold: false, available: true },
     });
+
+    // ROBUST: Boost fee is never charged for a returned order.
+    // Reverse the listing-level boost fee (item-level, never cross-subsidized).
+    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+    await markPayoutRefunded(txn);
 
     // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
     const refundAmount = txn.paymentBreakdown.totalPaid || 0;
@@ -1030,6 +1101,10 @@ router.post('/auto-process', async (req, res) => {
           buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
           await buyer.save();
         }
+
+        // ROBUST: Boost fee is now EARNED for a completed order.
+        // Finalize at the listing level: owed → collected.
+        await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
 
         txn.status = orderStates.COMPLETED;
         await txn.save();

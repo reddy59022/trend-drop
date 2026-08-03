@@ -413,7 +413,12 @@ const ListingDetail = () => {
           )}
 
           {/* Seller earnings */}
-          {isOwner && (
+          {isOwner && (() => {
+            const boostFeePct = listing.boost?.active ? { standard: 10, premium: 15, elite: 20 }[listing.boost.tier] || 10 : 0;
+            const boostFee = listing.boost?.active ? Math.round(listing.price * (boostFeePct / 100) * 100) / 100 : 0;
+            const platformFee = Math.round(listing.price * 0.08 * 100) / 100;
+            const youEarn = Math.round((listing.price - platformFee - boostFee) * 100) / 100;
+            return (
             <div className="glass-card" style={{ padding: 'var(--td-space-md)', margin: 'var(--td-space-md) 0', borderLeft: '3px solid var(--td-success)' }}>
               <h4 style={{ marginBottom: 12, color: 'var(--td-success)' }}>Your Earnings</h4>
               <div style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -423,23 +428,24 @@ const ListingDetail = () => {
                 </div>
                 <div className="flex-between" style={{ color: 'var(--td-error)' }}>
                   <span>Platform Fee (8%)</span>
-                  <span>-{formatPrice(listing.price * 0.08, listing.currency || 'USD')}</span>
+                  <span>-{formatPrice(platformFee, listing.currency || 'USD')}</span>
                 </div>
-                {listing.boost && listing.boost.active && listing.boost.fee > 0 && (
+                {boostFee > 0 && (
                   <div className="flex-between" style={{ color: 'var(--td-error)' }}>
-                    <span>Boost Fee ({listing.boost.tier || 'featured'})</span>
-                    <span>-{formatPrice(listing.boost.fee, listing.currency || 'USD')}</span>
+                    <span>Boost Fee ({listing.boost.tier})</span>
+                    <span>-{formatPrice(boostFee, listing.currency || 'USD')}</span>
                   </div>
                 )}
                 <div style={{ borderTop: '1px solid var(--td-border)', paddingTop: 6, marginTop: 4 }}>
                   <div className="flex-between" style={{ color: 'var(--td-success)', fontWeight: 700 }}>
-                    <span>You'll Receive</span>
-                    <span style={{ fontSize: 18 }}>{formatPrice(listing.price * 0.92 - (listing.boost && listing.boost.active ? listing.boost.fee || 0 : 0), listing.currency || 'USD')}</span>
+                    <span>You'll Earn</span>
+                    <span style={{ fontSize: 18 }}>{formatPrice(youEarn, listing.currency || 'USD')}</span>
                   </div>
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Description */}
           <div className="listing-detail-description">

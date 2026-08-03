@@ -171,6 +171,20 @@ const listingSchema = new mongoose.Schema({
     durationDays: { type: Number, default: 14 },
     fee: { type: Number, default: 0 },
     priorityScore: { type: Number, default: 0 },
+    // ITEM-LEVEL BOOST FEE LEDGER
+    // Boost fees are tied to THIS listing only — never cross-subsidized
+    // from a seller's other earnings. Every sale adds to `owed`; every
+    // completed order moves `owed → collected`; every cancelled/refunded
+    // order moves `owed → reversed` so the seller loses nothing and the
+    // platform never books revenue for a sale that didn't finish.
+    feeLedger: {
+      // Fees owed from active sales of this listing (incremented at sale)
+      owed: { type: Number, default: 0 },
+      // Fees finalized when the order completed (platform revenue)
+      collected: { type: Number, default: 0 },
+      // Fees reversed because the order was cancelled / returned / refunded
+      reversed: { type: Number, default: 0 },
+    },
   },
   views: {
     type: Number,

@@ -7,6 +7,30 @@ const Offer = require('../models/Offer');
 const { auth } = require('../middleware/auth');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
 const { calculatePaymentBreakdown, authorizePaymentIntent } = require('../config/payments');
+const { boostConfig } = require('../config/boost');
+
+// Flat per-sale boost fee: price × tier.feePercent / 100
+// Charged ONLY upon successful sale (never upfront)
+const BOOST_FEE_TIERS = boostConfig.tiers;
+const getBoostFee = (listing, salePrice = 0) => {
+  if (!listing?.boost?.active) return 0;
+  const tier = BOOST_FEE_TIERS[listing.boost.tier] || BOOST_FEE_TIERS.standard;
+  return Math.round(salePrice * (tier.feePercent / 100) * 100) / 100;
+};
+
+// ITEM-LEVEL BOOST LEDGER: record a boost fee against the listing.
+// The fee is deducted from the seller's earnings on THIS sale only,
+// never subsidized from other earnings. Atomic so we never lose money.
+// It is reversed only by the cancel/return lifecycle (see orderLifecycle).
+const recordBoostFeeOwed = async (listingId, boostFee, saleQuantity = 1) => {
+  if (!boostFee || boostFee <= 0) return null;
+  const totalFee = Math.round(boostFee * saleQuantity * 100) / 100;
+  return Listing.findByIdAndUpdate(
+    listingId,
+    { $inc: { 'boost.feeLedger.owed': totalFee } },
+    { new: true }
+  );
+};
 
 // POST /api/transactions/batch - Create payment intent for multi-seller checkout
 // NOTE: Transactions are NOT created here. Payment is authorized first.
@@ -136,7 +160,8 @@ router.post('/guest', async (req, res) => {
     const weightKg = listing.weight || 0.5;
 
     const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, buyerShipCountry, weightKg);
-    const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? listing.boost.fee : 0;
+    // Boost fee: flat % of sale price, charged only upon successful sale
+    const boostFee = getBoostFee(listing, listing.price);
 
     const sellerAddress = seller?.shippingAddress ? {
       street1: seller.shippingAddress.street1,
@@ -207,6 +232,9 @@ router.post('/guest', async (req, res) => {
       { new: true }
     );
 
+    // Item-level boost fee ledger (this listing only)
+    await recordBoostFeeOwed(listing._id, boostFee, 1);
+
     // Update seller pending balance
     await User.findByIdAndUpdate(listing.seller, {
       $inc: { 'balance.pending': breakdown.seller.sellerEarnings - boostFee }
@@ -271,7 +299,7 @@ router.post('/', auth, async (req, res) => {
       const breakdown = calculatePaymentBreakdown(finalPrice, sellerCountry, buyerShipCountry, weightKg);
 
     // Boost fee: only deducted if item is boosted AND sale completes
-    const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? listing.boost.fee : 0;
+    const boostFee = getBoostFee(listing, finalPrice);
 
     // Get seller's address
     const sellerAddress = seller?.shippingAddress ? {
@@ -355,6 +383,9 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Sorry, this item just went out of stock' });
     }
 
+    // Item-level boost fee ledger (this listing only)
+    await recordBoostFeeOwed(listing._id, boostFee, 1);
+
     // Update seller's pending balance and notification
     const finalSellerEarnings = breakdown.seller.sellerEarnings - boostFee;
     if (seller) {
@@ -413,6 +444,8 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKg, finalPrice);
     const shippingCost = listing.shipping?.freeShipping ? 0 : shippingResult.cost;
     const breakdown = calculatePaymentBreakdown(finalPrice, sellerCountry, buyerCountry, weightKg);
+    // Boost fee: flat % of sale price, charged only upon successful sale
+    const boostFee = getBoostFee(listing, finalPrice);
 
     const transaction = await Transaction.create({
       listing: listing._id,
@@ -430,7 +463,9 @@ router.post('/offer/:offerId', auth, async (req, res) => {
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: breakdown.seller.shippingPayout,
-        sellerEarnings: breakdown.seller.sellerEarnings,
+        sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
+        boostFee,
+        boostTier: listing.boost?.tier || '',
       },
       shippingAddress: {
         fullName: req.user.name,
@@ -463,15 +498,18 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Sorry, this item just went out of stock' });
     }
 
+    // Item-level boost fee ledger (this listing only)
+    await recordBoostFeeOwed(listing._id, boostFee, 1);
+
     // Update seller pending balance and notify in one save
     if (seller) {
-      seller.balance.pending = (seller.balance.pending || 0) + breakdown.seller.sellerEarnings;
+      seller.balance.pending = (seller.balance.pending || 0) + (breakdown.seller.sellerEarnings - boostFee);
       seller.notifications.unshift({
         type: 'sale',
         from: req.user._id,
         listing: listing._id,
         transaction: transaction._id,
-        message: `"${listing.title}" sold via offer for $${finalPrice}`,
+        message: `"${listing.title}" sold via offer for $${finalPrice}! You'll earn $${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} after platform fees.`,
       });
       await seller.save();
     }

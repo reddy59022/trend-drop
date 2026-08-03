@@ -22,6 +22,29 @@ const {
   issueRefund,
   fetchExchangeRate,
 } = require('../config/payments');
+const { boostConfig } = require('../config/boost');
+
+// Flat per-sale boost fee: price × tier.feePercent / 100
+// Charged ONLY upon successful sale (never upfront)
+const BOOST_FEE_TIERS = boostConfig.tiers;
+const getBoostFee = (listing, salePrice = 0) => {
+  if (!listing?.boost?.active) return 0;
+  const tier = BOOST_FEE_TIERS[listing.boost.tier] || BOOST_FEE_TIERS.standard;
+  return Math.round(salePrice * (tier.feePercent / 100) * 100) / 100;
+};
+
+// ITEM-LEVEL BOOST LEDGER: record a boost fee against the listing.
+// Boost fees always stay with the listing that generated them.
+// Reversed only via orderLifecycle cancel/refund/return.
+const recordBoostFeeOwed = async (listingId, boostFee, saleQuantity = 1) => {
+  if (!boostFee || boostFee <= 0) return null;
+  const totalFee = Math.round(boostFee * saleQuantity * 100) / 100;
+  return Listing.findByIdAndUpdate(
+    listingId,
+    { $inc: { 'boost.feeLedger.owed': totalFee } },
+    { new: true }
+  );
+};
 
 // ===================== PUBLIC ENDPOINTS =====================
 
@@ -389,9 +412,12 @@ router.post('/confirm-batch', auth, async (req, res) => {
     for (const plan of orderPlans) {
       const { listing, seller, toCountry, salePrice, breakdown, label, offer, isNegotiated } = plan;
 
-      // Deduct boost fee if item is boosted (scale by qty)
-      const boostFee = (listing.boost?.active && listing.boost?.fee > 0) ? Math.round(listing.boost.fee * plan.qty * 100) / 100 : 0;
+      // Deduct boost fee if item is boosted (flat % of sale price, scale by qty; charged only upon successful sale)
+      const boostFee = Math.round(getBoostFee(listing, plan.salePrice) * plan.qty * 100) / 100;
       const sellerEarningsWithBoost = Math.round((plan.sellerEarningsTotal - boostFee) * 100) / 100;
+
+      // Item-level boost fee ledger (this listing only)
+      await recordBoostFeeOwed(listing._id, getBoostFee(listing, plan.salePrice), plan.qty);
 
       const txn = await Transaction.create({
         listing: listing._id,
@@ -729,6 +755,12 @@ router.post('/confirm', auth, async (req, res) => {
       weight: listing.weight || 0.5,
     }, carrierCode);
 
+    // Boost fee: flat % of sale price, charged only upon successful sale
+    const boostFee = getBoostFee(listing, listing.price);
+
+    // Item-level boost fee ledger (this listing only)
+    await recordBoostFeeOwed(listing._id, boostFee, 1);
+
     createdTransaction = await Transaction.create({
       listing: listingId,
       buyer: req.user._id,
@@ -745,7 +777,9 @@ router.post('/confirm', auth, async (req, res) => {
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: breakdown.seller.shippingPayout,
-        sellerEarnings: breakdown.seller.sellerEarnings,
+        sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
+        boostFee,
+        boostTier: listing.boost?.tier || '',
       },
       shippingAddress: {
         fullName: shippingAddress?.fullName || req.user.name,
@@ -792,13 +826,13 @@ router.post('/confirm', auth, async (req, res) => {
     }
 
     if (seller) {
-      seller.balance.pending = (seller.balance.pending || 0) + breakdown.seller.sellerEarnings;
+      seller.balance.pending = (seller.balance.pending || 0) + (breakdown.seller.sellerEarnings - boostFee);
       seller.notifications.unshift({
         type: 'sale',
         from: req.user._id,
         listing: listing._id,
         transaction: createdTransaction._id,
-        message: `Item sold! You'll earn ${breakdown.seller.sellerEarnings} ${breakdown.sellerCurrency}. Shipping label ready.`,
+        message: `Item sold! You'll earn ${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
       });
       await seller.save();
     }
@@ -813,7 +847,7 @@ router.post('/confirm', auth, async (req, res) => {
           salePrice: breakdown.buyer.itemPrice,
           commissionRate: breakdown.seller.platformFeePercent / 100,
           commissionAmount: breakdown.seller.platformFee,
-          payoutAmount: breakdown.seller.sellerEarnings,
+          payoutAmount: breakdown.seller.sellerEarnings - boostFee,
           status: 'pending',
           // R1 idempotency: tie payout to payment intent for dedupe
           paymentIntentId,
