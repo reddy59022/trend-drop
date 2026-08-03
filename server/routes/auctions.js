@@ -115,7 +115,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/auctions/:id/bids - Place bid on auction
 router.post('/:id/bids', auth, async (req, res) => {
   try {
-    const { amount } = req.body;
+    const { amount, currency } = req.body;
     const auctionId = req.params.id;
     
     if (!amount || amount <= 0) {
@@ -125,6 +125,11 @@ router.post('/:id/bids', auth, async (req, res) => {
     const auction = await Auction.findById(auctionId);
     if (!auction) {
       return res.status(404).json({ message: 'Auction not found' });
+    }
+    
+    // Prevent self-bidding: seller cannot bid on their own auction
+    if (String(auction.seller) === String(req.user._id)) {
+      return res.status(403).json({ message: 'Sellers cannot bid on their own auctions' });
     }
     
     // Check auction is active
@@ -148,10 +153,17 @@ router.post('/:id/bids', auth, async (req, res) => {
       return res.status(400).json({ message: `Bid must meet reserve price of ${auction.reservePrice}` });
     }
     
+    // Validate currency matches auction currency
+    const bidCurrency = currency || auction.currency || 'USD';
+    if (currency && currency !== (auction.currency || 'USD')) {
+      return res.status(400).json({ message: 'Bid currency must match auction currency' });
+    }
+    
     // Add bid
     auction.bids.push({
       bidder: req.user._id,
       amount,
+      currency: bidCurrency,
       timestamp: new Date(),
     });
     auction.currentBid = amount;
@@ -164,7 +176,7 @@ router.post('/:id/bids', auth, async (req, res) => {
       seller.notifications.unshift({
         type: 'sale',
         listing: auction.listing,
-        message: `New bid of ${amount} placed on your auction!`,
+        message: `New bid of ${bidCurrency} ${amount} placed on your auction!`,
       });
       await seller.save();
     }

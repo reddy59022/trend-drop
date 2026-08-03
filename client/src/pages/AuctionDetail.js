@@ -58,10 +58,20 @@ const AuctionDetail = () => {
     
     try {
       setStreamError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }, facingMode: 'environment' },
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      });
+      // Use 'user' for front-facing camera (laptop/webcam), fallback to no facingMode for compatibility
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }, facingMode: 'user' },
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+      } catch (err) {
+        // Fallback: try without facingMode constraint (works on all devices)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+      }
       
       setLocalStream(stream);
       setIsStreaming(true);
