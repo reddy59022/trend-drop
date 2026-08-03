@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaGavel, FaClock, FaDollarSign, FaVideo, FaMicrophone, FaArrowLeft, FaInfoCircle, FaBroadcastTower, FaPlayCircle, FaStopCircle, FaEye, FaExclamationTriangle, FaImage } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 
 const CreateAuction = () => {
   const { user } = useAuth();
+  const { currency } = useTheme();
   const navigate = useNavigate();
 
   // Form state
@@ -16,6 +18,7 @@ const CreateAuction = () => {
     endTime: '',
     reservePrice: '',
     enableLiveStream: false,
+    currency: currency,
   });
 
   const [errors, setErrors] = useState({});
@@ -247,6 +250,7 @@ const CreateAuction = () => {
         startTime: formData.startTime,
         endTime: formData.endTime,
         reservePrice: parseFloat(formData.reservePrice),
+        currency: formData.currency,
       });
       
       toast.success('Auction created successfully!');

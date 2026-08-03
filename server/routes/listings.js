@@ -123,6 +123,31 @@ router.get('/user/:userId', async (req, res) => {
   }
 });
 
+// GET /api/listings/my - Get current user's unsold listings (for auction creation)
+router.get('/my', auth, async (req, res) => {
+  try {
+    const { sold = false, available = true, status = 'active' } = req.query;
+    
+    let query = { seller: req.user._id };
+    
+    if (sold !== undefined) query.sold = sold === 'true';
+    if (available !== undefined) query.available = available === 'true';
+    if (status !== undefined) query.status = status;
+
+    const listings = await Listing.find(query)
+      .populate('seller', 'name avatar')
+      .sort({ createdAt: -1 });
+
+    res.json({ listings });
+  } catch (error) {
+    console.error(error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id)

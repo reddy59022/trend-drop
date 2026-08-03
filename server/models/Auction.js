@@ -24,6 +24,12 @@ const auctionSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  currency: {
+    type: String,
+    default: 'USD',
+    uppercase: true,
+    trim: true,
+  },
   currentBid: {
     type: Number,
     default: 0,
@@ -43,6 +49,12 @@ const auctionSchema = new mongoose.Schema({
       type: Number,
       required: true,
     },
+    currency: {
+      type: String,
+      default: 'USD',
+      uppercase: true,
+      trim: true,
+    },
     timestamp: {
       type: Date,
       default: Date.now,
@@ -56,6 +68,12 @@ const auctionSchema = new mongoose.Schema({
   winningBid: {
     type: Number,
     default: 0,
+  },
+  winningCurrency: {
+    type: String,
+    default: 'USD',
+    uppercase: true,
+    trim: true,
   },
   // Live video streaming info (client-side WebRTC, zero server load)
   streamInfo: {

@@ -23,7 +23,7 @@ router.get('/settings', (req, res) => {
 // POST /api/auctions - Create auction for a listing
 router.post('/', auth, async (req, res) => {
   try {
-    const { listingId, startTime, endTime, reservePrice } = req.body;
+    const { listingId, startTime, endTime, reservePrice, currency } = req.body;
     
     if (!listingId || !startTime || !endTime) {
       return res.status(400).json({ message: 'listingId, startTime, and endTime are required' });
@@ -50,14 +50,18 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Auction already exists for this listing' });
     }
     
+    // Use listing currency if not provided, otherwise validate it matches listing
+    const auctionCurrency = (currency || listing.currency || 'USD').toUpperCase();
+    
     const auction = await Auction.create({
       listing: listingId,
       seller: req.user._id,
       startTime,
       endTime,
       reservePrice: reservePrice || listing.price,
-      status: new Date(startTime) <= new Date() ? 'active' : 'scheduled',
+      currency: auctionCurrency,
       currentBid: reservePrice || listing.price,
+      status: new Date(startTime) <= new Date() ? 'active' : 'scheduled',
     });
     
     res.status(201).json({ auction });
@@ -353,15 +357,18 @@ router.post('/:id/close', auth, async (req, res) => {
     // Determine winner
     let winner = null;
     let winningBid = 0;
+    let winningCurrency = auction.currency || 'USD';
     
     if (auction.bids.length > 0 && auction.currentBid >= auction.reservePrice) {
       const highestBid = auction.bids.reduce((max, bid) => bid.amount > max.amount ? bid : max, auction.bids[0]);
       winner = highestBid.bidder;
       winningBid = highestBid.amount;
+      winningCurrency = highestBid.currency || auction.currency || 'USD';
     }
     
     auction.winner = winner;
     auction.winningBid = winningBid;
+    auction.winningCurrency = winningCurrency;
     auction.status = 'closed';
     
     // Stop any active stream
