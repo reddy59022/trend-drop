@@ -292,13 +292,24 @@ const ListingDetail = () => {
             )}
             <h1>{listing.title}</h1>
             <div className="listing-detail-price">
-              <span className="current-price">{formatPrice(listing.price, listing.currency || 'USD')}</span>
-              {listing.originalPrice && (
+              {buyerOffer && buyerOffer.status === 'accepted' && (
                 <>
-                  <span className="original-price">{formatPrice(listing.originalPrice, listing.currency || 'USD')}</span>
-                  <span className="discount-badge" style={{ position: 'relative', top: 0, left: 0 }}>-{discount}%</span>
+                  <span className="current-price negotiated-price" style={{ color: 'var(--td-success)' }}>Offer Price: {formatPrice(displayPrice, listing.currency || 'USD')}</span>
+                  <span className="original-price">{formatPrice(listing.price, listing.currency || 'USD')}</span>
+                  <span className="discount-badge" style={{ position: 'relative', top: 0, left: 0 }}>Negotiated</span>
                 </>
               )}
+              {!buyerOffer || buyerOffer.status !== 'accepted' ? (
+                <>
+                  <span className="current-price">{formatPrice(listing.price, listing.currency || 'USD')}</span>
+                  {listing.originalPrice && (
+                    <>
+                      <span className="original-price">{formatPrice(listing.originalPrice, listing.currency || 'USD')}</span>
+                      <span className="discount-badge" style={{ position: 'relative', top: 0, left: 0 }}>-{discount}%</span>
+                    </>
+                  )}
+                </>
+              ) : null}
             </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
               <div className="listing-card-likes" style={{ marginTop: 0 }}>

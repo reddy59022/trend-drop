@@ -126,13 +126,22 @@ router.get('/user/:userId', async (req, res) => {
 // GET /api/listings/my - Get current user's unsold listings (for auction creation)
 router.get('/my', auth, async (req, res) => {
   try {
-    const { sold = false, available = true, status = 'active' } = req.query;
+    // Parse query params as strings (Express query parser returns strings)
+    const soldStr = req.query.sold;
+    const availableStr = req.query.available;
+    const status = req.query.status;
     
     let query = { seller: req.user._id };
     
-    if (sold !== undefined) query.sold = sold === 'true';
-    if (available !== undefined) query.available = available === 'true';
+    // Default to unsold, available, active listings
+    if (soldStr !== undefined) query.sold = soldStr === 'true';
+    else query.sold = false;
+    
+    if (availableStr !== undefined) query.available = availableStr === 'true';
+    else query.available = true;
+    
     if (status !== undefined) query.status = status;
+    else query.status = 'active';
 
     const listings = await Listing.find(query)
       .populate('seller', 'name avatar')
