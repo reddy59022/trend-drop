@@ -19,7 +19,7 @@ const testListingIds = [];
 const testBundleIds = [];
 
 beforeAll(async () => {
-  const uri = process.env.MONGODB_URI || 'mongodb+srv://reddy59022_db_user:anNecZCiT3eJQfre@cluster.mongodb.net/poshmark?retryWrites=true&w=majority';
+  const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/trend-drop-test';
   if (mongoose.connection.readyState === 0) await mongoose.connect(uri);
 
   seller = await User.create({ name: 'BundleSeller', email: `bundle_seller_${Date.now()}@test.com`, password: 'password123', emailVerified: true, country: 'US', currency: 'USD' });

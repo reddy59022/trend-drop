@@ -7,8 +7,8 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed": "node seed.js",
-    "test": "jest --forceExit --detectOpenHandles --verbose",
-    "test:coverage": "jest --forceExit --detectOpenHandles --coverage"
+    "test": "NODE_ENV=test MONGO_URI=mongodb://localhost:27017/trend-drop-test MONGODB_URI=mongodb://localhost:27017/trend-drop-test jest --runInBand --forceExit --detectOpenHandles --verbose",
+    "test:coverage": "NODE_ENV=test MONGO_URI=mongodb://localhost:27017/trend-drop-test MONGODB_URI=mongodb://localhost:27017/trend-drop-test jest --runInBand --forceExit --detectOpenHandles --coverage"
   },
   "dependencies": {
     "@sendinblue/client": "^3.3.1",
@@ -39,13 +39,14 @@
   "jest": {
     "testEnvironment": "node",
     "testTimeout": 30000,
-    "setupFilesAfterEnv": []
+    "setupFilesAfterEnv": ["./jest.setup.js"]
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
     "@babel/preset-env": "^7.29.7",
     "@babel/register": "^7.29.7",
     "jest": "^30.4.2",
+    "mongodb-memory-server": "^11.2.0",
     "nodemon": "^2.0.22",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.2.2"

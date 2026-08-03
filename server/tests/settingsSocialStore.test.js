@@ -15,7 +15,7 @@ let user, token;
 const testUserIds = [];
 
 beforeAll(async () => {
-  const uri = process.env.MONGODB_URI || 'mongodb+srv://reddy59022_db_user:anNecZCiT3eJQfre@cluster.mongodb.net/poshmark?retryWrites=true&w=majority';
+  const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/trend-drop-test';
   if (mongoose.connection.readyState === 0) await mongoose.connect(uri);
   user = await User.create({ name: 'SettingsUser', email: `settings_user_${Date.now()}@test.com`, password: 'password123', emailVerified: true, country: 'US', currency: 'USD' });
   testUserIds.push(user._id);
