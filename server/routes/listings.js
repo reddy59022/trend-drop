@@ -371,7 +371,68 @@ router.put('/:id', auth, (req, res, next) => {
       updateData.boost = { ...boostObj, fee: boostInfo.fee };
     }
 
+    const oldPrice = listing.price;
+
     listing = await Listing.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true }).populate('seller', 'name avatar');
+
+    // Price drop notification & price history tracking
+    if (updateData.price && listing.price < oldPrice) {
+      const PriceHistory = require('../models/PriceHistory');
+      const newPrice = listing.price;
+      const priceDrop = oldPrice - newPrice;
+      const dropPercent = Math.round((priceDrop / oldPrice) * 100);
+
+      // Record price history
+      try {
+        await PriceHistory.create({
+          listing: listing._id,
+          price: newPrice,
+          oldPrice,
+          newPrice,
+          changedBy: req.user._id,
+          reason: 'price_drop',
+        });
+      } catch (histErr) {
+        console.error('PriceHistory record error:', histErr);
+      }
+
+      // Notify all likers (excluding seller)
+      const likers = listing.likes.filter(l => l.toString() !== req.user._id.toString());
+      if (likers.length > 0) {
+        const message = `Price drop! "${listing.title}" is now $${newPrice} (was $${oldPrice}, ${dropPercent}% off)`;
+        const bulkOps = likers.map(likerId => ({
+          updateOne: {
+            filter: { _id: likerId },
+            update: {
+              $push: {
+                notifications: {
+                  $each: [{
+                    type: 'priceDrop',
+                    from: req.user._id,
+                    listing: listing._id,
+                    message,
+                    read: false,
+                    createdAt: new Date(),
+                  }],
+                  $position: 0,
+                },
+              },
+            },
+          },
+        }));
+        try {
+          await User.bulkWrite(bulkOps);
+
+          // Update notified count on latest price history entry
+          await PriceHistory.updateOne(
+            { listing: listing._id, reason: 'price_drop', oldPrice },
+            { $set: { notifiedLikers: likers.length } }
+          );
+        } catch (notifErr) {
+          console.error('Price drop notification error:', notifErr);
+        }
+      }
+    }
 
     res.json({ listing });
   } catch (error) {
@@ -616,6 +677,60 @@ router.post('/:id/share', auth, async (req, res) => {
 
 router.patch('/:id/sold', auth, async (req, res) => {
   return res.status(400).json({ message: 'Manual marking as sold is disabled. Sales are recorded via transaction flow.' });
+});
+
+// POST /api/listings/:id/relist - Seller relists a previously sold item (Poshmark "Reposh" style)
+router.post('/:id/relist', auth, async (req, res) => {
+  try {
+    const source = await Listing.findById(req.params.id);
+    if (!source) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+
+    // Only the seller can relist
+    if (source.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to relist this item' });
+    }
+
+    // Only sold listings can be relisted
+    if (source.status !== 'sold' || !source.sold) {
+      return res.status(400).json({ message: 'Only sold items can be relisted' });
+    }
+
+    const { price, description, title, brand, size, condition, category, images, originalPrice } = req.body;
+
+    const relisted = await Listing.create({
+      seller: source.seller,
+      title: title || source.title,
+      description: description || source.description,
+      price: price !== undefined ? price : source.price,
+      originalPrice: originalPrice !== undefined ? originalPrice : source.originalPrice,
+      currency: source.currency,
+      images: images && images.length ? images : source.images,
+      videoUrl: source.videoUrl,
+      category: category || source.category,
+      brand: brand || source.brand,
+      size: size || source.size,
+      condition: condition || source.condition,
+      color: source.color,
+      weight: source.weight,
+      weightUnit: source.weightUnit,
+      dimensions: source.dimensions,
+      shipping: source.shipping,
+      shipsFrom: source.shipsFrom,
+      available: true,
+      sold: false,
+      status: 'active',
+      quantity: source.quantity > 0 ? source.quantity : 1,
+      quantitySold: 0,
+      reserved: 0,
+    });
+
+    res.status(201).json(relisted);
+  } catch (error) {
+    console.error('Relist error:', error);
+    res.status(500).json({ message: 'Failed to relist item' });
+  }
 });
 
 module.exports = router;

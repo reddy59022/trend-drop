@@ -8,6 +8,7 @@ const Payout = require('../models/Payout');
 const Offer = require('../models/Offer');
 const Promo = require('../models/Promo');
 const BundleRule = require('../models/BundleRule');
+const Order = require('../models/Order');
 const {
   stripe,
   countryCommissions,
@@ -474,6 +475,117 @@ router.post('/confirm-batch', auth, async (req, res) => {
     // Populate all transactions
     for (const txn of createdTransactions) {
       await txn.populate(['buyer', 'seller', 'listing']);
+    }
+
+    // ========== ENTERPRISE ORDER: group all txns into one order ==========
+    // One checkout = one Order. Each seller gets their own shipment.
+    // Same-seller items are bundled into a single shipment with bundle
+    // shipping pricing (max single-item shipping, free if all free).
+    try {
+      const sellerGroups = new Map();
+      orderPlans.forEach((plan, i) => {
+        const txn = createdTransactions[i];
+        if (!txn) return;
+        const key = plan.seller._id.toString();
+        if (!sellerGroups.has(key)) {
+          sellerGroups.set(key, { seller: plan.seller, items: [], txns: [] });
+        }
+        const g = sellerGroups.get(key);
+        g.items.push({
+          shippingCost: plan.breakdown.buyer.shippingCost || 0,
+          freeShipping: !!plan.listing.shipping?.freeShipping,
+          currency: plan.toCurrency || 'USD',
+        });
+        g.txns.push({ txn, plan });
+      });
+
+      const shipments = [];
+      const orderItems = [];
+      let shippingTotal = 0;
+      let protectionTotal = 0;
+      let subtotalTotal = 0;
+
+      for (const group of sellerGroups.values()) {
+        // Bundle shipping: same-seller multiple items → one label
+        const bundle = Order.calculateBundleShipping(group.items);
+        const shipmentTxns = group.txns.map((g) => g.txn._id);
+        const first = group.txns[0];
+        shipments.push({
+          seller: group.seller._id,
+          items: shipmentTxns,
+          shippingCost: bundle.shippingCost,
+          currency: first.plan.breakdown.sellerCurrency || 'USD',
+          labelStatus: 'created',
+          status: 'pending',
+        });
+
+        for (const g of group.txns) {
+          const t = g.txn;
+          const l = t.listing || {};
+          orderItems.push({
+            listing: t.listing._id || l._id,
+            transaction: t._id,
+            seller: t.seller._id || group.seller._id,
+            title: l.title || '',
+            price: t.itemPrice || 0,
+            quantity: 1,
+            currency: t.currency || 'USD',
+            image: (l.images && l.images[0]) || '',
+            condition: l.condition || '',
+            size: l.size || '',
+            brand: l.brand || '',
+          });
+          subtotalTotal += t.itemPrice || 0;
+          protectionTotal += t.paymentBreakdown?.buyerProtectionFee || 0;
+        }
+        shippingTotal += bundle.shippingCost;
+      }
+
+      const totalHeld = Math.round((subtotalTotal + shippingTotal + protectionTotal) * 100) / 100;
+      const discountTotal = totalHeld - (paymentIntent.metadata?.promoDiscount
+        ? Number(paymentIntent.metadata.promoDiscount) : 0)
+        - (paymentIntent.metadata?.bundleDiscount ? Number(paymentIntent.metadata.bundleDiscount) : 0);
+
+      await Order.create({
+        buyer: req.user._id,
+        sellers: [...sellerGroups.keys()],
+        currency: 'USD',
+        items: orderItems,
+        shipments,
+        totals: {
+          subtotal: subtotalTotal,
+          shipping: shippingTotal,
+          protectionFees: protectionTotal,
+          discounts: Math.max(0, Math.round(discountTotal * 100) / 100),
+          total: totalHeld,
+        },
+        payment: {
+          paymentIntentId,
+          status: 'captured',
+          currency: 'USD',
+          totalHeld,
+        },
+        shippingAddress: {
+          fullName: shippingAddress?.fullName || req.user.name,
+          street1: shippingAddress?.street1 || '',
+          street2: shippingAddress?.street2 || '',
+          city: shippingAddress?.city || '',
+          state: shippingAddress?.state || '',
+          postalCode: shippingAddress?.postalCode || '',
+          country: shippingAddress?.country || req.user.country || 'US',
+          phone: shippingAddress?.phone || '',
+        },
+        confirmation: {
+          sentAt: new Date(),
+          approach: 'email_and_push',
+          emailSent: false,
+          pushSent: false,
+        },
+      });
+    } catch (orderErr) {
+      // Order is a grouping convenience; core money flow must not be
+      // rolled back if order grouping fails, but log loudly for SRE.
+      console.error('Order creation failed (transactions still committed):', orderErr.message);
     }
 
     // ===== Apply promo code usage if present =====

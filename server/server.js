@@ -170,6 +170,8 @@ app.use('/api/referrals', require('./routes/referrals'));
 app.use('/api/shipping-insurance', require('./routes/shippingInsurance'));
 // Fraud detection routes
 app.use('/api/fraud', require('./routes/fraudDetection'));
+// Returns & Refund Management routes
+app.use('/api/returns', require('./routes/returns'));
 // Escrow service routes (v26.0)
 app.use('/api/escrow', require('./routes/escrow'));
 // Onboarding routes (mounted twice for different base paths)

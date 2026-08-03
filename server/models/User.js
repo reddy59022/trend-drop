@@ -186,7 +186,7 @@ const userSchema = new mongoose.Schema({
     default: '',
   },
   notifications: [{
-    type: { type: String, enum: ['like', 'follow', 'comment', 'offer', 'sale', 'share', 'purchase', 'shipping', 'review', 'payout'] },
+    type: { type: String, enum: ['like', 'follow', 'comment', 'offer', 'sale', 'share', 'purchase', 'shipping', 'review', 'payout', 'priceDrop', 'return', 'refund', 'system'] },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     listing: { type: mongoose.Schema.Types.ObjectId, ref: 'Listing' },
     transaction: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },

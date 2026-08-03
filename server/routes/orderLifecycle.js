@@ -5,6 +5,7 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Payout = require('../models/Payout');
+const Order = require('../models/Order');
 const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundRules, returnEligibility, evidenceRequirements, disputeProcess, isValidTransition, getAllowedActions } = require('../config/orderLifecycle');
 const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
 
@@ -14,6 +15,99 @@ const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, 
 // Money moves in this specific order:
 //   capture → label → transaction → inventory → balances
 // ============================================================
+
+// ============================================================
+// ENTERPRISE ORDER ENDPOINTS (one order = one buyer checkout,
+// possibly multiple sellers, each with its own shipment)
+// ============================================================
+
+// GET /api/orders - list orders for current user with role + allowed actions
+router.get('/', auth, async (req, res) => {
+  try {
+    const userId = req.user._id.toString();
+    const orders = await Order.find({ $or: [{ buyer: req.user._id }, { sellers: req.user._id }] })
+      .populate('items.listing', 'title images price currency brand condition size')
+      .populate('items.transaction')
+      .populate('buyer', 'name avatar email')
+      .populate('sellers', 'name avatar')
+      .sort({ createdAt: -1 });
+
+    const enriched = orders.map((o) => {
+      const isBuyer = o.buyer._id.toString() === userId;
+      const role = isBuyer ? 'buyer' : 'seller';
+      return {
+        ...o.toObject(),
+        role,
+        allowedActions: Order.getAllowedOrderActions(o, role, userId),
+      };
+    });
+
+    res.json({ orders: enriched });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/orders/:id/ship - seller marks ONLY their own shipment as shipped
+router.post('/:id/ship', auth, async (req, res) => {
+  try {
+    const { shipmentIndex, trackingNumber, carrier } = req.body;
+    if (shipmentIndex === undefined) {
+      return res.status(400).json({ message: 'shipmentIndex is required' });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    const shipment = order.shipments[shipmentIndex];
+    if (!shipment) return res.status(404).json({ message: 'Shipment not found' });
+
+    // A seller may only ship their own items
+    if (shipment.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to ship this seller\'s items' });
+    }
+
+    if (['shipped', 'in_transit', 'delivered', 'confirmed'].includes(shipment.status)) {
+      return res.status(400).json({ message: 'Shipment already shipped' });
+    }
+
+    shipment.status = 'shipped';
+    if (trackingNumber) shipment.trackingNumber = trackingNumber;
+    if (carrier) shipment.carrier = carrier;
+    shipment.shippedAt = new Date();
+    await order.save();
+
+    // Sync underlying transactions to shipped with tracking
+    try {
+      await Transaction.updateMany(
+        { _id: { $in: shipment.items } },
+        {
+          $set: {
+            status: 'shipped',
+            'shipping.trackingNumber': trackingNumber || '',
+            'shipping.carrier': carrier || '',
+          },
+        }
+      );
+    } catch (syncErr) {
+      console.error('Transaction sync error:', syncErr.message);
+    }
+
+    const userId = req.user._id.toString();
+    const role = order.buyer.toString() === userId ? 'buyer' : 'seller';
+    const payload = {
+      ...order.toObject(),
+      role,
+      allowedActions: Order.getAllowedOrderActions(order, role, userId),
+    };
+
+    res.json({ message: 'Shipment marked as shipped', order: payload });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // Middleware: Validate order access and state machine transition
 const validateOrderAccess = async (req, res, next) => {
