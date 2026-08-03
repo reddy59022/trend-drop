@@ -216,4 +216,68 @@ export const deletePromo = (id) => api.delete(`/promos/${id}`);
 export const validatePromo = (data) => api.post('/promos/validate', data);
 export const usePromo = (id) => api.post(`/promos/${id}/use`);
 
+// ====== Referral Program (v30.0) ======
+export const getReferralSettings = () => api.get('/referrals/settings');
+export const getReferralStats = () => api.get('/referrals/my');
+export const generateReferralCode = () => api.post('/referrals/generate');
+export const applyReferralCode = (data) => api.post('/referrals/apply', data);
+export const claimReferralReward = () => api.post('/referrals/claim');
+export const validateReferralCode = (code) => api.get(`/referrals/${code}`);
+
+// ====== Returns Center ======
+export const getReturns = () => api.get('/returns');
+export const getReturn = (id) => api.get(`/returns/${id}`);
+export const createReturn = (data) => api.post('/returns', data);
+export const approveReturn = (id) => api.put(`/returns/${id}/approve`);
+export const denyReturn = (id, reason) => api.put(`/returns/${id}/deny`, { reason });
+export const shipReturn = (id, trackingNumber) => api.put(`/returns/${id}/ship`, { trackingNumber });
+export const receiveReturn = (id) => api.put(`/returns/${id}/receive`);
+
+// ====== Escrow Service (v26.0) ======
+export const initiateEscrow = (data) => api.post('/escrow/initiate', data);
+export const confirmEscrowBuyer = (transactionId) => api.post('/escrow/confirm-buyer', { transactionId });
+export const confirmEscrowSeller = (transactionId) => api.post('/escrow/confirm-seller', { transactionId });
+export const disputeEscrow = (data) => api.post('/escrow/dispute', data);
+export const resolveEscrowDispute = (data) => api.post('/escrow/resolve-dispute', data);
+export const getEscrowSettings = () => api.get('/escrow/settings');
+
+// ====== Shipping Insurance (v31.0) ======
+export const purchaseShippingInsurance = (data) => api.post('/shipping-insurance/purchase', data);
+export const getMyInsurancePolicies = () => api.get('/shipping-insurance/my');
+export const fileInsuranceClaim = (policyId, data) => api.post(`/shipping-insurance/${policyId}/claim`, data);
+
+// ====== Cart (v29.0) ======
+export const getCart = () => api.get('/cart');
+export const addItemToCart = (data) => api.post('/cart/items', data);
+// Backend POST /cart/items replaces quantity (no separate PUT endpoint)
+export const updateCartItem = (listingId, quantity) => api.post('/cart/items', { listingId, quantity });
+export const removeCartItem = (listingId) => api.delete(`/cart/items/${listingId}`);
+export const cartCheckout = (shippingAddress) => api.post('/cart/checkout', { shippingAddress });
+
+// ====== Fraud Detection ======
+export const checkFraud = (data) => api.post('/fraud/check', data);
+export const getFraudSettings = () => api.get('/fraud/settings');
+export const flagFraud = (data) => api.post('/fraud/flag', data);
+
+// ====== Auctions (v27.0) ======
+export const getAuctions = (params) => api.get('/auctions', { params });
+export const getAuction = (id) => api.get(`/auctions/${id}`);
+export const createAuction = (data) => api.post('/auctions', data);
+export const placeBid = (auctionId, amount) => api.post(`/auctions/${auctionId}/bids`, { amount });
+export const endAuction = (auctionId) => api.post(`/auctions/${auctionId}/end`);
+export const cancelAuction = (auctionId) => api.post(`/auctions/${auctionId}/cancel`);
+export const getMyAuctions = () => api.get('/auctions/my');
+
+// ====== Price Suggestion AI (v28.0) ======
+export const getPriceSuggestionSettings = () => api.get('/price-suggestions/settings');
+export const getPriceSuggestion = (data) => api.post('/price-suggestions/suggest', data);
+export const getSimilarSold = (data) => api.post('/price-suggestions/similar', data);
+export const getPriceTrends = (category) => api.get(`/price-suggestions/trends?category=${category || ''}`);
+
+// ====== Seller Badges / Verification (v39.0) ======
+export const getMySellerBadge = () => api.get('/seller-badges/me');
+export const getSellerBadge = (userId) => api.get(`/seller-badges/${userId}`);
+export const requestSellerVerification = () => api.put('/seller-badges/verify');
+export const updateSellerBadgeStats = (data) => api.put('/seller-badges/update-stats', data);
+
 export default api;

@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import { 
   FaArrowLeft, FaTruck, FaShieldAlt, FaCheckCircle, FaTimesCircle, 
   FaClock, FaBoxOpen, FaExclamationTriangle, FaUndo, FaFileInvoiceDollar,
-  FaSpinner, FaStar, FaRegStar
+  FaSpinner, FaStar, FaRegStar, FaLock, FaHandshake, FaFileContract, FaCopy
 } from 'react-icons/fa';
 
 const StatusBadge = ({ status }) => {
@@ -44,10 +45,15 @@ const StatusBadge = ({ status }) => {
 const OrderDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
   const [returnReason, setReturnReason] = useState('');
+  const [insurancePolicies, setInsurancePolicies] = useState([]);
+  const [escrowLoading, setEscrowLoading] = useState(false);
+  const [insuranceLoading, setInsuranceLoading] = useState(false);
+  const [copiedTracking, setCopiedTracking] = useState(false);
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -62,7 +68,99 @@ const OrderDetail = () => {
       }
     };
     fetchOrder();
+    // Fetch insurance policies for sellers
+    fetchInsurance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, navigate]);
+
+  const fetchInsurance = async () => {
+    try {
+      const res = await api.get('/shipping-insurance/my').catch(() => ({ data: { policies: [] } }));
+      setInsurancePolicies(res.data.policies || []);
+    } catch { /* ignore */ }
+  };
+
+  // ===== Escrow handlers =====
+  const handleEscrowInitiate = async () => {
+    setEscrowLoading('initiate');
+    try {
+      const amount = order.paymentBreakdown?.totalPaid || order.itemPrice;
+      const res = await api.post('/escrow/initiate', { transactionId: id, amount });
+      toast.success(res.data.message);
+      const refreshed = await api.get(`/transactions/${id}`);
+      setOrder(refreshed.data);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to initiate escrow');
+    } finally {
+      setEscrowLoading(null);
+    }
+  };
+
+  const handleEscrowConfirm = async (side) => {
+    setEscrowLoading(side);
+    try {
+      const res = await api.post(`/escrow/confirm-${side}`, { transactionId: id });
+      toast.success(res.data.message);
+      const refreshed = await api.get(`/transactions/${id}`);
+      setOrder(refreshed.data);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to confirm escrow');
+    } finally {
+      setEscrowLoading(null);
+    }
+  };
+
+  const handleEscrowDispute = async () => {
+    if (!order?.escrow?.status) return;
+    const reason = window.prompt('Describe the issue with this transaction:');
+    if (!reason) return;
+    setEscrowLoading('dispute');
+    try {
+      const res = await api.post('/escrow/dispute', { transactionId: id, reason });
+      toast.success(res.data.message);
+      const refreshed = await api.get(`/transactions/${id}`);
+      setOrder(refreshed.data);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to dispute escrow');
+    } finally {
+      setEscrowLoading(null);
+    }
+  };
+
+  // ===== Shipping Insurance handlers =====
+  const handlePurchaseInsurance = async (coverageType = 'standard') => {
+    setInsuranceLoading(true);
+    try {
+      const res = await api.post('/shipping-insurance/purchase', { transactionId: id, coverageType });
+      toast.success('Shipping insurance purchased!');
+      const refreshed = await api.get(`/transactions/${id}`);
+      setOrder(refreshed.data);
+      fetchInsurance();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to purchase insurance');
+    } finally {
+      setInsuranceLoading(false);
+    }
+  };
+
+  const handleFileInsuranceClaim = async (policyId) => {
+    const reason = window.prompt('Reason for claim (e.g. Lost in transit, Damaged):');
+    if (!reason) return;
+    const description = window.prompt('Additional details (optional):') || '';
+    try {
+      await api.post(`/shipping-insurance/${policyId}/claim`, { reason, description });
+      toast.success('Insurance claim filed!');
+      fetchInsurance();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to file claim');
+    }
+  };
+
+  const copyTracking = (tracking) => {
+    navigator.clipboard?.writeText(tracking);
+    setCopiedTracking(true);
+    setTimeout(() => setCopiedTracking(false), 2000);
+  };
 
   const handleAction = async (action, data = {}) => {
     setActionLoading(action);
@@ -103,9 +201,13 @@ const OrderDetail = () => {
 
   if (!order) return null;
 
-  const isBuyer = order.buyer?._id === order.buyer?._id; // Check from populated data
-  const currentUserId = order.buyer?._id;
-  const isSellerView = order.seller?._id !== currentUserId;
+  const currentUserId = String(currentUser?._id || currentUser?.id || '');
+  const isBuyer = currentUserId && String(order.buyer?._id || order.buyer) === currentUserId;
+  const isSeller = currentUserId && String(order.seller?._id || order.seller) === currentUserId;
+  const escrow = order.escrow || null;
+  const myInsurance = insurancePolicies.filter(p => String(p.transaction?._id || p.transaction) === id)[0] || null;
+  const canInitiateEscrow = isBuyer && escrow?.status !== 'active' && escrow?.status !== 'disputed' &&
+    (order.paymentBreakdown?.totalPaid || order.itemPrice) > 500 && ['paid', 'shipped', 'in_transit', 'out_for_delivery', 'delivered'].includes(order.status);
   
   const canCancel = ['paid', 'pending'].includes(order.status);
   const canConfirm = order.status === 'delivered' || order.status === 'shipped';
@@ -246,6 +348,142 @@ const OrderDetail = () => {
 
         {/* Sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--td-space-md)' }}>
+          {/* ===== Escrow Section ===== */}
+          {(escrow?.status && escrow.status !== 'inactive') || (canInitiateEscrow) ? (
+            <div className="glass-card" style={{ padding: 'var(--td-space-lg)', borderLeft: `3px solid ${escrow?.status === 'active' ? 'var(--td-info)' : escrow?.status === 'disputed' ? 'var(--td-error)' : 'var(--td-success)'}` }}>
+              <h3 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FaLock size={14} style={{ color: 'var(--td-info)' }} /> Escrow Protection
+              </h3>
+
+              {!escrow || escrow.status === 'inactive' ? (
+                <div>
+                  <p style={{ fontSize: 13, color: 'var(--td-text-secondary)', marginBottom: 12 }}>
+                    <FaShieldAlt size={12} /> This is a high-value order (over $500). Initiate escrow to hold funds securely until you confirm the item.
+                  </p>
+                  <button className="btn btn-info btn-block" onClick={handleEscrowInitiate} disabled={escrowLoading === 'initiate'}>
+                    {escrowLoading === 'initiate' ? <FaSpinner className="spinner-sm" /> : <FaHandshake size={14} />} Initiate Escrow
+                  </button>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div className="flex-between">
+                    <span style={{ color: 'var(--td-text-secondary)' }}>Status</span>
+                    <span style={{ fontWeight: 700, color: escrow.status === 'disputed' ? 'var(--td-error)' : escrow.status === 'released' || escrow.status === 'resolved' ? 'var(--td-success)' : 'var(--td-info)' }}>
+                      {escrow.status.charAt(0).toUpperCase() + escrow.status.slice(1)}
+                    </span>
+                  </div>
+                  <div className="flex-between">
+                    <span style={{ color: 'var(--td-text-secondary)' }}>Amount Held</span>
+                    <span style={{ fontWeight: 700 }}>{formatPrice(escrow.amount, order.currency || 'USD')}</span>
+                  </div>
+                  {escrow.initiatedAt && (
+                    <div className="flex-between">
+                      <span style={{ color: 'var(--td-text-secondary)' }}>Initiated</span>
+                      <span>{new Date(escrow.initiatedAt).toLocaleDateString()}</span>
+                    </div>
+                  )}
+                  {escrow.status === 'active' && (
+                    <>
+                      <div className="flex-between">
+                        <span style={{ color: 'var(--td-text-secondary)' }}>Buyer Confirmed</span>
+                        <span style={{ color: escrow.releaseConditions?.buyerConfirmed ? 'var(--td-success)' : 'var(--td-text-tertiary)' }}>
+                          {escrow.releaseConditions?.buyerConfirmed ? <FaCheckCircle size={13} /> : <FaTimesCircle size={13} />}
+                        </span>
+                      </div>
+                      <div className="flex-between">
+                        <span style={{ color: 'var(--td-text-secondary)' }}>Seller Confirmed</span>
+                        <span style={{ color: escrow.releaseConditions?.sellerConfirmed ? 'var(--td-success)' : 'var(--td-text-tertiary)' }}>
+                          {escrow.releaseConditions?.sellerConfirmed ? <FaCheckCircle size={13} /> : <FaTimesCircle size={13} />}
+                        </span>
+                      </div>
+                      {escrow.releaseConditions?.inspectionPeriodDays && (
+                        <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', background: 'var(--td-surface-2)', padding: 8, borderRadius: 'var(--td-radius-sm)' }}>
+                          {escrow.releaseConditions.inspectionPeriodDays}-day inspection period. Both parties must confirm to release funds.
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {escrow.dispute?.reason && (
+                    <div style={{ fontSize: 12, padding: 8, background: 'var(--td-error)10', borderRadius: 'var(--td-radius-sm)', color: 'var(--td-error)' }}>
+                      <strong>Dispute:</strong> {escrow.dispute.reason}
+                    </div>
+                  )}
+
+                  {escrow.status === 'active' && currentUser && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                      {isBuyer && (
+                        <>
+                          <button className="btn btn-success btn-block" onClick={() => handleEscrowConfirm('buyer')} disabled={escrowLoading === 'buyer'}>
+                            {escrowLoading === 'buyer' ? <FaSpinner className="spinner-sm" /> : <FaCheckCircle size={14} />} I Confirm the Item
+                          </button>
+                          <button className="btn btn-outline btn-block" style={{ color: 'var(--td-error)' }} onClick={handleEscrowDispute} disabled={escrowLoading === 'dispute'}>
+                            {escrowLoading === 'dispute' ? <FaSpinner className="spinner-sm" /> : <FaExclamationTriangle size={14} />} File Dispute
+                          </button>
+                        </>
+                      )}
+                      {isSeller && (
+                        <button className="btn btn-success btn-block" onClick={() => handleEscrowConfirm('seller')} disabled={escrowLoading === 'seller'}>
+                          {escrowLoading === 'seller' ? <FaSpinner className="spinner-sm" /> : <FaCheckCircle size={14} />} Confirm Sale Complete
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {/* ===== Shipping Insurance Section ===== */}
+          {(isSeller || myInsurance) ? (
+            <div className="glass-card" style={{ padding: 'var(--td-space-lg)', borderLeft: '3px solid var(--td-warning)' }}>
+              <h3 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FaShieldAlt size={14} style={{ color: 'var(--td-warning)' }} /> Shipping Insurance
+              </h3>
+              {myInsurance ? (
+                <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div className="flex-between">
+                    <span style={{ color: 'var(--td-text-secondary)' }}>Coverage</span>
+                    <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{myInsurance.coverageType}</span>
+                  </div>
+                  <div className="flex-between">
+                    <span style={{ color: 'var(--td-text-secondary)' }}>Premium</span>
+                    <span style={{ fontWeight: 700 }}>{formatPrice(myInsurance.premium, myInsurance.currency || 'USD')}</span>
+                  </div>
+                  <div className="flex-between">
+                    <span style={{ color: 'var(--td-text-secondary)' }}>Status</span>
+                    <span style={{ fontWeight: 700, textTransform: 'capitalize', color: myInsurance.status === 'active' ? 'var(--td-success)' : 'var(--td-warning)' }}>
+                      {myInsurance.status}
+                    </span>
+                  </div>
+                  {myInsurance.expiresAt && (
+                    <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
+                      Expires: {new Date(myInsurance.expiresAt).toLocaleDateString()}
+                    </div>
+                  )}
+                  {myInsurance.claim?.status && (
+                    <div style={{ fontSize: 12, padding: 8, background: 'var(--td-info)10', borderRadius: 'var(--td-radius-sm)', color: 'var(--td-info)' }}>
+                      <strong>Claim ({myInsurance.claim.status}):</strong> {myInsurance.claim.reason}
+                    </div>
+                  )}
+                  {myInsurance.status === 'active' && !myInsurance.claim?.status && (
+                    <button className="btn btn-outline btn-block" onClick={() => handleFileInsuranceClaim(myInsurance._id)}>
+                      <FaFileContract size={14} /> File a Claim
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p style={{ fontSize: 13, color: 'var(--td-text-secondary)', marginBottom: 12 }}>
+                    Protect this shipment against loss or damage. Claims covered up to $500 (standard) with only a 2% premium.
+                  </p>
+                  <button className="btn btn-outline btn-block" onClick={() => handlePurchaseInsurance('standard')} disabled={insuranceLoading}>
+                    {insuranceLoading ? <FaSpinner className="spinner-sm" /> : <FaShieldAlt size={14} />} Purchase Insurance (2%)
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
+
           {/* Payment Summary */}
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)' }}>
             <h3 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Payment Summary</h3>
@@ -351,6 +589,13 @@ const OrderDetail = () => {
                 <p>Requested: {new Date(order.returnDetails.requestedAt).toLocaleDateString()}</p>
                 <p>Reason: {order.returnDetails.reason || 'N/A'}</p>
                 {order.returnDetails.acceptedAt && <p>Accepted: {new Date(order.returnDetails.acceptedAt).toLocaleDateString()}</p>}
+                {order.returnDetails.trackingNumber && (
+                  <p>
+                    <button className="btn btn-sm btn-outline" onClick={() => copyTracking(order.returnDetails.trackingNumber)} style={{ marginTop: 4 }}>
+                      {copiedTracking ? <FaCheckCircle size={12} /> : <FaCopy size={12} />} {copiedTracking ? 'Copied!' : 'Copy Return Tracking'}
+                    </button>
+                  </p>
+                )}
               </div>
             </div>
           )}

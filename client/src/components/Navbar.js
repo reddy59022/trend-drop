@@ -24,6 +24,11 @@ import {
   FaStar,
   FaShieldAlt,
   FaPlusCircle,
+  FaGavel,
+  FaUndo,
+  FaUserPlus,
+  FaAward,
+  FaTag,
 } from 'react-icons/fa';
 
 const currencies = [
@@ -319,6 +324,24 @@ const Navbar = () => {
                     </Link>
                     <Link to="/transactions" className="dropdown-item" onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}>
                       <FaShieldAlt size={14} /> Transactions
+                    </Link>
+                    <Link to="/auctions" className="dropdown-item" onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}>
+                      <FaGavel size={14} /> Auctions
+                    </Link>
+                    <Link to="/returns" className="dropdown-item" onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}>
+                      <FaUndo size={14} /> Returns
+                    </Link>
+                    <Link to="/referrals" className="dropdown-item" onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}>
+                      <FaUserPlus size={14} /> Referrals
+                    </Link>
+                    <Link to="/seller-badges" className="dropdown-item" onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}>
+                      <FaAward size={14} /> Seller Badges
+                    </Link>
+                    <Link to="/price-suggestion" className="dropdown-item" onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}>
+                      <FaTag size={14} /> Price Suggestion
+                    </Link>
+                    <Link to="/fraud-protection" className="dropdown-item" onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}>
+                      <FaShieldAlt size={14} /> Fraud Protection
                     </Link>
                     <Link to="/wishlist" className="dropdown-item" onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}>
                       <FaHeart size={14} /> Wishlist

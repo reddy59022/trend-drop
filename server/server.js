@@ -226,6 +226,7 @@ app.use('/api/vendors', require('./routes/vendors'));
 app.use('/api/advanced-shipping', require('./routes/advancedShipping'));
 // Enterprise API routes (v60.0)
 app.use('/api/enterprise', require('./routes/enterpriseApi'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)

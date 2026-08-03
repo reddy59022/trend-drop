@@ -59,6 +59,12 @@ const LoyaltyProgramPage = lazy(() => import('./pages/LoyaltyProgram'));
 const VendorsPage = lazy(() => import('./pages/Vendors'));
 const AdvancedShippingPage = lazy(() => import('./pages/AdvancedShipping'));
 const EnterpriseApiPage = lazy(() => import('./pages/EnterpriseApi'));
+const ReferralsPage = lazy(() => import('./pages/Referrals'));
+const ReturnsCenterPage = lazy(() => import('./pages/ReturnsCenter'));
+const AuctionPage = lazy(() => import('./pages/AuctionPage'));
+const PriceSuggestionPage = lazy(() => import('./pages/PriceSuggestion'));
+const SellerBadgesPage = lazy(() => import('./pages/SellerBadges'));
+const FraudProtectionPage = lazy(() => import('./pages/FraudProtection'));
 
 // Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
@@ -138,6 +144,13 @@ function App() {
 <Route path="/vendors" element={<ProtectedRoute><VendorsPage /></ProtectedRoute>} />
 <Route path="/advanced-shipping" element={<ProtectedRoute><AdvancedShippingPage /></ProtectedRoute>} />
 <Route path="/enterprise" element={<ProtectedRoute><EnterpriseApiPage /></ProtectedRoute>} />
+<Route path="/referrals" element={<ProtectedRoute><ReferralsPage /></ProtectedRoute>} />
+<Route path="/returns" element={<ProtectedRoute><ReturnsCenterPage /></ProtectedRoute>} />
+<Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
+<Route path="/auctions" element={<ProtectedRoute><AuctionPage /></ProtectedRoute>} />
+<Route path="/price-suggestion" element={<ProtectedRoute><PriceSuggestionPage /></ProtectedRoute>} />
+<Route path="/seller-badges" element={<ProtectedRoute><SellerBadgesPage /></ProtectedRoute>} />
+<Route path="/fraud-protection" element={<ProtectedRoute><FraudProtectionPage /></ProtectedRoute>} />
 
                 {/* Admin-only routes */}
                 <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>} />
