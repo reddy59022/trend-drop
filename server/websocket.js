@@ -76,6 +76,88 @@ function initializeWebSocket(server) {
       });
     });
 
+    // ============ AUCTION LIVE STREAM SIGNALING ============
+    // WebRTC signaling relay for live stream
+    // Join a stream room to exchange SDP offers/answers and ICE candidates
+
+    socket.on('stream:join', ({ auctionId }, callback) => {
+      try {
+        // Leave any previous stream room for this user
+        socket.rooms.forEach(room => {
+          if (room.startsWith('stream:')) socket.leave(room);
+        });
+        
+        socket.join(`stream:${auctionId}`);
+        console.log(`User ${socket.user.email} joined stream room for auction ${auctionId}`);
+        
+        // Notify the seller that a viewer joined
+        socket.to(`stream:${auctionId}`).emit('stream:viewer-joined', {
+          auctionId,
+          userId: socket.user._id,
+          userName: socket.user.name,
+        });
+        
+        if (callback) callback({ ok: true });
+      } catch (error) {
+        if (callback) callback({ ok: false, error: error.message });
+      }
+    });
+
+    socket.on('stream:leave', ({ auctionId }) => {
+      socket.leave(`stream:${auctionId}`);
+      console.log(`User ${socket.user.email} left stream room for auction ${auctionId}`);
+    });
+
+    // Seller sends SDP offer to viewers in the stream room
+    socket.on('stream:offer', ({ auctionId, offer }) => {
+      socket.to(`stream:${auctionId}`).emit('stream:offer', {
+        auctionId,
+        offer,
+        sellerId: socket.user._id,
+        sellerName: socket.user.name,
+      });
+      console.log(`Stream offer relayed for auction ${auctionId} by ${socket.user.email}`);
+    });
+
+    // Viewer sends SDP answer back to seller
+    socket.on('stream:answer', ({ auctionId, answer, toSellerId }) => {
+      socket.to(`user:${toSellerId}`).emit('stream:answer', {
+        auctionId,
+        answer,
+        viewerId: socket.user._id,
+        viewerName: socket.user.name,
+      });
+      console.log(`Stream answer relayed for auction ${auctionId} by ${socket.user.email}`);
+    });
+
+    // ICE candidate exchange
+    socket.on('stream:ice-candidate', ({ auctionId, candidate, toUserId }) => {
+      // If toUserId provided, send to that specific user; otherwise broadcast to room
+      if (toUserId) {
+        socket.to(`user:${toUserId}`).emit('stream:ice-candidate', {
+          auctionId,
+          candidate,
+          fromUserId: socket.user._id,
+        });
+      } else {
+        socket.to(`stream:${auctionId}`).emit('stream:ice-candidate', {
+          auctionId,
+          candidate,
+          fromUserId: socket.user._id,
+        });
+      }
+    });
+
+    // Seller announces stream is ending
+    socket.on('stream:end', ({ auctionId }) => {
+      socket.to(`stream:${auctionId}`).emit('stream:ended', {
+        auctionId,
+        sellerId: socket.user._id,
+      });
+      socket.leave(`stream:${auctionId}`);
+      console.log(`Stream ended for auction ${auctionId} by ${socket.user.email}`);
+    });
+
     // Mark notifications as read
     socket.on('notifications:mark-read', async (notificationIds) => {
       try {

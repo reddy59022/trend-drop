@@ -170,15 +170,20 @@ router.post('/:id/bids', auth, async (req, res) => {
     
     await auction.save();
     
-    // Notify seller of new bid
-    const seller = await User.findById(auction.seller);
-    if (seller) {
-      seller.notifications.unshift({
-        type: 'sale',
-        listing: auction.listing,
-        message: `New bid of ${bidCurrency} ${amount} placed on your auction!`,
-      });
-      await seller.save();
+    // Notify seller of new bid (non-critical: a notification failure must never
+    // prevent a valid bid from being accepted)
+    try {
+      const seller = await User.findById(auction.seller);
+      if (seller) {
+        seller.notifications.unshift({
+          type: 'sale',
+          listing: auction.listing,
+          message: `New bid of ${bidCurrency} ${amount} placed on your auction!`,
+        });
+        await seller.save();
+      }
+    } catch (notifErr) {
+      console.error('Failed to notify seller of bid:', notifErr.message);
     }
     
     const populatedAuction = await Auction.findById(auctionId).populate('bids.bidder', 'name');

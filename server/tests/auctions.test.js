@@ -285,6 +285,51 @@ describe('Auction/Bidding System', () => {
       expect(res.statusCode).toBe(400);
       expect(res.body.message).toContain('reserve price');
     });
+
+    it('AUCTION.8b should accept bid when seller has a dispute notification (regression for 500 error)', async () => {
+      const listing = await Listing.create({
+        title: 'Auction Item',
+        description: 'Item for auction',
+        price: 100,
+        category: 'Men',
+        condition: 'Good',
+        seller: sellerId,
+        available: true,
+        sold: false,
+        status: 'active',
+      });
+
+      const auction = await Auction.create({
+        listing: listing._id,
+        seller: sellerId,
+        startTime: new Date(Date.now() - 60 * 60 * 1000),
+        endTime: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        reservePrice: 100,
+        currentBid: 100,
+        status: 'active',
+      });
+      auctionId = auction._id;
+
+      // Simulate production state: seller already has a 'dispute' notification
+      // from the Stripe chargeback webhook (previously not in the schema enum,
+      // which caused seller.save() to throw ValidationError -> 500 on bids)
+      await User.findByIdAndUpdate(sellerId, {
+        $push: {
+          notifications: {
+            type: 'dispute',
+            message: 'A chargeback has been filed for your sale. Please provide evidence.',
+          },
+        },
+      });
+
+      const res = await request(app)
+        .post(`/api/auctions/${auctionId}/bids`)
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .send({ amount: 150 });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.auction.currentBid).toBe(150);
+    });
   });
 
   describe('GET /api/auctions', () => {
