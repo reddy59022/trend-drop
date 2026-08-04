@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
 import { FaShareAlt, FaInstagram, FaTiktok, FaPinterest, FaSnapchat, FaFacebook, FaPlus, FaSync, FaCog, FaTrash, FaChartBar, FaStore } from 'react-icons/fa';
 import api from '../services/api';
 
 const SocialCommerce = () => {
   const { user } = useAuth();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [connections, setConnections] = useState([]);
@@ -64,7 +66,13 @@ const SocialCommerce = () => {
   };
 
   const handleDisconnect = async (connectionId) => {
-    if (!window.confirm('Disconnect this account?')) return;
+    const ok = await confirmDialog({
+      title: 'Disconnect account?',
+      message: 'Disconnect this account?',
+      confirmLabel: 'Disconnect',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/social-commerce/${connectionId}`);
       fetchData();

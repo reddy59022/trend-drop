@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { FaPaperPlane, FaTrash, FaSpinner, FaUserCircle } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { toast } from 'react-toastify';
 import { defaultAvatar, timeAgo } from '../utils/helpers';
 
 const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
   const { user } = useAuth();
+  const confirmDialog = useConfirm();
   const [newComment, setNewComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(null);
@@ -35,7 +37,13 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
   };
 
   const handleDelete = async (commentId) => {
-    if (!window.confirm('Delete this comment?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete comment?',
+      message: 'Delete this comment?',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     setDeleting(commentId);
     try {
       const res = await api.delete(`/comments/${commentId}`);
@@ -80,10 +88,10 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
           </div>
         </form>
       ) : (
-        <div style={{ 
-          textAlign: 'center', 
-          padding: 'var(--td-space-md)', 
-          color: 'var(--td-text-tertiary)', 
+        <div style={{
+          textAlign: 'center',
+          padding: 'var(--td-space-md)',
+          color: 'var(--td-text-tertiary)',
           fontSize: 14,
           marginBottom: 16,
         }}>

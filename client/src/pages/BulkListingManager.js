@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { FaUpload, FaDownload, FaEdit, FaTrash, FaRocket, FaSpinner, FaCheckCircle, FaExclamationTriangle, FaFileCsv, FaTags, FaDollarSign, FaBox, FaUndo } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { useConfirm } from '../context/ConfirmContext';
 import { formatPrice } from '../utils/helpers';
 
 const BulkListingManager = () => {
+  const confirmDialog = useConfirm();
   const [listings, setListings] = useState([]);
   const [selectedListings, setSelectedListings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,12 +72,19 @@ const BulkListingManager = () => {
           await api.patch('/listings/bulk-price', { listingIds: selectedListings, price: parseFloat(bulkPrice) });
           toast.success(`${selectedListings.length} prices updated`);
           break;
-        case 'delete':
-          if (window.confirm(`Delete ${selectedListings.length} listings?`)) {
+        case 'delete': {
+          const ok = await confirmDialog({
+            title: 'Delete listings?',
+            message: `Delete ${selectedListings.length} listings?`,
+            confirmLabel: 'Delete',
+            danger: true,
+          });
+          if (ok) {
             await api.delete('/listings/bulk', { data: { listingIds: selectedListings } });
             toast.success(`${selectedListings.length} listings deleted`);
           }
           break;
+        }
         default:
           break;
       }

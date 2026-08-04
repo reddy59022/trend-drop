@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
 import { FaCreditCard, FaCheck, FaCrown, FaStar, FaGem, FaRocket } from 'react-icons/fa';
 import api from '../services/api';
 
 const Subscriptions = () => {
   const { user } = useAuth();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState([]);
@@ -46,7 +48,13 @@ const Subscriptions = () => {
   };
 
   const handleCancel = async () => {
-    if (!window.confirm('Cancel your subscription?')) return;
+    const ok = await confirmDialog({
+      title: 'Cancel subscription?',
+      message: 'Cancel your subscription?',
+      confirmLabel: 'Cancel',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.post('/subscriptions/cancel');
       fetchData();

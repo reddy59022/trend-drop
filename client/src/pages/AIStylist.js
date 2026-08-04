@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaRobot, FaHeart, FaSave, FaPlus, FaTrash, FaCalendarAlt, FaShoppingBag, FaMagic } from 'react-icons/fa';
 import { getAIPreferences, updateAIPreferences, getAIRecommendations, generateAIRecommendations, getAITrends, getUserOutfits, createOutfit } from '../services/api';
 import ListingCard from '../components/ListingCard';
+import { toast } from 'react-toastify';
 
 const AIStylist = () => {
   const { user } = useAuth();
@@ -18,6 +19,8 @@ const AIStylist = () => {
     brands: [],
     priceRange: { min: 0, max: 1000 },
   });
+  const [outfitModalOpen, setOutfitModalOpen] = useState(false);
+  const [outfitName, setOutfitName] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -64,14 +67,17 @@ const AIStylist = () => {
     }
   };
 
-  const handleCreateOutfit = async () => {
-    const name = prompt('Outfit name:');
-    if (!name) return;
+  const handleSubmitOutfit = async () => {
+    if (!outfitName.trim()) return;
     try {
-      await createOutfit({ name, items: [] });
+      await createOutfit({ name: outfitName.trim(), items: [] });
+      toast.success('Outfit created!');
+      setOutfitModalOpen(false);
+      setOutfitName('');
       fetchUserOutfits();
     } catch (error) {
       console.error('Error creating outfit:', error);
+      toast.error('Failed to create outfit');
     }
   };
 
@@ -203,7 +209,7 @@ const AIStylist = () => {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h2>Your Outfits</h2>
-            <button onClick={handleCreateOutfit} className="btn btn-primary btn-sm">
+            <button onClick={() => setOutfitModalOpen(true)} className="btn btn-primary btn-sm">
               <FaPlus /> Create Outfit
             </button>
           </div>
@@ -266,6 +272,43 @@ const AIStylist = () => {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Create Outfit Modal */}
+      {outfitModalOpen && (
+        <div className="modal-overlay" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: 16,
+        }}>
+          <div className="glass-card" style={{ padding: 'var(--td-space-xl)', maxWidth: 400, width: '100%' }}>
+            <h3 style={{ marginBottom: 12 }}>Create Outfit</h3>
+            <input
+              type="text"
+              className="form-input"
+              value={outfitName}
+              onChange={(e) => setOutfitName(e.target.value)}
+              placeholder="Outfit name"
+              style={{ marginBottom: 12 }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSubmitOutfit} disabled={!outfitName.trim()}>
+                Create
+              </button>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setOutfitModalOpen(false); setOutfitName(''); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

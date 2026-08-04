@@ -5,6 +5,7 @@ import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLi
 import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
+import { shareItem, copyText } from '../services/native';
 import MediaCarousel from '../components/MediaCarousel';
 import CommentSection from '../components/CommentSection';
 import OfferModal from '../components/OfferModal';
@@ -30,6 +31,8 @@ const ListingDetail = () => {
   const [selectedCountry, setSelectedCountry] = useState('US');
   const [shippingEstimate, setShippingEstimate] = useState(null);
   const [showMobileSticky, setShowMobileSticky] = useState(false);
+  const [counterModalOpen, setCounterModalOpen] = useState(false);
+  const [counterAmount, setCounterAmount] = useState('');
 
   useEffect(() => {
     fetchListing();
@@ -115,11 +118,23 @@ const ListingDetail = () => {
   };
 
   const handleShare = async () => {
-    if (navigator.share) {
-      navigator.share({ title: listing.title, url: window.location.href });
-    } else {
-      navigator.clipboard.writeText(window.location.href);
+    const shared = await shareItem({ title: listing.title, url: window.location.href });
+    if (!shared) {
+      await copyText(window.location.href);
       toast.success('Link copied to clipboard!');
+    }
+  };
+
+  const handleSubmitCounter = async () => {
+    if (!counterAmount || isNaN(counterAmount)) return;
+    try {
+      await api.patch(`/offers/${buyerOffer._id}/buyer-counter`, { counterAmount: Number(counterAmount) });
+      toast.success('Counter sent');
+      setCounterModalOpen(false);
+      setCounterAmount('');
+      fetchBuyerOffer();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to send counter');
     }
   };
 
@@ -488,19 +503,7 @@ const ListingDetail = () => {
                 )}
                 {buyerOffer && buyerOffer.status === 'countered' && (
                   <>
-                    <button className="btn btn-outline btn-lg" onClick={async () => {
-                      const currency = buyerOffer.currency || 'USD';
-                      const currentPrice = buyerOffer.counterAmount || buyerOffer.amount;
-                      const amount = prompt(`Enter your counter amount (must be higher than ${currency} ${currentPrice}):`);
-                      if (!amount || isNaN(amount)) return;
-                      try {
-                        await api.patch(`/offers/${buyerOffer._id}/buyer-counter`, { counterAmount: Number(amount) });
-                        toast.success('Counter sent');
-                        fetchBuyerOffer();
-                      } catch (e) {
-                        toast.error(e.response?.data?.message || 'Failed to send counter');
-                      }
-                    }}>
+                    <button className="btn btn-outline btn-lg" onClick={() => setCounterModalOpen(true)}>
                       Counter Offer
                     </button>
                     <button className="btn btn-primary btn-lg" style={{ flex: 2 }} onClick={async () => {
@@ -597,6 +600,46 @@ const ListingDetail = () => {
 
           <OfferModal listing={listing} isOpen={offerModalOpen} onClose={() => setOfferModalOpen(false)} onOfferSubmitted={() => { fetchListing(); fetchBuyerOffer(); }} />
     </div>
+
+    {/* Counter Offer Modal */}
+    {counterModalOpen && buyerOffer && (
+      <div className="modal-overlay" style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: 16,
+      }}>
+        <div className="glass-card" style={{ padding: 'var(--td-space-xl)', maxWidth: 400, width: '100%' }}>
+          <h3 style={{ marginBottom: 8 }}>Counter Offer</h3>
+          <p style={{ fontSize: 13, color: 'var(--td-text-secondary)', marginBottom: 12 }}>
+            Enter your counter amount (must be higher than {formatPrice(buyerOffer.counterAmount || buyerOffer.amount, buyerOffer.currency || 'USD')})
+          </p>
+          <input
+            type="number"
+            className="form-input"
+            value={counterAmount}
+            onChange={(e) => setCounterAmount(e.target.value)}
+            placeholder="Enter amount"
+            style={{ marginBottom: 12 }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSubmitCounter} disabled={!counterAmount || isNaN(counterAmount)}>
+              Send Counter
+            </button>
+            <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setCounterModalOpen(false); setCounterAmount(''); }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Mobile Sticky Buy Bar */}
     {showMobileSticky && !isOwner && !listing.sold && (

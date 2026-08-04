@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getMySellerBadge, requestSellerVerification, updateSellerBadgeStats } from '../services/api';
+import { toast } from 'react-toastify';
 
 const TIER_STYLES = {
   bronze: { color: '#CD7F32', label: 'Bronze', icon: '🥉' },
@@ -51,9 +52,9 @@ const SellerBadges = () => {
     try {
       await requestSellerVerification();
       await fetchBadge();
-      alert('Verification requested! Your badge will be reviewed by our team.');
+      toast.success('Verification requested! Your badge will be reviewed by our team.');
     } catch (error) {
-      alert(error.response?.data?.message || 'Failed to request verification');
+      toast.error(error.response?.data?.message || 'Failed to request verification');
     } finally {
       setVerifying(false);
     }
@@ -63,9 +64,9 @@ const SellerBadges = () => {
     try {
       await updateSellerBadgeStats(form);
       await fetchBadge();
-      alert('Seller stats updated — tier recalculated!');
+      toast.success('Seller stats updated — tier recalculated!');
     } catch (error) {
-      alert(error.response?.data?.message || 'Failed to update stats');
+      toast.error(error.response?.data?.message || 'Failed to update stats');
     }
   };
 

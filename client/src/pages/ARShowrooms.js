@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
 import { FaCube, FaPlus, FaTrash, FaHeart, FaEye, FaHome, FaBed, FaChair, FaStore } from 'react-icons/fa';
 import api from '../services/api';
 
 const ARShowrooms = () => {
   const { user } = useAuth();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [showrooms, setShowrooms] = useState([]);
@@ -63,7 +65,13 @@ const ARShowrooms = () => {
   };
 
   const handleDeleteShowroom = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this showroom?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete showroom?',
+      message: 'Are you sure you want to delete this showroom?',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/ar-showrooms/${id}`);
       fetchData();

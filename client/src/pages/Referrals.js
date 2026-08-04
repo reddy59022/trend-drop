@@ -5,6 +5,7 @@ import api from '../services/api';
 import { toast } from 'react-toastify';
 import { FaGift, FaLink, FaCopy, FaUsers, FaDollarSign, FaCheckCircle, FaShareAlt, FaTwitter, FaFacebookF } from 'react-icons/fa';
 import { formatPrice } from '../utils/helpers';
+import { copyText } from '../services/native';
 
 const Referrals = () => {
   const { user } = useAuth();
@@ -66,7 +67,7 @@ const Referrals = () => {
     const code = referral?.code || stats?.code;
     if (!code) return;
     try {
-      await navigator.clipboard.writeText(code);
+      await copyText(code);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -78,7 +79,7 @@ const Referrals = () => {
     const code = referral?.code || stats?.code;
     if (!code) return;
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/register?ref=${code}`);
+      await copyText(`${window.location.origin}/register?ref=${code}`);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {

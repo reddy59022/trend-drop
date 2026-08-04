@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { toast } from 'react-toastify';
@@ -15,6 +16,7 @@ const STEPS = [
 
 const SellerOnboarding = () => {
   const { user } = useAuth();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   const [onboarding, setOnboarding] = useState({ completed: false, currentStep: 0, steps: {} });
   const [tips, setTips] = useState([]);
@@ -60,7 +62,13 @@ const SellerOnboarding = () => {
   };
 
   const resetOnboarding = async () => {
-    if (!window.confirm('Are you sure you want to restart onboarding?')) return;
+    const ok = await confirmDialog({
+      title: 'Restart onboarding?',
+      message: 'Are you sure you want to restart onboarding?',
+      confirmLabel: 'Restart',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       const res = await api.post('/users/me/onboarding/reset');
       setOnboarding(res.data.onboarding);

@@ -5,6 +5,7 @@ import api from '../services/api';
 import { toast } from 'react-toastify';
 import { FaUndoAlt, FaCheckCircle, FaTimesCircle, FaTruck, FaInfoCircle, FaBoxOpen, FaDollarSign } from 'react-icons/fa';
 import { formatPrice } from '../utils/helpers';
+import { promptText } from '../services/native';
 import moment from 'moment';
 
 const RETURN_REASONS = [
@@ -228,15 +229,17 @@ const ReturnsCenter = () => {
                         {canApprove && (
                           <>
                             <button className="btn btn-sm btn-primary" onClick={() => updateStatus(r._id, 'approve')}><FaCheckCircle size={12} /> Approve</button>
-                            <button className="btn btn-sm btn-outline" style={{ color: 'var(--td-error)' }} onClick={() => {
-                              const reason = window.prompt('Denial reason:') || 'Return denied by seller';
+                            <button className="btn btn-sm btn-outline" style={{ color: 'var(--td-error)' }} onClick={async () => {
+                              const res = await promptText({ title: 'Denial reason', placeholder: 'Why are you denying this return?', confirmLabel: 'Deny' });
+                              const reason = res.ok && res.value ? res.value : 'Return denied by seller';
                               updateStatus(r._id, 'deny', { reason });
                             }}><FaTimesCircle size={12} /> Deny</button>
                           </>
                         )}
                         {canShip && (
-                          <button className="btn btn-sm btn-primary" onClick={() => {
-                            const tracking = window.prompt('Enter return tracking number (optional):') || '';
+                          <button className="btn btn-sm btn-primary" onClick={async () => {
+                            const res = await promptText({ title: 'Enter return tracking number (optional)', placeholder: 'Tracking number', confirmLabel: 'Submit' });
+                            const tracking = res.ok ? res.value : '';
                             updateStatus(r._id, 'ship', { trackingNumber: tracking });
                           }}><FaTruck size={12} /> Mark Shipped</button>
                         )}

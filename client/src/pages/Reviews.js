@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { getRatingsBySeller, createRating, deleteRating } from '../services/api'; // eslint-disable-line
 import StarRating from '../components/StarRating';
 import { FaStar, FaPen, FaTrash } from 'react-icons/fa';
@@ -10,6 +11,7 @@ import { toast } from 'react-toastify';
 const Reviews = () => {
   const { sellerId } = useParams();
   const { user } = useAuth(); // eslint-disable-line
+  const confirmDialog = useConfirm();
   const [data, setData] = useState({ averageRating: 0, count: 0, ratings: [] });
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -37,7 +39,13 @@ const Reviews = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this review?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete review?',
+      message: 'Delete this review?',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try { await deleteRating(id); toast.success('Review deleted'); fetchRatings(); } catch (error) { toast.error('Failed'); }
   };
 

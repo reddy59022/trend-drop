@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { FaUsers, FaShare, FaGift, FaTrash, FaEdit, FaTimes, FaPlus, FaTag, FaUserFriends } from 'react-icons/fa';
 import { getOfferSharingStats, shareOfferToLikers, createBundleOffer } from '../services/api';
 import api from '../services/api';
+import { toast } from 'react-toastify';
 
 const OfferSharing = () => {
   const { user } = useAuth();
@@ -51,12 +52,12 @@ const OfferSharing = () => {
     if (!selectedListing) return;
     try {
       const res = await shareOfferToLikers(selectedListing, shareData);
-      alert(`Share offers sent to ${res.data.offersCount} likers!`);
+      toast.success(`Share offers sent to ${res.data.offersCount} likers!`);
       setShowShareModal(false);
       fetchStats();
     } catch (error) {
       console.error('Error sharing offer:', error);
-      alert('Error: ' + (error.response?.data?.message || error.message));
+      toast.error('Error: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -67,12 +68,12 @@ const OfferSharing = () => {
         listingIds: selectedListings,
         buyerId: bundleData.buyerId,
       });
-      alert('Bundle offer created!');
+      toast.success('Bundle offer created!');
       setShowBundleModal(false);
       setSelectedListings([]);
     } catch (error) {
       console.error('Error creating bundle:', error);
-      alert('Error: ' + (error.response?.data?.message || error.message));
+      toast.error('Error: ' + (error.response?.data?.message || error.message));
     }
   };
 

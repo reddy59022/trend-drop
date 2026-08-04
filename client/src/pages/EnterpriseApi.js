@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { FaCode, FaDownload, FaLink, FaKey, FaChartBar, FaShareSquare } from 'react-icons/fa';
 import api from '../services/api';
+import { toast } from 'react-toastify';
 
 const EnterpriseApi = () => {
   const { user } = useAuth();
@@ -34,7 +35,7 @@ const EnterpriseApi = () => {
   const handleExport = async (type) => {
     try {
       const res = await api.post('/enterprise/export', { type });
-      alert(`Export started: ${res.data.downloadUrl}`);
+      toast.success(`Export started: ${res.data.downloadUrl}`);
     } catch (error) {
       console.error('Error exporting:', error);
     }
@@ -46,7 +47,7 @@ const EnterpriseApi = () => {
         url: 'https://your-app.com/webhook',
         events: ['order.created', 'order.shipped']
       });
-      alert('Webhook registered!');
+      toast.success('Webhook registered!');
     } catch (error) {
       console.error('Error registering webhook:', error);
     }

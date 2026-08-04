@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import {
   getAdminDashboard,
   getAdminUsers,
@@ -19,6 +21,7 @@ import { FaShieldAlt, FaUsers, FaList, FaFlag, FaExchangeAlt, FaSearch, FaTimes,
 
 const Admin = () => {
   const { user } = useAuth();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
@@ -92,7 +95,13 @@ const Admin = () => {
   };
 
   const handleDeleteListing = async (listingId) => {
-    if (!window.confirm('Are you sure you want to delete this listing?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete listing?',
+      message: 'Are you sure you want to delete this listing?',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteAdminListing(listingId);
       fetchData();
@@ -111,7 +120,13 @@ const Admin = () => {
   };
 
   const handleRefund = async (transactionId) => {
-    if (!window.confirm('Force refund this transaction? This cannot be undone.')) return;
+    const ok = await confirmDialog({
+      title: 'Force refund?',
+      message: 'Force refund this transaction? This cannot be undone.',
+      confirmLabel: 'Force Refund',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await adminRefundTransaction(transactionId);
       fetchData();
@@ -121,10 +136,16 @@ const Admin = () => {
   };
 
   const handleAutoSuspend = async () => {
-    if (!window.confirm('Auto-suspend all users with 3+ strikes?')) return;
+    const ok = await confirmDialog({
+      title: 'Auto-suspend users?',
+      message: 'Auto-suspend all users with 3+ strikes?',
+      confirmLabel: 'Auto-Suspend',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       const res = await autoSuspendUsers();
-      alert(res.data.message);
+      toast.success(res.data.message);
       fetchData();
     } catch (error) {
       console.error(error);

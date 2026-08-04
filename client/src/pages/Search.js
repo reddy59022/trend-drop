@@ -4,6 +4,7 @@ import { FaFilter, FaTimes, FaSlidersH, FaChevronDown, FaSave, FaTag } from 'rea
 import api, { getSearchBrands, getSearchColors, getSearchSizes, saveSearchFilter, getSavedSearchFilters, shareOfferToLikers } from '../services/api';
 import ListingCard from '../components/ListingCard';
 import Pagination from '../components/Pagination';
+import { toast } from 'react-toastify';
 
 const Search = () => {
   const [searchParams] = useSearchParams();
@@ -91,7 +92,7 @@ const Search = () => {
         name: `${filters.category || 'All'} Search`,
       });
       setShowSaveSearch(false);
-      alert('Search saved! You can find it in Saved Searches.');
+      toast.success('Search saved! You can find it in Saved Searches.');
     } catch (error) {
       console.error('Error saving search:', error);
     }

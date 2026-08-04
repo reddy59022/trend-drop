@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   getSavedSearches,
@@ -13,6 +14,7 @@ import { FaSearch, FaBell, FaTrash, FaEdit, FaTimes, FaSave } from 'react-icons/
 
 const SavedSearches = () => {
   const { user } = useAuth();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
 
   const [searches, setSearches] = useState([]);
@@ -96,7 +98,13 @@ const SavedSearches = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this saved search?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete saved search?',
+      message: 'Delete this saved search?',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteSavedSearch(id);
       if (activeSearch?._id === id) setActiveSearch(null);

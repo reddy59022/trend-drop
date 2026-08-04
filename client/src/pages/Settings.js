@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { toast } from 'react-toastify';
 import { countries, formatPrice } from '../utils/helpers';
 import api from '../services/api';
@@ -21,6 +22,7 @@ const languages = [
 function Settings() {
   const { user, updateProfile, updateAvatar, logout } = useAuth();
   const navigate = useNavigate();
+  const confirmDialog = useConfirm();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
   const [formData, setFormData] = useState({
@@ -93,6 +95,24 @@ function Settings() {
       toast.success('Profile updated!');
     } catch (err) { toast.error('Failed to update profile'); }
     setLoading(false);
+  };
+
+  const handleDeleteAccount = async () => {
+    const ok = await confirmDialog({
+      title: 'Delete account?',
+      message: 'Are you sure you want to delete your account? This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.delete('/auth/account');
+      logout();
+      toast.success('Account deleted');
+      navigate('/');
+    } catch (err) {
+      toast.error('Failed to delete');
+    }
   };
 
   const tabs = [
@@ -222,11 +242,7 @@ function Settings() {
                 <h3>Danger Zone</h3>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   <button type="button" className="btn btn-outline" onClick={() => { logout(); navigate('/'); }}><FaSignOutAlt size={14} /> Log Out</button>
-                  <button type="button" className="btn btn-outline" style={{ color: 'var(--td-error)', borderColor: 'var(--td-error)' }} onClick={async () => {
-                    if (window.confirm('Are you sure you want to delete your account? This cannot be undone.')) {
-                      try { await api.delete('/auth/account'); logout(); toast.success('Account deleted'); navigate('/'); } catch (err) { toast.error('Failed to delete'); }
-                    }
-                  }}><FaTrash size={14} /> Delete Account</button>
+                  <button type="button" className="btn btn-outline" style={{ color: 'var(--td-error)', borderColor: 'var(--td-error)' }} onClick={handleDeleteAccount}><FaTrash size={14} /> Delete Account</button>
                 </div>
               </div>
             </div>

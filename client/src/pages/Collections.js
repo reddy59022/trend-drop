@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   getSellerCollections,
@@ -14,6 +15,7 @@ import { FaStore, FaPlus, FaTrash, FaEdit, FaTimes, FaSave, FaImage } from 'reac
 
 const Collections = () => {
   const { user } = useAuth();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   const { sellerId } = useParams();
   const isOwner = user?._id === sellerId;
@@ -86,7 +88,13 @@ const Collections = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this collection?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete collection?',
+      message: 'Delete this collection?',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteCollection(id);
       if (activeCollection?._id === id) setActiveCollection(null);
