@@ -157,13 +157,22 @@ router.post('/create-intent', auth, async (req, res) => {
 
       const buyerCurrency = (countryCommissions[toCountry] || countryCommissions.default).currency;
       const exchangeRate = await fetchExchangeRate(buyerCurrency);
-      const breakdown = calculatePaymentBreakdown(salePrice, sellerCountry, toCountry, listing.weight || 0.5, exchangeRate);
-      
-      totalAmount += breakdown.buyer.totalPaid * (item.quantity || 1);
+      const qty = Math.max(1, Math.floor(item.quantity || 1));
+      // ZERO-LEAKAGE PARITY: authorize EXACTLY what confirm-batch will record.
+      // One label per listing quantity → shipping on COMBINED weight;
+      // item subtotal + buyer protection scale linearly with qty.
+      const combinedWeight = Math.round(((listing.weight || 0.5) * qty) * 1000) / 1000;
+      const breakdown = calculatePaymentBreakdown(salePrice, sellerCountry, toCountry, combinedWeight, exchangeRate);
+      const itemSubtotal = Math.round(salePrice * qty * 100) / 100;
+      const shippingCostTotal = Math.round(breakdown.buyer.shippingCost * 100) / 100;
+      const protectionTotal = Math.round(breakdown.buyer.buyerProtectionFee * qty * 100) / 100;
+      const lineTotal = Math.round((itemSubtotal + shippingCostTotal + protectionTotal) * 100) / 100;
+
+      totalAmount += lineTotal;
       breakdowns.push(breakdown);
       itemData.push({
         listing, seller, sellerCountry, toCountry, salePrice, breakdown,
-        isNegotiated, exchangeRate, quantity: item.quantity || 1
+        isNegotiated, exchangeRate, quantity: qty
       });
     }
 
@@ -555,7 +564,9 @@ router.post('/confirm-batch', auth, async (req, res) => {
         g.items.push({
           shippingCost: plan.breakdown.buyer.shippingCost || 0,
           freeShipping: !!plan.listing.shipping?.freeShipping,
-          currency: plan.toCurrency || 'USD',
+          // plan has no `toCurrency`; per-sale currency is the listing's
+          // currency which is what the buyer is actually charged in.
+          currency: plan.listing.currency || plan.breakdown.sellerCurrency || 'USD',
         });
         g.txns.push({ txn, plan });
       });

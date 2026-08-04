@@ -93,6 +93,13 @@ app.use(cors({
     'http://10.0.2.2:8100',   // Android emulator localhost
     'http://127.0.0.1:8100',  // iOS simulator
     'https://trend-drop.onrender.com',
+    // Capacitor native origins — WKWebView (iOS) uses capacitor://localhost,
+    // Android WebView with androidScheme 'https' uses https://localhost.
+    // Without these, every API call from release native builds is CORS-blocked.
+    'capacitor://localhost',
+    'https://localhost',
+    // Android WebView fallback origin names
+    'http://localhost',
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],

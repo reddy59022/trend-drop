@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import api from '../services/api';
+import { isNative, platform } from '../services/native';
 
 const AuthContext = createContext(null);
 
@@ -49,6 +50,41 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
     setToken(null);
     setUser(null);
+  };
+
+  // ============================================================
+  // Push notification registration (iOS/Android only).
+  // Registered token is POSTed to /api/mobile/push-token and
+  // stored on the user's MobilePreferences record.
+  // ============================================================
+  const registerPushToken = async () => {
+    if (!isNative()) return null;
+    try {
+      const { PushNotifications } = await import('@capacitor/push-notifications');
+      const perm = await PushNotifications.requestPermissions();
+      if (perm.receive !== 'granted') return null;
+      await PushNotifications.register();
+      return await new Promise((resolve) => {
+        const finished = (val) => { resolve(val); };
+        PushNotifications.addListener('registration', (token) => {
+          const t = token?.value;
+          if (t) {
+            api.post('/mobile/push-token', {
+              token: t,
+              platform: platform(),
+              deviceId: t,
+              appVersion: '1.0.0',
+            }).catch(() => {});
+          }
+          finished(t);
+        });
+        // Timeout in case registration never fires
+        setTimeout(() => finished(null), 8000);
+      });
+    } catch (e) {
+      console.warn('Push registration failed:', e.message);
+      return null;
+    }
   };
 
   // Listen for 401 unauthorized events dispatched by the API interceptor.
@@ -105,12 +141,78 @@ export const AuthProvider = ({ children }) => {
       document.head.appendChild(script);
     });
 
+  // ============================================================
+  // Native OAuth (iOS/Android): popup/full-page OAuth flows are
+  // unreliable inside a Capacitor WebView. Instead we open the
+  // provider's consent screen with the system Browser plugin and
+  // listen for the deep-link callback that App.js forwards here
+  // as a window 'oauth-callback' CustomEvent carrying the token.
+  // ============================================================
+  const [oauthListeners, setOauthListeners] = useState({});
+
+  const openNativeOAuth = (url, key) =>
+    new Promise((resolve, reject) => {
+      const onCallback = (event) => {
+        const rawUrl = event?.detail?.url || event?.url || '';
+        if (!rawUrl) return;
+        const url = rawUrl;
+        let token = null;
+        try {
+          const parsed = new URL(url);
+          token =
+            parsed.searchParams.get('token') ||
+            parsed.hash?.split('token=')[1]?.split('&')[0] ||
+            parsed.searchParams.get('id_token') ||
+            null;
+        } catch (e) {
+          /* ignore malformed url */
+        }
+        if (token) {
+          window.removeEventListener('oauth-callback', onCallback);
+          setOauthListeners((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+          resolve(token);
+        }
+      };
+      window.addEventListener('oauth-callback', onCallback);
+      setOauthListeners((prev) => ({ ...prev, [key]: { resolve, reject } }));
+
+      import('@capacitor/browser')
+        .then(({ Browser }) => Browser.open({ url, presentationStyle: 'popover' }))
+        .catch((e) => {
+          window.removeEventListener('oauth-callback', onCallback);
+          setOauthListeners((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+          reject(new Error('Native OAuth is not available. Try a different login method.'));
+        });
+
+      // Safety timeout so a cancelled flow doesn't hang
+      setTimeout(() => {
+        window.removeEventListener('oauth-callback', onCallback);
+        resolve(null);
+      }, 120000);
+    });
+
   const loginWithGoogle = async () => {
     const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
     if (!GOOGLE_CLIENT_ID) {
-      throw new Error(
-        'Google login is not configured. Set REACT_APP_GOOGLE_CLIENT_ID.'
-      );
+      throw new Error('Google login is not configured. Set REACT_APP_GOOGLE_CLIENT_ID.');
+    }
+
+    if (isNative()) {
+      const redirectUri = process.env.REACT_APP_NATIVE_REDIRECT_URI || 'auravest://callback';
+      const scope = encodeURIComponent('openid email profile');
+      const nonce = Math.random().toString(36).slice(2);
+      const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=id_token token&scope=${scope}&nonce=${nonce}`;
+      const idToken = await openNativeOAuth(url, 'google');
+      const { email, name } = decodeJwtPayload(idToken);
+      return exchangeOAuthToken('/auth/google', { idToken, email, name });
     }
 
     await loadScript('https://accounts.google.com/gsi/client', 'gsi-client');
@@ -134,38 +236,32 @@ export const AuthProvider = ({ children }) => {
       window.google.accounts.id.prompt();
     });
 
-    // Decode the JWT payload to get email & name (server also verifies the token).
-    let email = '';
-    let name = '';
-    try {
-      const payload = JSON.parse(
-        atob(idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
-      );
-      email = payload.email || '';
-      name = payload.name || '';
-    } catch (e) {
-      // If we can't decode locally, still send the token; server returns profile.
-    }
-
+    const { email, name } = decodeJwtPayload(idToken);
     return exchangeOAuthToken('/auth/google', { idToken, email, name });
   };
 
   const loginWithApple = async () => {
+    const clientId = process.env.REACT_APP_APPLE_CLIENT_ID;
+    if (!clientId) {
+      throw new Error('Apple Sign-In is not configured. Set REACT_APP_APPLE_CLIENT_ID.');
+    }
+
+    if (isNative()) {
+      const redirectUri = process.env.REACT_APP_NATIVE_REDIRECT_URI || 'auravest://callback';
+      const scope = encodeURIComponent('name email');
+      const url = `https://appleid.apple.com/auth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=id_token&scope=${scope}`;
+      const identityToken = await openNativeOAuth(url, 'apple');
+      const { email, name } = decodeJwtPayload(identityToken);
+      return exchangeOAuthToken('/auth/apple', { identityToken, email, name });
+    }
+
     try {
-      // Native Apple JS SDK (works in Safari, Chrome and Capacitor WebView)
       await loadScript(
         'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js',
         'apple-auth-js'
       );
     } catch (e) {
       throw new Error('Apple Sign-In is not available on this browser.');
-    }
-
-    const clientId = process.env.REACT_APP_APPLE_CLIENT_ID;
-    if (!clientId) {
-      throw new Error(
-        'Apple Sign-In is not configured. Set REACT_APP_APPLE_CLIENT_ID.'
-      );
     }
 
     const redirectURI =
@@ -193,16 +289,9 @@ export const AuthProvider = ({ children }) => {
         .join(' ');
     }
     // Decode payload for email when user info isn't returned (subsequent sign-ins)
-    if (!email && identityToken) {
-      try {
-        const payload = JSON.parse(
-          atob(identityToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
-        );
-        email = payload.email || '';
-      } catch (e) {
-        // ignore
-      }
-    }
+    const decoded = decodeJwtPayload(identityToken);
+    if (!email) email = decoded.email || '';
+    if (!name) name = decoded.name || '';
 
     return exchangeOAuthToken('/auth/apple', { identityToken, email, name });
   };
@@ -278,11 +367,29 @@ export const AuthProvider = ({ children }) => {
         loginWithGoogle,
         loginWithApple,
         loginWithFacebook,
+        registerPushToken,
       }}
     >
       {children}
     </AuthContext.Provider>
   );
+};
+
+// Decode a JWT payload locally (email + name + sub) without verifying.
+// The server always re-verifies the token, so this is display-only.
+const decodeJwtPayload = (jwt) => {
+  if (!jwt) return { email: '', name: '' };
+  try {
+    const payload = JSON.parse(
+      atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
+    );
+    return {
+      email: payload.email || '',
+      name: payload.name || '',
+    };
+  } catch (e) {
+    return { email: '', name: '' };
+  }
 };
 
 export const useAuth = () => {

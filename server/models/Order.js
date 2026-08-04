@@ -143,7 +143,14 @@ orderSchema.pre('save', function (next) {
     this.confirmation.emailSent = false;
     this.confirmation.pushSent = false;
   }
-  this.status = deriveStatus(this.shipments || []);
+  // CRITICAL: never overwrite FINAL states. deriveStatus is for *in-flight*
+  // fulfillment progression only. Once an order is cancelled/refunded/completed
+  // it must stay that way — otherwise a later save (e.g. a shipment touch)
+  // would resurrect the order back to 'shipped'.
+  const FINAL_STATES = ['cancelled', 'refunded', 'completed'];
+  if (!FINAL_STATES.includes(this.status)) {
+    this.status = deriveStatus(this.shipments || []);
+  }
   next();
 });
 

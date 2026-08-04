@@ -1,6 +1,7 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { isNative } from './services/native';
 import { CartProvider } from './context/CartContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { SocketProvider } from './context/SocketContext';
@@ -76,8 +77,58 @@ const PageLoader = () => (
   </div>
 );
 
+// Bridges OAuth deep-links from the system browser (Capacitor Browser
+// plugin) back into the WebView. When the user completes Google/Apple
+// sign-in natively, the provider redirects to auravest://callback?token=...
+// The native layer resumes the app with that URL; we forward it to
+// AuthContext's openNativeOAuth promise listener as an 'oauth-callback'
+// CustomEvent. Works on iOS, Android, and web (no-op on web).
+const NativeAppLifecycle = () => {
+  useEffect(() => {
+    if (!isNative()) return undefined;
+
+    const handleUrl = (url) => {
+      if (!url) return;
+      try {
+        const parsed = new URL(url);
+        if (parsed.hostname === 'callback' || parsed.pathname.includes('callback')) {
+          window.dispatchEvent(new CustomEvent('oauth-callback', { detail: { url } }));
+        }
+      } catch (e) {
+        // Some Android intents are not parseable URLs; forward raw text
+        if (String(url).includes('callback')) {
+          window.dispatchEvent(new CustomEvent('oauth-callback', { detail: { url: String(url) } }));
+        }
+      }
+    };
+
+    let capApp;
+    let listenerCleanup = () => {};
+    import('@capacitor/app').then(({ App }) => {
+      capApp = App;
+      App.addListener('appUrlOpen', (event) => handleUrl(event.url));
+    }).catch(() => {});
+
+    // Android deep links can also arrive as window.location changes
+    const onLocation = () => handleUrl(window.location.href);
+    window.addEventListener('popstate', onLocation);
+
+    return () => {
+      listenerCleanup();
+      window.removeEventListener('popstate', onLocation);
+    };
+  }, []);
+
+  return null;
+};
+
 function App() {
-  const { loading } = useAuth();
+  const { loading, registerPushToken } = useAuth();
+  useEffect(() => {
+    if (!isNative()) return;
+    const t = setTimeout(() => { registerPushToken(); }, 3000);
+    return () => clearTimeout(t);
+  }, [registerPushToken]);
 
   if (loading) {
     return (
@@ -90,6 +141,7 @@ function App() {
 
   return (
     <ThemeProvider>
+      <NativeAppLifecycle />
       <CartProvider>
         <SocketProvider>
           <div className="app">

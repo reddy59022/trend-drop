@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 import { useCart } from '../context/CartContext';
@@ -11,6 +11,7 @@ import StripeCheckoutForm from '../components/StripeCheckoutForm';
 import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaPercent, FaBoxes } from 'react-icons/fa';
 
 const Cart = () => {
+  const navigate = useNavigate();
   const { cart, removeFromCart, updateQuantity, clearCart } = useCart();
   const { currency } = useTheme();
   const [stripePromise, setStripePromise] = useState(null);
@@ -19,6 +20,12 @@ const Cart = () => {
   const [shippingInfo, setShippingInfo] = useState({
     fullName: '', street1: '', city: '', state: '', postalCode: '', country: 'US', phone: ''
   });
+  // Authoritative payment state created by the SERVER. The intent is created
+  // BEFORE the Stripe form renders so the button amount (displayed) always
+  // equals the amount the card will actually be charged.
+  const [clientSecret, setClientSecret] = useState(null);
+  const [paymentIntentId, setPaymentIntentId] = useState(null);
+  const [serverTotalAmount, setServerTotalAmount] = useState(null);
   // Promo code state
   const [promoCode, setPromoCode] = useState('');
   const [appliedPromo, setAppliedPromo] = useState(null);
@@ -52,6 +59,17 @@ const Cart = () => {
     initStripe();
   }, []);
 
+  // Build the exact item payload the server expects. negotiatedPrice is ONLY
+  // sent for genuinely negotiated items — otherwise it could override the
+  // listing price and bypass offer validation.
+  const buildItemsPayload = () =>
+    cart.map(item => ({
+      listingId: item.listingId,
+      quantity: item.quantity,
+      ...(item.negotiatedPrice != null ? { negotiatedPrice: item.negotiatedPrice } : {}),
+      currency: item.currency || 'USD'
+    }));
+
   const handleCheckout = async () => {
     if (cart.length === 0) return toast.error('Cart is empty');
     setPaymentLoading(true);
@@ -80,49 +98,58 @@ const Cart = () => {
       setPaymentLoading(false);
       return;
     }
-    setShowForm(true);
-    setPaymentLoading(false);
+
+    // Create the intent NOW so the Stripe button displays the SERVER amount.
+    // This guarantees displayed = charged (promo, bundle, combined-weight
+    // shipping all included) with zero drift from client-side estimates.
+    try {
+      const createRes = await api.post('/payments/create-intent', {
+        items: buildItemsPayload(),
+        shippingAddress: shippingInfo,
+        buyerCountry: shippingInfo.country || 'US',
+        promoCode: appliedPromo ? appliedPromo.code : null,
+      });
+      setClientSecret(createRes.data.clientSecret);
+      setPaymentIntentId(createRes.data.paymentIntentId);
+      setServerTotalAmount(createRes.data.amount != null ? createRes.data.amount : null);
+      setShowForm(true);
+    } catch (error) {
+      console.error('Create intent error:', error);
+      toast.error(error.response?.data?.message || 'Failed to initialize payment');
+    } finally {
+      setPaymentLoading(false);
+    }
   };
 
   const handleSuccess = async (paymentMethod) => {
     try {
-      const items = cart.map(item => ({
-        listingId: item.listingId,
-        quantity: item.quantity,
-        negotiatedPrice: item.negotiatedPrice || item.price,
-        currency: item.currency || 'USD'
-      }));
-
-      // STEP 1: Create batch payment intent for ALL items (supports multi-seller, promo, bundle discounts)
-      let promoCodeValue = null;
-      if (appliedPromo) {
-        promoCodeValue = appliedPromo.code;
-      }
-
-      const createRes = await api.post('/payments/create-intent', {
-        items,
-        shippingAddress: shippingInfo,
-        buyerCountry: shippingInfo.country || 'US',
-        promoCode: promoCodeValue,
-      });
-
-      const { clientSecret: cs, paymentIntentId, breakdowns } = createRes.data;
-
-      // STEP 2: Confirm payment with Stripe
-      if (!stripePromise) throw new Error('Stripe not loaded');
+      if (!clientSecret || !paymentIntentId) throw new Error('Payment not initialized');
       const stripe = await stripePromise;
-      
-      const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(cs, {
+      if (!stripe) throw new Error('Stripe not loaded');
+
+      // STEP 2: Confirm payment with Stripe (3DS2/SCA-aware)
+      let { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
         payment_method: paymentMethod.id,
       });
 
-      if (confirmError) throw new Error(confirmError.message);
-      if (paymentIntent.status !== 'succeeded') throw new Error(`Payment status: ${paymentIntent.status}`);
+      // 3-D Secure v2: some banks (especially cross-border EU/UK/IN cards)
+      // require an additional challenge. Loop handleCardAction until resolved
+      // instead of failing every SCA card on iOS/Android/web.
+      let attempts = 0;
+      while (!confirmError && paymentIntent?.status === 'requires_action' && attempts < 5) {
+        const { error: actionError, paymentIntent: updatedPi } = await stripe.handleCardAction(clientSecret);
+        confirmError = actionError || null;
+        if (updatedPi) paymentIntent = updatedPi;
+        attempts += 1;
+      }
 
-      // STEP 3: Confirm batch with all items
+      if (confirmError) throw new Error(confirmError.message);
+      if (paymentIntent?.status !== 'succeeded') throw new Error(`Payment status: ${paymentIntent?.status}`);
+
+      // STEP 3: Confirm batch with all items (same payload shape as intent)
       const confirmRes = await api.post('/payments/confirm-batch', {
         paymentIntentId,
-        items,
+        items: buildItemsPayload(),
         shippingAddress: shippingInfo,
       });
 
@@ -138,11 +165,13 @@ const Cart = () => {
       clearCart();
       setShowForm(false);
       toast.success('Order placed successfully! 🎉');
-      
-      if (confirmRes.data.transactions && confirmRes.data.transactions.length > 0) {
-        setTimeout(() => {
-          window.location.href = `/orders/${confirmRes.data.transactions[0]._id}`;
-        }, 2000);
+
+      // Navigate with the router — window.location.href deep-links are a
+      // hard page load that breaks inside the Capacitor WebView
+      // (capacitor://localhost/orders/... is not a real URL).
+      const orderId = confirmRes.data.orders?.[0]?._id || confirmRes.data.transactions?.[0]?._id;
+      if (orderId) {
+        setTimeout(() => navigate(`/orders/${orderId}`), 1500);
       }
     } catch (error) {
       console.error('Checkout error:', error);
@@ -468,7 +497,7 @@ const Cart = () => {
                     <StripeCheckoutForm
                       items={cart}
                       shippingInfo={shippingInfo}
-                      totalAmount={formatPrice(displayTotal, 'USD')}
+                      totalAmount={serverTotalAmount != null ? formatPrice(serverTotalAmount, 'USD') : formatPrice(displayTotal, 'USD')}
                       onSuccess={handleSuccess}
                       onCancel={() => setShowForm(false)}
                     />

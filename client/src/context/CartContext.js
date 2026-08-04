@@ -172,14 +172,19 @@ export const CartProvider = ({ children }) => {
 
   // Empty the entire cart (local) + remove each server item
   const clearCart = () => {
-    setCart([]);
-    if (isAuthed) {
-      // No bulk DELETE endpoint — remove each item individually
-      const current = cart;
-      current.forEach((item) => {
-        api.delete(`/cart/items/${item.listingId}`).catch(() => {});
-      });
-    }
+    setCart((prev) => {
+      // Snapshot the items being removed INSIDE the state updater so it's
+      // always the latest list — no stale render-scope closure (the cart may
+      // have just been mutated by checkout/promo flows).
+      const itemsToRemove = prev;
+      if (isAuthed && itemsToRemove.length > 0) {
+        // No bulk DELETE endpoint — remove each item individually
+        itemsToRemove.forEach((item) => {
+          api.delete(`/cart/items/${item.listingId}`).catch(() => {});
+        });
+      }
+      return [];
+    });
   };
 
   // Explicit refresh from the server (used after checkout / promotions)

@@ -68,6 +68,54 @@ const markPayoutRefunded = async (txn) => {
 // possibly multiple sellers, each with its own shipment)
 // ============================================================
 
+// ============================================================
+// Shared helper: when a transaction underneath an Enterprise Order
+// is cancelled/refunded/completed, keep the consolidated Order in sync.
+// If ALL shipments are refunded → Order = 'refunded' + payment refunded.
+// ============================================================
+const syncOrderFromTransaction = async (txn, newStatus) => {
+  try {
+    const orders = await Order.find({ 'items.transaction': txn._id });
+    for (const order of orders) {
+      let touched = false;
+
+      if (newStatus === 'refunded') {
+        // Remove the refunded txn from any shipment it belongs to
+        (order.shipments || []).forEach((s) => {
+          const idx = (s.items || []).findIndex((id) => id && id.toString() === txn._id.toString());
+          if (idx >= 0) { s.items.splice(idx, 1); touched = true; }
+        });
+        // Remove the refunded item from the consolidated items list
+        const before = order.items.length;
+        order.items = (order.items || []).filter((it) => !(it.transaction && it.transaction.toString() === txn._id.toString()));
+        if (order.items.length !== before) touched = true;
+
+        // If EVERY shipment + item is refunded → final state
+        const anyRemaining = (order.shipments || []).some((s) => s.items.length > 0) || order.items.length > 0;
+        if (!anyRemaining) {
+          order.status = 'refunded';
+          if (order.payment) order.payment.status = 'refunded';
+        }
+      } else if (newStatus === 'completed') {
+        // Mark the Order completed ONLY when EVERY underlying transaction completed
+        const txnIds = (order.items || []).map((it) => it.transaction).filter(Boolean);
+        if (txnIds.length > 0) {
+          const remaining = await Transaction.countDocuments({ _id: { $in: txnIds }, status: { $nin: ['completed'] } });
+          if (remaining === 0) {
+            order.status = 'completed';
+            if (order.payment) order.payment.status = 'captured';
+            touched = true;
+          }
+        }
+      }
+
+      if (touched) await order.save();
+    }
+  } catch (e) {
+    console.error('syncOrderFromTransaction failed:', e.message);
+  }
+};
+
 // GET /api/orders - list orders for current user with role + allowed actions
 router.get('/', auth, async (req, res) => {
   try {
@@ -93,6 +141,41 @@ router.get('/', auth, async (req, res) => {
     });
 
     res.json({ orders: enriched });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/orders/:id - single consolidated order (buyer or participating seller)
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id)
+      .populate('items.listing', 'title images price currency brand condition size')
+      .populate('items.transaction')
+      .populate('buyer', 'name avatar email')
+      .populate('sellers', 'name avatar');
+
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    const userId = req.user._id.toString();
+    const isBuyer = order.buyer._id.toString() === userId;
+    const isSeller = (order.sellers || []).some((s) => s._id.toString() === userId);
+    if (!isBuyer && !isSeller) {
+      return res.status(403).json({ message: 'Not authorized to view this order' });
+    }
+
+    const role = isBuyer ? 'buyer' : 'seller';
+    const raw = order.toObject();
+    const payload = {
+      ...raw,
+      totalAmount: raw.totals && typeof raw.totals.total === 'number' ? raw.totals.total : 0,
+      role,
+      allowedActions: Order.getAllowedOrderActions(order, role, userId),
+      payment: raw.payment || {},
+    };
+
+    res.json({ order: payload });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -326,6 +409,9 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
     };
     await txn.save();
 
+    // Keep the consolidated Enterprise Order in sync (full refund → refunded)
+    await syncOrderFromTransaction(txn, 'refunded');
+
     res.json({
       message: `Order cancelled. Refund of ${refundAmount} ${txn.currency} will be processed.`,
       transaction: txn,
@@ -494,6 +580,9 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
 
     txn.status = orderStates.COMPLETED;
     await txn.save();
+
+    // Keep the consolidated Enterprise Order in sync when ALL txns complete
+    await syncOrderFromTransaction(txn, 'completed');
 
     // Auto-create payout record
     // CRITICAL: Use actual breakdown values from the transaction, NOT recalculated
@@ -832,6 +921,9 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
 
     await txn.save();
 
+    // Keep the consolidated Enterprise Order in sync after a return refund
+    await syncOrderFromTransaction(txn, 'refunded');
+
     res.json({
       message: 'Return confirmed. Full refund issued to buyer via original payment method.',
       transaction: txn,
@@ -942,6 +1034,9 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
     txn.payout = { status: 'refunded', processedAt: new Date() };
 
     await txn.save();
+
+    // Keep the consolidated Enterprise Order in sync after a processed return
+    await syncOrderFromTransaction(txn, 'refunded');
 
     res.json({
       message: 'Return processed. Full refund issued to buyer via original payment method.',
@@ -1108,6 +1203,9 @@ router.post('/auto-process', async (req, res) => {
 
         txn.status = orderStates.COMPLETED;
         await txn.save();
+
+        // Keep the consolidated Enterprise Order in sync after batch completion
+        await syncOrderFromTransaction(txn, 'completed');
 
         // Auto-create payout
         // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
