@@ -1,0 +1,776 @@
+/* ============================================================
+   TRENDDROP — UNIVERSAL RESPONSIVE OVERRIDES
+   ============================================================
+   This stylesheet makes EVERY page in the app responsive across:
+   - Smallest mobile phones (320px+)
+   - Standard phones (360px-480px)
+   - Tablets (481px-768px)
+   - Laptops (769px-1024px)
+   - Desktops (1025px-1440px)
+   - Large monitors (1441px+)
+   - Ultra-wide (1921px+)
+
+   IMPORTANT: Many pages use React INLINE styles. React serializes
+   them to the DOM style attribute using HYPHENATED property names
+   with unit suffixes (e.g. `grid-template-columns: 1fr 1fr`,
+   `font-size: 48px`, `width: 260px`). Inline styles cannot be
+   overridden without `!important` in media queries, so we use
+   attribute selectors ([style*="..."]) that match the EXACT
+   serialized format to target those patterns.
+   ============================================================ */
+
+/* ============================================================
+   1. GLOBAL PLATFORM FIXES (ALL BREAKPOINTS)
+   ============================================================ */
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Prevent horizontal scroll from anywhere */
+body,
+#root,
+.app {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+/* Make all page containers center properly */
+.page-container {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+/* All inline wrappers should be able to shrink below content size */
+#root div,
+#root section,
+#root main,
+#root header,
+#root footer,
+#root aside,
+#root nav {
+  max-width: 100%;
+}
+
+/* Cards should never overflow their container */
+.glass-card,
+.form-section,
+.form-group,
+.card {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* ---------- AUTO-FILL/AUTO-FIT GRID OVERRIDES (all screens) ----------
+   Make minmax tracks never exceed the container by using min().
+   React serializes `gridTemplateColumns` → `grid-template-columns`. */
+[style*="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr))"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr))"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr))"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fill, minmax(120px, 1fr))"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(120px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fill, minmax(100px, 1fr))"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(100px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fill, minmax(80px, 1fr))"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(80px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)) !important;
+}
+
+[style*="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr))"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr)) !important;
+}
+
+/* ---------- INLINE FLEX WIDTH OVERRIDES (all screens) ---------- */
+[style*="min-width: 200px"] {
+  min-width: min(200px, 100%) !important;
+}
+
+[style*="min-width: 180px"] {
+  min-width: min(180px, 100%) !important;
+}
+
+[style*="min-width: 120px"] {
+  min-width: min(120px, 100%) !important;
+}
+
+
+/* Flex items should not overflow their containers */
+[style*="flex: 1"] {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* ============================================================
+   2. TABLET & DOWN (max-width: 1024px)
+   ============================================================ */
+@media (max-width: 1024px) {
+  /* 3+ column inline grids → at most 2 columns on tablets */
+  [style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  [style*="grid-template-columns: repeat(3, 1fr)"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  [style*="grid-template-columns: repeat(4, 1fr)"],
+  [style*="grid-template-columns: repeat(5, 1fr)"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  [style*="grid-template-columns: repeat(6, 1fr)"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  /* 2-column inline forms stay 2 cols on tablet */
+  [style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Cart / OrderDetail sidebar layouts — shrink sidebar */
+  [style*="grid-template-columns: 1fr 380px"],
+  [style*="grid-template-columns: 380px 1fr"] {
+    grid-template-columns: 1fr 320px !important;
+  }
+
+  /* Fixed-width sidebars */
+  [style*="width: 260px"] {
+    width: 220px !important;
+  }
+
+  [style*="width: 280px"] {
+    width: 240px !important;
+  }
+
+  [style*="width: 300px"] {
+    width: 260px !important;
+  }
+
+  /* Big horizontal flex rows → allow wrapping */
+  [style*="display: flex"][style*="gap: 40px"],
+  [style*="display: flex"][style*="gap: 32px"] {
+    flex-wrap: wrap !important;
+  }
+}
+
+/* ============================================================
+   3. MOBILE  (max-width: 768px)
+   ============================================================ */
+@media (max-width: 768px) {
+  /* ---------- ROOT LAYOUT ---------- */
+  .page-container {
+    padding: 16px !important;
+  }
+
+  .container,
+  .container-narrow {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .page-title {
+    font-size: 22px !important;
+  }
+
+  /* ---------- INLINE GRID OVERRIDES — stack everything ---------- */
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  [style*="grid-template-columns: 1fr 380px"],
+  [style*="grid-template-columns: 380px 1fr"],
+  [style*="grid-template-columns: 1fr 300px"],
+  [style*="grid-template-columns: 300px 1fr"],
+  [style*="grid-template-columns: 1fr 320px"],
+  [style*="grid-template-columns: 320px 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  [style*="grid-template-columns: repeat(2, 1fr)"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  [style*="grid-template-columns: repeat(3, 1fr)"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  [style*="grid-template-columns: repeat(4, 1fr)"],
+  [style*="grid-template-columns: repeat(5, 1fr)"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* ---------- FIXED WIDTHS → FULL WIDTH ---------- */
+  [style*="width: 260px"],
+  [style*="width: 280px"],
+  [style*="width: 300px"] {
+    width: 100% !important;
+    flex-shrink: 1 !important;
+  }
+
+  /* Form inputs with fixed widths — never exceed container */
+  [style*="width: 180px"],
+  [style*="width: 170px"],
+  [style*="width: 160px"],
+  [style*="width: 150px"],
+  [style*="width: 140px"],
+  [style*="width: 130px"],
+  [style*="width: 120px"],
+  [style*="width: 110px"],
+  [style*="width: 100px"],
+  [style*="width: 90px"],
+  [style*="width: 80px"],
+  [style*="width: 70px"] {
+    max-width: 100% !important;
+  }
+
+  [style*="max-width: 200px"],
+  [style*="max-width: 300px"],
+  [style*="max-width: 700px"],
+  [style*="max-width: 600px"],
+  [style*="max-width: 500px"],
+  [style*="max-width: 480px"],
+  [style*="max-width: 450px"],
+  [style*="max-width: 420px"],
+  [style*="max-width: 400px"] {
+    max-width: 100% !important;
+  }
+
+  /* ---------- FLEX LAYOUT FIXES ---------- */
+  [style*="display: flex"][style*="justify-content: space-between"][style*="align-items: center"] {
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+  }
+
+  /* Sidebar layouts using CSS var gaps (var(--td-space-lg) = 24px) */
+  [style*="display: flex"][style*="gap: var(--td-space-lg)"],
+  [style*="display: flex"][style*="gap: var(--td-space-xl)"] {
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+
+  /* Fixed-width sidebar children (Collections, SavedSearches) */
+  [style*="width: 260px"][style*="flex-shrink: 0"],
+  [style*="width: 280px"][style*="flex-shrink: 0"] {
+    width: 100% !important;
+    flex-shrink: 1 !important;
+  }
+
+  /* Flex rows with small inputs (steppers, quantity) — wrap */
+  [style*="display: flex"][style*="gap: 8px"][style*="align-items: center"],
+  [style*="display: flex"][style*="gap: 12px"][style*="align-items: center"] {
+    flex-wrap: wrap !important;
+  }
+
+  /* ---------- STAT NUMBERS ---------- */
+  [style*="font-size: 48px"] {
+    font-size: 34px !important;
+  }
+
+  [style*="font-size: 40px"] {
+    font-size: 30px !important;
+  }
+
+  [style*="font-size: 36px"] {
+    font-size: 28px !important;
+  }
+
+  [style*="font-size: 32px"] {
+    font-size: 24px !important;
+  }
+
+  [style*="font-size: 28px"] {
+    font-size: 22px !important;
+  }
+
+  /* ---------- TWO-PANE LAYOUTS ---------- */
+  /* ListingDetail / AuctionDetail horizontal split */
+  [style*="display: flex"][style*="gap: 40px"][style*="max-width: 1200px"] {
+    flex-direction: column !important;
+    gap: 24px !important;
+  }
+
+  /* AuctionDetail similar layouts */
+  [style*="display: flex"][style*="gap: 40px"] {
+    flex-direction: column !important;
+    gap: 20px !important;
+  }
+
+  /* Cart / OrderDetail sidebar grids */
+  [style*="display: grid"][style*="align-items: start"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Collection / SavedSearches sidebar layouts */
+  [style*="display: flex"][style*="gap: 24px"] {
+    flex-direction: column !important;
+  }
+
+  /* Dashboard cards row */
+  [style*="display: grid"][style*="grid-template-columns: 1fr 1fr"][style*="margin-bottom"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Commission comparison grid */
+  [style*="display: grid"][style*="repeat(4, 1fr)"][style*="background: rgba(255,255,255,0.12)"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    max-width: 100% !important;
+  }
+
+  /* ---------- CLASS-BASED GRID OVERRIDES ---------- */
+  .listings-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)) !important;
+    gap: 16px !important;
+  }
+
+  .features-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)) !important;
+    gap: 16px !important;
+  }
+
+  .categories-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Section padding reduction */
+  .section {
+    padding: 48px 0 !important;
+  }
+
+  /* ---------- NAVBAR / HEADER ---------- */
+  .navbar-container {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* ---------- TABLES → horizontal scroll ---------- */
+  .page-container table,
+  .glass-card table {
+    display: block !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    white-space: nowrap;
+  }
+
+  /* ---------- MODALS ---------- */
+  .modal {
+    max-width: 100% !important;
+    margin: 8px !important;
+  }
+
+  .modal-overlay {
+    padding: 8px !important;
+  }
+
+  /* ---------- BUTTONS ---------- */
+  .btn {
+    white-space: normal !important;
+    word-break: break-word;
+  }
+
+  /* ---------- CHECKOUT STEPPER ---------- */
+  .checkout-stepper {
+    width: 100% !important;
+    overflow-x: auto !important;
+    justify-content: flex-start !important;
+  }
+
+  /* ---------- FORMS ---------- */
+  .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ---------- EMPTY STATES ---------- */
+  .empty-state-icon {
+    font-size: 48px !important;
+  }
+
+  /* ---------- FOOTER ---------- */
+  .footer-grid {
+    grid-template-columns: 1fr !important;
+    text-align: center;
+  }
+}
+
+/* ============================================================
+   4. SMALL MOBILE  (max-width: 480px)
+   ============================================================ */
+@media (max-width: 480px) {
+  /* ---------- SHRINK CONTAINERS ---------- */
+  .page-container {
+    padding: 12px !important;
+  }
+
+  /* ---------- GRID DENSITY ---------- */
+  [style*="grid-template-columns: repeat(2, 1fr)"],
+  [style*="grid-template-columns: repeat(3, 1fr)"],
+  [style*="grid-template-columns: repeat(4, 1fr)"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  /* ---------- FLEX STACK ---------- */
+  [style*="display: flex"][style*="gap: 16px"] {
+    gap: 12px !important;
+  }
+
+  /* ---------- STAT NUMBERS ---------- */
+  [style*="font-size: 48px"] {
+    font-size: 28px !important;
+  }
+
+  [style*="font-size: 40px"] {
+    font-size: 24px !important;
+  }
+
+  [style*="font-size: 36px"] {
+    font-size: 22px !important;
+  }
+
+  [style*="font-size: 32px"] {
+    font-size: 20px !important;
+  }
+
+  /* ---------- AVATARS ---------- */
+  [style*="width: 110px"] {
+    width: 80px !important;
+    height: 80px !important;
+  }
+
+  /* ---------- AUTH PAGES ---------- */
+  .auth-container {
+    padding: 20px 16px !important;
+  }
+
+  .auth-container h1 {
+    font-size: 24px !important;
+  }
+
+  /* ---------- BID FORM ---------- */
+  .bid-form {
+    flex-direction: column !important;
+  }
+
+  .bid-input {
+    width: 100% !important;
+  }
+
+  /* ---------- TABS ---------- */
+  .tabs {
+    border-radius: var(--td-radius-full) !important;
+    padding: 4px !important;
+  }
+
+  .tabs .btn {
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+  }
+
+  /* ---------- STEP INDICATOR ---------- */
+  .step-indicator {
+    padding: 0 4px !important;
+  }
+
+  .step-indicator .step-label {
+    display: none !important;
+  }
+
+  /* ---------- COMMISSION BANNER ---------- */
+  .commission-section [style*="font-size: 48px"] {
+    font-size: 30px !important;
+  }
+
+  /* ---------- PROFILE PAGE ---------- */
+  .profile-header {
+    padding: 16px !important;
+  }
+
+  .profile-avatar {
+    width: 80px !important;
+    height: 80px !important;
+  }
+
+  /* ---------- SELL IMAGE UPLOAD ---------- */
+  .upload-btn {
+    width: 100px !important;
+    height: 100px !important;
+  }
+
+  /* ---------- REFERRAL CODE BOX ---------- */
+  [style*="letter-spacing: 2px"] {
+    font-size: 16px !important;
+    letter-spacing: 1px !important;
+  }
+}
+
+/* ============================================================
+   5. SMALLEST MOBILE  (max-width: 360px)
+   ============================================================ */
+@media (max-width: 360px) {
+  .page-container {
+    padding: 8px !important;
+  }
+
+  .page-title {
+    font-size: 20px !important;
+  }
+
+  /* 2-col grids → 1 col on tiny screens */
+  [style*="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))"],
+  [style*="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr))"],
+  [style*="grid-template-columns: repeat(2, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Hero content */
+  .hero-content h1 {
+    font-size: 1.6rem !important;
+  }
+
+  /* Small stat numbers */
+  [style*="font-size: 32px"] {
+    font-size: 20px !important;
+  }
+
+  /* Buttons shrink */
+  .btn {
+    padding: 10px 18px !important;
+    font-size: 13px !important;
+  }
+
+  .btn-lg {
+    padding: 12px 20px !important;
+  }
+
+  /* Footer */
+  .footer {
+    font-size: 12px !important;
+  }
+}
+
+/* ============================================================
+   6. LARGE DESKTOP  (min-width: 1441px)
+   ============================================================ */
+@media (min-width: 1441px) {
+  /* Containers widen for large monitors */
+  .page-container {
+    max-width: 1400px !important;
+  }
+
+  .container {
+    max-width: 1400px !important;
+  }
+
+  /* Larger grid tracks for big screens */
+  [style*="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))"] {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important;
+  }
+
+  [style*="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))"] {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+  }
+
+  /* Scale up base font a touch on very large screens */
+  html {
+    font-size: 17px;
+  }
+}
+
+/* ============================================================
+   7. ULTRA-WIDE MONITORS  (min-width: 1921px)
+   ============================================================ */
+@media (min-width: 1921px) {
+  html {
+    font-size: 18px;
+  }
+
+  .page-container {
+    max-width: 1600px !important;
+  }
+
+  .container {
+    max-width: 1600px !important;
+  }
+
+  /* Larger listing cards on ultra-wide */
+  .listings-grid {
+    gap: 28px !important;
+  }
+
+  [style*="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))"] {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important;
+  }
+
+  [style*="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))"] {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important;
+  }
+}
+
+/* ============================================================
+   8. LANDSCAPE / SHORT-HEIGHT MOBILE  (max-height: 500px)
+   ============================================================ */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Modals should scroll vertically, not overflow */
+  .modal {
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+  }
+
+  /* Auth pages shouldn't require vertical scroll */
+  .auth-page {
+    min-height: auto !important;
+    padding-top: 16px !important;
+    padding-bottom: 16px !important;
+  }
+
+  .auth-container {
+    padding: 16px !important;
+    max-height: calc(100vh - 32px) !important;
+    overflow-y: auto !important;
+  }
+
+  .main-content {
+    padding-bottom: 66px !important;
+  }
+}
+
+/* ============================================================
+   9. SAFE AREA (iOS / Android notches)
+   ============================================================ */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .mobile-tab-bar {
+    bottom: calc(var(--td-space-sm) + env(safe-area-inset-bottom)) !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+  }
+
+  .main-content {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .page-container {
+    padding-left: calc(16px + env(safe-area-inset-left)) !important;
+    padding-right: calc(16px + env(safe-area-inset-right)) !important;
+  }
+}
+
+/* ============================================================
+   10. HIGH-DENSITY / SMALL TABLETS  (max-width: 1024px, min: 769px)
+   ============================================================ */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* 4-col inline grids → 3 cols on tablets */
+  [style*="grid-template-columns: repeat(4, 1fr)"],
+  [style*="grid-template-columns: repeat(5, 1fr)"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  /* 2-col inline grids stay 2 cols on tablet */
+  [style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Auction grid on tablet */
+  .auction-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Stats bar wraps more compactly */
+  .stats-bar {
+    gap: 12px !important;
+  }
+}
+
+/* ============================================================
+   11. PRINT (optional polish)
+   ============================================================ */
+@media print {
+  .navbar,
+  .footer,
+  .mobile-tab-bar,
+  .mobile-tab-bar *,
+  .toast-container,
+  .modal-overlay {
+    display: none !important;
+  }
+
+  .main-content {
+    padding: 0 !important;
+  }
+
+  .page-container {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+}
