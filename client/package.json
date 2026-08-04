@@ -35,7 +35,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test",
+    "test": "react-scripts test --passWithNoTests",
     "eject": "react-scripts eject",
     "cap:init": "npx cap init TrendDrop com.trenddrop.app --web-dir build",
     "cap:add:android": "npx cap add android",

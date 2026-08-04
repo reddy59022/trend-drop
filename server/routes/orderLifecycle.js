@@ -584,25 +584,41 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
     // Keep the consolidated Enterprise Order in sync when ALL txns complete
     await syncOrderFromTransaction(txn, 'completed');
 
-    // Auto-create payout record
+    // Auto-create OR UPGRADE payout record
     // CRITICAL: Use actual breakdown values from the transaction, NOT recalculated
+    // Also handles batch checkouts where payouts were created as 'pending' by confirm-batch.
     try {
       const existingPayout = await Payout.findOne({ transaction: txn._id });
+      const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
+      const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
+      const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
+      const commissionRate = (txn.paymentBreakdown?.platformFeePercent || 10) / 100;
+
       if (!existingPayout) {
-        const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
-        const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
-        const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
         await Payout.create({
           seller: txn.seller,
           transaction: txn._id,
           listing: txn.listing,
           salePrice: itemPrice,
-          commissionRate: (txn.paymentBreakdown?.platformFeePercent || 10) / 100,
+          commissionRate,
           commissionAmount,
           payoutAmount,
           status: 'completed',
           paidAt: new Date(),
         });
+      } else {
+        // Upgrade pending → completed so batch sellers can cash out via process/:id
+        // (process/:id refuses to re-process 'pending' payouts; this makes them available)
+        if (existingPayout.status === 'pending') {
+          existingPayout.status = 'completed';
+          existingPayout.paidAt = new Date();
+          // Ensure amounts match the confirmed transaction breakdown
+          existingPayout.salePrice = itemPrice;
+          existingPayout.commissionAmount = commissionAmount;
+          existingPayout.payoutAmount = payoutAmount;
+          existingPayout.commissionRate = commissionRate;
+          await existingPayout.save();
+        }
       }
     } catch (pErr) {
       console.error('Auto-payout error:', pErr.message);

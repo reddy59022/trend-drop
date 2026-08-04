@@ -728,8 +728,12 @@ router.post('/:id/relist', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to relist this item' });
     }
 
-    // Only sold listings can be relisted
-    if (source.status !== 'sold' || !source.sold) {
+    // Only sold listings can be relisted.
+    // NOTE: The purchase flow (confirm-batch) marks listings `sold: true`
+    // but leaves `status: 'active'` for public-hiding semantics.
+    // Guarding on `sold` alone is the canonical check, so reposh works
+    // for every purchase path (single + batch) across platforms.
+    if (!source.sold) {
       return res.status(400).json({ message: 'Only sold items can be relisted' });
     }
 
@@ -762,7 +766,8 @@ router.post('/:id/relist', auth, async (req, res) => {
       reserved: 0,
     });
 
-    res.status(201).json(relisted);
+    // Return wrapped in { listing: ... } for client compatibility and use 200 status
+    res.status(200).json({ listing: relisted });
   } catch (error) {
     console.error('Relist error:', error);
     res.status(500).json({ message: 'Failed to relist item' });

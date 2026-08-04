@@ -23,16 +23,24 @@ const getBaseURL = () => {
     // For native iOS/Android:
     // - Local development (Capacitor Live Reload / `npx cap run`) is served
     //   from http://localhost:3000 (web) or capacitor://localhost (app).
+    // - On the Android emulator the host machine is reachable at 10.0.2.2,
+    //   NOT localhost — otherwise the app on the emulator would try to talk
+    //   to its own http://localhost:5001 and every API call would fail.
     // - A release build stores the app bundle locally and the hostname is
     //   always "localhost", so we additionally require a non-HTTPS origin
     //   before treating it as local dev. The deployed backend is always
     //   HTTPS, so this cleanly separates the two.
     const isLocalServer = window.location.protocol === 'http:'
                        && (window.location.hostname === 'localhost'
-                        || window.location.hostname === '127.0.0.1');
+                        || window.location.hostname === '127.0.0.1'
+                        || window.location.hostname === '10.0.2.2');
 
     if (isLocalServer) {
-      // Local development - point to local backend on the updated port 5001
+      // Local development - point to local backend on the updated port 5001.
+      // Android emulator reaches the host machine via 10.0.2.2.
+      if (window.location.hostname === '10.0.2.2') {
+        return 'http://10.0.2.2:5001/api';
+      }
       return 'http://localhost:5001/api';
     }
 

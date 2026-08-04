@@ -106,7 +106,16 @@ const NativeAppLifecycle = () => {
     let listenerCleanup = () => {};
     import('@capacitor/app').then(({ App }) => {
       capApp = App;
-      App.addListener('appUrlOpen', (event) => handleUrl(event.url));
+      // Keep the returned handle so the deep-link listener is removed on
+      // unmount (avoids duplicate appUrlOpen handlers accumulating on
+      // iOS/Android when the provider re-mounts).
+      App.addListener('appUrlOpen', (event) => handleUrl(event.url)).then(
+        (handle) => {
+          listenerCleanup = () => {
+            try { handle.remove(); } catch (e) { /* already removed */ }
+          };
+        }
+      );
     }).catch(() => {});
 
     // Android deep links can also arrive as window.location changes

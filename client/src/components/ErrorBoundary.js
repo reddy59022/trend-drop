@@ -1,9 +1,14 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * ErrorBoundary - Catches JavaScript errors anywhere in the child component tree,
  * logs those errors, and displays a fallback UI instead of crashing the whole app.
  * This is an enterprise-grade pattern for React applications.
+ *
+ * The "Go Home" button uses React Router's navigate() instead of
+ * window.location.href — a hard page load breaks inside the iOS/Android
+ * Capacitor WebView (it would try to load a non-existent WebView path).
  */
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -25,7 +30,7 @@ class ErrorBoundary extends React.Component {
           message: error.message,
           stack: error.stack,
           componentStack: errorInfo?.componentStack,
-          url: window.location.href,
+          url: typeof window !== 'undefined' ? window.location.href : '',
           timestamp: new Date().toISOString(),
         };
         // Send to monitoring endpoint (non-blocking)
@@ -46,7 +51,17 @@ class ErrorBoundary extends React.Component {
   };
 
   handleReload = () => {
-    window.location.reload();
+    if (typeof window !== 'undefined') window.location.reload();
+  };
+
+  handleGoHome = () => {
+    // Router-aware navigation — works on web AND inside the Capacitor
+    // WebView where a hard `window.location.href = '/'` would break.
+    if (this.props.onGoHome) {
+      this.props.onGoHome();
+    } else {
+      this.handleReset();
+    }
   };
 
   render() {
@@ -56,11 +71,11 @@ class ErrorBoundary extends React.Component {
       const isAuthError = error?.message?.includes('401') || error?.message?.includes('unauthorized');
 
       return (
-        <div className="page-container" style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
+        <div className="page-container" style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
           minHeight: '60vh',
           textAlign: 'center',
           padding: '40px 20px'
@@ -72,7 +87,7 @@ class ErrorBoundary extends React.Component {
             {isNetworkError ? 'Connection Issue' : isAuthError ? 'Access Error' : 'Something went wrong'}
           </h1>
           <p style={{ color: 'var(--td-text-secondary)', maxWidth: 400, marginBottom: 24, fontSize: 14, lineHeight: 1.5 }}>
-            {isNetworkError 
+            {isNetworkError
               ? 'Unable to connect to our servers. Please check your internet connection and try again.'
               : isAuthError
                 ? 'Your session may have expired. Please sign in again.'
@@ -82,7 +97,7 @@ class ErrorBoundary extends React.Component {
             <button className="btn btn-primary" onClick={this.handleReload}>
               Reload Page
             </button>
-            <button className="btn btn-outline" onClick={() => window.location.href = '/'}>
+            <button className="btn btn-outline" onClick={this.handleGoHome}>
               Go Home
             </button>
           </div>
@@ -91,10 +106,10 @@ class ErrorBoundary extends React.Component {
               <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--td-text-tertiary)' }}>
                 Error Details (Development Only)
               </summary>
-              <pre style={{ 
-                marginTop: 8, 
-                padding: 12, 
-                background: '#fef2f2', 
+              <pre style={{
+                marginTop: 8,
+                padding: 12,
+                background: '#fef2f2',
                 borderRadius: 8,
                 fontSize: 11,
                 overflow: 'auto',
@@ -113,4 +128,15 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-export default ErrorBoundary;
+/** Functional wrapper that injects router navigate via hooks. */
+const ErrorBoundaryWithRouter = (props) => {
+  const navigate = useNavigate();
+  return (
+    <ErrorBoundary
+      {...props}
+      onGoHome={() => navigate('/')}
+    />
+  );
+};
+
+export default ErrorBoundaryWithRouter;

@@ -116,14 +116,19 @@ const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
   const idempotencyKey = generateIdempotencyKey({ amount, currency, metadata });
   if (!stripe) {
     // Test/dev mode: return mock payment intent
-    return {
-      id: `pi_mock_${Math.abs(idempotencyKey)}`,
+    const mockId = `pi_mock_${idempotencyKey.replace('idemp_', '')}`;
+    const mockIntent = {
+      id: mockId,
       status: 'succeeded',
       amount: Math.round(amount * 100),
       currency: currency.toLowerCase(),
       client_secret: 'cs_test_mock',
       metadata,
     };
+    // Register in global mock store so retrievePaymentIntent can find it
+    if (!global.__mockPaymentIntents) global.__mockPaymentIntents = {};
+    global.__mockPaymentIntents[mockId] = mockIntent;
+    return mockIntent;
   }
   return stripe.paymentIntents.create({
     amount: Math.round(amount * 100),

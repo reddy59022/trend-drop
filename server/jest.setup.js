@@ -1,31 +1,35 @@
 // jest.setup.js — runs before every test file in the worker process
 // (configured via jest.setupFilesAfterEnv).
 //
-// Gives each test SUITE its own isolated MongoDB database
-// (trend-drop-test-<suite name>) on the shared local MongoDB server.
-// This prevents suites from clobbering each other's fixtures and cleanups
-// while guaranteeing the app under test (server.js -> config/db.js) and the
-// direct model operations inside each test file always speak to the SAME
-// database for that suite.
+// Gives each test SUITE a stable, shared test database and prevents the
+// "Can't call openUri() on an active connection with different connection
+// strings" crash that occurs when Jest reuses a worker process across test
+// files that connect to different Mongo URIs.
 //
-// Previous architecture ran every suite against one shared database, which
-// caused hundreds of cascading failures (401s, "User not found", null carts,
-// wiped fixtures) purely from cross-suite interference.
+// Some test files previously fell back to
+//   process.env.MONGO_URI || 'mongodb://localhost:27017/trenddrop_test'
+// which pointed at a DIFFERENT database name than the configured
+// 'trend-drop-test'. When run via plain `npx jest` (instead of `npm test`,
+// which sets both env vars), those suites connected to a different URI and
+// crashed the shared Mongoose connection. Pinning BOTH env vars here ensures
+// every suite (and the app under test) always uses the same database,
+// regardless of how the test runner is invoked.
 
-const path = require('path');
-
-// NOTE: The test runner executes with --runInBand and a single shared test DB
-// (see package.json test scripts). Because suites run serially in one process
-// and the app connects lazily via Mongoose, per-suite database isolation is NOT
-// needed here — the shared MONGODB_URI set in the npm script is authoritative.
-// This keeps the app's Mongoose connection and each suite's explicit
-// `mongoose.connect()` on the SAME database, eliminating:
-//   1. `Can't call openUri() on an active connection` cross-worker crashes
-//   2. Cross-suite data contamination when suites clean up shared fixtures
-//
-// We still pin a stable JWT secret + NODE_ENV so token generation and route
-// behavior are deterministic across environments.
+const TEST_MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/trend-drop-test';
 
 if (!process.env.JWT_SECRET) process.env.JWT_SECRET = 'fallback_secret_change_me';
 if (!process.env.NODE_ENV) process.env.NODE_ENV = 'test';
-process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/trend-drop-test';
+process.env.MONGODB_URI = TEST_MONGO_URI;
+process.env.MONGO_URI = TEST_MONGO_URI;
+
+// Disable Stripe for tests - use mock payment intents instead
+delete process.env.STRIPE_SECRET_KEY;
+delete process.env.STRIPE_WEBHOOK_SECRET;
+
+// NOTE: We intentionally do NOT disconnect Mongoose after each file here.
+// Several suites (e.g. offers.test.js) execute top-level DB operations at
+// module evaluation time, so a cross-file disconnect crashes those suites.
+// The connectDB() helper in config/db.js already honors an active connection
+// and reconnects when readyState is 0, which together with the pinned,
+// consistent URI above eliminates the "Can't call openUri() on an active
+// connection" crash without tearing the connection down between files.

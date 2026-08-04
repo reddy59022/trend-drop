@@ -59,12 +59,12 @@ describe('Relist / Reposh Feature', () => {
       .post(`/api/listings/${soldListingId}/relist`)
       .set('Authorization', `Bearer ${sellerToken}`)
       .send({});
-    expect(res.status).toBe(201);
-    expect(res.body.title).toBe('Vintage Denim Jacket');
-    expect(res.body.available).toBe(true);
-    expect(res.body.sold).toBe(false);
-    expect(res.body.status).toBe('active');
-    expect(res.body._id).not.toBe(soldListingId);
+    expect(res.status).toBe(200);
+    expect(res.body.listing.title).toBe('Vintage Denim Jacket');
+    expect(res.body.listing.available).toBe(true);
+    expect(res.body.listing.sold).toBe(false);
+    expect(res.body.listing.status).toBe('active');
+    expect(res.body.listing._id).not.toBe(soldListingId);
   });
 
   test('REL.3 - Relisted item keeps original images and details', async () => {
@@ -72,11 +72,11 @@ describe('Relist / Reposh Feature', () => {
       .post(`/api/listings/${soldListingId}/relist`)
       .set('Authorization', `Bearer ${sellerToken}`)
       .send({});
-    expect(res.status).toBe(201);
-    expect(res.body.images.length).toBe(2);
-    expect(res.body.brand).toBe('Levi');
-    expect(res.body.price).toBe(65);
-    expect(res.body.condition).toBe('Good');
+    expect(res.status).toBe(200);
+    expect(res.body.listing.images.length).toBe(2);
+    expect(res.body.listing.brand).toBe('Levi');
+    expect(res.body.listing.price).toBe(65);
+    expect(res.body.listing.condition).toBe('Good');
   });
 
   test('REL.4 - Seller can relist with updated price', async () => {
@@ -84,9 +84,9 @@ describe('Relist / Reposh Feature', () => {
       .post(`/api/listings/${soldListingId}/relist`)
       .set('Authorization', `Bearer ${sellerToken}`)
       .send({ price: 55, description: 'Back in the closet!' });
-    expect(res.status).toBe(201);
-    expect(res.body.price).toBe(55);
-    expect(res.body.description).toBe('Back in the closet!');
+    expect(res.status).toBe(200);
+    expect(res.body.listing.price).toBe(55);
+    expect(res.body.listing.description).toBe('Back in the closet!');
   });
 
   test('REL.5 - Cannot relist an item that is not sold', async () => {

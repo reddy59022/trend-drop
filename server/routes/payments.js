@@ -311,6 +311,8 @@ router.post('/confirm-batch', auth, async (req, res) => {
 
     // Verify payment status from Stripe
     const paymentIntent = await retrievePaymentIntent(paymentIntentId);
+    console.log("DEBUG confirm-batch: paymentIntentId:", paymentIntentId);
+    console.log("DEBUG confirm-batch: paymentIntent:", JSON.stringify(paymentIntent, null, 2));
     const VALID_STATUSES = ['succeeded', 'requires_capture'];
     if (!VALID_STATUSES.includes(paymentIntent.status)) {
       return res.status(400).json({

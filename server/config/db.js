@@ -39,11 +39,16 @@ const connectDB = async () => {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    // Avoid logging after Jest test teardown (suppress noisy post-test output).
+    if (process.env.NODE_ENV !== 'test') {
+      console.log(`MongoDB Connected: ${conn.connection.host}`);
+    }
     return conn;
   } catch (error) {
     // Log the error and continue without a DB connection.
-    console.warn('MongoDB connection warning:', error.message);
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('MongoDB connection warning:', error.message);
+    }
     return null;
   }
 };

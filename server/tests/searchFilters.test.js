@@ -40,13 +40,17 @@ beforeAll(async () => {
   sellerToken = jwt.sign({ id: seller._id }, JWT_SECRET, { expiresIn: '30d' });
   sellerId = seller._id;
 
-  // Seed listings with various attributes
+  // Seed listings with various attributes.
+  // Use explicit, distinct createdAt timestamps so the "newest first"
+  // sort assertion (SF.19) is deterministic — seeding via a loop can put
+  // all documents in the same millisecond, making MongoDB's sort unstable.
+  const now = Date.now();
   const listings = [
-    { title: 'Red Nike Shirt', price: 50, category: 'Men', brand: 'Nike', size: 'L', condition: 'New with tags', color: 'Red', weight: 0.3, quantity: 5 },
-    { title: 'Blue Adidas Pants', price: 80, category: 'Men', brand: 'Adidas', size: 'M', condition: 'Good', color: 'Blue', weight: 0.5, quantity: 3 },
-    { title: 'Green Zara Dress', price: 120, category: 'Women', brand: 'Zara', size: 'S', condition: 'New with tags', color: 'Green', weight: 0.3, quantity: 2 },
-    { title: 'Black Levi Jeans', price: 90, category: 'Men', brand: 'Levi', size: '32', condition: 'Good', color: 'Black', weight: 0.5, quantity: 4 },
-    { title: 'White Uniqlo Tee', price: 30, category: 'Women', brand: 'Uniqlo', size: 'M', condition: 'New with tags', color: 'White', weight: 0.2, quantity: 10 },
+    { title: 'Red Nike Shirt',   price: 50,  category: 'Men',   brand: 'Nike',   size: 'L',  condition: 'New with tags', color: 'Red',   weight: 0.3, quantity: 5,  createdAt: new Date(now - 4000) },
+    { title: 'Blue Adidas Pants', price: 80,  category: 'Men',   brand: 'Adidas', size: 'M',  condition: 'Good',          color: 'Blue',  weight: 0.5, quantity: 3,  createdAt: new Date(now - 3000) },
+    { title: 'Green Zara Dress',  price: 120, category: 'Women', brand: 'Zara',   size: 'S',  condition: 'New with tags', color: 'Green', weight: 0.3, quantity: 2,  createdAt: new Date(now - 2000) },
+    { title: 'Black Levi Jeans',  price: 90,  category: 'Men',   brand: 'Levi',   size: '32', condition: 'Good',          color: 'Black', weight: 0.5, quantity: 4,  createdAt: new Date(now - 1000) },
+    { title: 'White Uniqlo Tee',  price: 30,  category: 'Women', brand: 'Uniqlo', size: 'M',  condition: 'New with tags', color: 'White', weight: 0.2, quantity: 10, createdAt: new Date(now) },
   ];
 
   for (const listing of listings) {
