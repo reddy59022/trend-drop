@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { SocketProvider } from './context/SocketContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import MobileTabBar from './components/MobileTabBar';
@@ -90,7 +91,8 @@ function App() {
   return (
     <ThemeProvider>
       <CartProvider>
-        <div className="app">
+        <SocketProvider>
+          <div className="app">
           <ErrorBoundary>
           <Navbar />
           <main className="main-content">
@@ -167,6 +169,7 @@ function App() {
           <Footer />
           </ErrorBoundary>
         </div>
+        </SocketProvider>
       </CartProvider>
     </ThemeProvider>
   );

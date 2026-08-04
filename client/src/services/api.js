@@ -1,6 +1,10 @@
 import axios from 'axios';
 import { Capacitor } from '@capacitor/core';
 
+// Accessed in interceptors before the module-level default export below
+const isNativePlatform = () =>
+  typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform?.();
+
 // Determine the API base URL based on platform
 const getBaseURL = () => {
   // 1) Explicit build-time override — set REACT_APP_API_URL at build time
@@ -64,7 +68,11 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
-      if (window.location.pathname !== '/login') {
+      // Broadcast so React (AuthContext) can clear state and reroute.
+      window.dispatchEvent(new Event('auth-unauthorized'));
+      // On web, hard redirect. On native, React Router handles it to avoid
+      // navigating to a non-existent WebView path.
+      if (!isNativePlatform() && window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
     }

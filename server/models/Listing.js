@@ -100,6 +100,11 @@ const listingSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   }],
+  likesCount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   comments: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     text: { type: String, required: true },
@@ -211,5 +216,6 @@ listingSchema.index({ currency: 1 });
 listingSchema.index({ quantity: 1, available: 1 });
 listingSchema.index({ 'boost.active': 1, 'boost.endDate': 1 });
 listingSchema.index({ 'boost.priorityScore': -1 });
+listingSchema.index({ likesCount: -1 });
 
 module.exports = mongoose.model('Listing', listingSchema);

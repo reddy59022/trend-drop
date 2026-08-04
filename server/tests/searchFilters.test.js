@@ -18,6 +18,12 @@ beforeAll(async () => {
     await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/trenddrop_test');
   }
 
+  // Isolate this suite: other test files share the same DB and may leave
+  // listings with likes behind, which would make the popularity sort
+  // (SF.18) order-dependent. Clean the collection first.
+  await Listing.deleteMany({});
+  await User.deleteMany({ email: /search_/ });
+
   const seedBase = `search_${Date.now()}_`;
 
   const seller = await User.create({

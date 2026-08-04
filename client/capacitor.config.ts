@@ -5,9 +5,11 @@ const config: CapacitorConfig = {
   appName: 'TrendDrop',
   webDir: 'build',
   server: {
-    // Production: Render backend for iOS and Android
-    url: 'https://trend-drop.onrender.com',
-    cleartext: false,
+    // Load bundled local assets (build/) instead of a remote URL so the app
+    // starts instantly and works offline. API calls are routed by
+    // client/src/services/api.js which points to the deployed backend in
+    // release builds.
+    cleartext: true,
     androidScheme: 'https',
   },
   plugins: {
@@ -19,8 +21,12 @@ const config: CapacitorConfig = {
     CapacitorCookies: {
       enabled: true,
     },
+    // CapacitorHttp is DISABLED on purpose: axios (client/src/services/api.js)
+    // handles auth tokens via request interceptors and does 401 redirects via
+    // response interceptors. Enabling it would bypass those interceptors and
+    // break auth on iOS and Android.
     CapacitorHttp: {
-      enabled: true,
+      enabled: false,
     },
     Camera: {
       permissions: ['camera', 'photos'],

@@ -135,8 +135,10 @@ app.use('/api/auth', require('./routes/auth'));
 // Bulk listing management routes MUST be mounted before main listings route to avoid ID conflict
 app.use('/api/listings', require('./routes/bulkListings'));
 app.use('/api/listings', require('./routes/listings'));
-// Analytics routes MUST be mounted before /api/users/:id to avoid conflict
+// Analytics and onboarding routes MUST be mounted before /api/users/:id
+// to avoid the users router's /:id catch-all swallowing /me/* paths.
 app.use('/api/users/me', require('./routes/analytics'));
+app.use('/api/users/me', require('./routes/onboarding'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/offers', require('./routes/offers'));
 app.use('/api/transactions', require('./routes/transactions'));
@@ -177,9 +179,8 @@ app.use('/api/fraud', require('./routes/fraudDetection'));
 app.use('/api/returns', require('./routes/returns'));
 // Escrow service routes (v26.0)
 app.use('/api/escrow', require('./routes/escrow'));
-// Onboarding routes (mounted twice for different base paths)
+// Onboarding routes (client uses the /api/onboarding base path)
 app.use('/api/onboarding', require('./routes/onboarding'));
-app.use('/api/users/me', require('./routes/onboarding'));
 // Parties / Social Selling Events routes (v37.0)
 app.use('/api/parties', require('./routes/parties'));
 // Recently Viewed Items routes (v38.0)

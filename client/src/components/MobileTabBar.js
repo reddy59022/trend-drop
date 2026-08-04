@@ -13,6 +13,9 @@ import {
 const MobileTabBar = () => {
   const { user } = useAuth();
   const location = useLocation();
+  // Logged-out users only see public routes (/home, /feed & /login).
+  // Protected routes (/sell, /messages, /profile, /wishlist) require auth,
+  // so showing them to guests would create a confusing login-loop UX.
   const tabs = user ? [
     { path: '/', icon: <FaHome />, label: 'Home' },
     { path: '/feed', icon: <FaCompass />, label: 'Feed' },
@@ -22,9 +25,7 @@ const MobileTabBar = () => {
   ] : [
     { path: '/', icon: <FaHome />, label: 'Home' },
     { path: '/feed', icon: <FaCompass />, label: 'Feed' },
-    { path: '/sell', icon: <FaPlusCircle />, label: 'Sell', highlight: true },
-    { path: '/wishlist', icon: <FaHeart />, label: 'Saved' },
-    { path: '/login', icon: <FaUser />, label: 'Login' },
+    { path: '/login', icon: <FaUser />, label: 'Login', highlight: true },
   ];
 
   return (

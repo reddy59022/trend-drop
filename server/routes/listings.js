@@ -37,7 +37,7 @@ router.get('/', optionalAuth, async (req, res) => {
     let sortOption = { createdAt: -1 };
     if (sort === 'price_low') sortOption = { price: 1 };
     else if (sort === 'price_high') sortOption = { price: -1 };
-    else if (sort === 'popular') sortOption = { 'likes.length': -1 };
+    else if (sort === 'popular') sortOption = { likesCount: -1 };
 
     const result = await paginate(Listing, {
       page: pageNum,
@@ -582,6 +582,7 @@ router.post('/:id/like', auth, async (req, res) => {
     
     if (index > -1) {
       listing.likes.splice(index, 1);
+      listing.likesCount = Math.max(0, (listing.likesCount || 0) - 1);
       liked = false;
       
       let wishlist = await Wishlist.findOne({ user: req.user._id });
@@ -591,6 +592,7 @@ router.post('/:id/like', auth, async (req, res) => {
       }
     } else {
       listing.likes.push(req.user._id);
+      listing.likesCount = (listing.likesCount || 0) + 1;
       liked = true;
 
       let wishlist = await Wishlist.findOne({ user: req.user._id });

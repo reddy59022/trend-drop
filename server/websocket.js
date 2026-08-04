@@ -16,9 +16,31 @@ let userSocketMap = new Map(); // userId -> socketId
  * Initialize WebSocket server
  */
 function initializeWebSocket(server) {
+  // Mirror the Express CORS allow-list so real-time features work on
+  // web, iOS (capacitor://localhost) and Android (http://localhost) apps.
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:8100',     // Capacitor dev server
+    'http://localhost:5001',     // Local API (web fallback)
+    'http://10.0.2.2:8100',      // Android emulator
+    'http://127.0.0.1:8100',     // iOS simulator
+    'capacitor://localhost',     // Native iOS WebView
+    'https://trend-drop.onrender.com',
+  ];
+  if (process.env.CLIENT_URL) {
+    allowedOrigins.push(process.env.CLIENT_URL);
+  }
+
   io = new Server(server, {
     cors: {
-      origin: process.env.CLIENT_URL || 'http://localhost:3000',
+      origin(origin, callback) {
+        // Allow same-origin (no Origin header) and any listed origin.
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(null, false);
+        }
+      },
       methods: ['GET', 'POST'],
       credentials: true,
     },
