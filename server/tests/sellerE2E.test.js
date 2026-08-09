@@ -62,6 +62,15 @@ async function createUser(name, email) {
     shippingAddress: { fullName: name, street1: '123 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' },
     balance: { available: 500, pending: 0, totalEarned: 0, totalPaidOut: 0, currency: 'USD' },
     stats: { totalSales: 0, totalPurchases: 0, strikes: 0 },
+    createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago to bypass new seller hold
+    payoutMethod: {
+      type: 'bank',
+      details: {
+        accountNumber: '123456789',
+        routingNumber: '987654321',
+        accountHolderName: name,
+      },
+    },
   });
   testUserIds.push(u._id);
   const jwt = require('jsonwebtoken');
@@ -134,10 +143,19 @@ async function completeTransaction(token, txnId) {
   const t = await Transaction.findById(txnId);
   if (!t) return { error: 'txn not found' };
   t.status = 'delivered';
-  t.shipping = { ...(t.shipping || {}), actualDelivery: new Date() };
+  t.shipping = { ...(t.shipping || {}), actualDelivery: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) };
   await t.save();
   const c = await request(app).post(`/api/orders/${txnId}/confirm-received`).set('Authorization', `Bearer ${token}`);
-  return c;
+  // Backdate the confirmation so auto-complete can run (3-day return window + 5-day delivery window)
+  const t2 = await Transaction.findById(txnId);
+  if (t2) {
+    t2.buyerConfirmed = { confirmedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) };
+    t2.shipping = { ...(t2.shipping || {}), actualDelivery: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) };
+    await t2.save();
+  }
+  // Seller triggers auto-complete
+  const ac = await request(app).post(`/api/orders/${txnId}/auto-complete`).set('Authorization', `Bearer ${token}`);
+  return ac;
 }
 
 async function cleanupTestData() {
@@ -165,7 +183,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanupTestData();
-  await mongoose.disconnect();
+  // Do NOT disconnect mongoose here — jest.setup.js afterAll cleans the DB
+  // between files, and disconnecting prevents that cleanup.
 });
 
 // ============================================================
@@ -297,7 +316,18 @@ describe('SELLER TYPE A — Full Sale Pipeline (Sell, Ship, Deliver, Complete, C
     await t.save();
     const r = await request(app).post(`/api/orders/${txnId}/confirm-received`).set('Authorization', `Bearer ${buyerToken}`);
     expect(r.status).toBe(200);
-    const txn = await Transaction.findById(txnId);
+    // Buyer confirmation starts the 3-day return window (funds stay pending)
+    let txn = await Transaction.findById(txnId);
+    expect(txn.status).toBe('buyer_confirmed');
+
+    // After the return window elapses, the auto-complete job releases funds
+    txn.buyerConfirmed.confirmedAt = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+    txn.shipping.actualDelivery = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+    await txn.save();
+    const ac = await request(app).post(`/api/orders/${txnId}/auto-complete`).set('Authorization', `Bearer ${sellerToken}`);
+    expect(ac.status).toBe(200);
+
+    txn = await Transaction.findById(txnId);
     expect(txn.status).toBe('completed');
   });
 
@@ -421,12 +451,26 @@ describe('SELLER TYPE B — Enterprise Multi-Seller Order', () => {
         shippingAddress: { fullName: 'B', street1: '456 St', city: 'City', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
       });
-    expect(r.status).toBe(201);
-    expect(r.body.transactions.length).toBe(2);
-    txn1Id = r.body.transactions[0]._id;
-    txn2Id = r.body.transactions[1]._id;
+    expect(r.status).toBe(200);
+    expect(r.body.paymentIntentId).toBeDefined();
+
+    // Confirmation step creates the transactions + consolidated order
+    const r2 = await request(app).post('/api/payments/confirm-batch').set('Authorization', `Bearer ${buyerToken}`)
+      .send({
+        paymentIntentId: r.body.paymentIntentId,
+        items: [
+          { listingId: seller1Listing._id },
+          { listingId: seller2Listing._id },
+        ],
+        shippingAddress: { fullName: 'B', street1: '456 St', city: 'City', state: 'NY', postalCode: '10001', country: 'US' },
+        buyerCountry: 'US',
+      });
+    expect(r2.status).toBe(201);
+    expect(r2.body.transactions.length).toBe(2);
+    txn1Id = r2.body.transactions[0]._id;
+    txn2Id = r2.body.transactions[1]._id;
     testTransactionIds.push(txn1Id, txn2Id);
-    enterpriseOrderId = r.body.orderId;
+    enterpriseOrderId = r2.body.orderId;
     expect(enterpriseOrderId).toBeDefined();
   });
 

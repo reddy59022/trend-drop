@@ -8,6 +8,7 @@ import {
   FaEnvelope, 
   FaUser,
   FaHeart,
+  FaFire,
 } from 'react-icons/fa';
 
 const MobileTabBar = () => {
@@ -20,6 +21,7 @@ const MobileTabBar = () => {
     { path: '/', icon: <FaHome />, label: 'Home' },
     { path: '/feed', icon: <FaCompass />, label: 'Feed' },
     { path: '/sell', icon: <FaPlusCircle />, label: 'Sell', highlight: true },
+    { path: '/trends', icon: <FaFire />, label: 'Trends' },
     { path: '/messages', icon: <FaEnvelope />, label: 'Messages' },
     { path: `/profile/${user.id || user._id}`, icon: <FaUser />, label: 'Profile' },
   ] : [

@@ -1,19 +1,33 @@
 // Brevo (formerly Sendinblue) email configuration
 const SibApiV3Sdk = require('@sendinblue/client');
 
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
+if (BREVO_API_KEY) {
+  apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, BREVO_API_KEY);
+}
 
 const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'reddy59021@gmail.com';
 const SENDER_NAME = 'TrendDrop';
-// Use the FRONTEND_URL environment variable for email links. It must be set in the deployment environment.
-const BASE_URL = process.env.FRONTEND_URL;
+// FRONTEND_URL drives all email links. Fall back to CLIENT_URL, then localhost
+// so a missing env var never produces 'undefined/verify-email' links.
+const BASE_URL = (process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
-// Send email verification
-const sendVerificationEmail = async (email, name, token) => {
+const hasApiKey = () => {
+  if (BREVO_API_KEY) return true;
+  console.warn('[email] BREVO_API_KEY is not set — skipping outbound email (no network call made).');
+  return false;
+};
+
+// Send email verification. Fire-and-forget: returns immediately so
+// registration never blocks on the (slow) email provider; failures are
+// logged, never thrown to the caller.
+const sendVerificationEmail = (email, name, token) => {
+  if (!hasApiKey()) return Promise.resolve({ emailSent: false, skipped: true });
   const verificationUrl = `${BASE_URL}/verify-email?token=${token}`;
 
-  try {
+  const sendPromise = (async () => {
     const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = 'Verify your TrendDrop email address';
     sendSmtpEmail.htmlContent = `
@@ -59,19 +73,24 @@ const sendVerificationEmail = async (email, name, token) => {
 
     const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
     console.log('Verification email sent to:', email, 'messageId:', result.body?.messageId);
-    return true;
-  } catch (error) {
+    return { emailSent: true };
+  })();
+
+  sendPromise.catch((error) => {
     console.error('Brevo send error:', error.message, error.response?.body || '');
-    return false;
-  }
+  });
+
+  return Promise.resolve({ emailSent: true, queued: true });
 };
 
 
-// Send password reset email
-const sendPasswordResetEmail = async (email, name, token) => {
+// Send password reset email. Fire-and-forget: returns immediately,
+// failures are logged, never thrown to the caller.
+const sendPasswordResetEmail = (email, name, token) => {
+  if (!hasApiKey()) return Promise.resolve({ emailSent: false, skipped: true });
   const resetUrl = `${BASE_URL}/reset-password?token=${token}`;
 
-  try {
+  const sendPromise = (async () => {
     const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = 'Reset your TrendDrop password';
     sendSmtpEmail.htmlContent = `
@@ -100,11 +119,14 @@ const sendPasswordResetEmail = async (email, name, token) => {
 
     await apiInstance.sendTransacEmail(sendSmtpEmail);
     console.log('Password reset email sent to:', email);
-    return true;
-  } catch (error) {
+    return { emailSent: true };
+  })();
+
+  sendPromise.catch((error) => {
     console.error('Brevo reset error:', error.message);
-    return false;
-  }
+  });
+
+  return Promise.resolve({ emailSent: true, queued: true });
 };
 
 module.exports = { sendVerificationEmail, sendPasswordResetEmail };

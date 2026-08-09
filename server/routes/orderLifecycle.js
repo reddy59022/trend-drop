@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const { auth } = require('../middleware/auth');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
@@ -188,6 +189,11 @@ router.post('/:id/ship', auth, async (req, res) => {
     const { shipmentIndex, trackingNumber, carrier } = req.body;
     if (shipmentIndex === undefined) {
       return res.status(400).json({ message: 'shipmentIndex is required' });
+    }
+    
+    // Validate orderId
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid order ID' });
     }
 
     const order = await Order.findById(req.params.id);
@@ -829,6 +835,84 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
     }
 
     await txn.save();
+
+    // Transition to completed after rejection (return_rejected -> completed)
+    if (isValidTransition(txn.status, orderStates.COMPLETED)) {
+      // Update seller balance and create payout (same as auto-complete)
+      const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+      const seller = await User.findById(txn.seller);
+      if (seller) {
+        const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
+        const availableAmount = sellerEarnings - reserveAmount;
+        seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
+        seller.balance.available = (seller.balance.available || 0) + availableAmount;
+        seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
+        if (!seller.balance.reserve) seller.balance.reserve = 0;
+        if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
+        seller.balance.reserve += reserveAmount;
+        seller.balance.reserveReleaseDate.push({
+          amount: reserveAmount,
+          releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+          transactionId: txn._id,
+        });
+        seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
+        seller.notifications.unshift({
+          type: 'sale',
+          listing: txn.listing,
+          transaction: txn._id,
+          message: `Return rejected. Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
+        });
+        await seller.save();
+      }
+
+      const buyer = await User.findById(txn.buyer);
+      if (buyer) {
+        buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
+        await buyer.save();
+      }
+
+      // Collect boost fee for completed order
+      await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+
+      txn.status = orderStates.COMPLETED;
+      await txn.save();
+
+      // Create payout record (same as auto-complete)
+      try {
+        const existingPayout = await Payout.findOne({ transaction: txn._id });
+        const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
+        const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
+        const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
+        const commissionRate = (txn.paymentBreakdown?.platformFeePercent || 10) / 100;
+
+        if (!existingPayout) {
+          await Payout.create({
+            seller: txn.seller,
+            transaction: txn._id,
+            listing: txn.listing,
+            salePrice: itemPrice,
+            commissionRate,
+            commissionAmount,
+            payoutAmount,
+            status: 'completed',
+            paidAt: new Date(),
+          });
+        } else if (existingPayout.status === 'pending') {
+          existingPayout.status = 'completed';
+          existingPayout.paidAt = new Date();
+          existingPayout.salePrice = itemPrice;
+          existingPayout.commissionAmount = commissionAmount;
+          existingPayout.payoutAmount = payoutAmount;
+          existingPayout.commissionRate = commissionRate;
+          await existingPayout.save();
+        }
+      } catch (pErr) {
+        console.error('Payout creation on return-rejected failed:', pErr.message);
+      }
+
+      // Keep the consolidated Enterprise Order in sync
+      await syncOrderFromTransaction(txn, 'completed');
+    }
 
     res.json({
       message: 'Return rejected. Buyer can file a dispute within 14 days.',

@@ -86,7 +86,7 @@ afterAll(async () => {
   await Transaction.deleteMany({ buyer: { $in: testUserIds } });
   await Listing.deleteMany({ _id: { $in: testListingIds } });
   await User.deleteMany({ _id: { $in: testUserIds } });
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('Admin Authorization', () => {

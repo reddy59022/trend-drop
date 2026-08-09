@@ -123,7 +123,7 @@ afterAll(async () => {
   await Order.deleteMany({ buyer: ids.buyer });
   await Cart.deleteMany({ user: ids.buyer });
   await User.deleteMany({ _id: { $in: [...ids.seller, ids.buyer].filter(Boolean) } });
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5 shipments', () => {
@@ -156,7 +156,7 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5
     const items = sellerRefs.map((s) => ({ listingId: s.listing._id, quantity: quantities[s.country] }));
     const pi = mockPi();
     const res = await confirmBatch(buyerToken, items, pi);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(res.body.transactions).toHaveLength(5);
     expect(res.body.orders).toHaveLength(1);
     const order = res.body.orders[0];
@@ -324,7 +324,7 @@ describe('DIRECTION MATRIX: every seller→buyer country pair charges/settles EX
       const address = { ...US_ADDRESS, country: p.buyer };
       const pi = mockPi();
       const res = await confirmBatch(p.buyerToken, [{ listingId: p.listingId, quantity: p.qty }], pi, address);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(201);
 
       const txn = res.body.transactions[0];
       expect(round2(txn.paymentBreakdown.subtotal)).toBe(exp.subtotal);
@@ -363,7 +363,7 @@ describe('ROBUSTNESS: no leaks on failure paths', () => {
     const pi = mockPi();
     const items = [{ listingId: l._id, quantity: 1 }];
     const first = await confirmBatch(b.token, items, pi);
-    expect(first.status).toBe(200);
+    expect(first.status).toBe(201);
     expect(first.body.transactions).toHaveLength(1);
 
     const second = await confirmBatch(b.token, items, pi);
@@ -415,7 +415,7 @@ describe('ROBUSTNESS: no leaks on failure paths', () => {
 
     const pi = mockPi();
     const buy = await confirmBatch(b.token, [{ listingId: l._id, quantity: 2 }], pi);
-    expect(buy.status).toBe(200);
+    expect(buy.status).toBe(201);
     const txn = buy.body.transactions[0];
 
     // Seller pending credited for qty 2

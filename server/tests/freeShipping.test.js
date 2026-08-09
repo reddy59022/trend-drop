@@ -73,7 +73,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Promise.all([User.deleteMany({ email: /fs_test/ }), Listing.deleteMany({ title: /Free Ship Test/ })]);
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('Free Shipping Test', () => {

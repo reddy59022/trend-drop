@@ -48,12 +48,13 @@ const VirtualTryOnPage = lazy(() => import('./pages/VirtualTryOn'));
 const MobileSettingsPage = lazy(() => import('./pages/MobileSettings'));
 const OfferSharingPage = lazy(() => import('./pages/OfferSharing'));
 const AIStylistPage = lazy(() => import('./pages/AIStylist'));
+const TrendForecastPage = lazy(() => import('./pages/TrendForecast'));
+const SocialCommercePage = lazy(() => import('./pages/SocialCommerce'));
 const LiveEventsPage = lazy(() => import('./pages/LiveEvents'));
 const ARShowroomsPage = lazy(() => import('./pages/ARShowrooms'));
-const SocialCommercePage = lazy(() => import('./pages/SocialCommerce'));
+const TrendsPage = lazy(() => import('./pages/Trends'));
 const SubscriptionsPage = lazy(() => import('./pages/Subscriptions'));
 const CrossBorderPage = lazy(() => import('./pages/CrossBorder'));
-const TrendForecastPage = lazy(() => import('./pages/TrendForecast'));
 const VideoShoppingPage = lazy(() => import('./pages/VideoShopping'));
 const SellerCommunitiesPage = lazy(() => import('./pages/SellerCommunities'));
 const InventoryManagementPage = lazy(() => import('./pages/InventoryManagement'));
@@ -66,39 +67,23 @@ const ReturnsCenterPage = lazy(() => import('./pages/ReturnsCenter'));
 const AuctionPage = lazy(() => import('./pages/AuctionPage'));
 const CreateAuctionPage = lazy(() => import('./pages/CreateAuction'));
 const AuctionDetail = lazy(() => import('./pages/AuctionDetail'));
-const PriceSuggestionPage = lazy(() => import('./pages/PriceSuggestion'));
 const SellerBadgesPage = lazy(() => import('./pages/SellerBadges'));
 const FraudProtectionPage = lazy(() => import('./pages/FraudProtection'));
 
-// Performance: Minimal loading component for lazy-loaded pages
 const PageLoader = () => (
-  <div className="page-container" style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
+  <div className="page-loader">
     <div className="spinner"></div>
   </div>
 );
 
-// Bridges OAuth deep-links from the system browser (Capacitor Browser
-// plugin) back into the WebView. When the user completes Google/Apple
-// sign-in natively, the provider redirects to auravest://callback?token=...
-// The native layer resumes the app with that URL; we forward it to
-// AuthContext's openNativeOAuth promise listener as an 'oauth-callback'
-// CustomEvent. Works on iOS, Android, and web (no-op on web).
 const NativeAppLifecycle = () => {
-  useEffect(() => {
-    if (!isNative()) return undefined;
+  const { handleOAuthCallback } = useAuth();
 
+  useEffect(() => {
     const handleUrl = (url) => {
-      if (!url) return;
-      try {
-        const parsed = new URL(url);
-        if (parsed.hostname === 'callback' || parsed.pathname.includes('callback')) {
-          window.dispatchEvent(new CustomEvent('oauth-callback', { detail: { url } }));
-        }
-      } catch (e) {
-        // Some Android intents are not parseable URLs; forward raw text
-        if (String(url).includes('callback')) {
-          window.dispatchEvent(new CustomEvent('oauth-callback', { detail: { url: String(url) } }));
-        }
+      if (url.includes('oauth-callback')) {
+        handleOAuthCallback(url);
+        window.dispatchEvent(new CustomEvent('oauth-callback', { detail: { url: String(url) } }));
       }
     };
 
@@ -106,9 +91,6 @@ const NativeAppLifecycle = () => {
     let listenerCleanup = () => {};
     import('@capacitor/app').then(({ App }) => {
       capApp = App;
-      // Keep the returned handle so the deep-link listener is removed on
-      // unmount (avoids duplicate appUrlOpen handlers accumulating on
-      // iOS/Android when the provider re-mounts).
       App.addListener('appUrlOpen', (event) => handleUrl(event.url)).then(
         (handle) => {
           listenerCleanup = () => {
@@ -118,7 +100,6 @@ const NativeAppLifecycle = () => {
       );
     }).catch(() => {});
 
-    // Android deep links can also arrive as window.location changes
     const onLocation = () => handleUrl(window.location.href);
     window.addEventListener('popstate', onLocation);
 
@@ -189,34 +170,35 @@ function App() {
                 <Route path="/seller/listings/bulk" element={<ProtectedRoute><BulkListingManager /></ProtectedRoute>} />
                 <Route path="/saved-searches" element={<ProtectedRoute><SavedSearchesPage /></ProtectedRoute>} />
                 <Route path="/parties" element={<ProtectedRoute><PartiesPage /></ProtectedRoute>} />
-<Route path="/recently-viewed" element={<ProtectedRoute><RecentlyViewedPage /></ProtectedRoute>} />
+                <Route path="/recently-viewed" element={<ProtectedRoute><RecentlyViewedPage /></ProtectedRoute>} />
                 <Route path="/size-recommendation" element={<ProtectedRoute><SizeRecommendationPage /></ProtectedRoute>} />
                 <Route path="/virtual-try-on" element={<ProtectedRoute><VirtualTryOnPage /></ProtectedRoute>} />
-<Route path="/virtual-try-on/:listingId" element={<ProtectedRoute><VirtualTryOnPage /></ProtectedRoute>} />
-<Route path="/mobile-settings" element={<ProtectedRoute><MobileSettingsPage /></ProtectedRoute>} />
-<Route path="/offer-sharing" element={<ProtectedRoute><OfferSharingPage /></ProtectedRoute>} />
-<Route path="/ai-stylist" element={<ProtectedRoute><AIStylistPage /></ProtectedRoute>} />
-<Route path="/live-events" element={<ProtectedRoute><LiveEventsPage /></ProtectedRoute>} />
-<Route path="/ar-showrooms" element={<ProtectedRoute><ARShowroomsPage /></ProtectedRoute>} />
-<Route path="/social-commerce" element={<ProtectedRoute><SocialCommercePage /></ProtectedRoute>} />
-<Route path="/subscriptions" element={<ProtectedRoute><SubscriptionsPage /></ProtectedRoute>} />
-<Route path="/cross-border" element={<ProtectedRoute><CrossBorderPage /></ProtectedRoute>} />
-<Route path="/trend-forecast" element={<ProtectedRoute><TrendForecastPage /></ProtectedRoute>} />
-<Route path="/video-shopping" element={<ProtectedRoute><VideoShoppingPage /></ProtectedRoute>} />
-<Route path="/seller-communities" element={<ProtectedRoute><SellerCommunitiesPage /></ProtectedRoute>} />
-<Route path="/inventory" element={<ProtectedRoute><InventoryManagementPage /></ProtectedRoute>} />
-<Route path="/loyalty" element={<ProtectedRoute><LoyaltyProgramPage /></ProtectedRoute>} />
-<Route path="/vendors" element={<ProtectedRoute><VendorsPage /></ProtectedRoute>} />
-<Route path="/advanced-shipping" element={<ProtectedRoute><AdvancedShippingPage /></ProtectedRoute>} />
-<Route path="/enterprise" element={<ProtectedRoute><EnterpriseApiPage /></ProtectedRoute>} />
-<Route path="/referrals" element={<ProtectedRoute><ReferralsPage /></ProtectedRoute>} />
-<Route path="/returns" element={<ProtectedRoute><ReturnsCenterPage /></ProtectedRoute>} />
-<Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
-<Route path="/auctions" element={<ProtectedRoute><AuctionPage /></ProtectedRoute>} />
-<Route path="/auctions/create" element={<ProtectedRoute><CreateAuctionPage /></ProtectedRoute>} />
-<Route path="/auctions/:id" element={<ProtectedRoute><AuctionDetail /></ProtectedRoute>} />
-<Route path="/seller-badges" element={<ProtectedRoute><SellerBadgesPage /></ProtectedRoute>} />
-<Route path="/fraud-protection" element={<ProtectedRoute><FraudProtectionPage /></ProtectedRoute>} />
+                <Route path="/virtual-try-on/:listingId" element={<ProtectedRoute><VirtualTryOnPage /></ProtectedRoute>} />
+                <Route path="/mobile-settings" element={<ProtectedRoute><MobileSettingsPage /></ProtectedRoute>} />
+                <Route path="/offer-sharing" element={<ProtectedRoute><OfferSharingPage /></ProtectedRoute>} />
+                <Route path="/ai-stylist" element={<ProtectedRoute><AIStylistPage /></ProtectedRoute>} />
+                <Route path="/live-events" element={<ProtectedRoute><LiveEventsPage /></ProtectedRoute>} />
+                <Route path="/trend-forecast" element={<ProtectedRoute><TrendForecastPage /></ProtectedRoute>} />
+                <Route path="/trends" element={<ProtectedRoute><TrendsPage /></ProtectedRoute>} />
+                <Route path="/video-shopping" element={<ProtectedRoute><VideoShoppingPage /></ProtectedRoute>} />
+                <Route path="/ar-showrooms" element={<ProtectedRoute><ARShowroomsPage /></ProtectedRoute>} />
+                <Route path="/social-commerce" element={<ProtectedRoute><SocialCommercePage /></ProtectedRoute>} />
+                <Route path="/subscriptions" element={<ProtectedRoute><SubscriptionsPage /></ProtectedRoute>} />
+                <Route path="/cross-border" element={<ProtectedRoute><CrossBorderPage /></ProtectedRoute>} />
+                <Route path="/seller-communities" element={<ProtectedRoute><SellerCommunitiesPage /></ProtectedRoute>} />
+                <Route path="/inventory" element={<ProtectedRoute><InventoryManagementPage /></ProtectedRoute>} />
+                <Route path="/loyalty" element={<ProtectedRoute><LoyaltyProgramPage /></ProtectedRoute>} />
+                <Route path="/vendors" element={<ProtectedRoute><VendorsPage /></ProtectedRoute>} />
+                <Route path="/advanced-shipping" element={<ProtectedRoute><AdvancedShippingPage /></ProtectedRoute>} />
+                <Route path="/enterprise" element={<ProtectedRoute><EnterpriseApiPage /></ProtectedRoute>} />
+                <Route path="/referrals" element={<ProtectedRoute><ReferralsPage /></ProtectedRoute>} />
+                <Route path="/returns" element={<ProtectedRoute><ReturnsCenterPage /></ProtectedRoute>} />
+                <Route path="/orders/:id" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
+                <Route path="/auctions" element={<ProtectedRoute><AuctionPage /></ProtectedRoute>} />
+                <Route path="/auctions/create" element={<ProtectedRoute><CreateAuctionPage /></ProtectedRoute>} />
+                <Route path="/auctions/:id" element={<ProtectedRoute><AuctionDetail /></ProtectedRoute>} />
+                <Route path="/seller-badges" element={<ProtectedRoute><SellerBadgesPage /></ProtectedRoute>} />
+                <Route path="/fraud-protection" element={<ProtectedRoute><FraudProtectionPage /></ProtectedRoute>} />
 
                 {/* Admin-only routes */}
                 <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>} />

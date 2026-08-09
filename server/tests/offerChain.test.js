@@ -85,7 +85,7 @@ afterAll(async () => {
     Listing.deleteMany({ title: re }),
     Offer.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
   ]);
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('Offer Counter-Offer Chain (v14.0)', () => {

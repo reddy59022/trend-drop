@@ -137,6 +137,13 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// Global ObjectId param validation: turns invalid IDs into 400 responses
+// instead of 500 CastErrors, across every route. Mounted before all
+// routers so no route can be reached with a malformed :id-style param
+// (see utils/validators.js).
+const { assertObjectId } = require('./utils/validators');
+app.use('/api', assertObjectId);
+
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
 // Bulk listing management routes MUST be mounted before main listings route to avoid ID conflict
@@ -234,6 +241,8 @@ app.use('/api/vendors', require('./routes/vendors'));
 app.use('/api/advanced-shipping', require('./routes/advancedShipping'));
 // Enterprise API routes (v60.0)
 app.use('/api/enterprise', require('./routes/enterpriseApi'));
+// Trend Tracking routes (v61.0)
+app.use('/api/trends', require('./routes/trends'));
 app.use('/api/notifications', require('./routes/notifications'));
 
 // ---------------------------------------------------------------------------
@@ -332,6 +341,11 @@ app.use((err, req, res, next) => {
       return res.status(400).json({ message: 'File is too large. Maximum size is 2MB' });
     }
     return res.status(400).json({ message: err.message });
+  }
+
+  // Malformed ObjectId (e.g. /api/orders/undefined) is a client error, not a 500.
+  if (err.name === 'CastError' || err.name === 'BSONError' || err.name === 'BSONTypeError') {
+    return res.status(400).json({ message: 'Invalid ID', param: err.path || 'id' });
   }
 
   res.status(500).json({

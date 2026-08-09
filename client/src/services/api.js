@@ -58,6 +58,16 @@ const api = axios.create({
   baseURL: getBaseURL(),
 });
 
+// Guard against accidentally interpolating undefined/null/NaN into URLs
+// (e.g. /users/undefined). Fail fast client-side instead of sending
+// garbage requests to the API (which used to surface as 500s server-side).
+api.interceptors.request.use((config) => {
+  if (config.url && /(?:undefined|null|NaN)(?:\/|$)/.test(config.url)) {
+    return Promise.reject(new Error(`Invalid request URL: ${config.url}`));
+  }
+  return config;
+});
+
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {

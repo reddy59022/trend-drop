@@ -85,7 +85,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await User.deleteMany({ email: /boost_test/ });
   await Listing.deleteMany({ title: /Boost Test/ });
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 // ============================================================

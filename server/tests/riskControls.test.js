@@ -105,7 +105,7 @@ afterAll(async () => {
     Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }),
     Payout.deleteMany({ seller: { $in: testUserIds } }),
   ]);
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('Risk Controls & Fraud Detection', () => {

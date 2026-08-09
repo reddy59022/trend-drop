@@ -37,7 +37,7 @@ afterAll(async () => {
   await Promo.deleteMany({ _id: { $in: testPromoIds } });
   await Listing.deleteMany({ _id: { $in: testListingIds } });
   await User.deleteMany({ _id: { $in: testUserIds } });
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('Promotions / Coupon Codes (Section 28c)', () => {

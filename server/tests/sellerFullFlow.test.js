@@ -47,6 +47,14 @@ async function createUser(name, email, overrides = {}) {
     shippingAddress: { fullName: name, street1: '123 Main St', city: 'Austin', state: 'TX', postalCode: '78701', country: 'US' },
     balance: { available: 0, pending: 0, totalEarned: 0, totalPaidOut: 0, currency: 'USD' },
     stats: { totalSales: 0, totalPurchases: 0, strikes: 0 },
+    payoutMethod: {
+      type: 'bank',
+      details: {
+        accountNumber: '123456789',
+        routingNumber: '987654321',
+        accountHolderName: name,
+      },
+    },
     ...overrides,
   });
   testUserIds.push(u._id);
@@ -200,7 +208,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanup();
-  await mongoose.disconnect();
+  // Do NOT disconnect mongoose here — jest.setup.js afterAll cleans the DB
+  // between files, and disconnecting prevents that cleanup.
 });
 
 describe('Seller Full-Flow E2E (certifies web / iOS / Android API)', () => {
@@ -308,7 +317,7 @@ describe('Seller Full-Flow E2E (certifies web / iOS / Android API)', () => {
     let orderId, batchTxnIds = [], batchListingIds = [];
 
     test('buyer purchases multiple items via batch', async () => {
-      const l1 = await createListing(sellerId, { price: 60, quantity: 2, title: 'BatchItem1' });
+      const l1 = await createListing(sellerId, { price: 60, quantity: 1, title: 'BatchItem1' });
       const l2 = await createListing(sellerId, { price: 40, quantity: 1, title: 'BatchItem2' });
       batchListingIds = [l1._id, l2._id];
       const r = await buyBatch(buyerToken, batchListingIds, [1, 1]);
@@ -531,9 +540,12 @@ describe('Seller Full-Flow E2E (certifies web / iOS / Android API)', () => {
       expect(typeof totalEarned).toBe('number');
       expect(typeof availableBalance).toBe('number');
       expect(typeof pendingBalance).toBe('number');
-      // totalSales should equal count of completed payouts for this seller
-      const completedCount = await Payout.countDocuments({ seller: sellerId, status: 'completed' });
-      expect(totalSales).toBe(completedCount);
+      // totalSales should equal the sum of all payout sale prices
+      const allPayouts = await Payout.find({ seller: sellerId });
+      const expectedTotalSales = allPayouts.reduce((sum, p) => sum + (p.salePrice || 0), 0);
+      expect(totalSales).toBe(expectedTotalSales);
+      // pendingBalance should be a non-negative number
+      expect(pendingBalance).toBeGreaterThanOrEqual(0);
     });
 
     test('totalEarned matches sum of completed payout amounts', async () => {

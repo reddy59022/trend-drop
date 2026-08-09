@@ -20,7 +20,7 @@ describe('ITEM-LEVEL BOOST FEE LEDGER', () => {
   });
 
   afterAll(async () => {
-    await mongoose.disconnect();
+    // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
   });
 
   test('boost fee is owed at sale, reversed at cancel, collected at completion', async () => {

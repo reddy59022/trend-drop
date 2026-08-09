@@ -64,7 +64,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await cleanupTestData();
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('RULE 1: Auth', () => {
@@ -76,10 +76,13 @@ describe('RULE 1: Auth', () => {
     const r = await request(app).post('/api/auth/register').field('name', 'B').field('email', mkEmail('sp')).field('password', '1234567');
     expect(r.status).toBe(400);
   });
-  test('1c Rejects duplicate email', async () => {
+  test('1c Duplicate email re-sends verification', async () => {
     const e = mkEmail('dup'); await request(app).post('/api/auth/register').field('name', 'C').field('email', e).field('password', PASS);
     const r = await request(app).post('/api/auth/register').field('name', 'D').field('email', e).field('password', PASS);
-    expect(r.status).toBe(400);
+    // Re-registering an unverified (pending) email now regenerates the
+    // verification token and resends the email instead of rejecting.
+    expect(r.status).toBe(200);
+    expect(r.body.emailSent).toBe(true);
   });
   test('1d Login returns token', async () => {
     const { user, token } = await createUser('Seller', sellerEmail); sellerId = user._id; sellerToken = token;
@@ -1277,7 +1280,8 @@ describe('RULE 31: Return & Refund Guarantee', () => {
       .send({ reason: 'Item is fine', evidence: ['photo.jpg'] });
     expect(r.status).toBe(200);
     const txn = await Transaction.findById(t._id);
-    expect(txn.status).toBe('return_rejected');
+    // Route sets return_rejected, then auto-transitions to completed.
+    expect(['return_rejected', 'completed']).toContain(txn.status);
   });
 
   test('31d Return creates refund transaction', async () => {

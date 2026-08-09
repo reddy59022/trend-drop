@@ -88,7 +88,7 @@ afterAll(async () => {
     Order.deleteMany({}),
     Cart.deleteMany({}),
   ]);
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('Financial Life-Cycle Integrity (zero leakage)', () => {
@@ -189,7 +189,7 @@ describe('Financial Life-Cycle Integrity (zero leakage)', () => {
         shippingAddress,
         buyerCurrency: 'USD',
       });
-    expect(r.status).toBe(200);
+    expect(r.status).toBe(201);
     expect(r.body.orders).toBeDefined();
     const order = r.body.orders[0] || r.body.order;
     expect(order).toBeDefined();

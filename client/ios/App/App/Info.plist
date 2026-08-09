@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CAPACITOR_DEBUG</key>
-	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
@@ -47,39 +45,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>TrendDrop needs access to your camera to take photos of items you want to sell.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>TrendDrop needs access to your photo library to upload images of items you want to sell.</string>
-    <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>TrendDrop needs access to save shipping labels and purchase receipts to your photo library.</string>
-	<key>NSMicrophoneUsageDescription</key>
-    <string>TrendDrop needs access to your microphone for live video streaming during auctions.</string>
-    <!-- Local development ATS exception:
-         WKWebView blocks cleartext HTTP by default. Capacitor dev builds
-         call http://localhost:5001/api — this allows local networking only;
-         production HTTPS traffic is unaffected. -->
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsLocalNetworking</key>
-        <true/>
-        <key>NSExceptionDomains</key>
-        <dict>
-            <key>localhost</key>
-            <dict>
-                <key>NSExceptionAllowsInsecureHTTPLoads</key>
-                <true/>
-                <key>NSIncludesSubdomains</key>
-                <true/>
-            </dict>
-            <key>127.0.0.1</key>
-            <dict>
-                <key>NSExceptionAllowsInsecureHTTPLoads</key>
-                <true/>
-                <key>NSIncludesSubdomains</key>
-                <true/>
-            </dict>
-        </dict>
-    </dict>
 </dict>
 </plist>

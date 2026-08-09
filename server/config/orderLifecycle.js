@@ -42,6 +42,7 @@ const allowedTransitions = {
   [orderStates.RETURN_ACCEPTED]: [orderStates.RETURN_IN_TRANSIT],
   [orderStates.RETURN_IN_TRANSIT]: [orderStates.RETURN_DELIVERED],
   [orderStates.RETURN_DELIVERED]: [orderStates.REFUNDED, orderStates.DISPUTED],
+  [orderStates.RETURN_REJECTED]: [orderStates.COMPLETED],
   [orderStates.DISPUTED]: [orderStates.DISPUTE_RESOLVED, orderStates.REFUNDED],
   [orderStates.DISPUTE_RESOLVED]: [orderStates.REFUNDED, orderStates.COMPLETED],
   [orderStates.CHARGEBACK_OPEN]: [orderStates.CHARGEBACK_WON, orderStates.CHARGEBACK_LOST],

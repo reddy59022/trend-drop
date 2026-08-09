@@ -7,11 +7,12 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed": "node seed.js",
-    "test": "NODE_ENV=test MONGO_URI=mongodb://localhost:27017/trend-drop-test MONGODB_URI=mongodb://localhost:27017/trend-drop-test jest --runInBand --forceExit --detectOpenHandles --verbose",
-    "test:coverage": "NODE_ENV=test MONGO_URI=mongodb://localhost:27017/trend-drop-test MONGODB_URI=mongodb://localhost:27017/trend-drop-test jest --runInBand --forceExit --detectOpenHandles --coverage"
+    "test": "NODE_ENV=test jest --runInBand --forceExit --detectOpenHandles --verbose",
+    "test:coverage": "NODE_ENV=test jest --runInBand --forceExit --detectOpenHandles --coverage"
   },
   "dependencies": {
     "@sendinblue/client": "^3.3.1",
+    "axios": "^1.19.0",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^1.37.0",
     "compression": "^1.8.1",
@@ -39,7 +40,11 @@
   "jest": {
     "testEnvironment": "node",
     "testTimeout": 30000,
-    "setupFilesAfterEnv": ["./jest.setup.js"]
+    "globalSetup": "./jest.globalSetup.js",
+    "globalTeardown": "./jest.globalTeardown.js",
+    "setupFilesAfterEnv": [
+      "./jest.setup.js"
+    ]
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",

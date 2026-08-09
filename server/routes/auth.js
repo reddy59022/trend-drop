@@ -7,12 +7,13 @@ const PendingUser = require('../models/PendingUser');
 const upload = require('../middleware/upload');
 const { auth } = require('../middleware/auth');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../config/email');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
+const { getJwtSecret } = require('../config/security');
 
 // Helper: Generate JWT + user response
+// Always signs with the SAME secret the auth middleware verifies with
+// (config/security.js), so logins can never produce tokens that 401.
 const generateToken = (user) => {
-  return jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+  return jwt.sign({ id: user._id }, getJwtSecret(), { expiresIn: '30d' });
 };
 
 const userResponse = (user, token) => ({
@@ -66,6 +67,25 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
       return res.status(400).json({ message: 'An account with this email already exists' });
     }
 
+    // A pending (unverified) registration with this email may already exist
+    // (e.g. the user registered but never clicked the link). Resend instead
+    // of silently failing on the unique index.
+    const existingPending = await PendingUser.findOne({ email: email.toLowerCase() });
+    if (existingPending) {
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      existingPending.verificationToken = verificationToken;
+      existingPending.verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      existingPending.expiresAt = existingPending.verificationTokenExpires;
+      await existingPending.save();
+
+      await sendVerificationEmail(existingPending.email, existingPending.name, verificationToken);
+      return res.status(200).json({
+        message: 'A verification email was already sent. We have sent you a fresh one — please check your inbox.',
+        emailSent: true,
+        userId: existingPending._id,
+      });
+    }
+
     // Generate verification token
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
@@ -94,6 +114,7 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
       avatar,
       verificationToken,
       verificationTokenExpires,
+      expiresAt: verificationTokenExpires,
     });
 
     // Send verification email (don't block on failure)
@@ -189,6 +210,7 @@ async function handleVerification(token, res) {
 
 // ============================================================
 // POST /api/auth/resend-verification - Resend verification email
+// Handles BOTH pending (unverified) registrations and existing users.
 // ============================================================
 router.post('/resend-verification', async (req, res) => {
   try {
@@ -198,7 +220,21 @@ router.post('/resend-verification', async (req, res) => {
       return res.status(400).json({ message: 'Email is required' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const normalizedEmail = email.toLowerCase();
+
+    // Pending registrations live in PendingUser until the token is used.
+    const pending = await PendingUser.findOne({ email: normalizedEmail });
+    if (pending) {
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      pending.verificationToken = verificationToken;
+      pending.verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await pending.save();
+
+      await sendVerificationEmail(pending.email, pending.name, verificationToken);
+      return res.json({ message: 'Verification email resent. Please check your inbox.' });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -335,6 +371,116 @@ router.post('/google', async (req, res) => {
 });
 
 // ============================================================
+// Apple Sign-In helpers
+// Verifies the identity token's cryptographic signature against
+// Apple's public JWKS (https://appleid.apple.com/auth/keys) and
+// checks issuer/audience claims. Without a valid signature the
+// request is rejected — a client-supplied token is never trusted.
+// ============================================================
+async function verifyAppleIdentityToken(identityToken) {
+  const crypto = require('crypto');
+
+  // 1. Decode header to find the key id (kid) Apple signed with.
+  let decodedHeader;
+  try {
+    decodedHeader = jwt.decode(identityToken, { complete: true });
+  } catch (err) {
+    return { error: 'Invalid Apple token format' };
+  }
+  if (!decodedHeader || !decodedHeader.header || !decodedHeader.header.kid) {
+    return { error: 'Invalid Apple token (missing key id)' };
+  }
+
+  // 2. Fetch Apple's current public keys.
+  let keys;
+  try {
+    const res = await fetch('https://appleid.apple.com/auth/keys');
+    if (!res.ok) return { error: 'Could not fetch Apple public keys' };
+    const body = await res.json();
+    keys = body.keys || [];
+  } catch (err) {
+    return { error: 'Could not fetch Apple public keys' };
+  }
+
+  // 3. Find the key that matches the token's kid.
+  const jwk = keys.find((k) => k.kid === decodedHeader.header.kid);
+  if (!jwk) {
+    return { error: 'Apple token key not found' };
+  }
+
+  // 4. Verify the signature with the public key.
+  let payload;
+  try {
+    const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    const pem = publicKey.export({ type: 'spki', format: 'pem' });
+    payload = jwt.verify(identityToken, pem, { algorithms: ['RS256'] });
+  } catch (err) {
+    return { error: 'Apple token signature verification failed' };
+  }
+
+  // 5. Validate issuer + audience claims.
+  if (!payload || payload.iss !== 'https://appleid.apple.com') {
+    return { error: 'Invalid Apple token issuer' };
+  }
+  // Audience check only when a client id is actually configured
+  // (tests and local dev may sign tokens without one).
+  const expectedAud = process.env.APPLE_CLIENT_ID;
+  if (expectedAud && expectedAud !== 'CHANGE_ME' && payload.aud && payload.aud !== expectedAud) {
+    return { error: 'Invalid Apple token audience' };
+  }
+  if (!payload.sub) {
+    return { error: 'Invalid Apple token (missing subject)' };
+  }
+
+  return { payload };
+}
+
+// ============================================================
+// Facebook Sign-In helper
+// Verifies the access token against the Facebook Graph API. The
+// /me endpoint only returns data for tokens Facebook actually
+// issued — a forged token fails with an OAuth error. When app
+// credentials are configured we additionally use appsecret_proof.
+// ============================================================
+async function verifyFacebookToken(accessToken) {
+  const crypto = require('crypto');
+  const appSecret = process.env.FB_APP_SECRET;
+
+  const params = new URLSearchParams({
+    fields: 'id,name,email,picture',
+    access_token: accessToken,
+  });
+  // appsecret_proof: HMAC-SHA256 of the token signed with the app secret.
+  // Facebook rejects the request if the proof doesn't match, which stops
+  // token-swapping attacks even if an access token leaks. Added whenever
+  // app credentials are configured; /me alone still verifies the token
+  // against Facebook's API (it only returns data for tokens Facebook
+  // actually issued, so forged tokens fail with an OAuth error).
+  if (appSecret && appSecret !== 'CHANGE_ME') {
+    const proof = crypto.createHmac('sha256', appSecret).update(accessToken).digest('hex');
+    params.set('appsecret_proof', proof);
+  }
+
+  let data;
+  try {
+    const res = await fetch(`https://graph.facebook.com/me?${params.toString()}`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.error) {
+      return { error: 'Invalid Facebook access token' };
+    }
+    data = body;
+  } catch (err) {
+    return { error: 'Could not verify Facebook token' };
+  }
+
+  if (!data.id || !data.email) {
+    return { error: 'Facebook account is missing an email address' };
+  }
+
+  return { data };
+}
+
+// ============================================================
 // Apple Sign-In - POST /api/auth/apple
 // Accepts Apple identity token from frontend, creates/returns user
 // ============================================================
@@ -346,17 +492,9 @@ router.post('/apple', async (req, res) => {
       return res.status(400).json({ message: 'Apple identity token and email required' });
     }
 
-    // Apple token verification - verify JWT claims
-    // In production, verify against Apple's public keys
-    // For now, we validate the token format and proceed
-    const jwt = require('jsonwebtoken');
-    let payload;
-    try {
-      // Decode without verification for development
-      // In production: fetch Apple's JWKS and verify
-      payload = jwt.decode(identityToken);
-    } catch (decodeErr) {
-      return res.status(401).json({ message: 'Invalid Apple token' });
+    const { payload, error: appleError } = await verifyAppleIdentityToken(identityToken);
+    if (appleError || !payload) {
+      return res.status(401).json({ message: appleError || 'Invalid Apple token' });
     }
 
     // Apple provides email only on first sign-in
@@ -381,7 +519,7 @@ router.post('/apple', async (req, res) => {
     } else {
       // Create new user from Apple
       user = await User.create({
-        name: name || payload.name?.firstName || 'Apple User',
+        name: name || (payload.name && (payload.name.firstName || payload.name.lastName) && `${payload.name.firstName || ''} ${payload.name.lastName || ''}`.trim()) || 'Apple User',
         email: userEmail.toLowerCase(),
         appleId: payload.sub,
         authProvider: 'apple',
@@ -409,20 +547,22 @@ router.post('/facebook', async (req, res) => {
       return res.status(400).json({ message: 'Facebook access token and email required' });
     }
 
-    // Verify Facebook token and get user data
-    // In production, call Facebook Graph API to validate
-    // For now, we accept the provided data
-    const userData = {
-      id: `fb_${Date.now()}`, // Placeholder Facebook ID
-      name: name || email.split('@')[0],
-      email: email.toLowerCase(),
-    };
+    // Verify the token against the Facebook Graph API. The /me endpoint
+    // only returns data for tokens Facebook actually issued, so this
+    // rejects forged tokens (previous behavior accepted ANY token and
+    // minted a fake facebookId — anyone could log in as anyone).
+    const { data: userData, error: fbError } = await verifyFacebookToken(accessToken);
+    if (fbError || !userData) {
+      return res.status(401).json({ message: fbError || 'Invalid Facebook token' });
+    }
+
+    const userEmail = (userData.email || email).toLowerCase();
 
     // Check if user exists by facebookId or email
     let user = await User.findOne({
       $or: [
         { facebookId: userData.id },
-        { email: userData.email },
+        { email: userEmail },
       ],
     });
 
@@ -437,8 +577,9 @@ router.post('/facebook', async (req, res) => {
     } else {
       // Create new user from Facebook
       user = await User.create({
-        name: userData.name,
-        email: userData.email,
+        name: userData.name || name || userEmail.split('@')[0],
+        email: userEmail,
+        avatar: (userData.picture && userData.picture.data && userData.picture.data.url) || '',
         facebookId: userData.id,
         authProvider: 'facebook',
         emailVerified: true,

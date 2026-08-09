@@ -4,6 +4,7 @@ const Transaction = require('../models/Transaction');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const Offer = require('../models/Offer');
+const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
 const { calculatePaymentBreakdown, authorizePaymentIntent } = require('../config/payments');
@@ -399,6 +400,58 @@ router.post('/', auth, async (req, res) => {
       });
       await seller.save();
     }
+
+    // Create the consolidated Enterprise Order for this checkout event
+    // (one Order per purchase; the seller fulfills via order.shipments[0])
+    await Order.create({
+      buyer: req.user._id,
+      sellers: [listing.seller],
+      currency: listing.currency || 'USD',
+      items: [{
+        listing: listingId,
+        transaction: transaction._id,
+        seller: listing.seller,
+        title: listing.title || '',
+        price: finalPrice,
+        quantity: 1,
+        currency: listing.currency || 'USD',
+        image: (listing.images || [])[0] || '',
+        condition: listing.condition || '',
+        size: listing.size || '',
+        brand: listing.brand || '',
+      }],
+      shipments: [{
+        seller: listing.seller,
+        items: [transaction._id],
+        shippingCost: breakdown.buyer.shippingCost,
+        currency: listing.currency || 'USD',
+        status: 'pending',
+      }],
+      totals: {
+        subtotal: breakdown.buyer.itemPrice,
+        shipping: breakdown.buyer.shippingCost,
+        protectionFees: breakdown.buyer.buyerProtectionFee,
+        discounts: 0,
+        total: breakdown.buyer.totalPaid,
+      },
+      payment: {
+        paymentIntentId: '',
+        status: 'captured',
+        currency: listing.currency || 'USD',
+        totalHeld: breakdown.buyer.totalPaid,
+      },
+      status: 'confirmed',
+      shippingAddress: {
+        fullName: shippingAddress?.fullName || req.user.name,
+        street1: shippingAddress?.street1,
+        street2: shippingAddress?.street2,
+        city: shippingAddress?.city,
+        state: shippingAddress?.state,
+        postalCode: shippingAddress?.postalCode,
+        country: buyerShipCountry,
+        phone: shippingAddress?.phone,
+      },
+    });
 
     await transaction.populate(['buyer', 'seller', 'listing']);
     res.status(201).json(transaction);

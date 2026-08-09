@@ -24,7 +24,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await User.deleteMany({ _id: { $in: testUserIds } });
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('Settings: Social Links & Store Customization', () => {

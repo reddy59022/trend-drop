@@ -208,7 +208,13 @@ userSchema.index({ 'notifications.read': 1, 'notifications.createdAt': -1 });
 userSchema.index({ country: 1 });
 
 userSchema.pre('save', async function (next) {
+  // Callers that already hold a bcrypt hash (e.g. verification flow copying
+  // a PendingUser hash into a new User) set _skipPasswordHash to avoid
+  // double-hashing.
+  if (this._skipPasswordHash) return next();
   if (!this.isModified('password') || !this.password) return next();
+  // Defense-in-depth: never hash an already-hashed bcrypt string.
+  if (typeof this.password === 'string' && this.password.startsWith('$2')) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
@@ -221,9 +227,9 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 // Generate JWT token for the user (used in tests and elsewhere)
 userSchema.methods.generateAuthToken = function () {
   const jwt = require('jsonwebtoken');
-  const secret = process.env.JWT_SECRET || 'fallback_secret_change_me';
+  const { getJwtSecret } = require('../config/security');
   // Token expiry consistent with other auth routes (30 days)
-  return jwt.sign({ id: this._id }, secret, { expiresIn: '30d' });
+  return jwt.sign({ id: this._id }, getJwtSecret(), { expiresIn: '30d' });
 };
 
 module.exports = mongoose.model('User', userSchema);

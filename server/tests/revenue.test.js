@@ -48,7 +48,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await Promise.all([User.deleteMany({ email: /rev_test/ }), Listing.deleteMany({ title: /Rev Test/ }), Transaction.deleteMany({ $or: [{ listing: { $in: testListingIds } }, { buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] }), Payout.deleteMany({ seller: { $in: testUserIds } })]);
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 // ============================================================

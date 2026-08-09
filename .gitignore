@@ -4,10 +4,9 @@ server/node_modules/
 client/node_modules/
 
 # Environment
-.env
-server/.env
-.env.local
-.env.production
+# Ignore all .env files except the committed template
+.env*
+!.env.example
 
 # Build outputs
 client/build/
@@ -41,7 +40,20 @@ client/ios/App/build/
 coverage/
 .nyc_output/
 
+# Runtime uploads (multer destination: server/routes/bulkListings.js)
+uploads/
+server/uploads/
+
 # Misc
 *.tsbuildinfo
 .eslintcache
 .aider*
+
+# OpenClaw agent workspace files (local only, not for the repo)
+openclaw-workspace-state.json
+memory/
+IDENTITY.md
+USER.md
+TOOLS.md
+HEARTBEAT.md
+SOUL.md

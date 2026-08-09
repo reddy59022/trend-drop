@@ -30,7 +30,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await SavedSearch.deleteMany({ _id: { $in: testSearchIds } });
   await User.deleteMany({ _id: { $in: testUserIds } });
-  await mongoose.disconnect();
+  // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
 describe('Saved Search CRUD', () => {

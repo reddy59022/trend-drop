@@ -357,7 +357,10 @@ router.put('/:id', auth, (req, res, next) => {
       if (status === 'active') updateData.available = true;
       if (status === 'draft') updateData.available = false;
     }
-    if (available !== undefined) updateData.available = Boolean(available);
+    if (available !== undefined) {
+      // multipart form fields arrive as strings: Boolean("false") === true
+      updateData.available = available === true || available === 'true';
+    }
 
     if (price) {
       updateData.price = Number(price);

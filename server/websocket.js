@@ -6,8 +6,7 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const User = require('./models/User');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
+const { getJwtSecret } = require('./config/security');
 
 let io = null;
 let userSocketMap = new Map(); // userId -> socketId
@@ -54,7 +53,7 @@ function initializeWebSocket(server) {
         return next(new Error('Authentication token required'));
       }
 
-      const decoded = jwt.verify(token, JWT_SECRET);
+      const decoded = jwt.verify(token, getJwtSecret());
       const user = await User.findById(decoded.id).select('-password');
       
       if (!user) {

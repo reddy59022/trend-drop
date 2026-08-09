@@ -19,11 +19,16 @@ let rawUri = process.env.MONGO_URI || process.env.MONGODB_URI;
 if (process.env.NODE_ENV === 'test') {
   // Tests use MONGODB_URI convention; never let tests point at the dev DB name.
   rawUri = cleanUri(process.env.MONGODB_URI);
-  if (!rawUri || rawUri.includes('/trend-drop') && !rawUri.includes('trend-drop-test')) {
+  if (!rawUri || (rawUri.includes('/trend-drop') && !rawUri.includes('trend-drop-test'))) {
     rawUri = 'mongodb://localhost:27017/trend-drop-test';
   }
 }
 const mongoUri = cleanUri(rawUri) || 'mongodb://localhost:27017/trend-drop';
+
+const RETRY_COUNT = 3;
+const RETRY_DELAY_MS = 2000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const connectDB = async () => {
   // If mongoose is already connected (e.g., a test suite explicitly connected
@@ -33,24 +38,45 @@ const connectDB = async () => {
   if (mongoose.connection.readyState !== 0) {
     return mongoose.connection;
   }
-  // Attempt to connect using the provided MongoDB URI (standard or SRV).
-  try {
-    const conn = await mongoose.connect(mongoUri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    // Avoid logging after Jest test teardown (suppress noisy post-test output).
-    if (process.env.NODE_ENV !== 'test') {
-      console.log(`MongoDB Connected: ${conn.connection.host}`);
+
+  let lastError;
+
+  for (let attempt = 1; attempt <= RETRY_COUNT; attempt++) {
+    try {
+      // useNewUrlParser/useUnifiedTopology are Mongoose 7 defaults; passing
+      // them is deprecated and may log warnings — rely on the defaults.
+      const conn = await mongoose.connect(mongoUri);
+      // Avoid logging after Jest test teardown (suppress noisy post-test output).
+      if (process.env.NODE_ENV !== 'test') {
+        console.log(`MongoDB Connected: ${conn.connection.host}`);
+      }
+      return conn;
+    } catch (error) {
+      lastError = error;
+      if (process.env.NODE_ENV !== 'test') {
+        console.error(`MongoDB connection attempt ${attempt}/${RETRY_COUNT} failed:`, error.message);
+      }
+      if (attempt < RETRY_COUNT) {
+        await sleep(RETRY_DELAY_MS);
+      }
     }
-    return conn;
-  } catch (error) {
-    // Log the error and continue without a DB connection.
-    if (process.env.NODE_ENV !== 'test') {
-      console.warn('MongoDB connection warning:', error.message);
-    }
-    return null;
   }
+
+  // All retries exhausted.
+  if (process.env.NODE_ENV === 'production') {
+    console.error(
+      `FATAL: Could not connect to MongoDB after ${RETRY_COUNT} attempts (${mongoUri}). ` +
+      'Refusing to start the server without a database. Check MONGO_URI/MONGODB_URI.'
+    );
+    process.exit(1);
+  }
+
+  // Development: surface the error so server.js can handle it (server stays
+  // up for health checks, but the failure is visible).
+  if (process.env.NODE_ENV !== 'test') {
+    console.warn('MongoDB connection failed in development:', lastError.message);
+  }
+  throw lastError;
 };
 
 module.exports = connectDB;

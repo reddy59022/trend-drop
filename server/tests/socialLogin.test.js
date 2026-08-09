@@ -43,7 +43,7 @@ describe('Social Login - Apple & Facebook', () => {
         email: `apple_${Date.now()}@example.com`,
         name: { firstName: 'Apple', lastName: 'User' },
       };
-      const appleToken = jwt.sign(mockPayload, 'secret', { expiresIn: '1h' });
+      const appleToken = global.testJwt.signAppleIdentityToken(mockPayload);
       
       const res = await request(app)
         .post('/api/auth/apple')
@@ -81,7 +81,7 @@ describe('Social Login - Apple & Facebook', () => {
         sub: 'apple_user_456',
         email: existingEmail,
       };
-      const appleToken = jwt.sign(mockPayload, 'secret', { expiresIn: '1h' });
+      const appleToken = global.testJwt.signAppleIdentityToken(mockPayload);
 
       const res = await request(app)
         .post('/api/auth/apple')

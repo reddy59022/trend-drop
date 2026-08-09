@@ -2,47 +2,65 @@ services:
   - type: web
     name: trend-drop
     env: node
-    # Use a stable LTS Node version compatible with react-scripts (v5.x)
+    # Stable LTS Node version compatible with react-scripts (v5.x)
     nodeVersion: 20
-    # Install client dependencies with Yarn (as the project uses Yarn) then build.
-    # Afterwards, install server dependencies with npm.
-    # Install client dependencies using npm (avoids missing Yarn) and build the React app.
-    buildCommand: cd client && npm install && npm run build && cd ../server && npm install
-  # Explicitly set NODE_ENV to production to ensure static file serving.
-  # Start the server; explicitly set NODE_ENV to production.
-  startCommand: NODE_ENV=production node server/server.js
-  envVars:
-    - key: NODE_ENV
-      value: production
-    - key: MONGO_URI
-      # Provide the Atlas connection string as a secret (do not expose in source).
-      # Use the full cluster host as shown in Atlas (e.g., cluster0.vzxzhdy.mongodb.net).
-      value: "mongodb+srv://reddy59022_db_user:anNecZCiT3eJQfre@cluster0.vzxzhdy.mongodb.net/trend-drop?retryWrites=true&w=majority"
-      sync: false
-    - key: JWT_SECRET
-      value: 4QmypzuXr4jWuuQAa6hFuga0Mch4wT19Usj53CRxd14=
-    - key: FRONTEND_URL
-      # Frontend URL used for email links (verification, password reset, etc.)
-      value: "https://trend-drop.onrender.com"
-      sync: false
-    - key: CLOUDINARY_CLOUD_NAME
-      value: dhw3unh0e
-    - key: CLOUDINARY_API_KEY
-      value: "536891585567"
-    - key: CLOUDINARY_API_SECRET
-      value: kxa47g-Rl846xNqfWU0kh3uTN0M
-    # Stripe configuration – set real keys in Render dashboard.
-    - key: STRIPE_SECRET_KEY
-      sync: false
-    - key: STRIPE_WEBHOOK_SECRET
-      sync: false
-      value: kxa47g-Rl846xNqfWU0kh3uTN0M
-    # Google OAuth credentials – keep secret; not synced from .env.
-    - key: GOOGLE_CLIENT_ID
-      # Google OAuth client ID placeholder – set the actual secret in Render's dashboard.
-      value: "<GOOGLE_CLIENT_ID>"
-      sync: false
-    - key: GOOGLE_CLIENT_SECRET
-      # Google OAuth client secret placeholder – set the actual secret in Render's dashboard.
-      value: "<GOOGLE_CLIENT_SECRET>"
-      sync: false
+    # Install client dependencies, build the React app, then install server dependencies.
+    buildCommand: cd client && npm ci && npm run build && cd ../server && npm ci
+    # Express serves the API and the built client statically (NODE_ENV set via envVars below).
+    startCommand: node server/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: "https://trend-drop.onrender.com"
+        sync: false
+      - key: CLIENT_URL
+        value: "https://trend-drop.onrender.com"
+      - key: CLOUDINARY_CLOUD_NAME
+        value: dhw3unh0e
+      # --- Secrets: PLACEHOLDERS ONLY. Set real values in the Render dashboard. ---
+      - key: MONGO_URI
+        value: "mongodb+srv://USERNAME:PASSWORD@cluster0.example.mongodb.net/trend-drop?retryWrites=true&w=majority"
+        sync: false
+      - key: JWT_SECRET
+        value: CHANGE_ME_random_64_chars
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        value: CHANGE_ME
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        value: CHANGE_ME
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        value: CHANGE_ME
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        value: CHANGE_ME
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        value: CHANGE_ME
+        sync: false
+      - key: BREVO_API_KEY
+        value: CHANGE_ME
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        value: CHANGE_ME
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        value: CHANGE_ME
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        value: CHANGE_ME
+        sync: false
+      - key: ADMIN_EMAILS
+        value: CHANGE_ME
+        sync: false
+      - key: APPLE_CLIENT_ID
+        value: CHANGE_ME
+        sync: false
+      - key: FB_APP_ID
+        value: CHANGE_ME
+        sync: false
+      - key: FB_APP_SECRET
+        value: CHANGE_ME
+        sync: false

@@ -29,13 +29,16 @@ router.get('/dashboard', auth, async (req, res) => {
     // Total sales = all sales (completed + pending)
     const totalSales = payouts.reduce((sum, p) => sum + (p.salePrice || 0), 0);
 
+    const completedPayouts = payouts.filter(p => p.status === 'completed');
     // Completed earnings = only from completed payouts
-    const totalEarnings = payouts
-      .filter(p => p.status === 'completed')
+    const totalEarnings = completedPayouts
       .reduce((sum, p) => sum + p.payoutAmount, 0);
 
     // Total commission = from all payouts (completed + pending)
     const totalCommission = payouts.reduce((sum, p) => sum + (p.commissionAmount || 0), 0);
+
+    // Total paid out = sum of completed payouts
+    const totalPaidOut = completedPayouts.reduce((sum, p) => sum + (p.payoutAmount || 0), 0);
 
     // Pending = all pending payouts + transactions without payout records
     const pendingPayouts = payouts.filter(p => p.status === 'pending');
@@ -46,7 +49,7 @@ router.get('/dashboard', auth, async (req, res) => {
       .filter(t => !payouts.some(p => p.transaction?.toString() === t._id.toString()))
       .reduce((sum, t) => sum + (t.paymentBreakdown?.sellerEarnings || 0), 0);
 
-    const completedPayouts = payouts.filter(p => p.status === 'completed');
+    const availableBalance = completedPayouts.reduce((sum, p) => sum + (p.payoutAmount || 0), 0);
 
     res.json({
       commissionRate: COMMISSION_RATE,
@@ -54,6 +57,10 @@ router.get('/dashboard', auth, async (req, res) => {
       totalSales,
       totalCommission,
       totalEarnings,
+      totalEarned: totalEarnings,
+      totalPaidOut,
+      availableBalance: Math.round(availableBalance * 100) / 100,
+      pendingBalance: Math.round((pendingAmount + pendingFromTransactions) * 100) / 100,
       pendingAmount: pendingAmount + pendingFromTransactions,
       pendingCount: pendingPayouts.length + completedTransactions.filter(
         t => !payouts.some(p => p.transaction?.toString() === t._id.toString())
@@ -85,7 +92,12 @@ router.post('/process/:transactionId', auth, async (req, res) => {
     // Check if payout already exists for this transaction
     const existingPayout = await Payout.findOne({ transaction: transaction._id });
     if (existingPayout) {
-      return res.status(400).json({ message: 'Payout already processed for this transaction' });
+      // Idempotent success when the payout is already released (auto-complete
+      // pre-creates a completed payout); only refuse while it is still pending.
+      if (['completed', 'paid', 'processing'].includes(existingPayout.status)) {
+        return res.json({ message: 'Payout already processed', payout: existingPayout });
+      }
+      return res.status(400).json({ message: 'Payout already exists but is not yet completed' });
     }
 
     // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
@@ -180,10 +192,12 @@ router.get('/balance', auth, async (req, res) => {
 
     const availableBalance = completedPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
     const totalCommissionPaid = completedPayouts.reduce((sum, p) => sum + p.commissionAmount, 0);
+    const totalPaidOut = completedPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
 
     res.json({
       availableBalance: Math.round(availableBalance * 100) / 100,
       totalCommissionPaid: Math.round(totalCommissionPaid * 100) / 100,
+      totalPaidOut: Math.round(totalPaidOut * 100) / 100,
       commissionRate: COMMISSION_RATE,
       commissionPercent: COMMISSION_RATE * 100,
     });

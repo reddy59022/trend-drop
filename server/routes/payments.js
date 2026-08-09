@@ -311,8 +311,6 @@ router.post('/confirm-batch', auth, async (req, res) => {
 
     // Verify payment status from Stripe
     const paymentIntent = await retrievePaymentIntent(paymentIntentId);
-    console.log("DEBUG confirm-batch: paymentIntentId:", paymentIntentId);
-    console.log("DEBUG confirm-batch: paymentIntent:", JSON.stringify(paymentIntent, null, 2));
     const VALID_STATUSES = ['succeeded', 'requires_capture'];
     if (!VALID_STATUSES.includes(paymentIntent.status)) {
       return res.status(400).json({
@@ -528,18 +526,29 @@ router.post('/confirm-batch', auth, async (req, res) => {
     }
 
     // ========== PHASE 4: Update seller balances + notifications ==========
+    // Use atomic $inc/$push instead of save() to avoid Mongoose VersionError
+    // when the same seller has multiple items in a batch checkout.
     for (const update of sellerBalanceUpdates) {
       const { sellerDoc, earnings, listingId, transactionId, sellerCurrency } = update;
       if (sellerDoc) {
-        sellerDoc.balance.pending = (sellerDoc.balance.pending || 0) + earnings;
-        sellerDoc.notifications.unshift({
-          type: 'sale',
-          from: req.user._id,
-          listing: listingId,
-          transaction: transactionId,
-          message: `Item sold! You'll earn ${earnings} ${sellerCurrency}.`,
-        });
-        await sellerDoc.save();
+        await User.findByIdAndUpdate(
+          sellerDoc._id,
+          {
+            $inc: { 'balance.pending': earnings },
+            $push: {
+              notifications: {
+                $each: [{
+                  type: 'sale',
+                  from: req.user._id,
+                  listing: listingId,
+                  transaction: transactionId,
+                  message: `Item sold! You'll earn ${earnings} ${sellerCurrency}.`,
+                }],
+                $position: 0,
+              },
+            },
+          }
+        );
       }
     }
 
@@ -622,9 +631,15 @@ router.post('/confirm-batch', auth, async (req, res) => {
         ? Number(paymentIntent.metadata.promoDiscount) : 0)
         + (paymentIntent.metadata?.bundleDiscount ? Number(paymentIntent.metadata.bundleDiscount) : 0);
 
+      // Validate seller IDs before creating the order
+      const validSellers = [...sellerGroups.values()].map(g => g.seller._id).filter(id => id);
+      if (validSellers.length === 0) {
+        throw new Error('No valid sellers found for order creation');
+      }
+      
       createdOrder = await Order.create({
         buyer: req.user._id,
-        sellers: [...sellerGroups.keys()],
+        sellers: validSellers,
         currency: 'USD',
         items: orderItems,
         shipments,
@@ -677,10 +692,11 @@ router.post('/confirm-batch', auth, async (req, res) => {
       }
     }
 
-    res.json({
+    res.status(201).json({
       transactions: createdTransactions,
       captureResult: { id: captureResult.id, status: captureResult.status },
       orders: createdOrder ? [createdOrder] : [],
+      orderId: createdOrder ? createdOrder._id : null,
     });
 
   } catch (error) {
