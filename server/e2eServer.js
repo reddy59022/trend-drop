@@ -23,16 +23,19 @@ async function main() {
   process.env.JWT_SECRET = 'e2e-test-secret-do-not-use-in-prod';
   process.env.FRONTEND_URL = `http://localhost:${process.env.PORT}`;
   process.env.CLIENT_URL = `http://localhost:${process.env.PORT}`;
-  // Placeholder keys — E2E never touches real external services
-  process.env.CLOUDINARY_CLOUD_NAME = 'placeholder';
-  process.env.CLOUDINARY_API_KEY = 'placeholder';
-  process.env.CLOUDINARY_API_SECRET = 'placeholder';
-  process.env.STRIPE_SECRET_KEY = 'sk_test_placeholder';
-  process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_placeholder';
-  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_placeholder';
-  process.env.BREVO_API_KEY = 'xkeysib-placeholder';
-  process.env.GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
-  process.env.REACT_APP_GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
+  // Placeholder keys — E2E never touches real external services UNLESS the
+  // caller explicitly provides real keys (e.g. Stripe test-mode live checkout
+  // in stripe-checkout.spec.js). Only set placeholders when the env var is
+  // absent, so real keys passed to e2eServer flow through to the app.
+  if (!process.env.CLOUDINARY_CLOUD_NAME) process.env.CLOUDINARY_CLOUD_NAME = 'placeholder';
+  if (!process.env.CLOUDINARY_API_KEY) process.env.CLOUDINARY_API_KEY = 'placeholder';
+  if (!process.env.CLOUDINARY_API_SECRET) process.env.CLOUDINARY_API_SECRET = 'placeholder';
+  if (!process.env.STRIPE_SECRET_KEY) process.env.STRIPE_SECRET_KEY = 'sk_test_placeholder';
+  if (!process.env.STRIPE_PUBLISHABLE_KEY) process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_placeholder';
+  if (!process.env.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = 'whsec_placeholder';
+  if (!process.env.BREVO_API_KEY) process.env.BREVO_API_KEY = 'xkeysib-placeholder';
+  if (!process.env.GOOGLE_CLIENT_ID) process.env.GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
+  if (!process.env.REACT_APP_GOOGLE_CLIENT_ID) process.env.REACT_APP_GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
 
   // 3. Seed data (must happen after mongoose connects, so we require models
   //    and connect manually before seeding; server.js will reuse the connection)

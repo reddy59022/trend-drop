@@ -108,6 +108,9 @@ jest.mock('stripe', () => {
     webhooks: {
       constructEvent: jest.fn((payload, sig) => {
         if (sig === 'bad') throw new Error('Invalid signature');
+        if (Buffer.isBuffer(payload)) {
+          return JSON.parse(payload.toString());
+        }
         return typeof payload === 'string' ? JSON.parse(payload) : payload;
       }),
     },

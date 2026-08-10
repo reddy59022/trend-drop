@@ -162,7 +162,7 @@ const transactionSchema = new mongoose.Schema({
     inspectionNotes: String,
     trackingNumber: String,
   },
-  // Dispute info
+  // Dispute info (internal platform dispute)
   dispute: {
     reason: String,
     filedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -171,6 +171,15 @@ const transactionSchema = new mongoose.Schema({
     resolution: String,
     evidence: [String],
     responseDeadline: Date,
+  },
+  // Stripe chargeback / dispute tracking (from Stripe webhooks)
+  disputeInfo: {
+    stripeDisputeId: { type: String, default: '' },
+    reason: { type: String, default: '' },
+    status: { type: String, default: '' },
+    openedAt: { type: Date, default: null },
+    evidenceDueBy: { type: Date, default: null },
+    closedAt: { type: Date, default: null },
   },
   // Cancellation info
   cancellation: {
@@ -208,5 +217,6 @@ transactionSchema.index({ seller: 1, createdAt: -1 });
 transactionSchema.index({ status: 1 });
 transactionSchema.index({ 'shipping.trackingNumber': 1 });
 transactionSchema.index({ 'autoTracking.nextCheck': 1, status: 1 });
+transactionSchema.index({ 'disputeInfo.stripeDisputeId': 1 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

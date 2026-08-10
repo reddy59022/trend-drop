@@ -50,9 +50,12 @@ const recordBoostFeeOwed = async (listingId, boostFee, saleQuantity = 1) => {
 
 router.get('/publishable-key', (req, res) => {
   const key = process.env.STRIPE_PUBLISHABLE_KEY;
+  // configured must be FALSE for placeholder/dev keys: the client only boots
+  // Stripe.js (and enables checkout) when a REAL key is present. Placeholder
+  // keys start with 'pk_' too, so filter them explicitly.
   res.json({ 
     publishableKey: key || 'pk_test_placeholder',
-    configured: !!(key && key.startsWith('pk_')),
+    configured: !!(key && key.startsWith('pk_') && !/placeholder|CHANGE_ME|xxxx/i.test(key)),
   });
 });
 
@@ -151,7 +154,23 @@ router.post('/create-intent', auth, async (req, res) => {
           isNegotiated = true;
         }
       } else if (item.negotiatedPrice) {
-        salePrice = item.negotiatedPrice;
+        // SECURITY: never trust a client-supplied price. Cart items carry
+        // negotiatedPrice but no offerId, so resolve the accepted offer
+        // server-side and require an exact match — otherwise a buyer could
+        // set any price (e.g. $0.01) and pay pennies for the item.
+        const acceptedOffer = await Offer.findOne({
+          listing: listing._id,
+          buyer: req.user._id,
+          status: 'accepted',
+        });
+        if (!acceptedOffer) {
+          return res.status(400).json({ message: 'Negotiated price requires an accepted offer', failedItem: item.listingId });
+        }
+        const offerPrice = acceptedOffer.acceptedPrice || acceptedOffer.counterAmount || acceptedOffer.amount;
+        if (Math.abs(item.negotiatedPrice - offerPrice) > 0.01) {
+          return res.status(400).json({ message: 'Price mismatch with accepted offer', failedItem: item.listingId });
+        }
+        salePrice = offerPrice;
         isNegotiated = true;
       }
 
@@ -369,7 +388,21 @@ router.post('/confirm-batch', auth, async (req, res) => {
           return res.status(400).json({ message: `Price mismatch. Expected ${salePrice}`, failedItem: item.listingId });
         }
       } else if (item.negotiatedPrice) {
-        salePrice = item.negotiatedPrice;
+        // SECURITY: mirror create-intent — negotiatedPrice must match an
+        // accepted offer for this buyer+listing (see create-intent).
+        const acceptedOffer = await Offer.findOne({
+          listing: listing._id,
+          buyer: req.user._id,
+          status: 'accepted',
+        });
+        if (!acceptedOffer) {
+          return res.status(400).json({ message: 'Negotiated price requires an accepted offer', failedItem: item.listingId });
+        }
+        const offerPrice = acceptedOffer.acceptedPrice || acceptedOffer.counterAmount || acceptedOffer.amount;
+        if (Math.abs(item.negotiatedPrice - offerPrice) > 0.01) {
+          return res.status(400).json({ message: 'Price mismatch with accepted offer', failedItem: item.listingId });
+        }
+        salePrice = offerPrice;
       }
       
       // ZERO-LEAKAGE QUANTITY FIX: one label for the whole quantity;

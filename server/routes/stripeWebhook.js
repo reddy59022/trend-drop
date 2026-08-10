@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
@@ -30,35 +31,46 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
         const dispute = event.data.object;
         const paymentIntentId = dispute.payment_intent;
         
-        console.log(`Chargeback created for payment: ${paymentIntentId}`);
+        console.log(`[WEBHOOK] charge.dispute.created for payment_intent=${paymentIntentId}`);
         
         // Find the transaction by payment intent
         const transaction = await Transaction.findOne({
           'stripePaymentIntentId': paymentIntentId
         });
         
+        console.log(`[WEBHOOK] found transaction:`, transaction ? transaction._id : 'NOT FOUND');
+        
         if (transaction) {
+          // IDEMPOTENCY: Stripe can re-deliver the same event. Only open the
+          // dispute (and notify the seller) when this is a NEW dispute — a
+          // duplicate delivery must not push duplicate notifications or reset
+          // evidence deadlines that may already have been updated.
+          const isNewDispute = !transaction.disputeInfo ||
+            transaction.disputeInfo.stripeDisputeId !== dispute.id ||
+            transaction.status !== 'chargeback_open';
           transaction.status = 'chargeback_open';
           transaction.disputeInfo = {
             stripeDisputeId: dispute.id,
             reason: dispute.reason,
             status: dispute.status,
-            openedAt: new Date(),
+            openedAt: transaction.disputeInfo?.openedAt || new Date(),
             evidenceDueBy: dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000) : null,
           };
           await transaction.save();
           
           // Notify seller about the chargeback
-          const seller = await User.findById(transaction.seller);
-          if (seller) {
-            seller.notifications.unshift({
-              type: 'dispute',
-              from: transaction.buyer,
-              listing: transaction.listing,
-              transaction: transaction._id,
-              message: `A chargeback has been filed for your sale. Please provide evidence.`,
-            });
-            await seller.save();
+          if (isNewDispute) {
+            const seller = await User.findById(transaction.seller);
+            if (seller) {
+              seller.notifications.unshift({
+                type: 'dispute',
+                from: transaction.buyer,
+                listing: transaction.listing,
+                transaction: transaction._id,
+                message: `A chargeback has been filed for your sale. Please provide evidence.`,
+              });
+              await seller.save();
+            }
           }
         }
         break;
@@ -67,54 +79,59 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
       case 'charge.dispute.updated': {
         const dispute = event.data.object;
         
-        console.log(`Chargeback updated: ${dispute.id} -> status: ${dispute.status}`);
+        console.log(`[WEBHOOK] charge.dispute.updated dispute=${dispute.id} status=${dispute.status} payment_intent=${dispute.payment_intent}`);
         
         // Find transaction by stripe dispute ID
         const transaction = await Transaction.findOne({
           'disputeInfo.stripeDisputeId': dispute.id
         });
         
+        console.log(`[WEBHOOK] found transaction:`, transaction ? transaction._id : 'NOT FOUND');
+        
         if (transaction) {
           // If won, restore funds to seller
           if (dispute.status === 'won') {
-            transaction.status = 'chargeback_won';
-            // Restore seller's pending balance
-            if (transaction.paymentBreakdown?.sellerEarnings) {
-              const seller = await User.findById(transaction.seller);
-              if (seller) {
-                seller.balance.pending = (seller.balance.pending || 0) + transaction.paymentBreakdown.sellerEarnings;
-                seller.notifications.unshift({
-                  type: 'dispute',
-                  from: transaction.buyer,
-                  listing: transaction.listing,
-                  transaction: transaction._id,
-                  message: `Chargeback resolved in your favor. Funds restored.`,
-                });
-                await seller.save();
+            // IDEMPOTENCY: only credit once — Stripe re-delivers events and
+            // also emits multiple 'updated' events as the dispute progresses.
+            if (transaction.status !== 'chargeback_won') {
+              transaction.status = 'chargeback_won';
+              // Restore seller's pending balance
+              if (transaction.paymentBreakdown?.sellerEarnings) {
+                const seller = await User.findById(transaction.seller);
+                if (seller) {
+                  seller.balance.pending = (seller.balance.pending || 0) + transaction.paymentBreakdown.sellerEarnings;
+                  seller.notifications.unshift({
+                    type: 'dispute',
+                    from: transaction.buyer,
+                    listing: transaction.listing,
+                    transaction: transaction._id,
+                    message: `Chargeback resolved in your favor. Funds restored.`,
+                  });
+                  await seller.save();
+                }
               }
             }
           } else if (dispute.status === 'lost') {
-            transaction.status = 'chargeback_lost';
-            // Deduct from seller's balance if available
-            if (transaction.paymentBreakdown?.sellerEarnings) {
-              const seller = await User.findById(transaction.seller);
-              if (seller) {
-                const amount = transaction.paymentBreakdown.sellerEarnings;
-                const currentPending = seller.balance.pending || 0;
-                if (currentPending >= amount) {
-                  seller.balance.pending = Math.round((currentPending - amount) * 100) / 100;
-                } else {
+            // IDEMPOTENCY: only debit once (see 'won' above).
+            if (transaction.status !== 'chargeback_lost') {
+              transaction.status = 'chargeback_lost';
+              // Deduct from seller's balance if available
+              if (transaction.paymentBreakdown?.sellerEarnings) {
+                const seller = await User.findById(transaction.seller);
+                if (seller) {
+                  const amount = transaction.paymentBreakdown.sellerEarnings;
+                  const currentPending = seller.balance.pending || 0;
                   // Negative balance - seller owes platform
                   seller.balance.pending = Math.round((currentPending - amount) * 100) / 100;
+                  seller.notifications.unshift({
+                    type: 'dispute',
+                    from: transaction.buyer,
+                    listing: transaction.listing,
+                    transaction: transaction._id,
+                    message: `Chargeback lost. The sale amount has been deducted from your balance.`,
+                  });
+                  await seller.save();
                 }
-                seller.notifications.unshift({
-                  type: 'dispute',
-                  from: transaction.buyer,
-                  listing: transaction.listing,
-                  transaction: transaction._id,
-                  message: `Chargeback lost. The sale amount has been deducted from your balance.`,
-                });
-                await seller.save();
               }
             }
           }
@@ -143,11 +160,18 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
 
       case 'payment_intent.succeeded': {
         const paymentIntent = event.data.object;
-        // Find transaction by metadata
-        const transaction = await Transaction.findById(paymentIntent.metadata.transactionId);
-        if (transaction && transaction.status === 'paid') {
-          transaction.stripePaymentIntentId = paymentIntent.id;
-          await transaction.save();
+        // Only events created by OUR payment intents carry transactionId; a
+        // missing/malformed id must not turn into a CastError (500 → Stripe
+        // retries forever). Signature is already verified, but metadata is
+        // still untrusted input — validate before touching the DB.
+        const txId = paymentIntent.metadata?.transactionId;
+        if (txId && mongoose.isValidObjectId(txId)) {
+          // Find transaction by metadata
+          const transaction = await Transaction.findById(txId);
+          if (transaction && transaction.status === 'paid') {
+            transaction.stripePaymentIntentId = paymentIntent.id;
+            await transaction.save();
+          }
         }
         break;
       }
