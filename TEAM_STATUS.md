@@ -49,3 +49,9 @@ Working as a full autonomous software team per `AGENTS.md`. Status by role:
 - iOS build still requires a full Xcode.app install (CLT-only machine — xcodebuild unavailable). Android debug APK builds fine.
 - Store submission (Google Play / App Store) is a manual business step.
 - E2E artifacts are local-only; CI integration (GitHub Actions) not configured.
+
+## Operating Process (standing, per Sunny 2026-08-09)
+- **Source of truth:** `BACKLOG_TRACKING.md` — read first at every startup.
+- **Daily wake:** cron `Daily backlog kickoff` (09:00 America/Chicago) restores context and drives the next story.
+- **Acceptance gate:** a story/feature is accepted ONLY when its Definition of Done passes (tests + build + review + commit + push + deploy verified) — never on code alone.
+- **Failure handling:** any red test from a prior day is priority #1 the next morning.
