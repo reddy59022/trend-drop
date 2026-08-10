@@ -1,7 +1,7 @@
 # BACKLOG TRACKING — Trend-Drop Marketplace
 
 _Source of truth for story status. Read this FIRST every day at startup._
-_Last sync: 2026-08-09 21:10 CDT · Baseline: jest 1084/1084 · E2E 25/25 · Render live & healthy_
+_Last sync: 2026-08-10 14:07 CDT · Baseline: jest 1084/1084 · E2E 25/25 · Render live & healthy · CI run #4 GREEN (31417224258) · TD-8.1 Accepted_
 
 ---
 
@@ -36,14 +36,14 @@ A story is **Accepted only when ALL** hold:
 
 | Story | Title | Status | Owner | Notes |
 |---|---|---|---|---|
-| **TD-8.1** | CI pipeline (GitHub Actions) | **In Progress** | DevOps | Workflow written; local verification passed (jest 1084/1084, build OK, E2E 25/25); ready for commit/push |
+| **TD-1.1** | Stripe test-mode payments | **In Progress** | Backend/QA | CI green; starting Stripe checkout E2E + security review |
 | TD-1.1 | Stripe test-mode payments | Next after CI | Backend/QA | Unblocks full checkout E2E |
 
 ## 5. Full Story Tracker (31 stories / 10 epics)
 
 | ID | Story | Epic | Pri | Size | Status | Owner | Test evidence | Accepted |
 |---|---|---|---|---|---|---|---|---|
-| TD-1.1 | Real payment processing (Stripe test mode) | 1 | P0 | L | Backlog | Backend | – | – |
+| TD-1.1 | Real payment processing (Stripe test mode) | 1 | P0 | L | **In Progress** | Backend | – | – |
 | TD-1.2 | Functional media uploads (Cloudinary) | 1 | P0 | M | Backlog | Frontend | – | – |
 | TD-1.3 | Verification & transactional email (Brevo/SMTP) | 1 | P0 | M | Backlog | Backend | – | – |
 | TD-1.4 | Social sign-in (Google/Apple/Facebook) | 1 | P0 | L | Backlog | Frontend | – | – |
@@ -65,7 +65,7 @@ A story is **Accepted only when ALL** hold:
 | TD-6.3 | Similar items / complete-the-look | 6 | P1 | M | Backlog | Backend | – | – |
 | TD-7.1 | Social sharing with OG/meta tags | 7 | P1 | M | Backlog | Frontend | – | – |
 | TD-7.2 | Offer-sharing/referral attribution verification | 7 | P1 | L | Backlog | QA | – | – |
-| TD-8.1 | CI pipeline (GitHub Actions) | 8 | P1 | M | **In Progress** | DevOps | jest 1084/1084, E2E 25/25, client build OK | – |
+| TD-8.1 | CI pipeline (GitHub Actions) | 8 | P1 | M | **Accepted** | DevOps | CI run #4 green (31417224258): jest 1084/1084, build OK, E2E 25/25 on GitHub Actions | 2026-08-10 |
 | TD-8.2 | Error monitoring & structured logging | 8 | P1 | M | Backlog | Backend | – | – |
 | TD-8.3 | Product analytics events | 8 | P1 | M | Backlog | Frontend | – | – |
 | TD-9.1 | Privacy: account deletion & data export | 9 | P2 | M | Backlog | Backend | – | – |
@@ -80,3 +80,4 @@ A story is **Accepted only when ALL** hold:
 | Date | Story | Result | Evidence | Deploy |
 |---|---|---|---|---|
 | 2026-08-09 | Baseline (pre-sprint) | Cert | jest 1084/1084 (81 suites); Playwright 25/25; live `/health` ok | live |
+| 2026-08-10 | TD-8.1 CI pipeline | Accepted | CI run #4 green (31417224258, commit 6f4d4e6): jest 1084/1084, client build OK (eslint warnings non-blocking), Playwright 25/25 | live |
