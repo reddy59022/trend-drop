@@ -115,6 +115,62 @@ jest.mock('stripe', () => {
   return jest.fn(() => mockClient);
 });
 
+// Pin Cloudinary to hermetic values so server/.env real keys never re-populate
+// (server.js calls dotenv.config() after this file runs; dotenv only sets
+// absent vars, so pinning beats deleting). Tests must never reach
+// res.cloudinary.com — mocked below.
+process.env.CLOUDINARY_CLOUD_NAME = 'trenddrop-test';
+process.env.CLOUDINARY_API_KEY = 'test_key';
+process.env.CLOUDINARY_API_SECRET = 'test_secret';
+
+// Mock the Cloudinary SDK entirely: uploads, streams (multer-storage-cloudinary
+// pipes file.stream into uploader.upload_stream), and destroys are all
+// in-memory with deterministic public URLs.
+jest.mock('cloudinary', () => {
+  const { PassThrough } = require('stream');
+  const publicUrl = (publicId) =>
+    `https://res.cloudinary.com/trenddrop-test/image/upload/v1/${publicId}.webp`;
+  const mockUploader = {
+    upload: jest.fn(async (file, options = {}) => {
+      const publicId = `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        public_id: publicId,
+        secure_url: publicUrl(publicId),
+        url: publicUrl(publicId).replace('https://', 'http://'),
+        format: 'webp',
+        width: 800,
+        height: 800,
+        bytes: 1234,
+        created_at: new Date().toISOString(),
+      };
+    }),
+    destroy: jest.fn(async (publicId) => ({ result: 'ok', public_id: publicId })),
+    upload_stream: jest.fn((options, callback) => {
+      const stream = new PassThrough();
+      const chunks = [];
+      stream.on('data', (c) => chunks.push(c));
+      stream.on('end', () => {
+        const publicId = `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        callback(null, {
+          public_id: publicId,
+          secure_url: publicUrl(publicId),
+          url: publicUrl(publicId).replace('https://', 'http://'),
+          format: 'webp',
+          bytes: Buffer.concat(chunks).length,
+        });
+      });
+      return stream;
+    }),
+  };
+  return {
+    v2: {
+      config: jest.fn(),
+      uploader: mockUploader,
+      api: { resources: jest.fn(async () => ({ resources: [] })) },
+    },
+  };
+});
+
 // ---------------------------------------------------------------------------
 // 2. Hermetic external calls
 // ---------------------------------------------------------------------------
