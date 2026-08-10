@@ -36,7 +36,7 @@ A story is **Accepted only when ALL** hold:
 
 | Story | Title | Status | Owner | Notes |
 |---|---|---|---|---|
-| **TD-8.1** | CI pipeline (GitHub Actions) | **Next up** | DevOps | De-risks every later story; run jest + E2E on push |
+| **TD-8.1** | CI pipeline (GitHub Actions) | **In Progress** | DevOps | Workflow written; local verification passed (jest 1084/1084, build OK, E2E 25/25); ready for commit/push |
 | TD-1.1 | Stripe test-mode payments | Next after CI | Backend/QA | Unblocks full checkout E2E |
 
 ## 5. Full Story Tracker (31 stories / 10 epics)
@@ -65,7 +65,7 @@ A story is **Accepted only when ALL** hold:
 | TD-6.3 | Similar items / complete-the-look | 6 | P1 | M | Backlog | Backend | – | – |
 | TD-7.1 | Social sharing with OG/meta tags | 7 | P1 | M | Backlog | Frontend | – | – |
 | TD-7.2 | Offer-sharing/referral attribution verification | 7 | P1 | L | Backlog | QA | – | – |
-| TD-8.1 | CI pipeline (GitHub Actions) | 8 | P1 | M | **Next up** | DevOps | – | – |
+| TD-8.1 | CI pipeline (GitHub Actions) | 8 | P1 | M | **In Progress** | DevOps | jest 1084/1084, E2E 25/25, client build OK | – |
 | TD-8.2 | Error monitoring & structured logging | 8 | P1 | M | Backlog | Backend | – | – |
 | TD-8.3 | Product analytics events | 8 | P1 | M | Backlog | Frontend | – | – |
 | TD-9.1 | Privacy: account deletion & data export | 9 | P2 | M | Backlog | Backend | – | – |

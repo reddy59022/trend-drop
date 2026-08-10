@@ -1,0 +1,134 @@
+name: CI
+
+# TD-8.1 — CI pipeline (GitHub Actions)
+# Runs the full verification gate on every push to main and every PR:
+#   server jest suite (>=1084 tests) -> client production build -> Playwright E2E (>=25/25)
+# A failing step fails the job and blocks merge (when branch protection
+# requires the "test" status check). A green run posts a test summary.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  # Pin the same versions used/verified locally (macOS 12 gotchas do not
+  # apply on CI runners, but pinning keeps cache keys + behavior stable).
+  MONGOMS_VERSION: "7.0.14"
+
+jobs:
+  test:
+    name: Jest + build + Playwright E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20 # matches render.yaml nodeVersion
+          cache: npm # caches ROOT node_modules (Playwright + test runner)
+
+      - name: Cache server deps
+        uses: actions/cache@v4
+        with:
+          path: server/node_modules
+          key: npm-server-${{ hashFiles('server/package-lock.json') }}
+
+      - name: Cache client deps
+        uses: actions/cache@v4
+        with:
+          path: client/node_modules
+          key: npm-client-${{ hashFiles('client/package-lock.json') }}
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Cache mongod binary (mongodb-memory-server)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-${{ runner.os }}-${{ env.MONGOMS_VERSION }}
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install server deps
+        working-directory: server
+        run: npm ci
+
+      - name: Install client deps
+        working-directory: client
+        run: npm ci
+
+      - name: Server tests (jest, full suite)
+        id: jest
+        working-directory: server
+        run: |
+          set -o pipefail
+          npm run test:ci 2>&1 | tee /tmp/jest.log
+          echo "summary=$(grep -E '^Tests:' /tmp/jest.log | tail -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Client unit tests (react-scripts, CI mode)
+        working-directory: client
+        run: npm test
+
+      - name: Client production build
+        working-directory: client
+        run: npm run build
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests (Playwright, headless)
+        id: e2e
+        run: |
+          set -o pipefail
+          npx playwright test 2>&1 | tee /tmp/e2e.log
+          echo "summary=$(grep -E '[0-9]+ (passed|failed)' /tmp/e2e.log | tail -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Post test summary
+        if: always()
+        run: |
+          {
+            echo "## CI verification — ${{ github.sha }}"
+            echo ""
+            echo "| Stage | Result |"
+            echo "| --- | --- |"
+            echo "| Server jest | ${{ steps.jest.outputs.summary || 'skipped/failed' }} |"
+            echo "| Client build | see job log (react-scripts build) |"
+            echo "| Playwright E2E | ${{ steps.e2e.outputs.summary || 'skipped/failed' }} |"
+            echo ""
+            echo "_Status: ${{ job.status }}_"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            e2e/reports/
+            e2e/test-results/
+          retention-days: 7
+
+      - name: Upload jest log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-log
+          path: /tmp/jest.log
+          retention-days: 7

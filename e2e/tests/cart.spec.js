@@ -55,6 +55,10 @@ test.describe('Cart & checkout', () => {
     await page.reload();
   });
 
+  test.afterEach(async ({ page }) => {
+    await clearCart(page);
+  });
+
   test('Add item to cart from listing detail', async ({ page }) => {
     await addJacketToCart(page);
     await page.goto('/cart');

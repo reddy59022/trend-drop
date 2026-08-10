@@ -10,7 +10,10 @@
     "install-all": "npm install && cd server && npm install && cd ../client && npm install",
     "build": "cd client && npm run build",
     "heroku-postbuild": "npm run build",
-    "start:all": "bash start.sh"
+    "start:all": "bash start.sh",
+    "test:server": "cd server && npm run test:ci",
+    "test:e2e": "npx playwright test",
+    "test:ci": "npm run test:server && npm run build && npm run test:e2e"
   },
   "engines": {
     "node": ">=14.0.0"
