@@ -57,3 +57,17 @@ USER.md
 TOOLS.md
 HEARTBEAT.md
 SOUL.md
+
+# Playwright E2E artifacts (generated runs — never commit)
+test-results/
+playwright-report/
+e2e/test-results/
+e2e/playwright-report/
+e2e/results/
+e2e/output/
+e2e/screenshots/
+e2e/videos/
+e2e/traces/
+e2e/.cache/
+blob-report/
+e2e/reports/

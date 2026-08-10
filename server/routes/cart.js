@@ -15,8 +15,7 @@ const { getPreferredCarrier, generateLabel } = require('../config/shipping');
 // GET /api/cart - Get user cart
 router.get('/', auth, async (req, res) => {
   try {
-    let cart = await Cart.findOne({ user: req.user._id, status: 'active' })
-      .populate('items.listing', 'title price images available sold quantity category weight');
+    let cart = await Cart.findOne({ user: req.user._id, status: 'active' });
 
     // Create cart if doesn't exist
     if (!cart) {
@@ -28,12 +27,27 @@ router.get('/', auth, async (req, res) => {
       });
     }
 
-    // Filter out items for listings that are no longer available
+    // Filter out items for listings that are no longer available.
+    // IMPORTANT: filter on RAW listing ids BEFORE populating — saving a
+    // populated cart embeds the listing objects into items.listing, which
+    // breaks subsequent populate() calls and silently empties the cart
+    // (found by E2E: add-to-cart then refresh lost the item).
     if (cart.items && cart.items.length > 0) {
-      cart.items = cart.items.filter(item => item.listing && item.listing.available && !item.listing.sold);
-      await cart.save();
+      const rawIds = cart.items.map(item => item.listing).filter(Boolean);
+      const validListings = await Listing.find({
+        _id: { $in: rawIds },
+        available: true,
+        sold: false,
+      }).select('_id');
+      const validIds = new Set(validListings.map(l => l._id.toString()));
+      const kept = cart.items.filter(item => item.listing && validIds.has(item.listing.toString()));
+      if (kept.length !== cart.items.length) {
+        cart.items = kept;
+        await cart.save();
+      }
     }
 
+    await cart.populate('items.listing', 'title price images available sold quantity category weight');
     res.json({ cart });
   } catch (error) {
     console.error('Get cart error:', error);

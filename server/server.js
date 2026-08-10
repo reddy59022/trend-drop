@@ -124,13 +124,30 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Performance: Set cache headers for API responses (must be BEFORE routes)
+// DEFAULT: no-store. Only opt-in caching for genuinely public, read-only
+// catalog endpoints. Everything user-specific (cart, offers, messages,
+// notifications, wishlist, orders, payouts, …) must never be cached — a
+// 5-minute stale cart response was served from browser cache after the user
+// added an item (found by E2E: add-to-cart then refresh lost the item).
+const PUBLIC_CACHE_PATHS = [
+  '/listings',        // public catalog GETs (incl. /listings/seller/:id)
+  '/trends',
+  '/trend-forecast',
+  '/search',
+  '/size-guides',
+  '/shipping',
+  '/pricehistory',
+  '/seller-badges',
+  '/seller-communities',
+  '/brands',
+  '/colors',
+];
 app.use('/api', (req, res, next) => {
-  // Don't cache auth/transaction/payment endpoints
-  if (req.path.includes('/auth') || req.path.includes('/transactions') || req.path.includes('/payments') || req.path.includes('/orders') || req.path.includes('/payouts')) {
+  const isPublic = PUBLIC_CACHE_PATHS.some(p => req.path.startsWith(p));
+  if (req.method === 'GET' && isPublic) {
+    res.set('Cache-Control', 'public, max-age=60'); // 60s for catalog data
+  } else {
     res.set('Cache-Control', 'no-store');
-  } else if (req.method === 'GET') {
-    // Cache read-only endpoints for 5 minutes
-    res.set('Cache-Control', 'public, max-age=300');
   }
   // Enable ETag for conditional requests
   res.set('ETag', '');

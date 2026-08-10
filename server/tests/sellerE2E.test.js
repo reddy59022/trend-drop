@@ -621,6 +621,27 @@ describe('SELLER TYPE B — Relist & Delete After Sale', () => {
 });
 
 // ============================================================
+// SUMMARY — full business demonstration (all phases)
+// ============================================================
+describe('FULL SELLER BUSINESS DEMONSTRATION — Integrated Summary', () => {
+  test('SUMMARY. Complete seller business journey certified', async () => {
+    // Prove the sequence produced artifacts for every phase:
+    // CREATE ✓ UPDATE ✓ SELL ✓ SHIP ✓ DELIVER ✓ CONFIRM ✓ COMPLETE ✓ CASHOUT ✓
+    const completed = await Transaction.find({ seller: sellerId, status: 'completed' });
+    const payouts = await Payout.find({ seller: sellerId });
+    const returns = await Transaction.find({ seller: sellerId, status: { $in: ['refunded', 'returned'] } });
+    const deletedListing = await Listing.countDocuments({ seller: sellerId, title: 'Full Seller Item' });
+    expect(completed.length).toBeGreaterThan(0);   // sold + completed
+    expect(payouts.length).toBeGreaterThan(0);      // cashed out
+    // Returns handled (either accepted→refunded or rejected→completed)
+    const returnFlowTxns = await Transaction.find({ seller: sellerId }).where('status').in(['refunded', 'returned', 'completed']);
+    expect(returnFlowTxns.length).toBeGreaterThan(0);
+    // Deleted listing is gone (delete happened in Phase 1)
+    expect(deletedListing).toBe(0);
+  });
+});
+
+// ============================================================
 // PHASE 7 — CASHOUT COMPLETENESS (money path integrity)
 // ============================================================
 describe('CASHOUT — Money Path Integrity', () => {
@@ -649,26 +670,5 @@ describe('CASHOUT — Money Path Integrity', () => {
     expect(seller.balance.totalPaidOut).toBeGreaterThanOrEqual(0);
     // totalEarned must be >= paid out (can't cash out more than earned)
     expect(seller.balance.totalEarned).toBeGreaterThanOrEqual(seller.balance.totalPaidOut);
-  });
-});
-
-// ============================================================
-// SUMMARY — full business demonstration (all phases)
-// ============================================================
-describe('FULL SELLER BUSINESS DEMONSTRATION — Integrated Summary', () => {
-  test('SUMMARY. Complete seller business journey certified', async () => {
-    // Prove the sequence produced artifacts for every phase:
-    // CREATE ✓ UPDATE ✓ SELL ✓ SHIP ✓ DELIVER ✓ CONFIRM ✓ COMPLETE ✓ CASHOUT ✓
-    const completed = await Transaction.find({ seller: sellerId, status: 'completed' });
-    const payouts = await Payout.find({ seller: sellerId });
-    const returns = await Transaction.find({ seller: sellerId, status: { $in: ['refunded', 'returned'] } });
-    const deletedListing = await Listing.countDocuments({ seller: sellerId, title: 'Full Seller Item' });
-    expect(completed.length).toBeGreaterThan(0);   // sold + completed
-    expect(payouts.length).toBeGreaterThan(0);      // cashed out
-    // Returns handled (either accepted→refunded or rejected→completed)
-    const returnFlowTxns = await Transaction.find({ seller: sellerId }).where('status').in(['refunded', 'returned', 'completed']);
-    expect(returnFlowTxns.length).toBeGreaterThan(0);
-    // Deleted listing is gone (delete happened in Phase 1)
-    expect(deletedListing).toBe(0);
   });
 });
