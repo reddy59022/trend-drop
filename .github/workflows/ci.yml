@@ -188,16 +188,22 @@ jobs:
         run: npx cap sync android
 
       - name: Decode signing keystore (key-gated)
-        # Documented pattern: secrets are empty strings when unset, so this
-        # step runs only when Sunny has added the KEYSTORE_BASE64 secret.
-        if: secrets.KEYSTORE_BASE64 != ''
+        # Secrets cannot be referenced in step-level `if`, so the guard is
+        # shell-side: with no KEYSTORE_BASE64 secret the step no-ops and the
+        # build produces an unsigned APK. Sunny adds the secrets to activate
+        # real signing.
         working-directory: client
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          mkdir -p android/keystore
-          echo "$KEYSTORE_BASE64" | base64 -d > android/keystore/trenddrop-release.keystore
-          echo "TRENDDROP_KEYSTORE_PATH=$PWD/android/keystore/trenddrop-release.keystore" >> "$GITHUB_ENV"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            mkdir -p android/keystore
+            echo "$KEYSTORE_BASE64" | base64 -d > android/keystore/trenddrop-release.keystore
+            echo "TRENDDROP_KEYSTORE_PATH=$PWD/android/keystore/trenddrop-release.keystore" >> "$GITHUB_ENV"
+            echo "Keystore decoded — release APK will be signed"
+          else
+            echo "No KEYSTORE_BASE64 secret — building unsigned release APK"
+          fi
 
       - name: Assemble release APK
         working-directory: client/android
