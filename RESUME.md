@@ -10,10 +10,14 @@ Drive the 31-story backlog (TD-1.1 → TD-10.3, tracked in `BACKLOG_TRACKING.md`
 1. ✅ Security review of `server/routes/stripeWebhook.js` (payment_intent.succeeded guard, dispute idempotency) + `server/config/payments.js` (verifyStripeWebhook) — DONE in commit 888f492.
 2. ✅ `e2e/tests/stripe-checkout.spec.js` added: full checkout with Stripe test card 4242… — auto-skip when keys absent, activates when real TEST keys provided. `cart.spec.js` key-gated to match (commit 6903685).
 3. ⏳ LIVE VERIFICATION QUEUED on Sunny's Stripe TEST keys (STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET) — then run jest webhook suite against real test events + E2E 4242 card checkout, mark TD-1.1 Accepted.
-4. Then TD-1.2 Cloudinary (live keys), TD-1.3 Brevo (live keys), TD-1.4 social sign-in (live keys)… — each code-complete + mocked tests, live check queued.
+4. **TD-1.2/1.3/1.4 moved to In QA (key-independent test hardening done, commit c3515cd):**
+   - TD-1.3 Brevo: new EM.1–EM.7 suite exercises REAL config/email.js (keyless skip, keyed send via mocked SDK, FRONTEND_URL/CLIENT_URL/localhost fallbacks, slash stripping).
+   - TD-1.4 social: SOCIAL.7–10 add Google create/link/email-mismatch coverage (Apple+Facebook already covered).
+   - TD-1.2 Cloudinary: upload routes + mocked SDK tests already green (imageUpload/boost).
+   All three still need LIVE keys to Accept: Cloudinary (CLOUDINARY_*), Brevo (BREVO_API_KEY), Google/Apple/FB (client ids).
 
-## Local verification (2026-08-10, heartbeat)
-- jest: **1090/1090 green** (82 suites; incl. 6 new Stripe webhook tests WH.1–WH.6)
+## Local verification (2026-08-10, heartbeat 19:50)
+- jest: **1101/1101 green** (83 suites; +11 new: EM.1–EM.7 email module, SOCIAL.7–10 Google OAuth) — commit c3515cd
 - Playwright: **25 passed / 1 key-gated skip** (stripe-checkout live card test skips without keys)
 - Render health: `{"status":"ok"}`
 
@@ -38,6 +42,7 @@ Drive the 31-story backlog (TD-1.1 → TD-10.3, tracked in `BACKLOG_TRACKING.md`
 - 888f492: TD-1.1 webhook/checkout security hardening (idempotency, CastError guard, server-side negotiatedPrice, key-gated E2E, 6 webhook tests). Pushed.
 - 3e48474: tracker sync for TD-1.1 state.
 - 6903685: cart.spec.js checkout test key-gated (iframe assert only with real keys; keyless asserts 'payment system not loaded' toast). Full E2E 25 passed / 1 skip.
+- c3515cd: TD-1.3 email module suite EM.1–EM.7 + Google OAuth SOCIAL.7–10; jest 1101/1101 (83 suites). Pushed. TD-1.2/1.3/1.4 → In QA (live verify queued on keys).
 
 ## Working Copy State
 - Clean (`git status` empty). TD-1.1 fully committed: 888f492 + 6903685.

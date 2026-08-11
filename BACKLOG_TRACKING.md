@@ -1,7 +1,7 @@
 # BACKLOG TRACKING — Trend-Drop Marketplace
 
 _Source of truth for story status. Read this FIRST every day at startup._
-_Last sync: 2026-08-10 14:07 CDT · Baseline: jest 1084/1084 · E2E 25/25 · Render live & healthy · CI run #4 GREEN (31417224258) · TD-8.1 Accepted_
+_Last sync: 2026-08-10 19:50 CDT · Baseline: jest 1101/1101 (83 suites) · E2E 25/25 · Render live & healthy · CI run #4 GREEN (31417224258) · TD-8.1 Accepted_
 
 ---
 
@@ -36,17 +36,17 @@ A story is **Accepted only when ALL** hold:
 
 | Story | Title | Status | Owner | Notes |
 |---|---|---|---|---|
-| **TD-1.1** | Stripe test-mode payments | **In Progress** | Backend/QA | Code-complete + security-reviewed (888f492); jest 1090/1090, E2E 25/25+1 skip (6903685); ⏳ live verify queued on Sunny's Stripe TEST keys |
+| **TD-1.1** | Stripe test-mode payments | **In Progress** | Backend/QA | Code-complete + security-reviewed (888f492); jest 1101/1101, E2E 25/25+1 skip (6903685); ⏳ live verify queued on Sunny's Stripe TEST keys |
 | TD-1.1 | Stripe test-mode payments | Next after CI | Backend/QA | Unblocks full checkout E2E |
 
 ## 5. Full Story Tracker (31 stories / 10 epics)
 
 | ID | Story | Epic | Pri | Size | Status | Owner | Test evidence | Accepted |
 |---|---|---|---|---|---|---|---|---|
-| TD-1.1 | Real payment processing (Stripe test mode) | 1 | P0 | L | **In Progress** | Backend | jest 1090/1090 incl. WH.1–WH.6 (888f492); E2E 25/25 + key-gated 4242 card spec (6903685); live check blocked on Stripe keys | – |
-| TD-1.2 | Functional media uploads (Cloudinary) | 1 | P0 | M | Backlog | Frontend | – | – |
-| TD-1.3 | Verification & transactional email (Brevo/SMTP) | 1 | P0 | M | Backlog | Backend | – | – |
-| TD-1.4 | Social sign-in (Google/Apple/Facebook) | 1 | P0 | L | Backlog | Frontend | – | – |
+| TD-1.1 | Real payment processing (Stripe test mode) | 1 | P0 | L | **In Progress** | Backend | jest 1101/1101 incl. WH.1–WH.6 (888f492); E2E 25/25 + key-gated 4242 card spec (6903685); live check blocked on Stripe keys | – |
+| TD-1.2 | Functional media uploads (Cloudinary) | 1 | P0 | M | **In QA** | Frontend | Upload routes + mocked SDK tests (imageUpload, boost) green; ⏳ live verify queued on Cloudinary keys | – |
+| TD-1.3 | Verification & transactional email (Brevo/SMTP) | 1 | P0 | M | **In QA** | Backend | New EM.1–EM.7 suite on real config/email.js logic (c3515cd); ⏳ live verify queued on Brevo key | – |
+| TD-1.4 | Social sign-in (Google/Apple/Facebook) | 1 | P0 | L | **In QA** | Frontend | SOCIAL.1–10 cover Apple, Facebook + Google create/link/validate (c3515cd); ⏳ live verify queued on Google/Apple/FB client ids | – |
 | TD-2.1 | Signed Android release build + CI artifact | 2 | P0 | M | Backlog | DevOps | – | – |
 | TD-2.2 | iOS build pipeline | 2 | P0 | M | Blocked | DevOps | needs full Xcode machine | – |
 | TD-2.3 | Push notifications (FCM + APNs) | 2 | P0 | L | Backlog | Backend | – | – |
@@ -81,4 +81,5 @@ A story is **Accepted only when ALL** hold:
 |---|---|---|---|---|
 | 2026-08-09 | Baseline (pre-sprint) | Cert | jest 1084/1084 (81 suites); Playwright 25/25; live `/health` ok | live |
 | 2026-08-10 | TD-8.1 CI pipeline | Accepted | CI run #4 green (31417224258, commit 6f4d4e6): jest 1084/1084, client build OK (eslint warnings non-blocking), Playwright 25/25 | live |
-| 2026-08-10 | TD-1.1 prep | Verified | Security hardening + key-gated E2E committed (888f492, 6903685); local jest 1090/1090, Playwright 25/25 + 1 key-gated skip; Render `/health` ok. Live card checkout still queued on Stripe TEST keys | live |
+| 2026-08-10 | TD-1.1 prep | Verified | Security hardening + key-gated E2E committed (888f492, 6903685); local jest 1101/1101, Playwright 25/25 + 1 key-gated skip; Render `/health` ok. Live card checkout still queued on Stripe TEST keys | live |
+| 2026-08-10 | TD-1.3/TD-1.4 test hardening | In QA | c3515cd: email module suite EM.1–EM.7 (keyless skip, keyed send, URL fallbacks) + Google OAuth SOCIAL.7–10; jest 1101/1101 (83 suites), no prod code touched | live |
