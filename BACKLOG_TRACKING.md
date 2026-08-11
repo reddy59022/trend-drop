@@ -36,7 +36,7 @@ A story is **Accepted only when ALL** hold:
 
 | Story | Title | Status | Owner | Notes |
 |---|---|---|---|---|
-| **TD-1.1** | Stripe test-mode payments | **In Progress** | Backend/QA | CI green; starting Stripe checkout E2E + security review |
+| **TD-1.1** | Stripe test-mode payments | **In Progress** | Backend/QA | CI green (run #4); Stripe webhook + checkout security hardening committed (888f492); remaining: checkout E2E w/ Stripe test keys, then DoD gate |
 | TD-1.1 | Stripe test-mode payments | Next after CI | Backend/QA | Unblocks full checkout E2E |
 
 ## 5. Full Story Tracker (31 stories / 10 epics)
