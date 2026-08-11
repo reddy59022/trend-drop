@@ -6,12 +6,16 @@ _This file is the durable continuation state. On ANY wake (cron, message, heartb
 Drive the 31-story backlog (TD-1.1 → TD-10.3, tracked in `BACKLOG_TRACKING.md` + `PRODUCT_BACKLOG.md`) through Definition of Done: implement → jest ≥1084 green → Playwright ≥25/25 green → client build → review → commit+push → Render verified → tracker updated.
 
 ## Current Focus
-**TD-2.1 Signed Android release build + CI artifact** — key-gated release signing + CI APK artifact (P0). Local verify DONE both paths; CI verify queued on next push.
-1. ✅ `client/android/app/build.gradle`: key-gated `signingConfigs.release` — activates when keystore present via env/Gradle props (`TRENDDROP_KEYSTORE_PATH` or `TRENDDROP_KEYSTORE_BASE64` + `TRENDDROP_KEYSTORE_PASSWORD`/`TRENDDROP_KEY_ALIAS`/`TRENDDROP_KEY_PASSWORD`); without keys → unsigned `app-release-unsigned.apk`. `TRENDDROP_VERSION_CODE`/`TRENDDROP_VERSION_NAME` stamping added.
-2. ✅ `.github/workflows/ci.yml`: new `android-release` job (needs: test) — client build → `cap sync android` → `assembleRelease` (Java 21, setup-android, Gradle cache) → uploads APK artifact (30-day retention). Signing key-gated on secrets `KEYSTORE_BASE64`/`KEYSTORE_PASSWORD`/`KEY_ALIAS`/`KEY_PASSWORD`; versionCode = `github.run_number`.
-3. ✅ Local verification: unsigned APK 7.7MB built keyless; signed APK 7.8MB built via base64 keystore path (exact CI flow), apksigner cert verified (CN=TrendDrop CI Test), versionCode 42/versionName 1.0-test stamped. Throwaway keystore deleted; keystore paths gitignored.
-4. ⏳ CI verification queued (run #5 expected on next push).
-5. Remaining for full Accept: Sunny adds signing secrets (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD) → CI produces a genuinely signed release APK.
+**TD-2.3 Push notifications (FCM + APNs)** — implemented, tested, committed, pushed (2302364). In QA: live verify queued on FCM/APNs credentials. CI run 31452285290 (this push) also carries the TD-2.1 android-release CI verification.
+1. ✅ PushDevice model (multi-device registry, unique token, userId+platform index).
+2. ✅ pushService: register/unregister + sendToUser with master + per-category gating (messages/offers/orderUpdates/priceDrop); never throws.
+3. ✅ pushTransports: key-gated FCM HTTP v1 (FCM_SERVICE_ACCOUNT | GOOGLE_APPLICATION_CREDENTIALS) + APNs HTTP/2 ES256 (APNS_KEY_PATH/KEY_ID/TEAM_ID/TOPIC, APNS_SANDBOX=false for prod); no creds → skipped, graceful in-app fallback.
+4. ✅ Route hooks: POST /api/messages (new convo → seller), POST /api/messages/:id (reply → other party), PATCH /api/offers/:id/accept (→ buyer); POST/DELETE /api/mobile/push-token (register/unregister, backward compatible with deviceInfo sync).
+5. ✅ Tests: PN.1–PN.16 + PE.1–PE.5 (jest 1122/1122, 85 suites); E2E 25/25 + 1 key-gated skip; client build OK.
+6. ⏳ CI run 31452285290 in progress (also = TD-2.1 android-release CI verify, unsigned APK expected until signing secrets added).
+7. ⏳ LIVE verify queued on Sunny: FCM service account JSON (or GOOGLE_APPLICATION_CREDENTIALS) + APNs .p8 key, key id, team id, topic → then mark TD-2.3 Accepted.
+
+**TD-2.1 Signed Android release build + CI artifact** — local verify DONE both paths; CI verify running on commit 2302364 (android-release job in run 31452285290). Remaining for full Accept: Sunny adds signing secrets (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD) → CI produces a genuinely signed release APK.
 
 **TD-1.1 Stripe test-mode payments** — code-complete + security-reviewed + E2E green (keyless mode); remaining ONLY live verification:
 1. ✅ Security review of `server/routes/stripeWebhook.js` (payment_intent.succeeded guard, dispute idempotency) + `server/config/payments.js` (verifyStripeWebhook) — DONE in commit 888f492.
@@ -23,10 +27,11 @@ Drive the 31-story backlog (TD-1.1 → TD-10.3, tracked in `BACKLOG_TRACKING.md`
    - TD-1.2 Cloudinary: upload routes + mocked SDK tests already green (imageUpload/boost).
    All three still need LIVE keys to Accept: Cloudinary (CLOUDINARY_*), Brevo (BREVO_API_KEY), Google/Apple/FB (client ids).
 
-## Local verification (2026-08-10, heartbeat 20:05)
-- jest: **1101/1101 green** (83 suites; +11 new: EM.1–EM.7 email module, SOCIAL.7–10 Google OAuth) — commit c3515cd
+## Local verification (2026-08-10, heartbeat 21:25)
+- jest: **1122/1122 green** (85 suites; +21 new: PN.1–PN.16 pushService, PE.1–PE.5 push event hooks) — commit 2302364
 - Playwright: **25 passed / 1 key-gated skip** (stripe-checkout live card test skips without keys)
-- Render health: `{"status":"ok"}`
+- Client build: OK (7.2MB dist)
+- Render health: check after deploy of 2302364
 - **TD-2.1 local**: assembleRelease unsigned 7.7MB OK; signed via TRENDDROP_KEYSTORE_BASE64 (CI path) → app-release.apk 7.8MB, apksigner cert verified, versionCode stamp OK
 
 ## Completed
@@ -52,6 +57,7 @@ Drive the 31-story backlog (TD-1.1 → TD-10.3, tracked in `BACKLOG_TRACKING.md`
 - 3e48474: tracker sync for TD-1.1 state.
 - 6903685: cart.spec.js checkout test key-gated (iframe assert only with real keys; keyless asserts 'payment system not loaded' toast). Full E2E 25 passed / 1 skip.
 - c3515cd: TD-1.3 email module suite EM.1–EM.7 + Google OAuth SOCIAL.7–10; jest 1101/1101 (83 suites). Pushed. TD-1.2/1.3/1.4 → In QA (live verify queued on keys).
+- **2302364: TD-2.3 push notifications (FCM+APNs).** PushDevice registry, pushService (preference-gated, never throws), key-gated FCM/APNs transports, route hooks (messages start/reply, offer accept) + register/unregister endpoints, PN.1–16 + PE.1–5 tests → jest 1122/1122, E2E 25/25+1 skip, build OK. Pushed; CI 31452285290 running; TD-2.3 → In QA (live verify on FCM/APNs creds); TD-2.1 CI verify riding this push.
 
 ## Working Copy State
-- Clean (`git status` empty). TD-1.1 fully committed: 888f492 + 6903685.
+- Push of TD-2.3 (2302364) done. Tracker/RESUME sync uncommitted → commit next heartbeat step. Baseline: jest 1122/1122, E2E 25/25+1 skip, build OK.
