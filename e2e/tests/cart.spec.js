@@ -8,6 +8,18 @@
 const { test, expect } = require('@playwright/test');
 const { login, clearCart, addJacketToCart, BUYER } = require('../helpers');
 
+// Same key-gate as stripe-checkout.spec.js: without real Stripe TEST keys the
+// server reports configured=false and the client intentionally does NOT mount
+// Stripe Elements (TD-1.1 hardening). The iframe assertion below only applies
+// when real test keys are present; otherwise we assert the payment-section
+// placeholder renders instead, keeping the test meaningful in both modes.
+const SECRET = process.env.STRIPE_SECRET_KEY || '';
+const PUBLISHABLE = process.env.STRIPE_PUBLISHABLE_KEY || '';
+const STRIPE_KEYS_CONFIGURED =
+  /^sk_test_/.test(SECRET) &&
+  /^pk_test_/.test(PUBLISHABLE) &&
+  !/placeholder|CHANGE_ME|xxxx/i.test(`${SECRET}${PUBLISHABLE}`);
+
 test.describe('Cart & checkout', () => {
   test.beforeEach(async ({ page }) => {
     await login(page, BUYER);
@@ -56,10 +68,21 @@ test.describe('Cart & checkout', () => {
     await checkoutBtn.click();
     // Checkout is INLINE on /cart (no separate URL): clicking creates the
     // intent then renders the Stripe payment form in place.
-    await expect(page.locator('form').first()).toBeVisible({ timeout: 15_000 });
-    // Stripe Elements card iframe proves the payment form actually mounted
-    await expect(
-      page.locator('iframe[title*="card"], iframe[title*="Secure"]').first()
-    ).toBeVisible({ timeout: 15_000 });
+    // NOTE: a plain `form` locator would match the Navbar search form
+    // vacuously — assert on Stripe-specific signals instead.
+    if (STRIPE_KEYS_CONFIGURED) {
+      // Stripe Elements card iframe proves the payment form actually mounted
+      await expect(
+        page.locator('iframe[title*="card"], iframe[title*="Secure"]').first()
+      ).toBeVisible({ timeout: 15_000 });
+    } else {
+      // No real Stripe keys: publishable-key reports configured=false, so the
+      // client intentionally does not mount Stripe Elements (TD-1.1
+      // hardening). The checkout click surfaces the explicit unavailability
+      // toast instead — assert that this graceful degradation works.
+      await expect(
+        page.getByText(/payment system not loaded/i).first()
+      ).toBeVisible({ timeout: 15_000 });
+    }
   });
 });
