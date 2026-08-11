@@ -36,14 +36,14 @@ A story is **Accepted only when ALL** hold:
 
 | Story | Title | Status | Owner | Notes |
 |---|---|---|---|---|
-| **TD-1.1** | Stripe test-mode payments | **In Progress** | Backend/QA | CI green (run #4); Stripe webhook + checkout security hardening committed (888f492); remaining: checkout E2E w/ Stripe test keys, then DoD gate |
+| **TD-1.1** | Stripe test-mode payments | **In Progress** | Backend/QA | Code-complete + security-reviewed (888f492); jest 1090/1090, E2E 25/25+1 skip (6903685); ⏳ live verify queued on Sunny's Stripe TEST keys |
 | TD-1.1 | Stripe test-mode payments | Next after CI | Backend/QA | Unblocks full checkout E2E |
 
 ## 5. Full Story Tracker (31 stories / 10 epics)
 
 | ID | Story | Epic | Pri | Size | Status | Owner | Test evidence | Accepted |
 |---|---|---|---|---|---|---|---|---|
-| TD-1.1 | Real payment processing (Stripe test mode) | 1 | P0 | L | **In Progress** | Backend | – | – |
+| TD-1.1 | Real payment processing (Stripe test mode) | 1 | P0 | L | **In Progress** | Backend | jest 1090/1090 incl. WH.1–WH.6 (888f492); E2E 25/25 + key-gated 4242 card spec (6903685); live check blocked on Stripe keys | – |
 | TD-1.2 | Functional media uploads (Cloudinary) | 1 | P0 | M | Backlog | Frontend | – | – |
 | TD-1.3 | Verification & transactional email (Brevo/SMTP) | 1 | P0 | M | Backlog | Backend | – | – |
 | TD-1.4 | Social sign-in (Google/Apple/Facebook) | 1 | P0 | L | Backlog | Frontend | – | – |
@@ -81,3 +81,4 @@ A story is **Accepted only when ALL** hold:
 |---|---|---|---|---|
 | 2026-08-09 | Baseline (pre-sprint) | Cert | jest 1084/1084 (81 suites); Playwright 25/25; live `/health` ok | live |
 | 2026-08-10 | TD-8.1 CI pipeline | Accepted | CI run #4 green (31417224258, commit 6f4d4e6): jest 1084/1084, client build OK (eslint warnings non-blocking), Playwright 25/25 | live |
+| 2026-08-10 | TD-1.1 prep | Verified | Security hardening + key-gated E2E committed (888f492, 6903685); local jest 1090/1090, Playwright 25/25 + 1 key-gated skip; Render `/health` ok. Live card checkout still queued on Stripe TEST keys | live |

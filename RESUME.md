@@ -6,11 +6,16 @@ _This file is the durable continuation state. On ANY wake (cron, message, heartb
 Drive the 31-story backlog (TD-1.1 → TD-10.3, tracked in `BACKLOG_TRACKING.md` + `PRODUCT_BACKLOG.md`) through Definition of Done: implement → jest ≥1084 green → Playwright ≥25/25 green → client build → review → commit+push → Render verified → tracker updated.
 
 ## Current Focus
-**TD-1.1 Stripe test-mode payments** — code-complete; remaining:
-1. Security review of `server/routes/stripeWebhook.js` (payment_intent.succeeded case at line 144) + `server/config/payments.js` (verifyStripeWebhook line 189).
-2. Add `e2e/tests/stripe-checkout.spec.js`: full checkout with Stripe test card 4242… — auto-skip when `STRIPE_PUBLISHABLE_KEY`/`STRIPE_SECRET_KEY` absent; activates when keys provided (Playwright fills Elements iframe).
-3. Live verification QUEUED on Sunny's Stripe test keys (STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET) — then run jest webhook suite against real test events + E2E card checkout, mark Accepted.
+**TD-1.1 Stripe test-mode payments** — code-complete + security-reviewed + E2E green (keyless mode); remaining ONLY live verification:
+1. ✅ Security review of `server/routes/stripeWebhook.js` (payment_intent.succeeded guard, dispute idempotency) + `server/config/payments.js` (verifyStripeWebhook) — DONE in commit 888f492.
+2. ✅ `e2e/tests/stripe-checkout.spec.js` added: full checkout with Stripe test card 4242… — auto-skip when keys absent, activates when real TEST keys provided. `cart.spec.js` key-gated to match (commit 6903685).
+3. ⏳ LIVE VERIFICATION QUEUED on Sunny's Stripe TEST keys (STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET) — then run jest webhook suite against real test events + E2E 4242 card checkout, mark TD-1.1 Accepted.
 4. Then TD-1.2 Cloudinary (live keys), TD-1.3 Brevo (live keys), TD-1.4 social sign-in (live keys)… — each code-complete + mocked tests, live check queued.
+
+## Local verification (2026-08-10, heartbeat)
+- jest: **1090/1090 green** (82 suites; incl. 6 new Stripe webhook tests WH.1–WH.6)
+- Playwright: **25 passed / 1 key-gated skip** (stripe-checkout live card test skips without keys)
+- Render health: `{"status":"ok"}`
 
 ## Completed
 **TD-8.1 CI pipeline** — Accepted 2026-08-10. CI run #4 green (GitHub Actions run 31417224258, commit 6f4d4e6). Full pipeline: npm ci (npm 10) → jest 1084/1084 → client build (eslint warnings non-blocking) → Playwright 25/25 headless. All four commits (19e567b → 18fad9b → fb6eb84 → 6f4d4e6) pushed and verified.
@@ -30,7 +35,9 @@ Drive the 31-story backlog (TD-1.1 → TD-10.3, tracked in `BACKLOG_TRACKING.md`
 - fb6eb84: Cloudinary SDK mocked in server/jest.setup.js (hermetic, deterministic URLs); local: boost 38/38, full suite 1084/1084. Run #3 failed (client build: eslint warnings as errors under CI=true).
 - 6f4d4e6: CI=true kept for tests, overridden to false for build step (pre-existing eslint warning debt tracked as follow-up). Run #4 GREEN.
 - **TD-8.1 Accepted.**
+- 888f492: TD-1.1 webhook/checkout security hardening (idempotency, CastError guard, server-side negotiatedPrice, key-gated E2E, 6 webhook tests). Pushed.
+- 3e48474: tracker sync for TD-1.1 state.
+- 6903685: cart.spec.js checkout test key-gated (iframe assert only with real keys; keyless asserts 'payment system not loaded' toast). Full E2E 25 passed / 1 skip.
 
 ## Working Copy State
-- Uncommitted changes from TD-1.1 work in progress: `server/routes/payments.js`, `server/routes/stripeWebhook.js`, `e2e/helpers.js`, `e2e/tests/cart.spec.js`, `server/e2eServer.js`, new files `e2e/tests/stripe-checkout.spec.js`, `server/tests/stripeWebhook.test.js`, `scripts/`, `BACKLOG_TRACKING.md`.
-- These changes need security review, test completion, and validation before commit.
+- Clean (`git status` empty). TD-1.1 fully committed: 888f492 + 6903685.
