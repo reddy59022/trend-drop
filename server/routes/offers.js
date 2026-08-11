@@ -5,6 +5,7 @@ const Listing = require('../models/Listing');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const { auth } = require('../middleware/auth');
+const pushService = require('../services/pushService');
 
 // ============================================================
 // OFFER STATE MACHINE (v14.0 - Full Counter-Offer Chain Support)
@@ -455,6 +456,15 @@ router.patch('/:id/accept', auth, async (req, res) => {
       });
       await buyer.save();
     }
+
+    // TD-2.3: push the buyer so they can act inside the 24h purchase window.
+    // Key-gated + never throws; falls back to in-app notification only.
+    await pushService.sendToUser(offer.buyer, {
+      category: 'offers',
+      title: 'Offer accepted! 🎉',
+      body: `Your offer of ${offer.currency || 'USD'} ${offer.acceptedPrice} has been accepted. Proceed to purchase.`,
+      data: { type: 'offer', offerId: offer._id.toString(), listingId: offer.listing ? offer.listing.toString() : '' },
+    });
 
     await offer.populate(['buyer', 'seller', 'listing']);
     res.json({ offer, finalPrice: offer.acceptedPrice, message: 'Offer accepted.' });

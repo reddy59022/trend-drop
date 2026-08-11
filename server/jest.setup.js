@@ -199,6 +199,15 @@ jest.mock('google-auth-library', () => ({
   })),
 }));
 
+// 2c. Push transports (TD-2.3) — never touch FCM/APNs from tests. The
+// transport module is key-gated in production (no credentials → skip); tests
+// replace the senders with recording mocks so pushService routing, preference
+// gating, and event hooks are exercised end-to-end.
+jest.mock('./services/pushTransports', () => ({
+  sendFcm: jest.fn(async () => ({ ok: true, provider: 'fcm', messageId: 'test-fcm-msg' })),
+  sendApns: jest.fn(async () => ({ ok: true, provider: 'apns' })),
+}));
+
 // 2c. global.fetch — the Apple / Facebook OAuth flows call real external APIs
 // in production. In tests, intercept every request with controlled responses:
 //   * Apple JWKS endpoint → a test JWK whose public key verifies identity

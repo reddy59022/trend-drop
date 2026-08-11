@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Message = require('../models/Message');
 const { auth } = require('../middleware/auth');
+const pushService = require('../services/pushService');
 
 // POST /api/messages - Start a conversation about a listing
 router.post('/', auth, async (req, res) => {
@@ -30,6 +31,16 @@ router.post('/', auth, async (req, res) => {
       { path: 'listing', select: 'title images price' },
       { path: 'messages.sender', select: 'name avatar' },
     ]);
+
+    // TD-2.3: push the recipient so time-sensitive deals aren't missed.
+    // Fire-and-forget safe: pushService never throws and is fully key-gated.
+    await pushService.sendToUser(sellerId, {
+      category: 'messages',
+      title: `New message from ${req.user.name}`,
+      body: text,
+      data: { type: 'message', conversationId: conversation._id.toString(), listingId: listingId.toString() },
+    });
+
     res.status(201).json(conversation);
   } catch (error) {
     console.error(error);
@@ -102,6 +113,24 @@ router.post('/:conversationId', auth, async (req, res) => {
     conversation.messages.push({ sender: req.user._id, text });
     await conversation.save();
     await conversation.populate('messages.sender', 'name avatar');
+
+    // TD-2.3: push the other participant on every reply.
+    const recipientId = conversation.participants.find(
+      (p) => p.toString() !== req.user._id.toString()
+    );
+    if (recipientId) {
+      await pushService.sendToUser(recipientId, {
+        category: 'messages',
+        title: `New message from ${req.user.name}`,
+        body: text,
+        data: {
+          type: 'message',
+          conversationId: conversation._id.toString(),
+          listingId: conversation.listing ? conversation.listing.toString() : '',
+        },
+      });
+    }
+
     res.json(conversation.messages);
   } catch (error) {
     console.error(error);
