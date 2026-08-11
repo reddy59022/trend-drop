@@ -1,7 +1,7 @@
 # BACKLOG TRACKING — Trend-Drop Marketplace
 
 _Source of truth for story status. Read this FIRST every day at startup._
-_Last sync: 2026-08-10 19:50 CDT · Baseline: jest 1101/1101 (83 suites) · E2E 25/25 · Render live & healthy · CI run #4 GREEN (31417224258) · TD-8.1 Accepted_
+_Last sync: 2026-08-10 20:05 CDT · Baseline: jest 1101/1101 (83 suites) · E2E 25/25 · Render live & healthy · CI run #4 GREEN (31417224258) · TD-8.1 Accepted · TD-2.1 local verify done (unsigned+signed), CI verify queued_
 
 ---
 
@@ -37,7 +37,7 @@ A story is **Accepted only when ALL** hold:
 | Story | Title | Status | Owner | Notes |
 |---|---|---|---|---|
 | **TD-1.1** | Stripe test-mode payments | **In Progress** | Backend/QA | Code-complete + security-reviewed (888f492); jest 1101/1101, E2E 25/25+1 skip (6903685); ⏳ live verify queued on Sunny's Stripe TEST keys |
-| TD-1.1 | Stripe test-mode payments | Next after CI | Backend/QA | Unblocks full checkout E2E |
+| **TD-2.1** | Signed Android release build + CI artifact | **In QA** | DevOps | Key-gated signing in app/build.gradle + android-release CI job; local verify: unsigned APK 7.7MB + signed APK (apksigner cert verified, versionCode stamp) ✅; CI verify queued on next push |
 
 ## 5. Full Story Tracker (31 stories / 10 epics)
 
@@ -47,7 +47,7 @@ A story is **Accepted only when ALL** hold:
 | TD-1.2 | Functional media uploads (Cloudinary) | 1 | P0 | M | **In QA** | Frontend | Upload routes + mocked SDK tests (imageUpload, boost) green; ⏳ live verify queued on Cloudinary keys | – |
 | TD-1.3 | Verification & transactional email (Brevo/SMTP) | 1 | P0 | M | **In QA** | Backend | New EM.1–EM.7 suite on real config/email.js logic (c3515cd); ⏳ live verify queued on Brevo key | – |
 | TD-1.4 | Social sign-in (Google/Apple/Facebook) | 1 | P0 | L | **In QA** | Frontend | SOCIAL.1–10 cover Apple, Facebook + Google create/link/validate (c3515cd); ⏳ live verify queued on Google/Apple/FB client ids | – |
-| TD-2.1 | Signed Android release build + CI artifact | 2 | P0 | M | Backlog | DevOps | – | – |
+| TD-2.1 | Signed Android release build + CI artifact | 2 | P0 | M | **In QA** | DevOps | Key-gated signing (env/Gradle props: TRENDDROP_KEYSTORE_PATH/BASE64/PASSWORD, KEY_ALIAS, KEY_PASSWORD, VERSION_CODE/NAME) + `android-release` CI job (needs: test, uploads APK artifact); local: unsigned 7.7MB + signed 7.8MB APK, apksigner cert verified | – |
 | TD-2.2 | iOS build pipeline | 2 | P0 | M | Blocked | DevOps | needs full Xcode machine | – |
 | TD-2.3 | Push notifications (FCM + APNs) | 2 | P0 | L | Backlog | Backend | – | – |
 | TD-2.4 | Deep links & native redirect URIs | 2 | P0 | M | Backlog | Frontend | – | – |
@@ -83,3 +83,4 @@ A story is **Accepted only when ALL** hold:
 | 2026-08-10 | TD-8.1 CI pipeline | Accepted | CI run #4 green (31417224258, commit 6f4d4e6): jest 1084/1084, client build OK (eslint warnings non-blocking), Playwright 25/25 | live |
 | 2026-08-10 | TD-1.1 prep | Verified | Security hardening + key-gated E2E committed (888f492, 6903685); local jest 1101/1101, Playwright 25/25 + 1 key-gated skip; Render `/health` ok. Live card checkout still queued on Stripe TEST keys | live |
 | 2026-08-10 | TD-1.3/TD-1.4 test hardening | In QA | c3515cd: email module suite EM.1–EM.7 (keyless skip, keyed send, URL fallbacks) + Google OAuth SOCIAL.7–10; jest 1101/1101 (83 suites), no prod code touched | live |
+| 2026-08-10 | TD-2.1 local verify | In QA | Key-gated signing + CI android-release job; local builds: unsigned app-release-unsigned.apk 7.7MB, signed app-release.apk 7.8MB (apksigner cert CN=TrendDrop CI Test, v2/v3 verified, versionCode 42/versionName 1.0-test stamped); signing activates via GitHub secrets KEYSTORE_BASE64/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD — key-independent, CI verify queued | n/a (build-only) |

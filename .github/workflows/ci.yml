@@ -138,3 +138,81 @@ jobs:
           name: jest-log
           path: /tmp/jest.log
           retention-days: 7
+
+  android-release:
+    name: Android release APK (TD-2.1)
+    # Only produce the artifact when the full verification gate is green.
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java 21 (matches local JDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('client/android/**/*.gradle*', 'client/android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Install client deps
+        working-directory: client
+        run: npm ci
+
+      - name: Client production build
+        working-directory: client
+        env:
+          CI: "false"
+        run: npm run build
+
+      - name: Sync web assets to Android
+        working-directory: client
+        run: npx cap sync android
+
+      - name: Decode signing keystore (key-gated)
+        # Documented pattern: secrets are empty strings when unset, so this
+        # step runs only when Sunny has added the KEYSTORE_BASE64 secret.
+        if: secrets.KEYSTORE_BASE64 != ''
+        working-directory: client
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p android/keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > android/keystore/trenddrop-release.keystore
+          echo "TRENDDROP_KEYSTORE_PATH=$PWD/android/keystore/trenddrop-release.keystore" >> "$GITHUB_ENV"
+
+      - name: Assemble release APK
+        working-directory: client/android
+        env:
+          TRENDDROP_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          TRENDDROP_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          TRENDDROP_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Monotonically increasing per repo run -> valid Android versionCode.
+          TRENDDROP_VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trenddrop-android-release
+          path: client/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+          if-no-files-found: error

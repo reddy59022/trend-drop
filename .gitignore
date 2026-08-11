@@ -36,6 +36,11 @@ client/ios/App/build/
 # Capacitor generated config - we commit this
 # client/capacitor.config.ts
 
+# Signing keystores - NEVER commit keystore material
+client/android/keystore/
+client/android/**/*.jks
+client/android/**/*.keystore
+
 # Coverage
 coverage/
 .nyc_output/
