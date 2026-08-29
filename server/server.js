@@ -56,7 +56,7 @@ const authLimiter = rateLimit({
 });
 
 // Apply rate limiters (disabled in test mode)
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.DISABLE_RATE_LIMIT) {
   app.use('/api/', apiLimiter);
   app.use('/api/auth/login', authLimiter);
   app.use('/api/auth/register', authLimiter);
@@ -261,6 +261,14 @@ app.use('/api/enterprise', require('./routes/enterpriseApi'));
 // Trend Tracking routes (v61.0)
 app.use('/api/trends', require('./routes/trends'));
 app.use('/api/notifications', require('./routes/notifications'));
+
+// ---------------------------------------------------------------------------
+// Deep link verification endpoints (TD-2.4) — must be defined before the
+// SPA fallback so Android App Links / iOS Universal Links verification
+// fetches resolve to JSON, not index.html. Key-gated: 404 (JSON) until
+// ANDROID_SHA256_FINGERPRINTS / IOS_TEAM_ID are set on the deployment.
+// ---------------------------------------------------------------------------
+app.use(require('./routes/wellKnown'));
 
 // ---------------------------------------------------------------------------
 // Health check endpoints (must be defined before the SPA fallback)

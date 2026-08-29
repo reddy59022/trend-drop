@@ -206,7 +206,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     if (isNative()) {
-      const redirectUri = process.env.REACT_APP_NATIVE_REDIRECT_URI || 'auravest://callback';
+      const redirectUri = process.env.REACT_APP_NATIVE_REDIRECT_URI || 'trenddrop://oauth-callback';
       const scope = encodeURIComponent('openid email profile');
       const nonce = Math.random().toString(36).slice(2);
       const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=id_token token&scope=${scope}&nonce=${nonce}`;
@@ -247,7 +247,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     if (isNative()) {
-      const redirectUri = process.env.REACT_APP_NATIVE_REDIRECT_URI || 'auravest://callback';
+      const redirectUri = process.env.REACT_APP_NATIVE_REDIRECT_URI || 'trenddrop://oauth-callback';
       const scope = encodeURIComponent('name email');
       const url = `https://appleid.apple.com/auth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=id_token&scope=${scope}`;
       const identityToken = await openNativeOAuth(url, 'apple');

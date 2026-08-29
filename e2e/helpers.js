@@ -7,19 +7,32 @@ const BUYER = { email: 'e2e-buyer@trenddrop.test', password: 'E2ePass123!', name
 const SELLER = { email: 'e2e-seller@trenddrop.test', password: 'E2ePass123!', name: 'E2E Seller' };
 
 async function login(page, { email, password }) {
+  // Check if already logged in
+  if (await page.locator('.user-menu-trigger').isVisible()) {
+    console.log('Already logged in, skipping login.');
+    return;
+  }
+  console.log('Not logged in, attempting login...');
   await page.goto('/login');
   await page.locator('input[placeholder="you@example.com"]').fill(email);
   await page.locator('input[placeholder="Enter your password"]').fill(password);
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+  
   // Wait for the auth state to flip (navbar shows the user dropdown trigger)
-  await expect(page.locator('.nav-dropdown-trigger').first()).toBeVisible({ timeout: 15_000 });
+  try {
+    await expect(page.locator('.user-menu-trigger')).toBeVisible({ timeout: 15_000 });
+    console.log('Login successful.');
+  } catch (e) {
+    console.error('Login failed. Page content:', await page.content());
+    throw e;
+  }
 }
 
 async function logout(page) {
   // Open user dropdown then click the Logout item
-  await page.locator('.nav-dropdown-trigger').first().click();
+  await page.locator('.user-menu-trigger').click();
   await page.locator('.logout-btn').first().click();
-  await expect(page.locator('.nav-dropdown-trigger').first()).toBeHidden({ timeout: 15_000 }).catch(() => {});
+  await expect(page.locator('.user-menu-trigger')).toBeHidden({ timeout: 15_000 }).catch(() => {});
 }
 
 async function clearCart(page) {

@@ -40,6 +40,7 @@ async function createListing(sellerId, overrides = {}) {
 }
 async function buy(buyerToken, listingId) {
   const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${buyerToken}`).send({ listingId, shippingAddress: { fullName: 'B', street1: '456 St', city: 'City', state: 'NY', postalCode: '10001', country: 'US' }, buyerCountry: 'US' });
+  if (r.status !== 201) console.log('BUY_NON201', r.status, JSON.stringify(r.body));
   return r.body;
 }
 

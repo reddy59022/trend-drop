@@ -18,6 +18,7 @@ async function main() {
   // 2. Configure environment BEFORE requiring server.js
   process.env.NODE_ENV = 'production';
   process.env.PORT = process.env.E2E_PORT || '5001';
+  process.env.DISABLE_RATE_LIMIT = 'true';
   process.env.MONGO_URI = uri;
   process.env.MONGODB_URI = uri;
   process.env.JWT_SECRET = 'e2e-test-secret-do-not-use-in-prod';

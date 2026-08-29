@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- TD-2.4 iOS Universal Links. Wire this file into the Xcode target
+	     (Signing &amp; Capabilities → Associated Domains, or set
+	     CODE_SIGN_ENTITLEMENTS = App/TrendDrop.entitlements) and add the
+	     associated-domains capability to the provisioning profile. The
+	     /.well-known/apple-app-site-association file is served by the API
+	     server once IOS_TEAM_ID is set on the deployment. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:trend-drop.onrender.com</string>
+		<string>applinks:trend-drop.app</string>
+	</array>
+</dict>
+</plist>

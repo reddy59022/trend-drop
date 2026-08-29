@@ -298,7 +298,7 @@ const Navbar = () => {
               {/* Profile Dropdown */}
               <div className="nav-dropdown" ref={dropdownRef}>
                 <button
-                  className="nav-dropdown-trigger"
+                  className="nav-dropdown-trigger user-menu-trigger"
                   onClick={() => setDropdownOpen(!dropdownOpen)}
                   aria-label="Profile menu"
                 >

@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { isNative } from './services/native';
+import { deepLinkPath, isOAuthCallbackUrl, isAppPath } from './services/deepLinks';
 import { CartProvider } from './context/CartContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { SocketProvider } from './context/SocketContext';
@@ -81,9 +82,19 @@ const NativeAppLifecycle = () => {
 
   useEffect(() => {
     const handleUrl = (url) => {
-      if (url.includes('oauth-callback')) {
+      if (!url) return;
+      if (isOAuthCallbackUrl(url)) {
         handleOAuthCallback(url);
         window.dispatchEvent(new CustomEvent('oauth-callback', { detail: { url: String(url) } }));
+        return;
+      }
+      // TD-2.4 deep links: trenddrop://listing/123, https://trend-drop.app/listing/123,
+      // https://trend-drop.onrender.com/orders/xyz … route inside the SPA.
+      const path = deepLinkPath(url);
+      if (path && path !== '/' && isAppPath(path)) {
+        // location.replace keeps the WebView history stack clean (one entry
+        // per deep link, back button does not loop through every link).
+        window.location.replace(path);
       }
     };
 

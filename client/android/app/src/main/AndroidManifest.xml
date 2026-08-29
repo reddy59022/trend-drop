@@ -22,6 +22,32 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- TD-2.4 deep links: Android App Links (https). autoVerify
+                 activates once /.well-known/assetlinks.json on the host
+                 lists the signing cert fingerprint. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="trend-drop.onrender.com" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="trend-drop.app" />
+            </intent-filter>
+
+            <!-- TD-2.4 deep links: custom scheme (trenddrop://...). Used for
+                 the native OAuth redirect (trenddrop://oauth-callback?token=…)
+                 and for direct custom-scheme links (trenddrop://listing/123). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="trenddrop" />
+            </intent-filter>
+
         </activity>
 
         <provider
