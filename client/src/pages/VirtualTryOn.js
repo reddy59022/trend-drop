@@ -30,7 +30,7 @@ const VirtualTryOn = () => {
   const [stream, setStream] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
   const [nativePhoto, setNativePhoto] = useState(null); // File from native camera for upload/save
-  const [cameraError, setCameraError] = useState(null); // 'denied' | 'noddevice' | null
+  const [cameraError, setCameraError] = useState(null); // 'denied' | 'nodevice' | 'busy' | null
   // Heuristic availability: null = unknown (assume available, let getUserMedia decide),
   // true = devices seen, false = user has no camera hardware at all.
   const [cameraAvailable, setCameraAvailable] = useState(null);
@@ -154,22 +154,27 @@ const VirtualTryOn = () => {
     // NOTE: do NOT gate on enumerateDevices() here — before permission is
     // granted browsers return an empty device list (privacy), which caused
     // the false "No camera found" on real laptops. getUserMedia is the
-    // source of truth.
+    // source of truth. Browsers also require a secure origin (HTTPS, localhost,
+    // file://) for getUserMedia, so check that lazily — when the user actually
+    // pushes the camera button — so the page still works on plain HTTP for
+    // normal browsing, and only reveal the HTTPS outcome at that moment
+    // (network-isolated previews/stripping can make even localhost look insecure).
     if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
       setCameraError('nodevice');
-      toast.error('Live camera needs HTTPS. Please use upload instead.');
+      toast.error('Live camera needs a secure connection (HTTPS or localhost). Please use upload instead.');
       setSelectedTab('upload');
       return;
     }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraError('nodevice');
-      toast.error('Live camera is not available in this browser. Please use upload instead.');
+      toast.error('Live camera is not available in this browser or network context. Please use upload instead.');
       setSelectedTab('upload');
       return;
     }
     // NOTE: facingMode must be `ideal`, not exact — desktop webcams (e.g.
     // MacBook FaceTime camera) report no facing, and exact 'user' throws
-    // OverconstrainedError which looks like "no camera".
+    // OverconstrainedError which looks like "no camera". Also relax width/height
+    // to ideal in case the environment rejects any specific constraint.
     const primary = { video: { facingMode: { ideal: 'user' }, width: { ideal: 1080 }, height: { ideal: 720 } }, audio: false };
     const openStream = async (constraints) => {
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
