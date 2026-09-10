@@ -210,18 +210,56 @@ userSchema.index({ country: 1 });
 // LEGACY-DATA SANITIZER (production seed-schema mismatch fix): legacy seed
 // docs inserted raw into Mongo carry shapes the production schema no longer
 // accepts (object `location`, string `payoutMethod`, unknown flat fields).
-// Runs pre-validate so unknown paths (e.g. payoutMethod.details) are
-// stripped BEFORE Mongoose strict validation — pre('save') is too late for
-// User.create, which validates first and would throw before the hook runs.
+// MUST run pre-VALIDATE (not pre-save): Mongoose runs `pre('validate')` →
+// `validate()` → `pre('save')`, and a cast failure during `validate()` aborts
+// the save before `pre('save')` ever executes. Worse, Mongoose 7 CACHES the
+// failed cast in `$errors.location.value` and rethrows it on every retry, so
+// even a subsequent `pre('save')` never runs. Flattening here — BEFORE the
+// first validation — prevents the cast error entirely and also self-heals an
+// already-poisoned in-memory doc by clearing the stale cached error.
 userSchema.pre('validate', function (next) {
   try {
+    // --- location: legacy seeds store { city, state, country }; schema is String ---
+    let rawLoc = this.get('location');
+    if (!rawLoc || typeof rawLoc !== 'object' || Array.isArray(rawLoc)) {
+      // Mongoose 7 quirk: a type-mismatched raw value that failed init/save
+      // casting is cached in $errors.location.value (not hydrated into _doc).
+      // Recover it from there so we can still flatten it to a valid string.
+      const cached = this.$errors && this.$errors.location && this.$errors.location.value;
+      if (cached && typeof cached === 'object' && !Array.isArray(cached)) rawLoc = cached;
+    }
+    if (rawLoc && typeof rawLoc === 'object' && !Array.isArray(rawLoc)) {
+      const parts = [rawLoc.city, rawLoc.state, rawLoc.country].filter(Boolean);
+      const flat = parts.join(', ');
+      if (this._doc) {
+        this._doc.location = flat;
+        // Direct `this.set()` can throw at cast-time (Mongoose tries to cast
+        // immediately against the still-poisoned path) — but even when it
+        // succeeds it may not mark the path dirty because the original value
+        // never hydrated. markModified() forces Mongoose to $set location to
+        // the new string during save. Critical: without it, save() writes
+        // nothing for location and the raw object stays in the DB.
+        try { this.set('location', flat); } catch (e) { /* handled by markModified */ }
+        try { this.markModified('location'); } catch (e) { /* ignore */ }
+      }
+      // Drop the stale cached cast error so validation re-runs on the fixed value.
+      if (this.$errors && this.$errors.location) delete this.$errors.location;
+      if (this.$__ && this.$__.validationError && this.$__.validationError.errors) {
+        delete this.$__.validationError.errors.location;
+      }
+    }
+
+    // --- payoutMethod: legacy string OR object-with-unknown-paths ---
     const pm = this.get('payoutMethod');
-    if (pm && typeof pm === 'object' && !Array.isArray(pm) && 'details' in pm) {
+    if (typeof pm === 'string') {
+      this.set('payoutMethod', pm ? { type: 'stripe' } : { type: '' });
+    } else if (pm && typeof pm === 'object' && !Array.isArray(pm) && 'details' in pm) {
       const d = pm.details || {};
       const clean = { type: pm.type };
       if (d.accountNumber) clean.accountNumber = String(d.accountNumber);
       if (d.routingNumber) clean.routingNumber = String(d.routingNumber);
       if (d.accountHolderName) clean.accountHolder = String(d.accountHolderName);
+      if (this._doc) this._doc.payoutMethod = clean;
       this.set('payoutMethod', clean);
     }
   } catch (e) { /* never block save on sanitizer */ }
