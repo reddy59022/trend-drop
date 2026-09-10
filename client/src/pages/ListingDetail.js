@@ -486,6 +486,16 @@ const ListingDetail = () => {
               <button className={`btn ${liked ? 'btn-primary' : 'btn-outline'}`} onClick={handleLike}>
                 <FaHeart /> {liked ? 'Liked' : 'Like'} ({likeCount})
               </button>
+              {!listing.sold && (
+                <button
+                  className="btn btn-outline"
+                  data-testid="try-on-button"
+                  aria-label="Try it on"
+                  onClick={() => navigate('/virtual-try-on/' + id, { state: { from: '/listing/' + id } })}
+                >
+                  <FaRulerCombined /> Try On
+                </button>
+              )}
               <button className="btn btn-outline" onClick={handleShare}>
                 <FaShareAlt /> Share
               </button>
@@ -500,7 +510,7 @@ const ListingDetail = () => {
                     if (perm === 'denied') {
                       toast.warning('Camera blocked - you can still try on with a photo upload.');
                     }
-                    navigate('/try-on/' + id);
+                    navigate('/virtual-try-on/' + id);
                   }}
                 >
                   Try On
@@ -522,7 +532,7 @@ const ListingDetail = () => {
                           if (perm === 'denied') {
                             toast.warning('Camera blocked - you can still try on with a photo upload.');
                           }
-                          navigate('/try-on/' + id);
+                          navigate('/virtual-try-on/' + id);
                         }}
                       >
                         Try On
@@ -701,6 +711,11 @@ const ListingDetail = () => {
         <button className="btn btn-outline btn-sm" onClick={() => setOfferModalOpen(true)}>
           Offer
         </button>
+        {!listing.sold && (
+          <button className="btn btn-outline btn-sm" data-testid="try-on-button-mobile" onClick={() => navigate('/virtual-try-on/' + id, { state: { from: '/listing/' + id } })}>
+            Try On
+          </button>
+        )}
         <button className="btn btn-primary" onClick={handleAddToBag} style={{ padding: '12px 24px' }}>
           Add to Bag
         </button>

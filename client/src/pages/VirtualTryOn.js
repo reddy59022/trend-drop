@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import { formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
-import { FaCamera, FaUpload, FaRulerHorizontal, FaCheck, FaTimes, FaHistory, FaMagic } from 'react-icons/fa';
+import { FaCamera, FaUpload, FaRulerHorizontal, FaTimes, FaHistory, FaMagic } from 'react-icons/fa';
 import { isNative, requestCameraPermission } from '../services/native';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 
@@ -213,10 +213,12 @@ const VirtualTryOn = () => {
   const handleSaveMeasurements = async () => {
     setLoading(true);
     try {
+      const photoFile = nativePhoto; // File when photo came from the native device camera
       const res = await api.post('/virtual-try-on/session', {
         listingId: listingId || (listing && listing._id),
         sessionType: capturedImage ? 'camera' : 'ar',
         measurements: Object.values(measurements).some(v => v) ? measurements : undefined,
+        hasUserPhoto: Boolean(capturedImage || photoFile),
       });
       setFitAnalysis(res.data.fitAnalysis);
       if (listingId) {
@@ -246,7 +248,18 @@ const VirtualTryOn = () => {
           <div className="empty-state-icon">👗</div>
           <h2>Virtual Try-On</h2>
           <p>Please login to use virtual try-on features.</p>
-          <Link to="/login" className="btn btn-primary">Login</Link>
+          <Link
+            to="/login"
+            state={{ from: listingId ? '/virtual-try-on/' + listingId : '/virtual-try-on' }}
+            className="btn btn-primary"
+          >
+            Login
+          </Link>
+          {listingId && (
+            <div style={{ marginTop: 12 }}>
+              <Link to={'/listing/' + listingId} className="btn btn-outline btn-sm">Back to listing</Link>
+            </div>
+          )}
         </div>
       </div>
     );
