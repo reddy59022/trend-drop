@@ -52,6 +52,27 @@ const payoutSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  // LEGACY schema fields (old seed data). Kept optional so historical docs
+  // are not stripped by Mongoose strict mode — the dashboard/balance
+  // aggregates fall back to `amount` when payoutAmount is absent.
+  amount: {
+    type: Number,
+  },
+  currency: {
+    type: String,
+    default: 'USD',
+  },
+  method: {
+    type: String,
+  },
+  stripePayoutId: {
+    type: String,
+  },
+  transactions: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Transaction',
+  }],
+
   // Deduplication: track payment intent to prevent double processing
   paymentIntentId: {
     type: String,

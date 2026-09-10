@@ -186,12 +186,70 @@ const releaseAuthorization = async (paymentIntentId) => {
   }
 };
 
-// Verify Stripe webhook
+// === STRIPE WEBHOOK SIGNATURE VERIFICATION (fail-closed) ===
+// Webhook events are authenticated by the Stripe-Signature header using the
+// webhook signing secret (whsec_…) from the Stripe dashboard. Verification is
+// ALWAYS enforced unless BOTH of the following hold:
+//   1. NODE_ENV is not 'production' (dev/test only), AND
+//   2. STRIPE_WEBHOOK_DISABLE_VERIFY=1 is explicitly set in the environment.
+// This keeps production fail-closed: a missing or misconfigured signing
+// secret can never silently turn the webhook into an unauthenticated event
+// sink, and unsigned events are never accepted by default.
+
+const isWebhookSignatureRequired = () => {
+  if (process.env.NODE_ENV === 'production') return true;
+  return process.env.STRIPE_WEBHOOK_DISABLE_VERIFY !== '1';
+};
+
+const getWebhookSecret = () => process.env.STRIPE_WEBHOOK_SECRET || '';
+
+// Verifies a Stripe webhook request. Returns { verified: true, event } on
+// success or { verified: false, reason } when the request must be rejected.
+// Never throws — callers translate verified:false into an HTTP 400/500.
+const verifyStripeWebhookEvent = (stripeClient, payload, signature) => {
+  if (!isWebhookSignatureRequired()) {
+    // Explicit dev-only bypass: accept the event without a signature check.
+    try {
+      const event = typeof payload === 'string' || Buffer.isBuffer(payload)
+        ? JSON.parse(payload.toString())
+        : payload;
+      return { verified: true, event, unsigned: true };
+    } catch (err) {
+      return { verified: false, reason: `Invalid JSON payload: ${err.message}` };
+    }
+  }
+
+  const secret = getWebhookSecret();
+  if (!secret) {
+    return {
+      verified: false,
+      reason: 'Webhook signing secret is not configured (STRIPE_WEBHOOK_SECRET). Refusing to process unsigned webhook events.',
+    };
+  }
+  if (!signature) {
+    return { verified: false, reason: 'Missing Stripe-Signature header' };
+  }
+  try {
+    return {
+      verified: true,
+      event: stripeClient.webhooks.constructEvent(payload, signature, secret),
+    };
+  } catch (err) {
+    return { verified: false, reason: err.message };
+  }
+};
+
+// Legacy helper — same throw-on-failure contract as before, now routed
+// through the hardened fail-closed logic above.
 const verifyStripeWebhook = (payload, signature) => {
   if (!stripe) {
     throw new Error('Stripe not initialized. Please check STRIPE_SECRET_KEY.');
   }
-  return stripe.webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET);
+  const result = verifyStripeWebhookEvent(stripe, payload, signature);
+  if (!result.verified) {
+    throw new Error(result.reason);
+  }
+  return result.event;
 };
 
 // Issue a refund (for orders that were already captured)
@@ -249,6 +307,9 @@ module.exports = {
   capturePaymentIntent,
   retrievePaymentIntent,
   releaseAuthorization,
+  isWebhookSignatureRequired,
+  getWebhookSecret,
+  verifyStripeWebhookEvent,
   verifyStripeWebhook,
   processSellerPayout,
   issueRefund,

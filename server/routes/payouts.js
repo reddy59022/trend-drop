@@ -15,7 +15,7 @@ router.get('/dashboard', auth, async (req, res) => {
     const sellerId = req.user._id;
 
     // Get all payouts for this seller
-    const payouts = await Payout.find({ seller: sellerId })
+    let payouts = await Payout.find({ seller: sellerId })
       .populate('listing', 'title images price')
       .populate('transaction', 'status createdAt')
       .sort({ createdAt: -1 });
@@ -25,6 +25,20 @@ router.get('/dashboard', auth, async (req, res) => {
       seller: sellerId,
       status: 'completed',
     }).populate('listing', 'title images price');
+
+    // Normalize legacy-schema docs so downstream code and the client always
+    // see salePrice/commissionAmount/payoutAmount.
+    const normalized = payouts.map(p => {
+      const doc = p.toObject ? p.toObject() : p;
+      if (doc.payoutAmount == null && doc.amount != null) {
+        const legacyCommission = Math.round(doc.amount * COMMISSION_RATE * 100) / 100;
+        doc.salePrice = doc.salePrice ?? doc.amount;
+        doc.commissionAmount = doc.commissionAmount ?? legacyCommission;
+        doc.payoutAmount = doc.payoutAmount ?? Math.round((doc.amount - legacyCommission) * 100) / 100;
+      }
+      return doc;
+    });
+    payouts = normalized;
 
     const completedPayouts = payouts.filter(p => p.status === 'completed');
 

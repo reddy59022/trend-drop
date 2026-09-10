@@ -4,6 +4,11 @@ const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
+const {
+  verifyStripeWebhookEvent,
+  isWebhookSignatureRequired,
+  getWebhookSecret,
+} = require('../config/payments');
 
 // Stripe webhook endpoint - handles chargeback events
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -18,12 +23,24 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
     let event;
 
-    try {
-      event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-    } catch (err) {
-      console.error('Webhook signature verification failed:', err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+    // Fail-closed signature verification (see config/payments.js). A missing
+    // signing secret is an infrastructure problem, so we answer 500 (Stripe
+    // will retry once it's fixed); an invalid/missing signature on a request
+    // with a configured secret is that request's problem → 400.
+    if (isWebhookSignatureRequired() && !getWebhookSecret()) {
+      console.error(
+        '[WEBHOOK] STRIPE_WEBHOOK_SECRET is not configured — refusing to process events. ' +
+        'Set the webhook signing secret (whsec_…) from the Stripe dashboard.'
+      );
+      return res.status(500).send('Webhook Error: Webhook signing secret not configured');
     }
+
+    const verification = verifyStripeWebhookEvent(stripe, req.body, sig);
+    if (!verification.verified) {
+      console.error('Webhook signature verification failed:', verification.reason);
+      return res.status(400).send(`Webhook Error: ${verification.reason}`);
+    }
+    event = verification.event;
 
     // Handle chargeback events
     switch (event.type) {
