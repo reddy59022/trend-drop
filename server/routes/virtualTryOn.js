@@ -144,7 +144,21 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 // GET /api/virtual-try-on/:listingId - Get try-on session for a specific listing
+// GET /api/virtual-try-on/status - client feature-probe (unauthenticated).
+// The mobile/web clients probe this on launch. MUST be registered BEFORE
+// /:listingId or Express matches "status" as a listingId and the lookup
+// 500s on CastError — that was the live 500 seen in production probing.
+router.get('/status', async (req, res) => {
+  res.json({ enabled: true, arSupported: true, cameraSupported: true, uploadSupported: true });
+});
+
 router.get('/:listingId', auth, async (req, res) => {
+  // Defensive: if routing ever lands here with a non-ObjectId (e.g. a new
+  // probe path added to the client), answer 404 — never let Mongoose
+  // CastError bubble into a 500.
+  if (!/^[0-9a-fA-F]{24}$/.test(req.params.listingId)) {
+    return res.status(404).json({ message: 'No try-on session found for this listing' });
+  }
   try {
     const { listingId } = req.params;
     
@@ -157,6 +171,7 @@ router.get('/:listingId', auth, async (req, res) => {
     
     res.json(tryOn);
   } catch (error) {
+    console.error('VirtualTryOn GET /:listingId failed:', error.message);
     res.status(500).json({ message: 'Failed to fetch try-on session' });
   }
 });

@@ -107,7 +107,13 @@ jest.mock('stripe', () => {
     },
     webhooks: {
       constructEvent: jest.fn((payload, sig) => {
-        if (sig === 'bad') throw new Error('Invalid signature');
+        // Fail-closed mock: mirrors the real Stripe SDK contract closely
+        // enough to catch missing/empty signatures at the unit level. The
+        // production verifier rejects empty sigs before reaching here, but
+        // defense in depth: never let an empty signature construct an event.
+        if (!sig || (typeof sig === 'string' && !sig.trim()) || sig === 'bad') {
+          throw new Error(!sig || !String(sig).trim() ? 'Missing Stripe-Signature header' : 'Invalid signature');
+        }
         if (Buffer.isBuffer(payload)) {
           return JSON.parse(payload.toString());
         }

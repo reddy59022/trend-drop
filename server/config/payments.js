@@ -226,7 +226,11 @@ const verifyStripeWebhookEvent = (stripeClient, payload, signature) => {
       reason: 'Webhook signing secret is not configured (STRIPE_WEBHOOK_SECRET). Refusing to process unsigned webhook events.',
     };
   }
-  if (!signature) {
+  // An empty or whitespace-only header is NOT a signature — supertest's
+  // .set(h, '') and some proxies transmit an empty value; treating it as
+  // "present" would forward it to constructEvent, where a lax mock (or a
+  // future SDK tolerance) could accept it. Fail closed: 400 missing-header.
+  if (!signature || (typeof signature === 'string' && !signature.trim())) {
     return { verified: false, reason: 'Missing Stripe-Signature header' };
   }
   try {

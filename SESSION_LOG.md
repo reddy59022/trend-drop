@@ -152,3 +152,91 @@ Legend: ✅ verified live · 🟡 verified locally (jest/E2E) only · ⬜ not ye
 
 _Full 60-row matrix to be completed during this pass — see FEATURE_MATRIX.md
 once generated from the route list._
+
+## Pass 2 — continued (same session)
+
+### A. Jest suite state (local, authoritative via npm run test:ci --runInBand)
+- Baseline (/tmp/jest-baseline.log): 1134/1135 (86/87 suites). Sole failure =
+  NEW `webhookSecurity` unsigned-empty-header case (got 200, want 400).
+- webhookSecurity standalone (/tmp/webhook-test.log): 5/5 PASS — but this is
+  misleading: the mocked `stripe.webhooks.constructEvent` accepts ANY
+  non-'bad' signature, so the empty-header path never fails against the mock.
+- e2e.test.js standalone (/tmp/e2e-alone.log): 197/197 PASS — green alone.
+- sellerE2E + e2e together WITHOUT --runInBand (/tmp/rerun2.log): 108 failed —
+  EXPECTED cross-file interference (both suites share one DB + JWT secret and
+  the repo script mandates --runInBand). NOT a code bug; always use
+  `npm run test:ci` (--runInBand).
+- Fix #7 applied: `User` pre('save') sanitizer extended to strip/ fold
+  `payoutMethod.details` (sellerE2E createUser passes details → strict-schema
+  ValidationError). NOTE: must be validated with the REAL script
+  (npm run test:ci), not bare npx jest.
+- Full `npm run test:ci` re-run after Fix #7: (/tmp/jest-full.log — PENDING at
+  time of writing; record result here.)
+
+### B. Live production testing (Render, Stripe TEST mode, real accounts)
+- Alex (seller) / Jordan (buyer) logins: 200 + tokens ✅
+- Listings: 5 active (Nike $100 Alex; QA Payment Test $25 Jordan; 3 QA Seller).
+- create-intent (Jordan buys Alex Nike $100): 200 ✅ — PI requires_capture,
+  $105 buyer charge / $92 seller earnings / 8% platform fee breakdown ✅
+- Direct Stripe API confirm needed `return_url` (dashboard has redirect
+  methods enabled); with return_url → requires_capture ✅ (harness note only)
+- confirm-batch → **500 REAL BUG** (Fix #6 above): legacy object `location`
+  on seeded User fails validation on save. Order NOT created; Stripe PI left
+  authorized-but-uncaptured → must void/release PI + retest after deploy.
+- payouts/balance, dashboard, commission-info, payments/breakdown: 200 ✅
+- POST /api/payments/payout $10 → 400 "Please set up a payout method first"
+  ✅ (correct guard; full cashout E2E pending after checkout retest).
+
+### C. Fixes queued for commit+deploy (NOT yet committed at time of writing)
+- Fix #6: User pre('save') location sanitizer (models/User.js) ✅ written
+- Fix #7: payoutMethod.details sanitizer (models/User.js) ✅ written
+- Fix #8 (PENDING): empty/whitespace Stripe-Signature → 400 missing-header
+  in config/payments.js + harden jest.setup.js mock to reject empty sig.
+- Then: full suite green → commit → push → Render deploy → re-run
+  confirm-batch live → release/void the stranded test PI.
+
+---
+
+## Pass 3 — 2026-09-10 (latest, authoritative)
+
+### A. Jest full-suite baseline (LOCAL, authoritative) ✅
+- Command: `node /tmp/run-suite-force.js` →
+  `NODE_ENV=test jest --passWithNoTests --no-coverage --runInBand --forceExit
+  --detectOpenHandles --colors=false`.
+- **Result: `Test Suites: 87 passed, 87 total · Tests: 1135 passed, 1135 total ·
+  Time: 133.5s · EXIT=0`.** Full snapshot: `/tmp/jest-full-suite-baseline.log`.
+- 0 FAIL / 0 skipped; includes sellerE2E (41/41), webhookSecurity (5/5),
+  e2e, escrow, multiCurrencyPayout, stripeWebhook, revenue, balanceLedger.
+- Infra notes: full suite REQUIRES `--forceExit --detectOpenHandles` (jest 30.4.1
+  otherwise hangs on an open handle after tests complete — the earlier
+  "no /tmp/jest-final.log" was the runner being killed by `pkill -f jest`
+  matching its own filename `run-jest.js`; renamed runner to `run-suite.js`).
+- `jest.config.js` does NOT exist and is NOT needed — config lives in
+  `package.json` `jest` key (testEnvironment node, globalSetup/Teardown,
+  setupFilesAfterEnv).
+
+### B. Live purchase re-test (Render, Stripe TEST mode) — STILL BLOCKED pre-deploy
+- Alex created live listing "Live Verify Sneakers" **$100** (id
+  `6aa2e37ba1eba57f3c376226`) ✅ via multipart POST /api/listings (201).
+- Jordan `POST /api/payments/create-intent` → 200 ✅:
+  PI `pi_3UEBQfDj9wdwpid12fWToSGz`, **$112.24** total
+  (100 item + 5 buyer protection + 7.24 shipping), seller **$92**, platform **$8**.
+- Card confirmed at Stripe with `pm_card_visa` + return_url → **requires_capture**
+  (manual capture) ✅.
+- `POST /api/payments/confirm-batch` → **STILL 500** on production:
+  `User validation failed: location: Cast to string failed ... { city: 'Los
+  Angeles', state: 'CA', country: 'US' }`. Order NOT created (dedupe-safe).
+- **ROOT CAUSE (deploy gap)**: the effective sanitizer (Mongoose-7 cached
+  `$errors.location` clear + `pre('validate')`) is in local HEAD **1164ff3**,
+  which is 1 commit AHEAD of origin/main (origin = a77eb9c). Render runs
+  a77eb9c → old sanitizer's `this.set('location', …)` can never clear the
+  cached validation error → 500 persists. **Fix = push 1164ff3 + this pass's
+  commits, let Render deploy, then re-run.**
+
+### C. Queue
+- Commit this pass (payments.js empty-sig fail-closed, jest.setup mock harden,
+  virtualTryOn /status + CastError guard, SESSION_LOG) → push (includes 1164ff3)
+  → verify Render deploy → re-run confirm-batch live → payout reconciliation
+  (Alex dashboard/balance delta = $92 + shipping share) → cashout (set
+  payoutMethod.type then POST /api/payments/payout) → release/void stranded PIs
+  from earlier failed attempts.
