@@ -9,6 +9,37 @@ const { paginate } = require('../utils/pagination');
 const LISTING_LIST_FIELDS = 'title price originalPrice images videoUrl seller category brand size condition likes sold createdAt status';
 const USER_PUBLIC_FIELDS = 'name avatar';
 
+// Listing image uploads.
+// In test mode (or when Cloudinary credentials are absent) files are NOT
+// uploaded to Cloudinary — a deterministic local placeholder URL is stored
+// instead so listing creation works offline and in CI without network or
+// secrets. Production still uploads to Cloudinary.
+const uploadListingImages = async (files) => {
+  const imageUrls = [];
+  if (!files || files.length === 0) return imageUrls;
+  const cloudConfigured = process.env.CLOUDINARY_CLOUD_NAME
+    && process.env.CLOUDINARY_API_KEY
+    && process.env.CLOUDINARY_API_SECRET;
+  const useMock = process.env.NODE_ENV === 'test' || !cloudConfigured;
+  if (useMock) {
+    for (const file of files) {
+      imageUrls.push(`test://listing-image/${Date.now()}-${file.originalname || 'image.png'}`);
+    }
+    return imageUrls;
+  }
+  const { cloudinary } = require('../config/cloudinary');
+  for (const file of files) {
+    const b64 = Buffer.from(file.buffer).toString('base64');
+    const dataURI = `data:${file.mimetype};base64,${b64}`;
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: 'trend-drop/listings',
+      transformation: [{ width: 800, height: 800, crop: 'limit' }],
+    });
+    imageUrls.push(result.secure_url);
+  }
+  return imageUrls;
+};
+
 router.get('/', optionalAuth, async (req, res) => {
   try {
     const { category, brand, size, condition, minPrice, maxPrice, search, sort, page = 1, limit = 20 } = req.query;
@@ -202,20 +233,7 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       boostTier, boostDuration,
     } = req.body;
 
-    let imageUrls = [];
-
-    if (req.files && req.files.length > 0) {
-      const { cloudinary } = require('../config/cloudinary');
-      for (const file of req.files) {
-        const b64 = Buffer.from(file.buffer).toString('base64');
-        const dataURI = `data:${file.mimetype};base64,${b64}`;
-        const result = await cloudinary.uploader.upload(dataURI, {
-          folder: 'trend-drop/listings',
-          transformation: [{ width: 800, height: 800, crop: 'limit' }],
-        });
-        imageUrls.push(result.secure_url);
-      }
-    }
+    const imageUrls = await uploadListingImages(req.files);
 
     if (Number(price) < 5) {
       return res.status(400).json({ message: 'Minimum listing price is $5.00' });
@@ -312,6 +330,15 @@ router.put('/:id', auth, (req, res, next) => {
       existingImages,
     } = req.body;
 
+    // String-aware boolean coercion: multipart/form-data fields arrive as
+    // strings ("true"/"false"), so Boolean("false") would incorrectly be true.
+    const toBool = (v) => {
+      if (typeof v === 'boolean') return v;
+      if (v === 'true') return true;
+      if (v === 'false') return false;
+      return undefined;
+    };
+
     const updateData = {};
 
     let imageUrls = [];
@@ -327,16 +354,8 @@ router.put('/:id', auth, (req, res, next) => {
     }
 
     if (req.files && req.files.length > 0) {
-      const { cloudinary } = require('../config/cloudinary');
-      for (const file of req.files) {
-        const b64 = Buffer.from(file.buffer).toString('base64');
-        const dataURI = `data:${file.mimetype};base64,${b64}`;
-        const result = await cloudinary.uploader.upload(dataURI, {
-          folder: 'trend-drop/listings',
-          transformation: [{ width: 800, height: 800, crop: 'limit' }],
-        });
-        imageUrls.push(result.secure_url);
-      }
+      const uploaded = await uploadListingImages(req.files);
+      imageUrls.push(...uploaded);
     }
 
     if (imageUrls.length > 0 || existingImages !== undefined) {
@@ -351,15 +370,15 @@ router.put('/:id', auth, (req, res, next) => {
     if (condition) updateData.condition = condition;
     if (color !== undefined) updateData.color = color;
     if (videoUrl !== undefined) updateData.videoUrl = videoUrl;
-    if (quantity) updateData.quantity = Number(quantity);
+    if (quantity !== undefined && quantity !== '') updateData.quantity = Number(quantity);
     if (status) {
       updateData.status = status;
       if (status === 'active') updateData.available = true;
       if (status === 'draft') updateData.available = false;
     }
     if (available !== undefined) {
-      // multipart form fields arrive as strings: Boolean("false") === true
-      updateData.available = available === true || available === 'true';
+      const b = toBool(available);
+      if (b !== undefined) updateData.available = b;
     }
 
     if (price) {

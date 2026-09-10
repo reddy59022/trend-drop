@@ -1,13 +1,31 @@
 # TrendDrop — Cross-Platform Certification Report
-## Date: 2026-08-04 (Updated)
+## Date: 2026-09-09 (Updated)
 
 ---
 
 ## Executive Summary
 
-All features have been analyzed across **Web**, **iOS (Simulator)**, and **Android (Emulator)** platforms. Bugs were identified and fixed in two passes: the original Phase A–D sweep and a fresh cross-platform audit (Phase E) that found and resolved 3 additional native-blocking bugs.
+All features have been analyzed across **Web**, **iOS (Simulator)**, and **Android (Emulator)** platforms. Bugs were identified and fixed in three passes: the original Phase A–D sweep, the Phase E cross-platform native audit (3 additional native-blocking bugs), and the **2026-09-09 full-project re-audit (Bugs 8–17)** covering payment correctness, order integrity, payout idempotency, security, and test realism.
+
+**Current status (2026-09-09):** 81/81 server suites, 1084/1084 tests green. Web production build + 9/9 runtime smoke checks pass. iOS `xcodebuild` BUILD SUCCEEDED. Android `assembleDebug` BUILD SUCCESSFUL (10 MB APK). `render.yaml` secrets scrubbed (rotation required).
+
+### Session 2026-09-09 — Bugs 8–17 (full detail in CERTIFICATION.md)
+
+| # | Bug | File(s) | Platform Impact |
+|---|-----|---------|-----------------|
+| 8 | Real Stripe key leaked into `NODE_ENV=test` via dotenv | `server/server.js`, `server/config/payments.js` | Test reliability |
+| 9 | Avatar upload crashed without Cloudinary credentials | `server/routes/auth.js` | Registration/profile (all platforms, dev/test) |
+| 10 | Purchases never marked listings sold; same-seller batch writes hit Mongoose `VersionError`; no payment-intent dedupe | `server/routes/payments.js`, `server/models/Transaction.js` | Checkout (Web/iOS/Android) |
+| 11 | Consolidated batch-checkout orders missing → `GET /orders/:id` 404; `isConsolidated` misdetection | `server/routes/transactions.js`, `server/models/Order.js`, `client/src/pages/OrderDetail.js` | Order detail (all platforms) |
+| 12 | Payout processing not idempotent; `totalSales` semantics wrong | `server/routes/payouts.js`, `client/src/pages/SellerDashboard.js` | Seller dashboard/payouts |
+| 13 | `multipart/form-data` string booleans corrupted (`isDraft:"false"` → `true`) | `server/routes/listings.js` | Edit listing (native) |
+| 14 | Cart quantity `NaN` divergence between local state and server sync | `client/src/context/CartContext.js` | Cart (all platforms) |
+| 15 | Missing `/price-suggestion` route → blank screen on navigation | `client/src/App.js` | All platforms |
+| 16 | Hardcoded secrets in `render.yaml` (+ Cloudinary secret pasted as Stripe webhook secret) | `render.yaml` | Security/deployment |
+| 17 | Tests bypassed public purchase API with internal `pay` helper, masking bugs 10–12 | `server/tests/sellerE2E.test.js` + 3 more | Test realism |
 
 ---
+
 
 ## Bug Fixes Applied
 

@@ -7,9 +7,15 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 // Mongoose is needed for the health‑check endpoint.
 const mongoose = require('mongoose');
-// Load environment variables from .env only in non‑production environments.
-// This prevents the local development NODE_ENV=development setting from overriding the production value set by Render.
-if (process.env.NODE_ENV !== 'production') {
+// Load environment variables from .env ONLY in non-production, non-test environments.
+// This prevents the local development NODE_ENV=development setting from overriding
+// the production value set by Render.
+// CRITICAL: In test mode, .env MUST NOT be loaded — jest.setup.js deliberately
+// deletes STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET so tests use mock payment
+// intents (global.__mockPaymentIntents). Re-loading .env here would re-introduce
+// the real Stripe key and cause tests to hit the live Stripe API (real
+// requires_payment_method intents → confirm-batch 400).
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   require('dotenv').config();
 }
 

@@ -10,10 +10,15 @@
 // Stripe is not needed (e.g., during deployment testing), we allow the module to
 // load without throwing an error.
 let stripe = null;
-if (process.env.STRIPE_SECRET_KEY) {
+// Defense-in-depth: never initialize the real Stripe SDK in test mode.
+// jest.setup.js deletes STRIPE_SECRET_KEY, but server.js/test-flows may
+// inadvertently reintroduce it (e.g. dotenv). Tests must ALWAYS use the
+// mock payment-intent registry (global.__mockPaymentIntents) so they never
+// hit the live Stripe API.
+if (process.env.STRIPE_SECRET_KEY && process.env.NODE_ENV !== 'test') {
   stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 } else {
-  console.warn('STRIPE_SECRET_KEY not set – Stripe functionality will be disabled.');
+  console.warn('STRIPE_SECRET_KEY not set (or test mode) – Stripe functionality will be disabled.');
 }
 
 // ALL countries use 8% platform fee. Buyer protection is 5% (separate).

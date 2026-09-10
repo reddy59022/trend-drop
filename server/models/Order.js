@@ -101,7 +101,11 @@ const orderSchema = new mongoose.Schema({
     country: { type: String, default: 'US' },
     phone: { type: String, default: '' },
   },
-}, { timestamps: true });
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
+});
 
 function deriveStatus(shipments) {
   if (!shipments || shipments.length === 0) return 'confirmed';

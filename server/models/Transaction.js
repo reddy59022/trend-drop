@@ -56,6 +56,10 @@ const transactionSchema = new mongoose.Schema({
     // Boost fees - BUG 9: Added missing fields that transactions.js sets
     boostFee: { type: Number, default: 0 },
     boostTier: { type: String, default: '' },
+    // Stripe idempotency: which payment intent funded this transaction.
+    // Required for confirm-batch dedupe (same PI retried after 3DS/app
+    // background must return already-processed instead of double-charging).
+    paymentIntentId: { type: String, default: '' },
   },
   status: {
     type: String,

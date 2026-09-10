@@ -3,6 +3,7 @@ const router = express.Router();
 const Payout = require('../models/Payout');
 const Transaction = require('../models/Transaction');
 const Listing = require('../models/Listing');
+const User = require('../models/User');
 const { auth } = require('../middleware/auth');
 
 // Platform commission is 8% of item price (matching payments.js countryCommissions)
@@ -25,20 +26,22 @@ router.get('/dashboard', auth, async (req, res) => {
       status: 'completed',
     }).populate('listing', 'title images price');
 
-    // Calculate totals from ALL payouts (both completed and pending)
-    // Total sales = all sales (completed + pending)
-    const totalSales = payouts.reduce((sum, p) => sum + (p.salePrice || 0), 0);
-
     const completedPayouts = payouts.filter(p => p.status === 'completed');
+
+    // totalSales = GROSS dollar volume of all sales (original API contract:
+    // revenue.test SF.2 asserts totalCommission < totalSales and
+    // SellerDashboard renders it via formatPrice). totalSalesCount = NUMBER
+    // of completed sales (count contract used by sellerFullFlow and the
+    // "N sales" displays). Both are returned so dollar and count consumers
+    // stay correct.
+    const totalSales = payouts.reduce((sum, p) => sum + (p.salePrice || 0), 0);
+    const totalSalesCount = completedPayouts.length;
+
     // Completed earnings = only from completed payouts
-    const totalEarnings = completedPayouts
-      .reduce((sum, p) => sum + p.payoutAmount, 0);
+    const totalEarnings = completedPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
 
     // Total commission = from all payouts (completed + pending)
     const totalCommission = payouts.reduce((sum, p) => sum + (p.commissionAmount || 0), 0);
-
-    // Total paid out = sum of completed payouts
-    const totalPaidOut = completedPayouts.reduce((sum, p) => sum + (p.payoutAmount || 0), 0);
 
     // Pending = all pending payouts + transactions without payout records
     const pendingPayouts = payouts.filter(p => p.status === 'pending');
@@ -49,18 +52,31 @@ router.get('/dashboard', auth, async (req, res) => {
       .filter(t => !payouts.some(p => p.transaction?.toString() === t._id.toString()))
       .reduce((sum, t) => sum + (t.paymentBreakdown?.sellerEarnings || 0), 0);
 
-    const availableBalance = completedPayouts.reduce((sum, p) => sum + (p.payoutAmount || 0), 0);
+    // NOTE: totalSales + totalEarnings computed from completedPayouts above.
+
+    // Seller's cash-out balance = earnings released minus what has already been
+    // paid out (tracked on the seller's balance by /api/payments/payout).
+    const sellerDoc = await User.findById(sellerId).select('balance').lean();
+    const userAvailable = sellerDoc?.balance?.available || 0;
+    const userTotalPaidOut = sellerDoc?.balance?.totalPaidOut || 0;
+    const totalEarned = Math.round(totalEarnings * 100) / 100;
+    const pendingBalance = Math.round((pendingAmount + pendingFromTransactions) * 100) / 100;
+    const availableBalance = Math.round(
+      Math.max(0, totalEarned - userTotalPaidOut) + userAvailable
+    ) / 100;
 
     res.json({
       commissionRate: COMMISSION_RATE,
       commissionPercent: COMMISSION_RATE * 100,
       totalSales,
+      totalSalesCount,
       totalCommission,
       totalEarnings,
-      totalEarned: totalEarnings,
-      totalPaidOut,
-      availableBalance: Math.round(availableBalance * 100) / 100,
-      pendingBalance: Math.round((pendingAmount + pendingFromTransactions) * 100) / 100,
+      // ALIASES — client + e2e contract expects these exact field names
+      totalEarned,
+      totalPaidOut: userTotalPaidOut,
+      pendingBalance,
+      availableBalance,
       pendingAmount: pendingAmount + pendingFromTransactions,
       pendingCount: pendingPayouts.length + completedTransactions.filter(
         t => !payouts.some(p => p.transaction?.toString() === t._id.toString())
@@ -92,12 +108,24 @@ router.post('/process/:transactionId', auth, async (req, res) => {
     // Check if payout already exists for this transaction
     const existingPayout = await Payout.findOne({ transaction: transaction._id });
     if (existingPayout) {
-      // Idempotent success when the payout is already released (auto-complete
-      // pre-creates a completed payout); only refuse while it is still pending.
-      if (['completed', 'paid', 'processing'].includes(existingPayout.status)) {
-        return res.json({ message: 'Payout already processed', payout: existingPayout });
-      }
-      return res.status(400).json({ message: 'Payout already exists but is not yet completed' });
+      // Idempotent: auto-complete may have already created/paid this payout.
+      // Returning 400 here means the Web/iOS/Android "Cash Out" button shows
+      // a confusing error after an order auto-completes. Return the existing
+      // payout with 200 so the client sees the money was already credited.
+      const salePrice = transaction.paymentBreakdown?.subtotal || transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
+      const commissionAmount = transaction.paymentBreakdown?.platformFee || Math.round(salePrice * COMMISSION_RATE * 100) / 100;
+      const payoutAmount = transaction.paymentBreakdown?.sellerEarnings || Math.round((salePrice - commissionAmount) * 100) / 100;
+      await existingPayout.populate(['listing', 'transaction']).catch(() => {});
+      return res.json({
+        message: 'Payout already processed',
+        payout: existingPayout,
+        breakdown: {
+          salePrice,
+          commissionRate: `${COMMISSION_RATE * 100}%`,
+          commissionAmount,
+          payoutAmount,
+        },
+      });
     }
 
     // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
@@ -192,12 +220,10 @@ router.get('/balance', auth, async (req, res) => {
 
     const availableBalance = completedPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
     const totalCommissionPaid = completedPayouts.reduce((sum, p) => sum + p.commissionAmount, 0);
-    const totalPaidOut = completedPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
 
     res.json({
       availableBalance: Math.round(availableBalance * 100) / 100,
       totalCommissionPaid: Math.round(totalCommissionPaid * 100) / 100,
-      totalPaidOut: Math.round(totalPaidOut * 100) / 100,
       commissionRate: COMMISSION_RATE,
       commissionPercent: COMMISSION_RATE * 100,
     });

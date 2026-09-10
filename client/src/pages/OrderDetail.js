@@ -4,11 +4,12 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
-import { 
-  FaArrowLeft, FaTruck, FaShieldAlt, FaCheckCircle, FaTimesCircle, 
+import {
+  FaArrowLeft, FaTruck, FaShieldAlt, FaCheckCircle, FaTimesCircle,
   FaClock, FaBoxOpen, FaExclamationTriangle, FaUndo, FaFileInvoiceDollar,
   FaSpinner, FaStar, FaRegStar, FaLock, FaHandshake, FaFileContract, FaCopy
 } from 'react-icons/fa';
+import { copyText as copyTextNative } from '../services/native';
 
 const StatusBadge = ({ status }) => {
   const statusConfig = {
@@ -86,29 +87,10 @@ const PromptModal = ({ title, placeholder, onConfirm, onCancel, value, setValue,
   );
 };
 
-// Clipboard safe copy — works on iOS WebView (navigator.clipboard
-// can be absent/rejected) with a hidden-textarea execCommand fallback.
-const copyText = (text) => {
-  const fallback = () => {
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      return true;
-    } catch { return false; }
-  };
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).then(() => true, () => fallback());
-  } else {
-    fallback();
-  }
-};
+// Clipboard copy — delegates to the Capacitor-safe helper in
+// services/native.js (navigator.clipboard with hidden-textarea
+// execCommand fallback for iOS/Android WebViews).
+const copyText = (text) => copyTextNative(text);
 
 const OrderDetail = () => {
   const { id } = useParams();
@@ -213,7 +195,7 @@ const OrderDetail = () => {
       };
     }
   }
-  const isConsolidated = !!(order?.items && order?.items.length >= 0 && order?.totals);
+  const isConsolidated = !!((order?.items && order.items.length > 0 && order?.totals) || (viewOrder.totals && !viewOrder.listing?.title && order?.items));
 
   // Actionable unit(s): each consolidated item maps to its own Transaction,
   // so lifecycle actions target the transaction id. Legacy orders target the

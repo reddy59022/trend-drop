@@ -18,21 +18,32 @@ Current progress: 10/10 items completed (100%)
 - [x] Client tests pass: runner clean (no test files in src; exit 0) ✅
 - [x] E2E tests pass: 197/197 ✅
 
-## Test Verification (2026-08-04)
+## Session 2026-09-09 — Full-Project Re-Audit (COMPLETE)
+
+- [x] Full test suite: **81/81 suites, 1084/1084 tests green** (`npm test`, run 3)
+- [x] Web production build: ✅ `client/build/` (main.df99f7f3.js, 136 chunks)
+- [x] Web runtime smoke (production mode): ✅ `/health` 200, `/health/mongo` 200 connected, `/api/listings` 200, auth guard 401, register 201, CORS preflight `capacitor://localhost` + `https://localhost` → 204, SPA fallback 200, static asset 200
+- [x] iOS build: ✅ BUILD SUCCEEDED (Xcode 26.4.1), fresh `App.app` in DerivedData with synced `public/` assets
+- [x] Android build: ✅ `app-debug.apk` 10 MB rebuilt (JDK 21, Gradle 8.14.3, compileSdk 36, `com.trenddrop.app`)
+- [x] Security: `render.yaml` secrets scrubbed (Mongo password, JWT_SECRET, Cloudinary secret removed; bogus STRIPE_WEBHOOK_SECRET value fixed); secret scan of tracked sources clean; **credentials must be rotated**
+- [x] Bugs 8–17 fixed and documented in `CERTIFICATION.md` (Stripe-in-tests leak, Cloudinary crash, sold-flag/VersionError, consolidated orders, payout idempotency, multipart boolean coercion, cart quantity divergence, missing `/price-suggestion` route, test-suite realism)
+
+## Test Verification (2026-09-09)
 
 | Suite | Result |
 |-------|--------|
-| Server (`npm test` — all 79 suites) | ✅ 1020/1020 passed |
-| E2E (`jest tests/e2e.test.js` — 34 business rules) | ✅ 197/197 passed |
+| Server (`npm test` — all 81 suites) | ✅ 1084/1084 passed |
+| E2E (`jest tests/e2e.test.js` — 34 business rules) | ✅ Included in suite run (11 tests) |
 | Client (`react-scripts test --passWithNoTests`) | ✅ exit 0 (no test files in client/src) |
+| Web production build + runtime smoke | ✅ build success + 9/9 smoke checks |
 
 ## Cross-Platform Certification Matrix
 
 | Platform | Build | Runtime | Tests |
 |----------|:-----:|:-------:|:-----:|
-| Web | ✅ 484KB production bundle | ✅ HTTP 200, hero renders, API calls succeed | ✅ 1020/1020 + e2e |
-| iOS (Simulator) | ✅ xcodebuild BUILD SUCCEEDED (iphonesimulator, all 9 Capacitor plugins resolved) | ✅ Assets synced; Capacitor plugin wiring confirmed | ✅ 1020/1020 + e2e |
-| Android (Emulator) | ✅ Gradle assembleDebug BUILD SUCCESSFUL, 10.9MB APK (API 36, JDK 21) | ✅ Assets synced; Capacitor plugin wiring confirmed | ✅ 1020/1020 + e2e |
+| Web | ✅ production bundle (main.df99f7f3.js, 136 chunks) | ✅ HTTP 200 health/API/CORS/SPA-fallback smoke 9/9 | ✅ 1084/1084 |
+| iOS (Simulator) | ✅ xcodebuild BUILD SUCCEEDED (iphonesimulator, all 9 Capacitor plugins resolved, assets synced) | ✅ Capacitor plugin wiring + native services (share/copy/modal) confirmed | ✅ 1084/1084 |
+| Android (Emulator) | ✅ Gradle assembleDebug BUILD SUCCESSFUL, 10MB APK (API 36, JDK 21) | ✅ Assets synced; Capacitor plugin wiring confirmed | ✅ 1084/1084 |
 
 ## Phase E — Fresh Cross-Platform Audit Fixes (2026-08-04)
 

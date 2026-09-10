@@ -53,6 +53,7 @@ export const ThemeProvider = ({ children }) => {
     if (!localStorage.getItem('currency')) {
       detectCurrency();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [dir, setDir] = useState(() => {

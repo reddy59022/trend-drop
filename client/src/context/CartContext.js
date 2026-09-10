@@ -43,7 +43,7 @@ const toLocalItem = (serverItem) => {
 };
 
 export const CartProvider = ({ children }) => {
-  const { user, token } = useAuth();
+  const { user } = useAuth();
   const isAuthed = Boolean(user);
   const lastSyncedUser = useRef(null);
 
@@ -123,19 +123,20 @@ export const CartProvider = ({ children }) => {
   const addToCart = (item) => {
     if (!item?.listingId) return;
 
+    const qtyToAdd = Math.max(1, item.quantity || 1);
     setCart((prev) => {
       const existing = prev.find((i) => i.listingId === item.listingId);
       const next = existing
         ? prev.map((i) =>
             i.listingId === item.listingId
-              ? { ...i, quantity: Math.min(i.available ?? Infinity, i.quantity + item.quantity) }
+              ? { ...i, quantity: Math.min(i.available ?? Infinity, i.quantity + qtyToAdd) }
               : i
           )
-        : [...prev, { ...item }];
+        : [...prev, { ...item, quantity: item.quantity || 1 }];
 
       // Sync to server when authenticated
       if (isAuthed) {
-        api.post('/cart/items', { listingId: item.listingId, quantity: item.quantity || 1 })
+        api.post('/cart/items', { listingId: item.listingId, quantity: qtyToAdd })
           .then(async () => {
             // Re-pull the canonical cart so quantities stay correct
             try {

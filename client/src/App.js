@@ -102,6 +102,9 @@ const NativeAppLifecycle = () => {
     let listenerCleanup = () => {};
     import('@capacitor/app').then(({ App }) => {
       capApp = App;
+      // Keep the returned handle so the deep-link listener is removed on
+      // unmount (avoids duplicate appUrlOpen handlers accumulating on
+      // iOS/Android when the provider re-mounts).
       App.addListener('appUrlOpen', (event) => handleUrl(event.url)).then(
         (handle) => {
           listenerCleanup = () => {
@@ -172,6 +175,7 @@ function App() {
                 <Route path="/transactions" element={<ProtectedRoute><Transactions /></ProtectedRoute>} />
                 <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                 <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+                <Route path="/price-suggestion" element={<ProtectedRoute><PriceSuggestionPage /></ProtectedRoute>} />
                 <Route path="/wishlist" element={<ProtectedRoute><Wishlist /></ProtectedRoute>} />
                 <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
                 <Route path="/cart" element={<ProtectedRoute><CartPage /></ProtectedRoute>} />

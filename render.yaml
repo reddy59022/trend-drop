@@ -4,63 +4,62 @@ services:
     env: node
     # Stable LTS Node version compatible with react-scripts (v5.x)
     nodeVersion: 20
-    # Install client dependencies, build the React app, then install server dependencies.
+    # Install client dependencies with a clean install (npm ci), build the React
+    # app, then install server dependencies.
     buildCommand: cd client && npm ci && npm run build && cd ../server && npm ci
     # Express serves the API and the built client statically (NODE_ENV set via envVars below).
     startCommand: node server/server.js
     envVars:
       - key: NODE_ENV
         value: production
+      # SECURITY: No secret values are committed in this file.
+      # All secret env vars use `sync: false`, so their values are prompted for /
+      # managed exclusively in the Render dashboard (never stored in source control).
+      #
+      # IMPORTANT: The following credentials were previously committed to this repo
+      # and MUST be rotated before the next production deploy:
+      #   - MongoDB Atlas user password (MONGO_URI)
+      #   - JWT_SECRET
+      #   - CLOUDINARY_API_SECRET
       - key: FRONTEND_URL
+        # Frontend URL used for email links (verification, password reset, etc.)
         value: "https://trend-drop.onrender.com"
         sync: false
       - key: CLIENT_URL
         value: "https://trend-drop.onrender.com"
       - key: CLOUDINARY_CLOUD_NAME
         value: dhw3unh0e
-      # --- Secrets: PLACEHOLDERS ONLY. Set real values in the Render dashboard. ---
       - key: MONGO_URI
-        value: "mongodb+srv://USERNAME:PASSWORD@cluster0.example.mongodb.net/trend-drop?retryWrites=true&w=majority"
         sync: false
       - key: JWT_SECRET
-        value: CHANGE_ME_random_64_chars
-        sync: false
+        generateValue: true
+      # Cloudinary API key is a public identifier; the secret stays out of source.
       - key: CLOUDINARY_API_KEY
-        value: CHANGE_ME
         sync: false
       - key: CLOUDINARY_API_SECRET
-        value: CHANGE_ME
         sync: false
+      # Stripe configuration – set real keys in the Render dashboard.
       - key: STRIPE_SECRET_KEY
-        value: CHANGE_ME
         sync: false
       - key: STRIPE_PUBLISHABLE_KEY
-        value: CHANGE_ME
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
-        value: CHANGE_ME
         sync: false
+      # Email (Brevo)
       - key: BREVO_API_KEY
-        value: CHANGE_ME
         sync: false
       - key: BREVO_SENDER_EMAIL
-        value: CHANGE_ME
         sync: false
+      # OAuth providers
       - key: GOOGLE_CLIENT_ID
-        value: CHANGE_ME
         sync: false
       - key: GOOGLE_CLIENT_SECRET
-        value: CHANGE_ME
         sync: false
       - key: ADMIN_EMAILS
-        value: CHANGE_ME
         sync: false
       - key: APPLE_CLIENT_ID
-        value: CHANGE_ME
         sync: false
       - key: FB_APP_ID
-        value: CHANGE_ME
         sync: false
       - key: FB_APP_SECRET
-        value: CHANGE_ME
         sync: false

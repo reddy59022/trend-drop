@@ -148,7 +148,9 @@ export const AuthProvider = ({ children }) => {
   // listen for the deep-link callback that App.js forwards here
   // as a window 'oauth-callback' CustomEvent carrying the token.
   // ============================================================
-  const [oauthListeners, setOauthListeners] = useState({});
+  // Tracks in-flight native OAuth flows by key so openNativeOAuth can clean
+  // up the matching listener on callback/close/timeout.
+  const [, setOauthListeners] = useState({});
 
   const openNativeOAuth = (url, key) =>
     new Promise((resolve, reject) => {

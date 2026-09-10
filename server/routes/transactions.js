@@ -401,57 +401,63 @@ router.post('/', auth, async (req, res) => {
       await seller.save();
     }
 
-    // Create the consolidated Enterprise Order for this checkout event
-    // (one Order per purchase; the seller fulfills via order.shipments[0])
-    await Order.create({
-      buyer: req.user._id,
-      sellers: [listing.seller],
-      currency: listing.currency || 'USD',
-      items: [{
-        listing: listingId,
-        transaction: transaction._id,
-        seller: listing.seller,
-        title: listing.title || '',
-        price: finalPrice,
-        quantity: 1,
-        currency: listing.currency || 'USD',
-        image: (listing.images || [])[0] || '',
-        condition: listing.condition || '',
-        size: listing.size || '',
-        brand: listing.brand || '',
-      }],
-      shipments: [{
-        seller: listing.seller,
-        items: [transaction._id],
-        shippingCost: breakdown.buyer.shippingCost,
-        currency: listing.currency || 'USD',
-        status: 'pending',
-      }],
-      totals: {
-        subtotal: breakdown.buyer.itemPrice,
-        shipping: breakdown.buyer.shippingCost,
-        protectionFees: breakdown.buyer.buyerProtectionFee,
-        discounts: 0,
-        total: breakdown.buyer.totalPaid,
-      },
-      payment: {
-        paymentIntentId: '',
-        status: 'captured',
-        currency: listing.currency || 'USD',
-        totalHeld: breakdown.buyer.totalPaid,
-      },
-      status: 'confirmed',
-      shippingAddress: {
-        fullName: shippingAddress?.fullName || req.user.name,
-        street1: shippingAddress?.street1,
-        street2: shippingAddress?.street2,
-        city: shippingAddress?.city,
-        state: shippingAddress?.state,
-        postalCode: shippingAddress?.postalCode,
-        country: buyerShipCountry,
-        phone: shippingAddress?.phone,
-      },
-    });
+    // CRITICAL FIX: Every purchase MUST create a consolidated Enterprise Order
+    // (same shape as confirm-batch) so buyers/sellers can manage, ship,
+    // confirm-received, and return items via /api/orders across platforms.
+    try {
+      await Order.create({
+        buyer: req.user._id,
+        sellers: [listing.seller],
+        currency: transaction.currency || 'USD',
+        items: [{
+          listing: listing._id,
+          transaction: transaction._id,
+          seller: listing.seller,
+          title: listing.title || '',
+          price: transaction.itemPrice || 0,
+          quantity: 1,
+          currency: transaction.currency || 'USD',
+          image: (listing.images && listing.images[0]) || '',
+          condition: listing.condition || '',
+          size: listing.size || '',
+          brand: listing.brand || '',
+        }],
+        shipments: [{
+          seller: listing.seller,
+          items: [transaction._id],
+          shippingCost: transaction.paymentBreakdown?.shippingCost || 0,
+          currency: transaction.currency || 'USD',
+          labelStatus: 'created',
+          status: 'pending',
+        }],
+        totals: {
+          subtotal: transaction.paymentBreakdown?.subtotal || transaction.itemPrice || 0,
+          shipping: transaction.paymentBreakdown?.shippingCost || 0,
+          protectionFees: transaction.paymentBreakdown?.buyerProtectionFee || 0,
+          discounts: 0,
+          total: transaction.paymentBreakdown?.totalPaid || 0,
+        },
+        payment: {
+          paymentIntentId: transaction.paymentBreakdown?.paymentIntentId || '',
+          status: 'captured',
+          currency: transaction.currency || 'USD',
+          totalHeld: transaction.paymentBreakdown?.totalPaid || 0,
+        },
+        shippingAddress: {
+          fullName: shippingAddress?.fullName || req.user.name,
+          street1: shippingAddress?.street1 || '',
+          street2: shippingAddress?.street2 || '',
+          city: shippingAddress?.city || '',
+          state: shippingAddress?.state || '',
+          postalCode: shippingAddress?.postalCode || '',
+          country: shippingAddress?.country || req.user.country || 'US',
+          phone: shippingAddress?.phone || '',
+        },
+      });
+    } catch (orderErr) {
+      // Order is a grouping convenience; the money flow must not roll back.
+      console.error('Order creation failed (transaction still committed):', orderErr.message);
+    }
 
     await transaction.populate(['buyer', 'seller', 'listing']);
     res.status(201).json(transaction);

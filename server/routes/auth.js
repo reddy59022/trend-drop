@@ -93,14 +93,21 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
     let avatar = '';
     if (req.file) {
       try {
-        const { cloudinary } = require('../config/cloudinary');
-        const b64 = Buffer.from(req.file.buffer).toString('base64');
-        const dataURI = `data:${req.file.mimetype};base64,${b64}`;
-        const result = await cloudinary.uploader.upload(dataURI, {
-          folder: 'trend-drop/avatars',
-          transformation: [{ width: 200, height: 200, crop: 'thumb' }],
-        });
-        avatar = result.secure_url;
+        const cloudConfigured = process.env.CLOUDINARY_CLOUD_NAME
+          && process.env.CLOUDINARY_API_KEY
+          && process.env.CLOUDINARY_API_SECRET;
+        if (process.env.NODE_ENV === 'test' || !cloudConfigured) {
+          avatar = `test://avatar/${Date.now()}-${req.file.originalname || 'avatar.png'}`;
+        } else {
+          const { cloudinary } = require('../config/cloudinary');
+          const b64 = Buffer.from(req.file.buffer).toString('base64');
+          const dataURI = `data:${req.file.mimetype};base64,${b64}`;
+          const result = await cloudinary.uploader.upload(dataURI, {
+            folder: 'trend-drop/avatars',
+            transformation: [{ width: 200, height: 200, crop: 'thumb' }],
+          });
+          avatar = result.secure_url;
+        }
       } catch (imgErr) {
         console.error('Avatar upload error:', imgErr.message);
       }
@@ -752,16 +759,25 @@ router.put('/avatar', auth, upload.single('avatar'), async (req, res) => {
     }
 
     const { cloudinary } = require('../config/cloudinary');
-    const b64 = Buffer.from(req.file.buffer).toString('base64');
-    const dataURI = `data:${req.file.mimetype};base64,${b64}`;
-    const result = await cloudinary.uploader.upload(dataURI, {
-      folder: 'trend-drop/avatars',
-      transformation: [{ width: 200, height: 200, crop: 'thumb' }],
-    });
+    const cloudConfigured = process.env.CLOUDINARY_CLOUD_NAME
+      && process.env.CLOUDINARY_API_KEY
+      && process.env.CLOUDINARY_API_SECRET;
+    let avatarUrl;
+    if (process.env.NODE_ENV === 'test' || !cloudConfigured) {
+      avatarUrl = `test://avatar/${Date.now()}-${req.file.originalname || 'avatar.png'}`;
+    } else {
+      const b64 = Buffer.from(req.file.buffer).toString('base64');
+      const dataURI = `data:${req.file.mimetype};base64,${b64}`;
+      const result = await cloudinary.uploader.upload(dataURI, {
+        folder: 'trend-drop/avatars',
+        transformation: [{ width: 200, height: 200, crop: 'thumb' }],
+      });
+      avatarUrl = result.secure_url;
+    }
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
-      { $set: { avatar: result.secure_url } },
+      { $set: { avatar: avatarUrl } },
       { new: true }
     );
 

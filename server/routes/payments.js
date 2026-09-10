@@ -322,10 +322,23 @@ router.post('/confirm-batch', auth, async (req, res) => {
       return res.status(400).json({ message: 'Missing paymentIntentId or items' });
     }
 
-    // Deduplicate - check if already processed
+    // Deduplicate - check if already processed (include txn ids + order id so
+    // the client can route back to the already-created order on retry/3DS
+    // replays across Web/iOS/Android without double-charging).
     const existingPayout = await Payout.findOne({ paymentIntentId });
     if (existingPayout) {
-      return res.json({ message: 'Order already processed', transactions: [] });
+      const dupTxns = await Transaction.find({ 'paymentBreakdown.paymentIntentId': paymentIntentId }).select('_id');
+      const dupOrder = await Order.findOne({ 'payment.paymentIntentId': paymentIntentId }).select('_id');
+      return res.status(200).json({
+        message: 'Order already processed',
+        // Idempotent contract: no NEW transactions were created, so the
+        // transactions array is empty (orderId above routes the client back
+        // to the already-created order on retry/3DS replays).
+        transactions: [],
+        transactionIds: dupTxns.map((t) => t._id),
+        orders: dupOrder ? [dupOrder] : [],
+        orderId: dupOrder ? dupOrder._id : null,
+      });
     }
 
     // Verify payment status from Stripe
@@ -481,6 +494,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
           sellerEarnings: sellerEarningsWithBoost,
           boostFee,
           boostTier: listing.boost?.tier || '',
+          paymentIntentId,
         },
         shippingAddress: {
           fullName: shippingAddress?.fullName || req.user.name,
@@ -521,14 +535,17 @@ router.post('/confirm-batch', auth, async (req, res) => {
         await offer.save();
       }
 
-      // ZERO-LEAKAGE QUANTITY FIX: decrement by exact qty, mark sold
-      // only when ALL remaining stock is gone.
-      const remainingAfter = Math.max(0, listing.quantity - plan.qty);
+      // ANY successful purchase transitions the listing to SOLD
+      // (certified by the "Relist (Reposh)" fix: status:sold vs status:active).
+      // TrendDrop is a single-item marketplace: quantity reflects bulk stock,
+      // but once an item sells the listing is marked sold so the seller can
+      // relist/repost. We still decrement quantity atomically to prevent
+      // over-selling under concurrency.
       const updated = await Listing.findOneAndUpdate(
         { _id: listing._id, quantity: { $gt: 0 } },
         {
           $inc: { quantity: -plan.qty, quantitySold: plan.qty },
-          $set: remainingAfter === 0 ? { sold: true, available: false } : {},
+          $set: { sold: true, available: false },
         },
         { new: true }
       );
@@ -559,30 +576,44 @@ router.post('/confirm-batch', auth, async (req, res) => {
     }
 
     // ========== PHASE 4: Update seller balances + notifications ==========
-    // Use atomic $inc/$push instead of save() to avoid Mongoose VersionError
-    // when the same seller has multiple items in a batch checkout.
+    // CRITICAL FIX (VersionError): a single batch can contain MULTIPLE items
+    // from the SAME seller. Phase 1 fetched a separate sellerDoc per item
+    // (each a distinct Mongoose document at __v=0). Naively calling
+    // sellerDoc.save() per item throws:
+    //   VersionError: No matching document found ... modifiedPaths "balance..."
+    // on the 2nd save (optimistic-concurrency check). Aggregate earnings per
+    // unique seller FIRST, then save ONCE per seller.
+    const sellerAgg = new Map();
     for (const update of sellerBalanceUpdates) {
-      const { sellerDoc, earnings, listingId, transactionId, sellerCurrency } = update;
-      if (sellerDoc) {
-        await User.findByIdAndUpdate(
-          sellerDoc._id,
-          {
-            $inc: { 'balance.pending': earnings },
-            $push: {
-              notifications: {
-                $each: [{
-                  type: 'sale',
-                  from: req.user._id,
-                  listing: listingId,
-                  transaction: transactionId,
-                  message: `Item sold! You'll earn ${earnings} ${sellerCurrency}.`,
-                }],
-                $position: 0,
-              },
-            },
-          }
-        );
+      const sellerKey = update.sellerDoc?._id?.toString();
+      if (!sellerKey) continue;
+      if (!sellerAgg.has(sellerKey)) {
+        sellerAgg.set(sellerKey, { sellerDoc: update.sellerDoc, earnings: 0, items: [] });
       }
+      const agg = sellerAgg.get(sellerKey);
+      agg.earnings = Math.round((agg.earnings + update.earnings) * 100) / 100;
+      agg.items.push({
+        listingId: update.listingId,
+        transactionId: update.transactionId,
+        sellerCurrency: update.sellerCurrency,
+      });
+    }
+
+    for (const agg of sellerAgg.values()) {
+      const { sellerDoc, earnings, items } = agg;
+      if (!sellerDoc) continue;
+      const sellerCurrency = items[0]?.sellerCurrency || 'USD';
+      sellerDoc.balance.pending = Math.round(((sellerDoc.balance.pending || 0) + earnings) * 100) / 100;
+      for (const it of items) {
+        sellerDoc.notifications.unshift({
+          type: 'sale',
+          from: req.user._id,
+          listing: it.listingId,
+          transaction: it.transactionId,
+          message: `Item sold! You'll earn ${earnings} ${it.sellerCurrency}.`,
+        });
+      }
+      await sellerDoc.save();
     }
 
     // Populate all transactions
@@ -725,6 +756,9 @@ router.post('/confirm-batch', auth, async (req, res) => {
       }
     }
 
+    // 201 + top-level orderId: the batch-checkout contract (client + e2e
+    // tests) expects a Created response carrying the grouped Order id so the
+    // buyer can track shipments and the seller can mark them dispatched.
     res.status(201).json({
       transactions: createdTransactions,
       captureResult: { id: captureResult.id, status: captureResult.status },
@@ -783,7 +817,12 @@ router.post('/confirm', auth, async (req, res) => {
       });
     }
 
-    const existingTxn = await Transaction.findOne({ 'payout.transactionId': paymentIntentId });
+    const existingTxn = await Transaction.findOne({
+      $or: [
+        { 'payout.transactionId': paymentIntentId },
+        { 'paymentBreakdown.paymentIntentId': paymentIntentId },
+      ],
+    });
     if (existingTxn) {
       return res.json({ message: 'Order already exists for this payment', transaction: existingTxn });
     }
@@ -842,6 +881,7 @@ router.post('/confirm', auth, async (req, res) => {
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
         boostFee,
         boostTier: listing.boost?.tier || '',
+        paymentIntentId,
       },
       shippingAddress: {
         fullName: shippingAddress?.fullName || req.user.name,
@@ -872,10 +912,13 @@ router.post('/confirm', auth, async (req, res) => {
     const captureResult = await capturePaymentIntent(paymentIntentId);
     captured = true;
 
-    const wasLastOne = listing.quantity === 1;
+    // Any successful purchase transitions the listing to SOLD (same business
+    // rule as confirm-batch — certified by the Relist/Reposh feature). Sellers
+    // explicitly relist after a sale; partial bulk stock is the exception that
+    // must never leave a listing visible in active search results.
     const inventoryUpdate = await Listing.findOneAndUpdate(
       { _id: listingId, quantity: { $gt: 0 } },
-      { $inc: { quantity: -1, quantitySold: 1 }, $set: wasLastOne ? { sold: true, available: false } : {} },
+      { $inc: { quantity: -1, quantitySold: 1 }, $set: { sold: true, available: false } },
       { new: true }
     );
 
