@@ -207,6 +207,27 @@ userSchema.index({ name: 'text' });
 userSchema.index({ 'notifications.read': 1, 'notifications.createdAt': -1 });
 userSchema.index({ country: 1 });
 
+// LEGACY-DATA SANITIZER (production seed-schema mismatch fix): legacy seed
+// docs inserted raw into Mongo carry shapes the production schema no longer
+// accepts (object `location`, string `payoutMethod`, unknown flat fields).
+// Runs pre-validate so unknown paths (e.g. payoutMethod.details) are
+// stripped BEFORE Mongoose strict validation — pre('save') is too late for
+// User.create, which validates first and would throw before the hook runs.
+userSchema.pre('validate', function (next) {
+  try {
+    const pm = this.get('payoutMethod');
+    if (pm && typeof pm === 'object' && !Array.isArray(pm) && 'details' in pm) {
+      const d = pm.details || {};
+      const clean = { type: pm.type };
+      if (d.accountNumber) clean.accountNumber = String(d.accountNumber);
+      if (d.routingNumber) clean.routingNumber = String(d.routingNumber);
+      if (d.accountHolderName) clean.accountHolder = String(d.accountHolderName);
+      this.set('payoutMethod', clean);
+    }
+  } catch (e) { /* never block save on sanitizer */ }
+  next();
+});
+
 userSchema.pre('save', async function (next) {
   // LEGACY-DATA SANITIZER (production seed-schema mismatch fix): legacy seed
   // docs inserted raw into Mongo carry shapes the production schema no longer
@@ -214,11 +235,28 @@ userSchema.pre('save', async function (next) {
   // Any money flow that loads + saves such a user (checkout, payouts, cancel)
   // would otherwise 500 on validation/cast. Coerce here so ONE fix covers
   // every current + future caller — no per-route patching needed.
+  //
+  // MONGOOSE 7 QUIRK (verified by local repro): a type-mismatched raw value
+  // (object where schema says String) is NOT hydrated into _doc — init casts
+  // it, the cast fails, and the raw value is cached ONLY in the document's
+  // validation-error slot ($errors.location.value). save() re-validates that
+  // cached error, so this.set()/direct _doc writes can never clear it. The
+  // working repair is: flatten the cached raw object into location, then
+  // DELETE the stale cached error (this.$errors.location) so validation
+  // re-runs against the fixed value. Same for payoutMethod.details (a key
+  // with no schema path): fold it into the real fields and drop the cache.
   try {
-    const loc = this.get('location');
-    if (loc && typeof loc === 'object' && !Array.isArray(loc)) {
-      const parts = [loc.city, loc.state, loc.country].filter(Boolean);
-      this.set('location', parts.join(', '));
+    const errs = this.$errors;
+    if (errs && errs.location && errs.location.value && typeof errs.location.value === 'object') {
+      const rawLoc = errs.location.value;
+      const parts = [rawLoc.city, rawLoc.state, rawLoc.country].filter(Boolean);
+      const flat = parts.join(', ');
+      if (this._doc) this._doc.location = flat;
+      try { this.set('location', flat); } catch (e) { /* fall through to cache clear */ }
+      delete errs.location;
+      if (this.$__ && this.$__.validationError && this.$__.validationError.errors) {
+        delete this.$__.validationError.errors.location;
+      }
     }
     const pm = this.get('payoutMethod');
     if (typeof pm === 'string') {
@@ -228,12 +266,16 @@ userSchema.pre('save', async function (next) {
       // schema has no `details` path, so strip it — otherwise strict-mode
       // saves throw "not in schema" ValidationError-adjacent failures on
       // User.create (e.g. sellerE2E createUser with payoutMethod.details).
-      if ('details' in pm) {
-        const d = pm.details || {};
+      // NOTE: `details` is not in the schema so reading it requires _doc
+      // access — this.get('payoutMethod') may return a subdoc without it.
+      const rawPm = (this._doc && this._doc.payoutMethod) || {};
+      if (rawPm && typeof rawPm === 'object' && 'details' in rawPm) {
+        const d = rawPm.details || {};
         const clean = { type: pm.type };
         if (d.accountNumber) clean.accountNumber = String(d.accountNumber);
         if (d.routingNumber) clean.routingNumber = String(d.routingNumber);
         if (d.accountHolderName) clean.accountHolder = String(d.accountHolderName);
+        if (this._doc) this._doc.payoutMethod = clean;
         this.set('payoutMethod', clean);
       }
     }

@@ -7,17 +7,30 @@ const { auth } = require('../middleware/auth');
 router.post('/:listingId', auth, async (req, res) => {
   try {
     const { listingId } = req.params;
-    
+
+    // Check-then-create: return 200 "Already viewed" when a record exists.
+    // (The unique index below is a backstop for races — two concurrent
+    // creates can still race past the check, in which case the loser's
+    // duplicate-key error maps to the same 200 response.)
+    const existing = await RecentlyViewed.findOne({
+      userId: req.user._id,
+      listingId,
+    });
+    if (existing) {
+      return res.status(200).json({ success: true, message: 'Already viewed' });
+    }
+
     const recentView = new RecentlyViewed({
       userId: req.user._id,
       listingId,
     });
-    
+
     await recentView.save();
-    
+
     res.status(201).json({ success: true });
   } catch (error) {
     // Duplicate key error is expected - user already viewed this item
+    // (race between the check above and the insert; unique index wins).
     if (error.code === 11000) {
       return res.status(200).json({ success: true, message: 'Already viewed' });
     }

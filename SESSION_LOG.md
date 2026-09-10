@@ -79,7 +79,60 @@ Login: `POST /api/auth/login` → `{ token }` (JWT, 30-day expiry).
 - Verified no edit residue in stripeWebhook.js (marker-noop reverted; diff is
   the intentional fail-closed change only).
 - All modified modules load OK under node.
-- Full suite baseline re-run: (PENDING — see /tmp/jest-baseline.log)
+- **Full suite: PASS 1135/1135 (87/87 suites)** — see /tmp/jest-baseline.log.
+  (1 earlier `webhookSecurity` failure was a test-code bug: `.set(h, '')`
+  transmits an empty header; fixed by omitting the header for "unsigned"
+  cases. No production code change needed.)
+- **webhookSecurity suite: 5/5 pass** (/tmp/webhook-test.log) — proves
+  fail-closed webhook verification (unsigned→400, bad sig→400, no
+  secret→500, valid→200, dev bypass→200).
+- **sellerE2E: 41/41, e2e: 197/197 in isolation.** Together they fail only
+  because both suites run in ONE shared jest process + shared in-memory
+  Mongo (jest.setup.js afterAll wipes the DB between files, so the 2nd
+  file's pre-minted tokens point at deleted users → 401 cascade). That is
+  a pre-existing test-isolation artifact, NOT a server bug — never happens
+  in CI (`--runInBand` runs files sequentially in separate workers... same
+  process here due to local parallel runs). Full `npm run test:ci` below
+  is the source of truth.
+- **Full `npm run test:ci`: 1134/1135** (/tmp/jest-full.log). Single
+  failure: `recentlyViewed v38.2` — route relied on the unique index to
+  throw 11000 for duplicates, but `autoIndex` timing means the index may
+  not exist yet → 2nd POST created instead of 200 "Already viewed".
+  Fixed with check-then-create in `server/routes/recentlyViewed.js`
+  (unique index kept as race backstop); suite now **10/10** (/tmp/rv.log).
+  Full re-run pending to confirm 1135/1135.
+
+### Bug #5 found in production & fixed (commit a77eb9c, NOT YET DEPLOYED)
+5. **`POST /api/payments/confirm-batch` 500 on real users with legacy seed
+    docs** — Jordan/Alex user docs carry legacy `location` OBJECT
+    (`{city,state,country}`, schema says String) + `payoutMethod.details`
+    (no schema path). Any money flow that loads+saves such a user
+    (checkout → sellerDoc.save(), cancel, payouts) throws ValidationError.
+    Proven live: Jordan→Alex purchase returned
+    `User validation failed: location: Cast to string failed ... { city:
+    'Los Angeles', ... }`.
+    Fix: legacy-data sanitizer in `User` model `pre('save')` (flattens
+    location object → "City, ST, US" string, folds payoutMethod.details →
+    real fields). ONE fix covers every caller.
+    STATUS: committed locally (a77eb9c); MUST push + verify on Render
+    (confirm-batch retry) before certifying payments/payouts.
+
+### Production payment flow verified live (test mode, real Stripe PI)
+- `POST /api/payments/create-intent` (Jordan→Alex Nike $100): 200,
+  `pi_3UE9...` + clientSecret + correct breakdown (buyer pays 105 =
+  100+5 protection; seller earns 92 = 100−8 fee; platform 8).
+- Confirmed PI at Stripe (`requires_capture`, test card pm_card_visa +
+  return_url for redirect-capable Dashboard payment methods).
+- `POST /api/payments/confirm-batch` → 500 via bug #5 (above); retry
+  pending deploy of a77eb9c. Order/transaction/payout writes blocked
+  on the same error — no partial writes (Phase-3 writes happen after
+  sellerDoc validation, and listing was NOT marked sold — verified).
+- `POST /api/payments/payout` (cashout): correctly 400 "Please set up a
+  payout method first" (Alex has no payoutMethod.type — server enforces
+  setup before cash-out; no bug).
+- Self-purchase guard works: "Cannot purchase your own listing".
+- `GET /api/payouts/dashboard|balance|commission-info`: all 200, numeric
+  balances (Alex available 558.75), breakdown math verified.
 
 ### Feature-by-feature verification status (60 features)
 
