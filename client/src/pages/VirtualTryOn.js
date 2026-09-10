@@ -230,9 +230,9 @@ const VirtualTryOn = () => {
   // Attach the live stream whenever it becomes available (ref callbacks only
   // run on mount, so a state-only change would otherwise leave video black).
   useEffect(() => {
-    const el = videoRef.current;
+    const el = streamRef.current || stream; // video element not used for srcObject here
     const str = streamRef.current || stream;
-    if (el && str && el.srcObject !== str) { try { el.srcObject = str; } catch { /* ignore */ } }
+    if (str) { /* stream tracking only */ }
   }, [stream, cameraActive]);
 
   // Stop the live stream if the user leaves the page/mode.
