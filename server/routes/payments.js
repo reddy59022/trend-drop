@@ -1005,6 +1005,51 @@ router.post('/confirm', auth, async (req, res) => {
   }
 });
 
+// POST /api/payments/test-confirm - Authorize a payment intent with Stripe's
+// always-approving TEST-mode payment method (pm_card_visa), server-side.
+// WHY THIS EXISTS: the browser client confirms via Stripe.js
+// (stripe.confirmCardPayment(clientSecret, {payment_method})) which uses the
+// PUBLISHABLE key + a test card. API-only E2E runners cannot run Stripe.js,
+// and Stripe forbids confirming via raw HTTPS with a publishable key — that
+// path 401s with "You did not provide an API key". This endpoint performs the
+// exact same REAL Stripe TEST-mode authorization using the server's secret
+// key, so confirm-batch/capture still exercises the real Stripe integration
+// (no mocks, no stubs).
+// SAFETY GATES (all must hold, else 403):
+//   1. The configured secret key is a TEST-mode key (sk_test_…).
+//      Automatically disabled the moment live keys (sk_live_) are installed.
+//   2. The intent's metadata.buyerId matches the authenticated user (ownership).
+//   3. Amount ≤ $500 (automation cap).
+router.post('/test-confirm', auth, async (req, res) => {
+  try {
+    const { paymentIntentId } = req.body || {};
+    if (!paymentIntentId) return res.status(400).json({ message: 'Missing paymentIntentId' });
+    const secretKey = process.env.STRIPE_SECRET_KEY || '';
+    if (!secretKey.startsWith('sk_test_')) {
+      return res.status(403).json({ message: 'Test confirmation is only available in Stripe TEST mode' });
+    }
+    if (!stripe) return res.status(500).json({ message: 'Stripe is not configured' });
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (String(pi?.metadata?.buyerId || '') !== String(req.user._id)) {
+      return res.status(403).json({ message: 'Not authorized for this payment intent' });
+    }
+    if (typeof pi.amount === 'number' && pi.amount > 50000) {
+      return res.status(403).json({ message: 'Test confirmation amount cap exceeded ($500)' });
+    }
+    if (['requires_capture', 'succeeded'].includes(pi.status)) {
+      return res.json({ id: pi.id, status: pi.status, amount: pi.amount, currency: pi.currency });
+    }
+    const confirmed = await stripe.paymentIntents.confirm(paymentIntentId, {
+      payment_method: 'pm_card_visa',
+      return_url: 'https://trend-drop.onrender.com/checkout',
+    });
+    res.json({ id: confirmed.id, status: confirmed.status, amount: confirmed.amount, currency: confirmed.currency });
+  } catch (error) {
+    console.error('Test confirm error:', error?.message || error);
+    res.status(400).json({ message: error?.message || 'Error confirming test payment' });
+  }
+});
+
 // POST /api/payments/cancel-payment - Release authorization if order not completed
 router.post('/cancel-payment', auth, async (req, res) => {
   try {

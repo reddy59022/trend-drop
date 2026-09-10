@@ -233,6 +233,12 @@ router.post('/auto-create', auth, async (req, res) => {
 });
 
 // GET /api/payouts/balance - Get seller available balance
+// CONTRACT: `availableBalance` MUST equal the dashboard's `availableBalance`
+// (same computation). The dashboard's available = released completed earnings
+// − paidOut + User.balance.available. Historically this endpoint returned the
+// RAW lifetime sum of completed payouts (ignoring what was already cashed
+// out) — a real bug the prod E2E suite caught (balance 150 vs dashboard 0).
+// Keep the same field names so existing consumers keep working.
 router.get('/balance', auth, async (req, res) => {
   try {
     const completedPayouts = await Payout.find({
@@ -241,13 +247,24 @@ router.get('/balance', auth, async (req, res) => {
     });
 
     const numB = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
-    const availableBalance = completedPayouts.reduce(
+    // Lifetime completed sums (kept for reporting; NOT the cash-out balance).
+    const lifetimeCompleted = completedPayouts.reduce(
       (sum, p) => sum + numB(p.payoutAmount ?? p.amount), 0);
     const totalCommissionPaid = completedPayouts.reduce(
       (sum, p) => sum + numB(p.commissionAmount), 0);
+    // Spendable balance — PARITY with GET /api/payouts/dashboard: released
+    // completed earnings minus what was already paid out, plus any manual
+    // User.balance.available credit.
+    const sellerDoc = await User.findById(req.user._id).select('balance').lean();
+    const userAvailable = numB(sellerDoc?.balance?.available);
+    const userTotalPaidOut = numB(sellerDoc?.balance?.totalPaidOut);
+    const availableBalance = Math.round(
+      (Math.max(0, lifetimeCompleted - userTotalPaidOut) + userAvailable) * 100
+    ) / 100;
 
     res.json({
-      availableBalance: Math.round(availableBalance * 100) / 100,
+      availableBalance,
+      totalEarned: Math.round(lifetimeCompleted * 100) / 100,
       totalCommissionPaid: Math.round(totalCommissionPaid * 100) / 100,
       commissionRate: COMMISSION_RATE,
       commissionPercent: COMMISSION_RATE * 100,

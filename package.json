@@ -13,6 +13,7 @@
     "start:all": "bash start.sh",
     "test:server": "cd server && npm run test:ci",
     "test:e2e": "npx playwright test",
+    "test:e2e:prod": "E2E_RUN_ID=$(date +%Y%m%d%H%M%S) npx playwright test --config=e2e/playwright.prod.config.js",
     "test:ci": "npm run test:server && npm run build && npm run test:e2e"
   },
   "engines": {
