@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
 // Mongoose is needed for the health‑check endpoint.
 const mongoose = require('mongoose');
 // Load environment variables from .env ONLY in non-production, non-test environments.
@@ -350,9 +351,27 @@ if (process.env.NODE_ENV === 'production') {
   });
 
   // Serve static files in production (SPA fallback)
-  app.get('*', (req, res) => {
-    res.set('Cache-Control', 'no-cache');
-    res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+  app.use(express.static(path.join(__dirname, '../client/build'), {
+    maxAge: '30d',
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.js')) res.set('Content-Type', 'application/javascript');
+    },
+  }));
+  // SPA fallback for client-side routing. Serve index.html for any path that
+  // isn't a static asset (React Router handles the rest). Keep this AFTER the
+  // static middleware so real JS/CSS/image files are served directly, not
+  // rewritten to index.html.
+  app.get('*', (req, res, next) => {
+    // If the request matches an existing static file, let express.static serve
+    // it normally (avoids serving stale pages when users hardcode /static/js/...).
+    const staticPath = path.join(__dirname, '../client/build', req.path);
+    fs.existsSync(staticPath) ? null : res.set('Cache-Control', 'no-cache');
+    // If this is the SPA catch-all and no static file matched, serve index.html.
+    if (req.method === 'GET' && !path.extname(req.path)) {
+      res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+      return;
+    }
+    next();
   });
 } else {
   // Development root endpoint
