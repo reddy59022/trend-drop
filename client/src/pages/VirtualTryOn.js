@@ -31,17 +31,50 @@ const VirtualTryOn = () => {
   const [capturedImage, setCapturedImage] = useState(null);
   const [nativePhoto, setNativePhoto] = useState(null); // File from native camera for upload/save
   const [cameraError, setCameraError] = useState(null); // 'denied' | 'noddevice' | null
+  // Heuristic availability: null = unknown (assume available, let getUserMedia decide),
+  // true = devices seen, false = user has no camera hardware at all.
+  const [cameraAvailable, setCameraAvailable] = useState(null);
   const [settings, setSettings] = useState(null);
   const streamRef = useRef(null);
 
+  // Non-blocking hint: enumerate devices (labels need prior permission, so an
+  // empty list is NOT proof of no camera). Only ever downgrade to false;
+  // never set an error here — the real check happens in startCamera.
+  const refreshDevices = async () => {
+    try {
+      if (!isNative() && navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter((d) => d.kind === 'videoinput');
+        // Only trust a POSITIVE signal. Empty/label-less lists happen when
+        // permission hasn't been granted yet (Chrome/Safari hide devices).
+        if (cams.length > 0) setCameraAvailable(true);
+      }
+    } catch { /* best-effort hint only */ }
+  };
+
   useEffect(() => {
     fetchSettings();
+    refreshDevices();
+    let onChange = null;
+    try {
+      if (!isNative() && navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+        onChange = () => refreshDevices();
+        navigator.mediaDevices.addEventListener('devicechange', onChange);
+      }
+    } catch { /* older Safari */ }
     if (listingId) {
       fetchListing(listingId);
     }
     if (user) {
       fetchTryOnHistory();
     }
+    return () => {
+      try {
+        if (onChange && navigator.mediaDevices && navigator.mediaDevices.removeEventListener) {
+          navigator.mediaDevices.removeEventListener('devicechange', onChange);
+        }
+      } catch { /* noop */ }
+    };
   }, [listingId, user]);
 
   const fetchSettings = async () => {
@@ -56,7 +89,9 @@ const VirtualTryOn = () => {
   const fetchListing = async (id) => {
     try {
       const res = await api.get(`/listings/${id}`);
-      setListing(res.data);
+      // Server wraps in { listing, similar } — ListingDetail uses
+      // res.data.listing; this page previously stored the wrapper itself.
+      setListing(res.data?.listing || res.data);
     } catch (error) {
       toast.error('Listing not found');
       navigate('/');
@@ -116,32 +151,64 @@ const VirtualTryOn = () => {
     }
     // Web: feature-detect first so insecure contexts / old browsers fall
     // back to upload instead of hanging on a silent failure.
+    // NOTE: do NOT gate on enumerateDevices() here — before permission is
+    // granted browsers return an empty device list (privacy), which caused
+    // the false "No camera found" on real laptops. getUserMedia is the
+    // source of truth.
+    if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+      setCameraError('nodevice');
+      toast.error('Live camera needs HTTPS. Please use upload instead.');
+      setSelectedTab('upload');
+      return;
+    }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraError('nodevice');
       toast.error('Live camera is not available in this browser. Please use upload instead.');
       setSelectedTab('upload');
       return;
     }
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1080 } }
-      });
+    // NOTE: facingMode must be `ideal`, not exact — desktop webcams (e.g.
+    // MacBook FaceTime camera) report no facing, and exact 'user' throws
+    // OverconstrainedError which looks like "no camera".
+    const primary = { video: { facingMode: { ideal: 'user' }, width: { ideal: 1080 }, height: { ideal: 720 } }, audio: false };
+    const openStream = async (constraints) => {
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = mediaStream;
       setStream(mediaStream);
       setCameraActive(true);
+      setCameraAvailable(true);
+      setCameraError(null);
+      refreshDevices();
+    };
+    try {
+      await openStream(primary);
     } catch (error) {
       const name = error && error.name;
-      if (name === 'NotAllowedError' || name === 'SecurityError') {
+      // Retry once with bare constraints before concluding anything — this
+      // recovers Safari/Chrome where a specific constraint is unsupported
+      // even though a camera exists.
+      if (name === 'OverconstrainedError' || name === 'NotFoundError') {
+        try {
+          await openStream({ video: true, audio: false });
+          return;
+        } catch (retryErr) {
+          error = retryErr;
+        }
+      }
+      const n2 = error && error.name;
+      if (n2 === 'NotAllowedError' || n2 === 'SecurityError') {
         setCameraError('denied');
         toast.error('Camera access denied. Allow camera permission or use upload instead.');
-      } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+      } else if (n2 === 'NotFoundError' || n2 === 'OverconstrainedError') {
         setCameraError('nodevice');
         toast.error('No camera found on this device. Please use upload instead.');
+      } else if (n2 === 'NotReadableError' || n2 === 'AbortError') {
+        setCameraError('busy');
+        toast.error('Camera is busy (another app may be using it). Close other apps and retry, or use upload.');
       } else {
         setCameraError('denied');
         toast.error('Could not start the camera. Please use upload instead.');
       }
-      setSelectedTab('upload');
     }
   };
 
@@ -154,6 +221,14 @@ const VirtualTryOn = () => {
     }
     setCameraActive(false);
   };
+
+  // Attach the live stream whenever it becomes available (ref callbacks only
+  // run on mount, so a state-only change would otherwise leave video black).
+  useEffect(() => {
+    const el = videoRef.current;
+    const str = streamRef.current || stream;
+    if (el && str && el.srcObject !== str) { try { el.srcObject = str; } catch { /* ignore */ } }
+  }, [stream, cameraActive]);
 
   // Stop the live stream if the user leaves the page/mode.
   useEffect(() => {
@@ -372,7 +447,21 @@ const VirtualTryOn = () => {
                 </div>
               </div>
             )}
-            {cameraError === 'nodevice' && (
+            {cameraError === 'busy' && (
+            <div className="alert alert-warning" style={{ marginTop: 'var(--td-space-md)', textAlign: 'left' }}>
+              <strong>Camera is busy.</strong> Another app (FaceTime, Zoom, etc.) may be using it.
+              Close other apps and try again — or use Upload.
+              <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                <button onClick={startCamera} className="btn btn-outline btn-sm">
+                  <FaCamera /> Retry Camera
+                </button>
+                <button onClick={() => setSelectedTab('upload')} className="btn btn-outline btn-sm">
+                  <FaUpload /> Use Upload Instead
+                </button>
+              </div>
+            </div>
+          )}
+          {cameraError === 'nodevice' && (
               <div className="alert alert-warning" style={{ marginTop: 12, textAlign: 'left' }}>
                 <strong>No camera found</strong> on this device. Please use Upload instead.
                 <div style={{ marginTop: 8 }}>
