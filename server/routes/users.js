@@ -23,6 +23,20 @@ router.get('/search', async (req, res) => {
   }
 });
 
+// GET /api/users/me - Current authenticated user (must precede /:id so the
+// literal path is not captured as an :id param, which would make
+// User.findById('me') throw a CastError and 500).
+router.get('/me', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('-password');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /api/users/feed - Get feed from followed users
 router.get('/feed', auth, async (req, res) => {
   try {

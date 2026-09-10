@@ -34,18 +34,26 @@ router.get('/dashboard', auth, async (req, res) => {
     // of completed sales (count contract used by sellerFullFlow and the
     // "N sales" displays). Both are returned so dollar and count consumers
     // stay correct.
-    const totalSales = payouts.reduce((sum, p) => sum + (p.salePrice || 0), 0);
+    // Legacy payout docs (old seed schema) store `amount` and lack
+    // salePrice/commissionAmount/payoutAmount. Fall back to `amount` so the
+    // aggregates below stay numeric instead of becoming NaN → null.
+    const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+    const payoutSalePrice = (p) => num(p.salePrice ?? p.amount);
+    const payoutCommission = (p) => num(p.commissionAmount ?? (p.amount != null ? Math.round(p.amount * COMMISSION_RATE * 100) / 100 : 0));
+    const payoutNet = (p) => num(p.payoutAmount ?? (p.amount != null ? p.amount - payoutCommission(p) : 0));
+
+    const totalSales = payouts.reduce((sum, p) => sum + payoutSalePrice(p), 0);
     const totalSalesCount = completedPayouts.length;
 
     // Completed earnings = only from completed payouts
-    const totalEarnings = completedPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
+    const totalEarnings = completedPayouts.reduce((sum, p) => sum + payoutNet(p), 0);
 
     // Total commission = from all payouts (completed + pending)
-    const totalCommission = payouts.reduce((sum, p) => sum + (p.commissionAmount || 0), 0);
+    const totalCommission = payouts.reduce((sum, p) => sum + payoutCommission(p), 0);
 
     // Pending = all pending payouts + transactions without payout records
     const pendingPayouts = payouts.filter(p => p.status === 'pending');
-    const pendingAmount = pendingPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
+    const pendingAmount = pendingPayouts.reduce((sum, p) => sum + payoutNet(p), 0);
 
     // Include transactions not yet in payouts for accurate pending amount
     const pendingFromTransactions = completedTransactions
@@ -62,7 +70,7 @@ router.get('/dashboard', auth, async (req, res) => {
     const totalEarned = Math.round(totalEarnings * 100) / 100;
     const pendingBalance = Math.round((pendingAmount + pendingFromTransactions) * 100) / 100;
     const availableBalance = Math.round(
-      Math.max(0, totalEarned - userTotalPaidOut) + userAvailable
+      (Math.max(0, totalEarned - userTotalPaidOut) + userAvailable) * 100
     ) / 100;
 
     res.json({
@@ -218,8 +226,11 @@ router.get('/balance', auth, async (req, res) => {
       status: 'completed',
     });
 
-    const availableBalance = completedPayouts.reduce((sum, p) => sum + p.payoutAmount, 0);
-    const totalCommissionPaid = completedPayouts.reduce((sum, p) => sum + p.commissionAmount, 0);
+    const numB = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+    const availableBalance = completedPayouts.reduce(
+      (sum, p) => sum + numB(p.payoutAmount ?? p.amount), 0);
+    const totalCommissionPaid = completedPayouts.reduce(
+      (sum, p) => sum + numB(p.commissionAmount), 0);
 
     res.json({
       availableBalance: Math.round(availableBalance * 100) / 100,
