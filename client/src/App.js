@@ -14,6 +14,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 // Performance: Lazy load pages - they only load when navigated to
 const Home = lazy(() => import('./pages/Home'));
+const PriceSuggestionPage = lazy(() => import('./pages/PriceSuggestion'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const Feed = lazy(() => import('./pages/Feed'));
