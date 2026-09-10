@@ -1,19 +1,29 @@
 #!/bin/bash
-# Rebuild Android APK script
+# Rebuild Android APK script (portable — auto-detects repo root and JDK 21+)
 # Usage: ./rebuild-android.sh
 
 set -e
 
-export JAVA_HOME="/Users/owner/jdk/jdk-21.0.12+8/Contents/Home"
-export ANDROID_HOME="$HOME/Library/Android/sdk"
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# Pick a JDK >= 21 (required by Capacitor 7's Android library)
+if command -v /usr/libexec/java_home >/dev/null 2>&1; then
+  JDK21="$(/usr/libexec/java_home -v 21+ 2>/dev/null || true)"
+  [ -n "$JDK21" ] && export JAVA_HOME="$JDK21"
+fi
+if [ -z "$JAVA_HOME" ] || [ "$(java -version 2>&1 | head -1 | grep -o '[0-9]\+' | head -1)" -lt 21 ]; then
+  echo "⚠️  JDK 21+ not found — Capacitor 7 requires it (invalid source release: 21 otherwise)" >&2
+  exit 1
+fi
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-cd /Users/owner/Desktop/trend-drop/client
+cd "$REPO_ROOT/client"
 npm run build
 npx cap copy android
 
 cd android
-./gradlew clean assembleDebug
+./gradlew assembleDebug
 
 APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
 if [ -f "$APK_PATH" ]; then

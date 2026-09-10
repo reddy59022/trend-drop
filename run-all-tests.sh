@@ -1,20 +1,26 @@
 #!/bin/bash
-# Run all tests for TrendDrop project
+# Run all tests for TrendDrop project (portable — auto-detects repo root)
 # Usage: ./run-all-tests.sh
+
+set -e
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 echo "🧪 Running all tests for TrendDrop..."
 echo ""
 
-# Server tests
 echo "🔹 Running server tests..."
-cd /Users/owner/Desktop/trend-drop/server
-npm test 2>&1 | tail -5
+cd "$REPO_ROOT/server"
+npm run test:ci 2>&1 | tail -6
 echo ""
 
-# Client tests
-echo "🔹 Running client tests..."
-cd /Users/owner/Desktop/trend-drop/client
-npm test 2>&1 | tail -5
+echo "🔹 Building client (production)..."
+cd "$REPO_ROOT/client"
+npm run build 2>&1 | tail -3
 echo ""
 
-echo "✅ All tests completed. Check output above for details."
+echo "🔹 Running Playwright E2E tests..."
+cd "$REPO_ROOT"
+npx playwright test 2>&1 | tail -6
+echo ""
+
+echo "✅ All tests completed."

@@ -31,6 +31,12 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>TrendDrop uses the camera to take photos of items you want to list for sale.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TrendDrop needs photo library access so you can upload photos of items you want to list for sale.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>TrendDrop can save listing photos to your photo library.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

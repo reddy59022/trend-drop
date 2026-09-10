@@ -310,7 +310,7 @@ if (process.env.NODE_ENV === 'production') {
   // ============================================================
   app.get('/verify-email', async (req, res) => {
     const token = req.query.token;
-    console.log('Received email verification request for token:', token);
+    // NOTE: never log verification tokens or user documents (PII / credentials)
     if (!token) {
       return res.status(400).send('Verification token is required');
     }
@@ -322,7 +322,6 @@ if (process.env.NODE_ENV === 'production') {
       verificationToken: token,
       verificationTokenExpires: { $gt: new Date() },
     });
-    console.log('Pending user lookup result:', pending);
     if (pending) {
       const user = await User.create({
         name: pending.name,
@@ -340,7 +339,6 @@ if (process.env.NODE_ENV === 'production') {
       verificationToken: token,
       verificationTokenExpires: { $gt: new Date() },
     });
-    console.log('User fallback lookup result:', user);
     if (!user) {
       return res.status(400).send('Invalid or expired verification token');
     }

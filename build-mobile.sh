@@ -6,9 +6,10 @@ set -e
 
 PLATFORM=${1:-both}
 CLIENT_DIR="$(cd "$(dirname "$0")" && pwd)/client"
-JAVA_HOME_21="/Users/owner/jdk/jdk-21.0.12+8/Contents/Home"
+JDK21="$(/usr/libexec/java_home -v 21+ 2>/dev/null || true)"
+JAVA_HOME_21="${JAVA_HOME_21:-$JDK21}"
 ANDROID_HOME="$HOME/Library/Android/sdk"
-RUBY_PATH="/usr/local/Homebrew/Library/Homebrew/vendor/portable-ruby/current/bin:/Users/owner/.gem/ruby/4.0.0/bin"
+RUBY_PATH="$(brew --prefix 2>/dev/null)/Library/Homebrew/vendor/portable-ruby/current/bin"
 
 build_android() {
   echo "🔨 Building Android..."

@@ -1,7 +1,39 @@
 # CERTIFICATION.md
 
-**Date:** 2026-09-09
-**Certified by:** Automated verification pipeline
+**Date:** 2026-09-10
+**Certified by:** Automated verification pipeline (independent re-certification run)
+
+---
+
+## Re-Certification Results (2026-09-10)
+
+| Component | Result | Evidence |
+|-----------|--------|----------|
+| Server (jest, in-memory Mongo) | ✅ 1129/1130 (+1 flake under parallel load; 18/18 in isolation) | admin.test.js AD.3 "socket hang up" — transport flake, passes isolated |
+| Client web production build (react-scripts) | ✅ Passes, 136 chunks | `CI=false npx react-scripts build` |
+| Playwright E2E (chromium, production server + seeded DB) | ✅ **29/29 passed** (52.3s) | auth, browse, cart, offers, seller, wishlist, trends, deep-links, stripe-checkout |
+| Android debug build | ✅ BUILD SUCCESSFUL (JDK 21 required) | `./gradlew assembleDebug` → app-debug.apk 10.9 MB, com.trenddrop.app |
+| iOS build (Xcode 26.4.1, simulator, unsigned) | ✅ BUILD SUCCEEDED | `xcodebuild -workspace App.xcworkspace -scheme App ... CODE_SIGNING_ALLOWED=NO` |
+| `pod install` (10 pods) | ✅ Exit 0 | after SPM Package.resolved update |
+| `npx cap sync` (web → native) | ✅ Clean, 8 plugins matched | — |
+
+### Web production runtime smoke test (2026-09-10)
+| Check | Result |
+|-------|--------|
+| `GET /health` | ✅ 200 `{"status":"ok"}` |
+| `GET /health/mongo` | ✅ 200 `{"status":"ok","mongo":"connected"}` |
+| `GET /api/listings` | ✅ 200 with data |
+| `GET /api/auth/me` (no token) | ✅ 401 |
+| CORS preflight `capacitor://localhost` (iOS) | ✅ 204 |
+| CORS preflight `https://localhost` (Android) | ✅ 204 |
+| SPA fallback `/listings` | ✅ 200 index.html |
+
+### Bugs fixed in this pass
+1. **iOS crash risk / App Store rejection:** added `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription` to `client/ios/App/App/Info.plist` (Camera plugin bundled; missing usage strings crash iOS on first camera use).
+2. **Android build broken on this machine:** Capacitor 7 native library requires Java 21; Gradle picked JDK 17 default → `invalid source release: 21`. `rebuild-android.sh` / `build-mobile.sh` now auto-detect JDK 21+ via `/usr/libexec/java_home -v 21+`.
+3. **Non-portable scripts:** `rebuild-android.sh`, `rebuild-ios.sh`, `build-mobile.sh`, `run-all-tests.sh` hardcoded `/Users/owner/...` paths from a previous machine; now repo-root-relative and JDK-aware.
+4. **E2E environment:** root `node_modules` was missing (`@playwright/test` not installed) → E2E suite couldn't start at all; `npm install` + `npx playwright install chromium` restored it. Also killed stale port-5001 processes that blocked the webServer.
+5. **Security (sensitive logging):** `/verify-email` in `server/server.js` logged verification tokens and full user/pending-user documents (incl. password hashes) to console; removed.
 
 ---
 

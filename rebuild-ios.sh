@@ -6,7 +6,7 @@
 set -e
 
 CLIENT_DIR="$(cd "$(dirname "$0")" && pwd)/client"
-RUBY_PATH="/usr/local/Homebrew/Library/Homebrew/vendor/portable-ruby/current/bin:/Users/owner/.gem/ruby/4.0.0/bin"
+RUBY_PATH="$(brew --prefix 2>/dev/null)/Library/Homebrew/vendor/portable-ruby/current/bin"
 
 build_ios() {
   echo "🔨 Building iOS (Swift)..."
