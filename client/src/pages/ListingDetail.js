@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit } from 'react-icons/fa';
 import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
+import { requestCameraPermission } from '../services/native';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { shareItem, copyText } from '../services/native';
@@ -491,14 +492,42 @@ const ListingDetail = () => {
             </div>
             {!isOwner && !listing.sold && user && (
               <div className="listing-detail-action-row">
+                <button
+                  className="btn btn-outline"
+                  title="Open Virtual Try-On - request camera access and preview this item on you"
+                  onClick={async () => {
+                    const perm = await requestCameraPermission();
+                    if (perm === 'denied') {
+                      toast.warning('Camera blocked - you can still try on with a photo upload.');
+                    }
+                    navigate('/try-on/' + id);
+                  }}
+                >
+                  Try On
+                </button>
                 {buyerOffer && buyerOffer.status === 'pending' && (
                   <>
                     <span className="badge badge-warning" style={{ padding: '8px 16px', fontSize: 14 }}>
                       ⏳ Offer pending — awaiting seller response
                     </span>
-                    <button className="btn btn-primary btn-lg" onClick={handleAddToBag}>
-                      Add to Bag at {formatPrice(listing.price, listing.currency || 'USD')}
-                    </button>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button className="btn btn-primary btn-lg" onClick={handleAddToBag}>
+                        Add to Bag at {formatPrice(listing.price, listing.currency || 'USD')}
+                      </button>
+                      <button
+                        className="btn btn-outline btn-lg"
+                        title="Open Virtual Try-On - request camera access and preview this item on you"
+                        onClick={async () => {
+                          const perm = await requestCameraPermission();
+                          if (perm === 'denied') {
+                            toast.warning('Camera blocked - you can still try on with a photo upload.');
+                          }
+                          navigate('/try-on/' + id);
+                        }}
+                      >
+                        Try On
+                      </button>
+                    </div>
                   </>
                 )}
                 {buyerOffer && buyerOffer.status === 'countered' && (

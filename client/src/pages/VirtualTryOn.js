@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -6,6 +6,8 @@ import api from '../services/api';
 import { formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import { FaCamera, FaUpload, FaRulerHorizontal, FaCheck, FaTimes, FaHistory, FaMagic } from 'react-icons/fa';
+import { isNative, requestCameraPermission } from '../services/native';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 
 const VirtualTryOn = () => {
   const { user } = useAuth();
@@ -27,7 +29,10 @@ const VirtualTryOn = () => {
   const [cameraActive, setCameraActive] = useState(false);
   const [stream, setStream] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
+  const [nativePhoto, setNativePhoto] = useState(null); // File from native camera for upload/save
+  const [cameraError, setCameraError] = useState(null); // 'denied' | 'noddevice' | null
   const [settings, setSettings] = useState(null);
+  const streamRef = useRef(null);
 
   useEffect(() => {
     fetchSettings();
@@ -67,30 +72,117 @@ const VirtualTryOn = () => {
     }
   };
 
-  const startCamera = async () => {
+  const startNativeCamera = async () => {
+    // Explicitly trigger the OS camera permission prompt first so the user
+    // sees a real allow/deny dialog on iOS + Android (user-gesture context).
+    const perm = await requestCameraPermission();
+    if (perm === 'denied') {
+      setCameraError('denied');
+      toast.error('Camera permission denied. Please enable it in Settings or use upload instead.');
+      setSelectedTab('upload');
+      return;
+    }
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user', width: { ideal: 1080 } } 
+      const photo = await Camera.getPhoto({
+        resultType: CameraResultType.DataUrl,
+        // CAMERA source opens the device camera directly (= "try actually").
+        // Prompt lets the user choose camera vs gallery on iOS/Android.
+        source: CameraSource.Prompt,
+        quality: 85,
+        allowEditing: false,
+        saveToGallery: false,
       });
+      if (!photo || !photo.dataUrl) return; // user cancelled
+      const file = dataUrlToFile(photo.dataUrl, `tryon-${Date.now()}.jpg`);
+      setCapturedImage(photo.dataUrl);
+      setNativePhoto(file);
+      setCameraError(null);
+    } catch (err) {
+      if (err && err.message && /cancel|cancelled|dismissed/i.test(err.message)) return;
+      setCameraError('denied');
+      toast.error('Could not open the camera. Please use upload instead.');
+      setSelectedTab('upload');
+    }
+  };
+
+  const startCamera = async () => {
+    setCameraError(null);
+    // Native iOS/Android apps: Capacitor Camera opens the real device
+    // camera with its OS permission dialog — getUserMedia does NOT work
+    // reliably inside the WebView.
+    if (isNative()) {
+      await startNativeCamera();
+      return;
+    }
+    // Web: feature-detect first so insecure contexts / old browsers fall
+    // back to upload instead of hanging on a silent failure.
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError('nodevice');
+      toast.error('Live camera is not available in this browser. Please use upload instead.');
+      setSelectedTab('upload');
+      return;
+    }
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1080 } }
+      });
+      streamRef.current = mediaStream;
       setStream(mediaStream);
       setCameraActive(true);
     } catch (error) {
-      toast.error('Camera access denied. Please use upload instead.');
+      const name = error && error.name;
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        setCameraError('denied');
+        toast.error('Camera access denied. Allow camera permission or use upload instead.');
+      } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        setCameraError('nodevice');
+        toast.error('No camera found on this device. Please use upload instead.');
+      } else {
+        setCameraError('denied');
+        toast.error('Could not start the camera. Please use upload instead.');
+      }
       setSelectedTab('upload');
     }
   };
 
   const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+    const s = streamRef.current || stream;
+    if (s) {
+      s.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
       setStream(null);
     }
     setCameraActive(false);
   };
 
+  // Stop the live stream if the user leaves the page/mode.
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  const dataUrlToFile = (dataUrl, filename) => {
+    try {
+      const arr = dataUrl.split(',');
+      const mimeMatch = arr[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) u8arr[n] = bstr.charCodeAt(n);
+      return new File([u8arr], filename, { type: mime });
+    } catch {
+      return null;
+    }
+  };
+
   const capturePhoto = () => {
-    if (!stream) return;
-    
+    if (!stream && !streamRef.current) return;
+
     const video = document.getElementById('vt-camera-video');
     const canvas = document.getElementById('vt-camera-canvas');
     if (video && canvas) {
@@ -100,6 +192,7 @@ const VirtualTryOn = () => {
       ctx.drawImage(video, 0, 0);
       const imageData = canvas.toDataURL('image/jpeg', 0.8);
       setCapturedImage(imageData);
+      setNativePhoto(dataUrlToFile(imageData, `tryon-${Date.now()}.jpg`));
       stopCamera();
     }
   };
@@ -209,6 +302,8 @@ const VirtualTryOn = () => {
                 id="vt-camera-video"
                 autoPlay 
                 playsInline 
+                muted
+                ref={(el) => { if (el && (streamRef.current || stream)) el.srcObject = streamRef.current || stream; }}
                 style={{ 
                   width: '100%', 
                   maxHeight: '400px', 
@@ -242,7 +337,7 @@ const VirtualTryOn = () => {
                 <button className="btn btn-primary" onClick={handleSaveMeasurements} disabled={loading}>
                   {loading ? 'Saving...' : 'Save Try-On'}
                 </button>
-                <button className="btn btn-secondary" onClick={() => { setCapturedImage(null); startCamera(); }}>
+                <button className="btn btn-secondary" onClick={() => { setCapturedImage(null); setNativePhoto(null); startCamera(); }}>
                   Retake
                 </button>
               </div>
@@ -251,9 +346,29 @@ const VirtualTryOn = () => {
             <div style={{ textAlign: 'center', padding: 'var(--td-space-xl)' }}>
               <FaCamera size={48} style={{ opacity: 0.5, marginBottom: 'var(--td-space-md)' }} />
               <p>Click to start camera for AR try-on experience</p>
-              <button className="btn btn-primary" onClick={startCamera}>
-                Start Camera
+              <button className="btn btn-primary" onClick={startCamera} data-testid="vt-start-camera">
+                <FaCamera /> {isNative() ? 'Open Camera' : 'Start Camera'}
               </button>
+            {cameraError === 'denied' && (
+              <div className="alert alert-warning" style={{ marginTop: 12, textAlign: 'left' }}>
+                <strong>Camera blocked.</strong> Use Upload instead or enable camera access.
+                <div style={{ marginTop: 8 }}>
+                  <button onClick={() => setSelectedTab('upload')} className="btn btn-outline btn-sm">
+                    <FaUpload /> Use Upload Instead
+                  </button>
+                </div>
+              </div>
+            )}
+            {cameraError === 'nodevice' && (
+              <div className="alert alert-warning" style={{ marginTop: 12, textAlign: 'left' }}>
+                <strong>No camera found</strong> on this device. Please use Upload instead.
+                <div style={{ marginTop: 8 }}>
+                  <button onClick={() => setSelectedTab('upload')} className="btn btn-outline btn-sm">
+                    <FaUpload /> Use Upload Instead
+                  </button>
+                </div>
+              </div>
+            )}
             </div>
           )}
         </div>

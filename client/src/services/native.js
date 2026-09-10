@@ -7,6 +7,62 @@ import { StatusBar } from '@capacitor/status-bar';
 export const isNative = () => Capacitor.isNativePlatform();
 export const platform = () => (isNative() ? Capacitor.getPlatform() : 'web');
 
+/**
+ * Camera permission state for Virtual Try-On and photo flows.
+ * Web: uses the Permissions API where available (query only — the real
+ * prompt comes from getUserMedia / file input).
+ * Native (iOS/Android): uses Capacitor Camera.checkPermissions /
+ * requestPermissions which triggers the OS dialog (NSCameraUsageDescription
+ * on iOS, CAMERA runtime permission on Android).
+ */
+export const getCameraPermissionState = async () => {
+  if (isNative()) {
+    try {
+      const status = await Camera.checkPermissions();
+      return status.camera || 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      const res = await navigator.permissions.query({ name: 'camera' });
+      return res.state || 'unknown';
+    }
+  } catch { /* Permissions API unavailable (older Safari) */ }
+  return 'unknown';
+};
+
+/**
+ * Explicitly request camera permission, showing the OS/browser prompt.
+ * Returns 'granted' | 'denied' | 'prompt' | 'unknown'.
+ * Must be called from a user gesture (button tap) on web/iOS/Android.
+ */
+export const requestCameraPermission = async () => {
+  if (isNative()) {
+    try {
+      const status = await Camera.requestPermissions({ permissions: ['camera'] });
+      return status.camera || 'unknown';
+    } catch {
+      return 'denied';
+    }
+  }
+  // Web: no direct permission API that shows a prompt — request a
+  // throwaway stream so the browser shows its permission dialog, then
+  // immediately stop it. The VirtualTryOn page's startCamera does this
+  // too; this helper is for pre-flight checks from buttons/cards.
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'unknown';
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream.getTracks().forEach((t) => t.stop());
+    return 'granted';
+  } catch (err) {
+    if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) return 'denied';
+    if (err && err.name === 'NotFoundError') return 'unknown';
+    return 'denied';
+  }
+};
+
 /** Pick/take an image natively. Falls back to a file input on web. */
 export const pickImage = async ({ source = CameraSource.Prompt } = {}) => {
   if (!isNative()) {
