@@ -784,11 +784,25 @@ router.post('/confirm-batch', auth, async (req, res) => {
       try { await Transaction.findByIdAndDelete(txn._id); } catch (e) {}
     }
     for (const change of inventoryChanges) {
-      if (!change.updated) {
+      // Restore inventory ONLY when the decrement actually happened
+      // (change.updated is the doc returned by findOneAndUpdate — truthy on
+      // success, null when quantity was already 0). The previous `!change.updated`
+      // guard was inverted: a failed later step (e.g. legacy-user validation on
+      // sellerDoc.save()) left the listing marked sold with 0 quantity and no
+      // transaction — an orphaned purchase. Regression: live confirm-batch
+      // orphan (listing 6aa2e37ba1eba57f3c376226) removed manually.
+      if (change.updated) {
         try {
+          // Full inventory rollback: restore the quantity AND clear the
+          // sold/available flags (TrendDrop is single-item — any sale marks the
+          // listing sold, so a rolled-back purchase must be buyable again,
+          // otherwise we leave an orphaned sold listing like the live 500 did).
           await Listing.findOneAndUpdate(
             { _id: change.listingId },
-            { $inc: { quantity: 1, quantitySold: -1 } },
+            {
+              $inc: { quantity: 1, quantitySold: -1 },
+              $set: { sold: false, available: true },
+            },
             { new: true }
           );
         } catch (e) {}
