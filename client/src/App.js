@@ -164,6 +164,8 @@ function App() {
                 <Route path="/profile/:id" element={<Profile />} />
                 <Route path="/closet/:id" element={<Closet />} />
                 <Route path="/search" element={<Search />} />
+                <Route path="/reviews" element={<Reviews />} />
+
                 <Route path="/reviews/:sellerId" element={<Reviews />} />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
                 <Route path="/verify-email" element={<VerifyEmailPage />} />
