@@ -234,9 +234,19 @@ const VirtualTryOn = () => {
   // Attach the live stream whenever it becomes available (ref callbacks only
   // run on mount, so a state-only change would otherwise leave video black).
   useEffect(() => {
-    const el = streamRef.current || stream; // video element not used for srcObject here
-    const str = streamRef.current || stream;
-    if (str) { /* stream tracking only */ }
+    if (streamRef.current || stream) {
+      const videoEl =
+        document.getElementById('vt-camera-video') ||
+        document.getElementById('vt-video') ||
+        document.querySelector('video#vt-camera-video') ||
+        document.querySelector('video#vt-video');
+      if (videoEl) {
+        videoEl.srcObject = streamRef.current || stream;
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        videoEl.play().catch(() => {});
+      }
+    }
   }, [stream, cameraActive]);
 
   // Stop the live stream if the user leaves the page/mode.
@@ -294,7 +304,7 @@ const VirtualTryOn = () => {
     }
   };
 
-  const handleSaveMeasurements = async () => {
+  const handleSaveTryOn = async () => {
     setLoading(true);
     try {
       const photoFile = nativePhoto; // File when photo came from the native device camera
@@ -308,11 +318,12 @@ const VirtualTryOn = () => {
       if (listingId) {
         setListing(res.data.listingId);
       }
-      toast.success('Try-on session saved! ✨');
+      toast.success('Try-on saved!');
     } catch (error) {
-      toast.error('Failed to save try-on session');
+      toast.error(error.response?.data?.message || 'Failed to save try-on');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleDeleteSession = async (id) => {
@@ -431,7 +442,7 @@ const VirtualTryOn = () => {
                 }}
               />
               <div style={{ display: 'flex', gap: 'var(--td-space-md)', justifyContent: 'center' }}>
-                <button className="btn btn-primary" onClick={handleSaveMeasurements} disabled={loading}>
+                <button className="btn btn-primary" onClick={handleSaveTryOn} disabled={loading}>
                   {loading ? 'Saving...' : 'Save Try-On'}
                 </button>
                 <button className="btn btn-secondary" onClick={() => { setCapturedImage(null); setNativePhoto(null); startCamera(); }}>
@@ -567,7 +578,7 @@ const VirtualTryOn = () => {
 
           <button 
             className="btn btn-primary" 
-            onClick={handleSaveMeasurements} 
+            onClick={handleSaveTryOn} 
             disabled={loading || !capturedImage}
           >
             {loading ? 'Saving...' : 'Save Try-On'}
