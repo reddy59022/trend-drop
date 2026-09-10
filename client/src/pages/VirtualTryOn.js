@@ -155,16 +155,13 @@ const VirtualTryOn = () => {
     // granted browsers return an empty device list (privacy), which caused
     // the false "No camera found" on real laptops. getUserMedia is the
     // source of truth. Browsers also require a secure origin (HTTPS, localhost,
-    // file://) for getUserMedia, so check that lazily — when the user actually
-    // pushes the camera button — so the page still works on plain HTTP for
-    // normal browsing, and only reveal the HTTPS outcome at that moment
-    // (network-isolated previews/stripping can make even localhost look insecure).
-    if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
-      setCameraError('nodevice');
-      toast.error('Live camera needs a secure connection (HTTPS or localhost). Please use upload instead.');
-      setSelectedTab('upload');
-      return;
-    }
+    // file://) for getUserMedia. If this is NOT secure, still attempt (Render
+    // production is served over HTTPS so the origin is fine in practice), but
+    // do not hard-fail: the user can always use Upload. Only reveal the HTTPS
+    // note at click time if getUserMedia itself rejects with NotAllowedError
+    // (which can happen when the context really is insecure). This keeps the
+    // page usable on plain HTTP for normal browsing while still surfacing the
+    // real problem once the user actually tries the camera.
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraError('nodevice');
       toast.error('Live camera is not available in this browser or network context. Please use upload instead.');
@@ -188,19 +185,26 @@ const VirtualTryOn = () => {
     try {
       await openStream(primary);
     } catch (error) {
-      const name = error && error.name;
-      // Retry once with bare constraints before concluding anything — this
-      // recovers Safari/Chrome where a specific constraint is unsupported
-      // even though a camera exists.
+      let current = error;
+      const name = current && current.name;
+      // Retry with progressively simpler constraints — real laptops/Safari
+      // often fail an exact request even though a camera exists.
+      const retries = [];
       if (name === 'OverconstrainedError' || name === 'NotFoundError') {
-        try {
-          await openStream({ video: true, audio: false });
-          return;
-        } catch (retryErr) {
-          error = retryErr;
+        retries.push({ video: true, audio: false });
+      }
+      if (retries.length) {
+        for await (const cfg of retries) {
+          try {
+            await openStream(cfg);
+            return; // succeeded on retry
+          } catch (r) {
+            // Keep retrying until exhausted, then use the last failure.
+            current = r;
+          }
         }
       }
-      const n2 = error && error.name;
+      const n2 = (current && current.name) || name;
       if (n2 === 'NotAllowedError' || n2 === 'SecurityError') {
         setCameraError('denied');
         toast.error('Camera access denied. Allow camera permission or use upload instead.');
@@ -261,15 +265,15 @@ const VirtualTryOn = () => {
   };
 
   const capturePhoto = () => {
-    if (!stream && !streamRef.current) return;
-
     const video = document.getElementById('vt-camera-video');
     const canvas = document.getElementById('vt-camera-canvas');
-    if (video && canvas) {
+    if (video && canvas && video.readyState >= 2) {
       const ctx = canvas.getContext('2d');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
+      const width = video.videoWidth || video.clientWidth || 640;
+      const height = video.videoHeight || video.clientHeight || 480;
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(video, 0, 0, width, height);
       const imageData = canvas.toDataURL('image/jpeg', 0.8);
       setCapturedImage(imageData);
       setNativePhoto(dataUrlToFile(imageData, `tryon-${Date.now()}.jpg`));
@@ -453,22 +457,22 @@ const VirtualTryOn = () => {
               </div>
             )}
             {cameraError === 'busy' && (
-            <div className="alert alert-warning" style={{ marginTop: 'var(--td-space-md)', textAlign: 'left' }}>
-              <strong>Camera is busy.</strong> Another app (FaceTime, Zoom, etc.) may be using it.
-              Close other apps and try again — or use Upload.
-              <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                <button onClick={startCamera} className="btn btn-outline btn-sm">
-                  <FaCamera /> Retry Camera
-                </button>
-                <button onClick={() => setSelectedTab('upload')} className="btn btn-outline btn-sm">
-                  <FaUpload /> Use Upload Instead
-                </button>
+              <div className="alert alert-warning" style={{ marginTop: 'var(--td-space-md)', textAlign: 'left' }}>
+                <strong>Camera is busy.</strong> Another app (FaceTime, Zoom, etc.) may be using it.
+                Close other apps and try again — or use Upload.
+                <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                  <button onClick={startCamera} className="btn btn-outline btn-sm">
+                    <FaCamera /> Retry Camera
+                  </button>
+                  <button onClick={() => setSelectedTab('upload')} className="btn btn-outline btn-sm">
+                    <FaUpload /> Use Upload Instead
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-          {cameraError === 'nodevice' && (
+            )}
+            {cameraError === 'nodevice' && (
               <div className="alert alert-warning" style={{ marginTop: 12, textAlign: 'left' }}>
-                <strong>No camera found</strong> on this device. Please use Upload instead.
+                <strong>No camera found</strong> on this device.
                 <div style={{ marginTop: 8 }}>
                   <button onClick={() => setSelectedTab('upload')} className="btn btn-outline btn-sm">
                     <FaUpload /> Use Upload Instead
