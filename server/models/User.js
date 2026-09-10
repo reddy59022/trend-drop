@@ -208,6 +208,36 @@ userSchema.index({ 'notifications.read': 1, 'notifications.createdAt': -1 });
 userSchema.index({ country: 1 });
 
 userSchema.pre('save', async function (next) {
+  // LEGACY-DATA SANITIZER (production seed-schema mismatch fix): legacy seed
+  // docs inserted raw into Mongo carry shapes the production schema no longer
+  // accepts (object `location`, string `payoutMethod`, unknown flat fields).
+  // Any money flow that loads + saves such a user (checkout, payouts, cancel)
+  // would otherwise 500 on validation/cast. Coerce here so ONE fix covers
+  // every current + future caller — no per-route patching needed.
+  try {
+    const loc = this.get('location');
+    if (loc && typeof loc === 'object' && !Array.isArray(loc)) {
+      const parts = [loc.city, loc.state, loc.country].filter(Boolean);
+      this.set('location', parts.join(', '));
+    }
+    const pm = this.get('payoutMethod');
+    if (typeof pm === 'string') {
+      this.set('payoutMethod', pm ? { type: 'stripe' } : { type: '' });
+    } else if (pm && typeof pm === 'object' && !Array.isArray(pm)) {
+      // Tests + clients sometimes send `details: {...}` (bank acct info);
+      // schema has no `details` path, so strip it — otherwise strict-mode
+      // saves throw "not in schema" ValidationError-adjacent failures on
+      // User.create (e.g. sellerE2E createUser with payoutMethod.details).
+      if ('details' in pm) {
+        const d = pm.details || {};
+        const clean = { type: pm.type };
+        if (d.accountNumber) clean.accountNumber = String(d.accountNumber);
+        if (d.routingNumber) clean.routingNumber = String(d.routingNumber);
+        if (d.accountHolderName) clean.accountHolder = String(d.accountHolderName);
+        this.set('payoutMethod', clean);
+      }
+    }
+  } catch (e) { /* never block save on sanitizer */ }
   // Callers that already hold a bcrypt hash (e.g. verification flow copying
   // a PendingUser hash into a new User) set _skipPasswordHash to avoid
   // double-hashing.
