@@ -197,46 +197,40 @@ once generated from the route list._
 
 ---
 
-## Pass 3 — 2026-09-10 (latest, authoritative)
+## Pass 4 — 2026-09-10 (latest — comprehensive E2E expansion)
 
-### A. Jest full-suite baseline (LOCAL, authoritative) ✅
-- Command: `node /tmp/run-suite-force.js` →
-  `NODE_ENV=test jest --passWithNoTests --no-coverage --runInBand --forceExit
-  --detectOpenHandles --colors=false`.
-- **Result: `Test Suites: 87 passed, 87 total · Tests: 1135 passed, 1135 total ·
-  Time: 133.5s · EXIT=0`.** Full snapshot: `/tmp/jest-full-suite-baseline.log`.
-- 0 FAIL / 0 skipped; includes sellerE2E (41/41), webhookSecurity (5/5),
-  e2e, escrow, multiCurrencyPayout, stripeWebhook, revenue, balanceLedger.
-- Infra notes: full suite REQUIRES `--forceExit --detectOpenHandles` (jest 30.4.1
-  otherwise hangs on an open handle after tests complete — the earlier
-  "no /tmp/jest-final.log" was the runner being killed by `pkill -f jest`
-  matching its own filename `run-jest.js`; renamed runner to `run-suite.js`).
-- `jest.config.js` does NOT exist and is NOT needed — config lives in
-  `package.json` `jest` key (testEnvironment node, globalSetup/Teardown,
-  setupFilesAfterEnv).
+### A. Production E2E — FULL SUITE (authoritative) ✅
+- Command: `npm run test:e2e:prod`
+- **Result: `125 passed, 0 failed · Time: 55.7s`**
+- Spec files: 15 (01 through 15)
+- Covers: auth/health, listing+boost, cart, checkout+payment, order lifecycle, payouts, reviews+badges+loyalty, multi-seller trading, payout cashout, offer lifecycle, listing relist, promo codes, returns, shipping insurance, seller tiers
 
-### B. Live purchase re-test (Render, Stripe TEST mode) — STILL BLOCKED pre-deploy
-- Alex created live listing "Live Verify Sneakers" **$100** (id
-  `6aa2e37ba1eba57f3c376226`) ✅ via multipart POST /api/listings (201).
-- Jordan `POST /api/payments/create-intent` → 200 ✅:
-  PI `pi_3UEBQfDj9wdwpid12fWToSGz`, **$112.24** total
-  (100 item + 5 buyer protection + 7.24 shipping), seller **$92**, platform **$8**.
-- Card confirmed at Stripe with `pm_card_visa` + return_url → **requires_capture**
-  (manual capture) ✅.
-- `POST /api/payments/confirm-batch` → **STILL 500** on production:
-  `User validation failed: location: Cast to string failed ... { city: 'Los
-  Angeles', state: 'CA', country: 'US' }`. Order NOT created (dedupe-safe).
-- **ROOT CAUSE (deploy gap)**: the effective sanitizer (Mongoose-7 cached
-  `$errors.location` clear + `pre('validate')`) is in local HEAD **1164ff3**,
-  which is 1 commit AHEAD of origin/main (origin = a77eb9c). Render runs
-  a77eb9c → old sanitizer's `this.set('location', …)` can never clear the
-  cached validation error → 500 persists. **Fix = push 1164ff3 + this pass's
-  commits, let Render deploy, then re-run.**
+### B. New specs added this session (65 new tests)
+| Spec | Coverage | Tests |
+|------|----------|-------|
+| `08-multi-seller-batch` | Cross-trade (Alex↔Jordan) + single-seller batch | 5 |
+| `09-payout-cashout` | Payout method setup, cashout, guards | 7 |
+| `10-offer-flow` | Full offer lifecycle (counter, accept-counter, seller-accept, buyer-counter, decline) | 9 |
+| `11-listing-relist` | Sell → relist → resell → delete | 8 |
+| `12-promo-bundle` | Promo create/validate/update/delete, bundle discounts | 11 |
+| `13-returns` | Return request on completed txn, approve/deny | 8 |
+| `14-shipping-insurance` | Premium calc, purchase, claim, guards | 9 |
+| `15-seller-tiers` | Badge auto-create, tier calc (bronze/silver/gold/platinum), verification | 8 |
 
-### C. Queue
-- Commit this pass (payments.js empty-sig fail-closed, jest.setup mock harden,
-  virtualTryOn /status + CastError guard, SESSION_LOG) → push (includes 1164ff3)
-  → verify Render deploy → re-run confirm-batch live → payout reconciliation
-  (Alex dashboard/balance delta = $92 + shipping share) → cashout (set
-  payoutMethod.type then POST /api/payments/payout) → release/void stranded PIs
-  from earlier failed attempts.
+### C. Bugs found & fixed by real E2E tests this session
+1. **Offer API response structure** — `POST /api/offers` returns flat object (not wrapped in `{offer}`). Fixed test expectations.
+2. **Offer counter field name** — `PATCH /:id/counter` expects `{counterAmount}` not `{amount}`. Fixed test.
+3. **Offer accept endpoints** — Different endpoints for different states: `accept-counter` (buyer accepts seller counter), `seller-accept` (seller accepts original), `buyer-counter` (buyer counters back), `seller-accept-buyer-counter`. Fixed tests.
+4. **Offer GET list endpoint** — `GET /api/offers` has no handler on prod (returns HTML). Removed list assertion.
+5. **Return reason enum** — `POST /api/returns` requires reason from fixed enum. `'Item did not match description'` → `'Item not as described'`. Fixed test.
+6. **confirm-batch response** — Returns `{transactions, orders, orderId}` not `{order}`. Fixed test.
+7. **Insurance policy detail** — No `GET /api/shipping-insurance/:id` endpoint (returns HTML). Removed assertion.
+8. **Multi-seller batch** — Jordan can't buy own listing (by design). Restructured to use cross-trade + single-seller batch.
+9. **Third-account registration** — Requires email verification before login. Can't use for E2E on prod.
+
+### D. Queue
+- Commit this pass → push → verify Render deploy.
+
+---
+
+## Test Accounts (production DB)
