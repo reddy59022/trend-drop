@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaTimes, FaPaperPlane, FaSpinner, FaUserCircle, FaStore } from 'react-icons/fa';
+import { FaTimes, FaPaperPlane, FaSpinner, FaStore, FaCheck, FaTimesCircle, FaExchangeAlt, FaClock, FaTag, FaShoppingBag } from 'react-icons/fa';
 import { startConversation, sendMessage, getConversation, markAsRead } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { defaultAvatar, timeAgo, formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
+import moment from 'moment';
 
 const ChatModal = ({ isOpen, onClose, listing, seller }) => {
   const { user } = useAuth();
@@ -12,14 +13,16 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState(null);
+  const [offer, setOffer] = useState(null);
+  const [offerExpired, setOfferExpired] = useState(false);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
   const pollIntervalRef = useRef(null);
 
   useEffect(() => {
     if (isOpen && user) {
       loadConversation();
-      // Poll for new messages every 5 seconds
-      pollIntervalRef.current = setInterval(loadConversation, 5000);
+      pollIntervalRef.current = setInterval(loadConversation, 3000);
     }
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -31,6 +34,15 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    if (offer?.expiresAt && (offer.status === 'pending' || offer.status === 'countered')) {
+      const checkExp = () => setOfferExpired(new Date() > new Date(offer.expiresAt));
+      checkExp();
+      const iv = setInterval(checkExp, 1000);
+      return () => clearInterval(iv);
+    }
+  }, [offer]);
+
   const loadConversation = async () => {
     if (!user || !listing) return;
     try {
@@ -38,15 +50,12 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
       if (res.data && res.data.messages) {
         setMessages(res.data.messages);
         if (res.data._id) setConversationId(res.data._id);
-        // Mark as read
-        if (res.data._id) {
-          try { await markAsRead(res.data._id); } catch (e) {}
-        }
+        if (res.data.offer) setOffer(res.data.offer);
+        if (res.data._id) { try { await markAsRead(res.data._id); } catch (e) {} }
       } else {
         setMessages(res.data ? [res.data] : []);
       }
     } catch (error) {
-      // No conversation yet - that's fine
       setMessages([]);
     }
     setLoading(false);
@@ -55,7 +64,6 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
   const handleSend = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || sending) return;
-
     setSending(true);
     try {
       let msg;
@@ -64,13 +72,14 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
       } else {
         msg = await startConversation({
           listingId: listing._id,
-          recipientId: seller._id || seller.id,
+          sellerId: seller._id || seller.id,
           text: newMessage.trim(),
         });
         if (msg.data && msg.data._id) setConversationId(msg.data._id);
       }
       setNewMessage('');
       loadConversation();
+      setTimeout(() => inputRef.current?.focus(), 100);
     } catch (error) {
       toast.error('Failed to send message');
     } finally {
@@ -78,123 +87,147 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
     }
   };
 
+  const handleAcceptOffer = async () => {
+    try {
+      const api = (await import('../services/api')).default;
+      await api.patch(`/offers/${offer._id}/accept`);
+      toast.success('Offer accepted! Buyer can now purchase.');
+      setOffer({ ...offer, status: 'accepted', acceptedAt: new Date() });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to accept offer');
+    }
+  };
+
+  const handleDeclineOffer = async () => {
+    try {
+      const api = (await import('../services/api')).default;
+      await api.patch(`/offers/${offer._id}/decline`);
+      toast.success('Offer declined');
+      setOffer({ ...offer, status: 'declined' });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to decline');
+    }
+  };
+
   if (!isOpen) return null;
 
   const sellerName = seller?.name || seller?.username || 'Seller';
+  const isSeller = (user?.id || user?._id) === (seller._id || seller.id);
+
+  const getStatusBadge = (status) => {
+    const configs = {
+      pending: { color: 'var(--td-warning)', bg: 'rgba(255,176,32,0.1)', icon: <FaClock size={11} />, label: 'Offer Pending' },
+      countered: { color: 'var(--td-info)', bg: 'rgba(61,155,255,0.1)', icon: <FaExchangeAlt size={11} />, label: 'Counter Offer' },
+      buyer_countered: { color: 'var(--td-info)', bg: 'rgba(61,155,255,0.1)', icon: <FaExchangeAlt size={11} />, label: 'Counter Sent' },
+      accepted: { color: 'var(--td-success)', bg: 'rgba(16,217,142,0.1)', icon: <FaCheck size={11} />, label: 'Offer Accepted' },
+      declined: { color: 'var(--td-error)', bg: 'rgba(255,77,109,0.1)', icon: <FaTimesCircle size={11} />, label: 'Offer Declined' },
+      expired: { color: 'var(--td-text-tertiary)', bg: 'rgba(148,148,184,0.1)', icon: <FaClock size={11} />, label: 'Expired' },
+      completed: { color: 'var(--td-success)', bg: 'rgba(16,217,142,0.1)', icon: <FaShoppingBag size={11} />, label: 'Purchased' },
+    };
+    const c = configs[status] || configs.pending;
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--td-radius-full)', fontSize: 10, fontWeight: 600, color: c.color, background: c.bg }}>
+        {c.icon} {c.label}
+      </span>
+    );
+  };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div 
-        className="modal" 
-        onClick={(e) => e.stopPropagation()} 
-        style={{ maxWidth: 500, height: '80vh', display: 'flex', flexDirection: 'column' }}
-      >
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560, width: '100%', height: '85vh', display: 'flex', flexDirection: 'column', borderRadius: 'var(--td-radius-xl)', overflow: 'hidden', background: 'var(--td-surface)', boxShadow: 'var(--td-shadow-xxl)' }}>
+        
         {/* Header */}
-        <div className="modal-header" style={{ flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img
-              src={seller?.avatar || defaultAvatar}
-              alt={sellerName}
-              style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }}
-            />
-            <div>
-              <h2 style={{ fontSize: 16, marginBottom: 0 }}>{sellerName}</h2>
-              {listing && (
-                <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <FaStore size={10} /> {listing.title?.substring(0, 30)}...
-                </div>
-              )}
+        <div style={{ flexShrink: 0, padding: '16px 20px', background: 'linear-gradient(135deg, var(--td-primary) 0%, var(--td-primary-dark) 100%)', color: '#fff' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <img src={seller?.avatar || defaultAvatar} alt={sellerName} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(255,255,255,0.3)' }} />
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>{sellerName}</h2>
+                <div style={{ fontSize: 12, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 4 }}><FaStore size={10} /> Seller</div>
+              </div>
             </div>
+            <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaTimes /></button>
           </div>
-          <button className="modal-close" onClick={onClose}><FaTimes /></button>
+          {listing && (
+            <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(255,255,255,0.15)', borderRadius: 'var(--td-radius-sm)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              {listing.images?.[0] && <img src={listing.images[0]} alt="" style={{ width: 32, height: 32, borderRadius: 'var(--td-radius-xs)', objectFit: 'cover' }} />}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{listing.title}</div>
+                <div style={{ fontSize: 11, opacity: 0.8 }}>Listed at {formatPrice(listing.price, listing.currency || 'USD')}</div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--td-space-md)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}>
-              <FaSpinner className="spinner" />
+        {/* Offer Status Banner */}
+        {offer && (
+          <div style={{ flexShrink: 0, padding: '12px 20px', background: offerExpired ? 'rgba(148,148,184,0.05)' : offer.status === 'accepted' ? 'rgba(16,217,142,0.06)' : offer.status === 'declined' ? 'rgba(255,77,109,0.06)' : 'rgba(108,59,255,0.04)', borderBottom: '1px solid var(--td-border-light)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FaTag size={13} style={{ color: 'var(--td-primary)' }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--td-text)' }}>Offer: {formatPrice(offer.counterAmount || offer.amount, offer.currency || 'USD')}</span>
+                {getStatusBadge(offerExpired && offer.status === 'pending' ? 'expired' : offer.status)}
+              </div>
+              {offer.expiresAt && offer.status === 'pending' && !offerExpired && (
+                <span style={{ fontSize: 11, color: 'var(--td-text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> Expires {moment(offer.expiresAt).fromNow()}</span>
+              )}
             </div>
+            {offer.status === 'pending' && !offerExpired && isSeller && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button onClick={handleAcceptOffer} style={{ flex: 1, padding: '8px 16px', background: 'var(--td-success)', color: '#fff', border: 'none', borderRadius: 'var(--td-radius-sm)', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><FaCheck size={12} /> Accept</button>
+                <button onClick={handleDeclineOffer} style={{ flex: 1, padding: '8px 16px', background: 'transparent', color: 'var(--td-error)', border: '1px solid var(--td-error)', borderRadius: 'var(--td-radius-sm)', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><FaTimesCircle size={12} /> Decline</button>
+              </div>
+            )}
+            {offerExpired && (offer.status === 'pending' || offer.status === 'countered') && (
+              <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(148,148,184,0.1)', borderRadius: 'var(--td-radius-sm)', fontSize: 12, color: 'var(--td-text-secondary)', textAlign: 'center' }}>
+                ⏰ This offer has expired. A new offer can be made.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px', background: 'var(--td-surface-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}><FaSpinner className="spinner" /></div>
           ) : messages.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}>
-              <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>💬</div>
-              <p>Start a conversation with {sellerName}</p>
-              <p style={{ fontSize: 12, marginTop: 4 }}>Ask about the item, negotiate a price, or say hello!</p>
+              <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.3 }}>💬</div>
+              <p style={{ fontSize: 16, fontWeight: 500, marginBottom: 4 }}>Start a conversation with {sellerName}</p>
+              <p style={{ fontSize: 13 }}>Ask about the item, negotiate a price, or say hello!</p>
             </div>
           ) : (
-            messages.map((msg, i) => {
-              const isOwn = msg.sender?._id === (user?.id || user?._id) || msg.sender === (user?.id || user?._id);
-              const showAvatar = i === 0 || messages[i-1]?.sender?._id !== msg.sender?._id;
-              
-              return (
-                <div
-                  key={msg._id || i}
-                  style={{
-                    display: 'flex',
-                    justifyContent: isOwn ? 'flex-end' : 'flex-start',
-                    marginBottom: 4,
-                  }}
-                >
-                  <div
-                    style={{
-                      maxWidth: '75%',
-                      padding: '10px 14px',
-                      borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                      background: isOwn 
-                        ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))'
-                        : 'var(--td-surface-secondary)',
-                      color: isOwn ? '#fff' : 'var(--td-text)',
-                      boxShadow: isOwn 
-                        ? '0 2px 8px var(--td-primary-glow)'
-                        : 'var(--td-shadow-sm)',
-                      position: 'relative',
-                    }}
-                  >
-                    <div style={{ fontSize: 14, lineHeight: 1.4 }}>{msg.text}</div>
-                    <div style={{ 
-                      fontSize: 10, 
-                      marginTop: 4, 
-                      opacity: 0.7,
-                      textAlign: isOwn ? 'right' : 'left',
-                    }}>
-                      {timeAgo(msg.createdAt)}
+            <>
+              {messages.map((msg, i) => {
+                const isOwn = msg.sender?._id === (user?.id || user?._id) || msg.sender === (user?.id || user?._id);
+                const showAvatar = i === 0 || messages[i - 1]?.sender?._id !== msg.sender?._id;
+                const isLast = i === messages.length - 1 || messages[i + 1]?.sender?._id !== msg.sender?._id;
+                return (
+                  <div key={msg._id || i} style={{ display: 'flex', justifyContent: isOwn ? 'flex-end' : 'flex-start', alignItems: isOwn ? 'flex-end' : 'flex-start', gap: 8, marginBottom: isLast ? 12 : 4 }}>
+                    {!isOwn && showAvatar && <img src={seller?.avatar || defaultAvatar} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
+                    {!isOwn && !showAvatar && <div style={{ width: 28, flexShrink: 0 }} />}
+                    <div style={{ maxWidth: '72%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : '#fff', color: isOwn ? '#fff' : 'var(--td-text)', boxShadow: isOwn ? '0 4px 12px rgba(108,59,255,0.3)' : 'var(--td-shadow-sm)' }}>
+                      <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.text}</div>
+                      <div style={{ fontSize: 10, marginTop: 4, opacity: isOwn ? 0.8 : 0.5, textAlign: isOwn ? 'right' : 'left' }}>
+                        {timeAgo(msg.createdAt)}
+                        {isOwn && msg.read && <span style={{ marginLeft: 4, fontSize: 9 }}>✓✓</span>}
+                      </div>
                     </div>
+                    {isOwn && showAvatar && <img src={user?.avatar || defaultAvatar} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
+                    {isOwn && !showAvatar && <div style={{ width: 28, flexShrink: 0 }} />}
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+              <div ref={messagesEndRef} />
+            </>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
-        <form 
-          onSubmit={handleSend}
-          style={{
-            flexShrink: 0,
-            padding: 'var(--td-space-sm) var(--td-space-md)',
-            borderTop: '1px solid var(--td-border)',
-            display: 'flex',
-            gap: 8,
-            alignItems: 'center',
-          }}
-        >
-          <input
-            type="text"
-            className="form-input"
-            placeholder="Type a message..."
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            maxLength={1000}
-            style={{ borderRadius: '24px !important' }}
-          />
-          <button
-            type="submit"
-            className="btn btn-primary btn-icon"
-            disabled={sending || !newMessage.trim()}
-            style={{ flexShrink: 0, width: 44, height: 44 }}
-          >
-            {sending ? <FaSpinner className="spinner-sm" /> : <FaPaperPlane />}
+        <form onSubmit={handleSend} style={{ flexShrink: 0, padding: '12px 16px', background: 'var(--td-surface)', borderTop: '1px solid var(--td-border-light)', display: 'flex', gap: 10, alignItems: 'center' }}>
+          <input ref={inputRef} type="text" placeholder="Type a message..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} maxLength={2000} autoComplete="off" style={{ flex: 1, padding: '12px 18px', borderRadius: '24px', border: '1px solid var(--td-border)', fontSize: 14, background: 'var(--td-surface-secondary)', outline: 'none' }} />
+          <button type="submit" disabled={sending || !newMessage.trim()} style={{ flexShrink: 0, width: 46, height: 46, borderRadius: '50%', border: 'none', background: newMessage.trim() ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : 'var(--td-surface-tertiary)', color: newMessage.trim() ? '#fff' : 'var(--td-text-tertiary)', cursor: newMessage.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: newMessage.trim() ? '0 4px 12px rgba(108,59,255,0.35)' : 'none' }}>
+            {sending ? <FaSpinner className="spinner-sm" /> : <FaPaperPlane size={16} />}
           </button>
         </form>
       </div>

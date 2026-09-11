@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import moment from 'moment';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { FaExchangeAlt, FaArrowUp, FaCheck, FaTimes, FaGavel } from 'react-icons/fa';
+import { FaExchangeAlt, FaArrowUp, FaCheck, FaTimes, FaGavel, FaClock, FaComment } from 'react-icons/fa';
 import { io } from 'socket.io-client';
 import CounterOfferModal from '../components/CounterOfferModal';
 
@@ -145,15 +145,31 @@ const Offers = () => {
   const getStatusLabel = (s) => ({ pending: '⏳ Pending', accepted: '✅ Accepted', declined: '❌ Declined', countered: '🔄 Countered', buyer_countered: '🔄 You Countered', completed: '✅ Completed', expired: '⏰ Expired' }[s] || s);
 
   const isOfferExpired = (offer) => {
+    // Pending/countered offers expire 24 hours after creation or last counter
+    if (offer.status === 'pending' || offer.status === 'countered' || offer.status === 'buyer_countered') {
+      const expiryTime = offer.expiresAt ? new Date(offer.expiresAt) : new Date(new Date(offer.updatedAt).getTime() + 24 * 60 * 60 * 1000);
+      return new Date() > expiryTime;
+    }
+    // Accepted offers expire after acceptedUntil window
     if (offer.status === 'accepted' && offer.acceptedUntil) {
       return new Date() > new Date(offer.acceptedUntil);
     }
     return false;
   };
 
+  const getTimeRemaining = (offer) => {
+    const expiryTime = offer.expiresAt ? new Date(offer.expiresAt) : new Date(new Date(offer.updatedAt).getTime() + 24 * 60 * 60 * 1000);
+    const diff = expiryTime - new Date();
+    if (diff <= 0) return 'Expired';
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    return hours > 0 ? `${hours}h ${mins}m left` : `${mins}m left`;
+  };
+
   const renderOfferCard = (offer, type) => {
     // If offer is completed/declined/expired, no action buttons
-    const isTerminalState = offer.status === 'completed' || offer.status === 'declined' || offer.status === 'expired' || isOfferExpired(offer);
+    const offerIsExpired = isOfferExpired(offer);
+    const isTerminalState = offer.status === 'completed' || offer.status === 'declined' || offer.status === 'expired' || offerIsExpired;
 
     return (
       <div key={offer._id} className="offer-card" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
@@ -173,12 +189,25 @@ const Offers = () => {
             )}
           </div>
           <span className={`offer-status ${getStatusColor(offer.status)}`} style={{ marginTop: 8 }}>{getStatusLabel(offer.status)}</span>
+          {(offer.status === 'pending' || offer.status === 'countered' || offer.status === 'buyer_countered') && !isOfferExpired(offer) && (
+            <p style={{ fontSize: 11, color: 'var(--td-text-tertiary)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <FaClock size={10} /> {getTimeRemaining(offer)}
+            </p>
+          )}
+          {isOfferExpired(offer) && (offer.status === 'pending' || offer.status === 'countered' || offer.status === 'buyer_countered') && (
+            <p style={{ fontSize: 11, color: 'var(--td-error)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <FaClock size={10} /> Expired - send a new offer
+            </p>
+          )}
           {offer.status === 'accepted' && offer.acceptedUntil && (
             <p style={{ fontSize: 11, color: isOfferExpired(offer) ? 'var(--td-error)' : 'var(--td-text-secondary)', marginTop: 4 }}>
-              {isOfferExpired(offer) ? '⏰ Offer expired - make a new offer' : `⏳ Valid for ${Math.max(0, Math.floor((new Date(offer.acceptedUntil) - new Date()) / (1000 * 60 * 60)))}h`}
+              {isOfferExpired(offer) ? '⏰ Purchase window expired' : `⏳ Purchase window: ${Math.max(0, Math.floor((new Date(offer.acceptedUntil) - new Date()) / (1000 * 60 * 60)))}h remaining`}
             </p>
           )}
           <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
+          <Link to="/messages" style={{ fontSize: 11, color: 'var(--td-primary)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+            <FaComment size={10} /> {type === 'received' ? 'Message Buyer' : 'View Conversation'}
+          </Link>
         </div>
         {/* Actions */}
         {/* Received offers - seller actions */}

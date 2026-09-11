@@ -537,6 +537,8 @@ router.patch('/:id/counter', auth, async (req, res) => {
     offer.status = 'countered';
     offer.counterAmount = numericCounter;
     offer.lastCounterBy = 'seller';
+    // Reset 24h expiration window on counter
+    offer.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     
     // CRITICAL: Push to counter history
     offer.counterHistory.push({
@@ -616,6 +618,8 @@ router.patch('/:id/buyer-counter', auth, async (req, res) => {
     offer.status = 'buyer_countered';
     offer.counterAmount = numericCounter;
     offer.lastCounterBy = 'buyer';
+    // Reset 24h expiration window on counter
+    offer.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     
     // CRITICAL: Push to counter history
     offer.counterHistory.push({

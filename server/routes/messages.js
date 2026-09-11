@@ -1,26 +1,29 @@
 const express = require('express');
 const router = express.Router();
 const Message = require('../models/Message');
+const Offer = require('../models/Offer');
 const { auth } = require('../middleware/auth');
 const pushService = require('../services/pushService');
 
 // POST /api/messages - Start a conversation about a listing
 router.post('/', auth, async (req, res) => {
   try {
-    const { listingId, sellerId, text } = req.body;
+    const { listingId, sellerId, recipientId, text } = req.body;
+    const targetUserId = sellerId || recipientId;
     if (!text) return res.status(400).json({ message: 'Message text is required' });
-    if (req.user._id.toString() === sellerId) {
+    if (!targetUserId) return res.status(400).json({ message: 'Recipient is required' });
+    if (req.user._id.toString() === targetUserId) {
       return res.status(400).json({ message: 'Cannot message yourself' });
     }
     let conversation = await Message.findOne({
-      participants: { $all: [req.user._id, sellerId] },
+      participants: { $all: [req.user._id, targetUserId] },
       listing: listingId,
     });
     if (conversation) {
       conversation.messages.push({ sender: req.user._id, text });
     } else {
       conversation = await Message.create({
-        participants: [req.user._id, sellerId],
+        participants: [req.user._id, targetUserId],
         listing: listingId,
         messages: [{ sender: req.user._id, text }],
       });
@@ -28,13 +31,13 @@ router.post('/', auth, async (req, res) => {
     await conversation.save();
     await conversation.populate([
       { path: 'participants', select: 'name avatar' },
-      { path: 'listing', select: 'title images price' },
+      { path: 'listing', select: 'title images price currency' },
       { path: 'messages.sender', select: 'name avatar' },
     ]);
 
     // TD-2.3: push the recipient so time-sensitive deals aren't missed.
     // Fire-and-forget safe: pushService never throws and is fully key-gated.
-    await pushService.sendToUser(sellerId, {
+    await pushService.sendToUser(targetUserId, {
       category: 'messages',
       title: `New message from ${req.user.name}`,
       body: text,
@@ -77,10 +80,34 @@ router.get('/conversation/:userId/:listingId', auth, async (req, res) => {
       participants: { $all: [req.user._id, req.params.userId] },
       listing: req.params.listingId,
     }).populate('participants', 'name avatar')
-      .populate('listing', 'title images price')
+      .populate('listing', 'title images price currency')
       .populate('messages.sender', 'name avatar');
     if (!conversation) return res.status(404).json({ message: 'Conversation not found' });
-    res.json(conversation);
+    
+    // Attach active offer for this listing between these users
+    const activeOffer = await Offer.findOne({
+      listing: req.params.listingId,
+      $or: [
+        { buyer: req.user._id, seller: req.params.userId },
+        { buyer: req.params.userId, seller: req.user._id },
+      ],
+      status: { $in: ['pending', 'countered', 'buyer_countered', 'accepted'] },
+    }).sort({ updatedAt: -1 });
+    
+    const result = conversation.toObject();
+    if (activeOffer) {
+      result.offer = activeOffer.toObject();
+      // Auto-expire offers past their 24h window
+      const now = new Date();
+      if (activeOffer.expiresAt && now > activeOffer.expiresAt && 
+          (activeOffer.status === 'pending' || activeOffer.status === 'countered' || activeOffer.status === 'buyer_countered')) {
+        activeOffer.status = 'expired';
+        await activeOffer.save();
+        result.offer.status = 'expired';
+      }
+    }
+    
+    res.json(result);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

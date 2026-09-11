@@ -17,6 +17,7 @@ const Payout = require('../models/Payout');
 const PendingUser = require('../models/PendingUser');
 const Auction = require('../models/Auction');
 const Return = require('../models/Return');
+const Offer = require('../models/Offer');
 
 const { orderStates, timeWindows } = require('./orderLifecycle');
 
@@ -499,6 +500,31 @@ async function closeAuctions() {
 }
 
 // ──────────────────────────────────────────────
+// JOB 8: Auto-Expire Offers (Every 30 minutes)
+// ──────────────────────────────────────────────
+// Pending/countered offers with expiresAt < now get status = 'expired'
+async function expireOffers() {
+  try {
+    const now = new Date();
+    const result = await Offer.updateMany(
+      { 
+        expiresAt: { $lt: now },
+        status: { $in: ['pending', 'countered', 'buyer_countered'] },
+      },
+      { 
+        $set: { status: 'expired' }
+      }
+    );
+    if (result.modifiedCount > 0) {
+      console.log(`[CRON] Auto-expired ${result.modifiedCount} offers`);
+    }
+    return result.modifiedCount;
+  } catch (error) {
+    console.error('[CRON] Error expiring offers:', error.message);
+  }
+}
+
+// ──────────────────────────────────────────────
 // Initialize all cron jobs
 // ──────────────────────────────────────────────
 function initCronJobs() {
@@ -556,6 +582,13 @@ function initCronJobs() {
     closeAuctions();
   });
   console.log('[CRON] Auction auto-close scheduled (every minute)');
+
+  // Job 8: Auto-expire offers every 30 minutes
+  // '*/30 * * * *' = every 30 minutes
+  cron.schedule('*/30 * * * *', () => {
+    expireOffers();
+  });
+  console.log('[CRON] Offer auto-expiration scheduled (every 30 minutes)');
 }
 
 module.exports = {
@@ -567,4 +600,5 @@ module.exports = {
   cleanExpiredTokens,
   activateAuctions,
   closeAuctions,
+  expireOffers,
 };

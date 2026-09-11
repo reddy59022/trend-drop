@@ -1,7 +1,7 @@
 import { defaultAvatar, formatPrice, getConditionColor } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit } from 'react-icons/fa';
+import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment } from 'react-icons/fa';
 import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
 import { requestCameraPermission } from '../services/native';
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +10,7 @@ import { shareItem, copyText } from '../services/native';
 import MediaCarousel from '../components/MediaCarousel';
 import CommentSection from '../components/CommentSection';
 import OfferModal from '../components/OfferModal';
+import ChatModal from '../components/ChatModal';
 import ListingCard from '../components/ListingCard';
 import { useCart } from '../context/CartContext';
 
@@ -34,6 +35,7 @@ const ListingDetail = () => {
   const [showMobileSticky, setShowMobileSticky] = useState(false);
   const [counterModalOpen, setCounterModalOpen] = useState(false);
   const [counterAmount, setCounterAmount] = useState('');
+  const [chatModalOpen, setChatModalOpen] = useState(false);
 
   useEffect(() => {
     fetchListing();
@@ -499,6 +501,15 @@ const ListingDetail = () => {
               <button className="btn btn-outline" onClick={handleShare}>
                 <FaShareAlt /> Share
               </button>
+              {!isOwner && user && listing.seller && (
+                <button
+                  className="btn btn-outline"
+                  onClick={() => setChatModalOpen(true)}
+                  style={{ color: 'var(--td-primary)', borderColor: 'var(--td-primary)' }}
+                >
+                  <FaComment /> Message Seller
+                </button>
+              )}
             </div>
             {!isOwner && !listing.sold && user && (
               <div className="listing-detail-action-row">
@@ -720,6 +731,16 @@ const ListingDetail = () => {
           Add to Bag
         </button>
       </div>
+    )}
+
+    {/* Chat Modal */}
+    {chatModalOpen && listing?.seller && (
+      <ChatModal
+        isOpen={chatModalOpen}
+        onClose={() => setChatModalOpen(false)}
+        listing={listing}
+        seller={listing.seller}
+      />
     )}
     </>
   );
