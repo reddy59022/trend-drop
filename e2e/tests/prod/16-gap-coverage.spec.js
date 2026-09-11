@@ -65,7 +65,8 @@ test.describe('16 · BE↔FE gap coverage (production)', () => {
     });
     expect([200, 201].includes(lr.status), JSON.stringify(lr.data)).toBe(true);
     const listingId = lr.data.listing?._id || lr.data._id;
-    const now = new Date(), end = new Date(Date.now() + 2 * 24 * 3600 * 1000);
+    const now = new Date();
+    const end = new Date(Date.now() - 1000); // Already ended so we can close it
     const ar = await api.req('post', '/api/auctions', {
       token: alexToken,
       body: {
