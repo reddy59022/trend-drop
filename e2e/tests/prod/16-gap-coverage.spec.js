@@ -11,16 +11,19 @@ const { test } = require('@playwright/test');
 const { makeApi, loadState, saveState, RUN_ID, expect } = require('./helpers');
 
 test.describe('16 · BE↔FE gap coverage (production)', () => {
-  let api, state, jordanToken, alexToken, jordanId;
+  let api, jordanToken, alexToken, jordanId;
 
   test.beforeAll(async () => {
     api = await makeApi();
-    state = loadState();
-    jordanToken = state.jordan?.token;
-    alexToken = state.alex?.token;
-    jordanId = state.jordan?.userId;
-    expect(jordanToken, 'missing jordan token — run specs 01–08 first').toBeTruthy();
+    // Self-sufficient: log in directly (tokens cached across runs in helpers)
+    jordanToken = await api.login('jordan');
+    alexToken = await api.login('alex');
+    const me = await api.req('get', '/api/users/me', { token: jordanToken });
+    jordanId = me.data?._id || me.data?.user?._id;
+    expect(jordanToken, 'jordan login must yield token').toBeTruthy();
   });
+
+  test.afterAll(async () => { await api.dispose(); });
 
   test('analytics overview loads with correct shape', async () => {
     const t = api.withToken(jordanToken);
