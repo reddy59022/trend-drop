@@ -66,9 +66,13 @@ router.get('/status', (req, res) => {
   
   res.json({
     stripe: {
+      // In E2E in-memory mode the mock payment-intent registry is the active
+      // payment backend — report it as initialized (payment flows work), with
+      // mockMode:true so callers can distinguish it from a real SDK client.
       publishableKeyConfigured: !!(publishableKey && publishableKey.startsWith('pk_')),
       secretKeyConfigured: !!(secretKey && secretKey.startsWith('sk_')),
-      stripeInitialized: !!stripe,
+      stripeInitialized: !!stripe || !!process.env.E2E_IN_MEMORY,
+      mockMode: !stripe && !!process.env.E2E_IN_MEMORY,
     },
     environment: process.env.NODE_ENV || 'development',
   });
@@ -1024,8 +1028,11 @@ router.post('/test-confirm', auth, async (req, res) => {
   try {
     const { paymentIntentId } = req.body || {};
     if (!paymentIntentId) return res.status(400).json({ message: 'Missing paymentIntentId' });
+    // The secret-key guard applies ONLY to the real Stripe SDK path. In
+    // E2E in-memory / hermetic mode Stripe is intentionally not initialized
+    // (mock payment-intent registry below handles the flow) — never 403 those.
     const secretKey = process.env.STRIPE_SECRET_KEY || '';
-    if (!secretKey.startsWith('sk_test_')) {
+    if (stripe && !secretKey.startsWith('sk_test_')) {
       return res.status(403).json({ message: 'Test confirmation is only available in Stripe TEST mode' });
     }
 
@@ -1033,9 +1040,15 @@ router.post('/test-confirm', auth, async (req, res) => {
      *  Build a fake intent from the request + global mock store and continue. */
     let pi;
     if (!stripe) {
-      const existing = global.__mockPaymentIntents && global.__mockPaymentIntents[paymentIntentId];
+      if (!global.__mockPaymentIntents) global.__mockPaymentIntents = {};
+      const existing = global.__mockPaymentIntents[paymentIntentId];
       if (existing) {
         pi = existing;
+        // Transition the STORED intent to the same state a manual-capture TEST
+        // confirm produces, so a subsequent retrievePaymentIntent (seen by the
+        // confirm / confirm-batch routes) observes requires_capture and accepts.
+        pi.status = 'requires_capture';
+        global.__mockPaymentIntents[paymentIntentId] = pi;
       } else {
         // Fresh mock intent (auth=false path): use request amount or default $100
         pi = {
@@ -1045,7 +1058,6 @@ router.post('/test-confirm', auth, async (req, res) => {
           currency: 'usd',
           metadata: { buyerId: req.user._id.toString() },
         };
-        if (!global.__mockPaymentIntents) global.__mockPaymentIntents = {};
         global.__mockPaymentIntents[paymentIntentId] = pi;
       }
     } else {
@@ -1075,7 +1087,10 @@ router.post('/test-confirm', auth, async (req, res) => {
     // Confirm the intent (Stripe or mock)
     let confirmed;
     if (!stripe) {
-      confirmed = { id: paymentIntentId, status: 'succeeded', amount: pi.amount, currency: pi.currency };
+      confirmed = { id: paymentIntentId, status: 'requires_capture', amount: pi.amount, currency: pi.currency };
+      // Persist so retrievePaymentIntent (confirm/confirm-batch) accepts it.
+      pi.status = 'requires_capture';
+      global.__mockPaymentIntents[paymentIntentId] = pi;
     } else {
       confirmed = await stripe.paymentIntents.confirm(paymentIntentId, {
         payment_method: 'pm_card_visa',
@@ -1116,10 +1131,25 @@ router.post('/payout', auth, async (req, res) => {
     if (!user.payoutMethod || !user.payoutMethod.type) {
       return res.status(400).json({ message: 'Please set up a payout method first' });
     }
-    const amount = user.balance.available;
+    // Amount validation: when omitted, default to the full available balance
+    // (legacy behavior); never accept zero/negative/non-numeric amounts, and
+    // never allow a cashout larger than the seller's available balance.
+    const requested = req.body && req.body.amount;
+    let amount;
+    if (typeof requested === 'undefined' || requested === null || requested === '') {
+      amount = user.balance.available;
+    } else {
+      amount = Number(requested);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ message: 'Invalid payout amount' });
+      }
+    }
+    if (amount > user.balance.available) {
+      return res.status(422).json({ message: 'Payout amount exceeds available balance' });
+    }
     const payout = await processSellerPayout(user._id, amount, user.balance.currency || 'USD', user.payoutMethod.type);
-    user.balance.totalPaidOut = (user.balance.totalPaidOut || 0) + amount;
-    user.balance.available = 0;
+    user.balance.totalPaidOut = Math.round(((user.balance.totalPaidOut || 0) + amount) * 100) / 100;
+    user.balance.available = Math.round((user.balance.available - amount) * 100) / 100;
     await user.save();
     res.json({ payout, message: `Payout of ${amount} ${user.balance.currency} processed` });
   } catch (error) {

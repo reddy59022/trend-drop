@@ -39,8 +39,8 @@ async function main() {
   if (!process.env.CLOUDINARY_CLOUD_NAME) process.env.CLOUDINARY_CLOUD_NAME = 'placeholder';
   if (!process.env.CLOUDINARY_API_KEY) process.env.CLOUDINARY_API_KEY = 'placeholder';
   if (!process.env.CLOUDINARY_API_SECRET) process.env.CLOUDINARY_API_SECRET = 'placeholder';
-  if (!process.env.STRIPE_SECRET_KEY) process.env.STRIPE_SECRET_KEY = 'placeholder';
-  if (!process.env.STRIPE_PUBLISHABLE_KEY) process.env.STRIPE_PUBLISHABLE_KEY = 'placeholder';
+  if (!process.env.STRIPE_SECRET_KEY) process.env.STRIPE_SECRET_KEY = 'sk_test_placeholder';
+  if (!process.env.STRIPE_PUBLISHABLE_KEY) process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_placeholder';
   if (!process.env.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = 'placeholder';
   if (!process.env.BREVO_API_KEY) process.env.BREVO_API_KEY = 'xkeysib-placeholder';
   if (!process.env.GOOGLE_CLIENT_ID) process.env.GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
@@ -60,6 +60,25 @@ async function main() {
   const User = require('./models/User');
   const Listing = require('./models/Listing');
   const Trend = require('./models/Trend');
+  const Transaction = require('./models/Transaction');
+  const Payout = require('./models/Payout');
+  const Cart = require('./models/Cart');
+  const Order = require('./models/Order');
+  const Offer = require('./models/Offer');
+  const ShippingInsurance = require('./models/ShippingInsurance');
+  const SellerBadge = require('./models/SellerBadge');
+  const BundleRule = require('./models/BundleRule');
+  const Promo = require('./models/Promo');
+  const Collection = require('./models/Collection');
+  const SellerCommunity = require('./models/SellerCommunity');
+  const LoyaltyProgram = require('./models/LoyaltyProgram');
+  const Comment = require('./models/Comment');
+  const Rating = require('./models/Rating');
+  const Auction = require('./models/Auction');
+  const Subscription = require('./models/Subscription');
+  const Return = require('./models/Return');
+  const Wishlist = require('./models/Wishlist');
+  const PushDevice = require('./models/PushDevice');
 
   // Seed users — backdated createdAt so the 14-day new-seller payout hold is bypassed
   const [buyer, seller, seller2] = await User.create([
@@ -110,7 +129,8 @@ async function main() {
   ]);
 
   const now = Date.now();
-  await Listing.create([
+  const RUN_ID = process.env.E2E_RUN_ID || 'INMEM';
+  const sellerListings = await Listing.create([
     {
       seller: seller._id,
       title: 'Vintage Denim Jacket',
@@ -178,6 +198,363 @@ async function main() {
 
   console.log(`[e2eServer] Seeded users: buyer=${buyer.email}, seller=${seller.email}, seller2=${seller2.email}`);
   console.log(`[e2eServer] Seeded 3 listings`);
+
+  // --- Seller badges ---
+  await SellerBadge.create({
+    userId: seller._id,
+    badges: ['starter', 'verified'],
+    tier: 'silver',
+    tierPoints: 500,
+    totalEarnings: 5000,
+    totalSales: 25,
+    totalReviews: 18,
+    avgRating: 4.8,
+  });
+  await SellerBadge.create({
+    userId: seller2._id,
+    badges: ['starter'],
+    tier: 'bronze',
+    tierPoints: 100,
+    totalEarnings: 800,
+    totalSales: 4,
+    totalReviews: 2,
+    avgRating: 4.5,
+  });
+
+  // --- Transactions (completed sales, so payouts/badges have real data) ---
+  const txns = await Transaction.create([
+    {
+      buyer: buyer._id,
+      seller: seller._id,
+      listing: sellerListings[0]._id,
+      quantity: 1,
+      itemPrice: 89.99,
+      currency: 'USD',
+      paymentBreakdown: {
+        subtotal: 89.99,
+        shippingCost: 0,
+        buyerProtectionFee: 4.5,
+        buyerProtectionPercent: 5,
+        tax: 0,
+        totalPaid: 94.49,
+        platformFee: 7.2,
+        platformFeePercent: 8,
+        shippingPayout: 0,
+        sellerEarnings: 82.79,
+        paymentIntentId: 'pi_e2e_completed_1',
+      },
+      paymentIntentId: 'pi_e2e_completed_1',
+      status: 'completed',
+      shippingAddress: { fullName: 'E2E Buyer', street1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701', country: 'US' },
+      createdAt: new Date(now - 10 * 24 * 60 * 60 * 1000),
+    },
+    {
+      buyer: buyer._id,
+      seller: seller._id,
+      listing: sellerListings[1]._id,
+      quantity: 1,
+      itemPrice: 129.0,
+      currency: 'USD',
+      paymentBreakdown: {
+        subtotal: 129.0,
+        shippingCost: 0,
+        buyerProtectionFee: 6.45,
+        buyerProtectionPercent: 5,
+        tax: 0,
+        totalPaid: 135.45,
+        platformFee: 10.32,
+        platformFeePercent: 8,
+        shippingPayout: 0,
+        sellerEarnings: 118.68,
+        paymentIntentId: 'pi_e2e_completed_2',
+      },
+      paymentIntentId: 'pi_e2e_completed_2',
+      status: 'completed',
+      shippingAddress: { fullName: 'E2E Buyer', street1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701', country: 'US' },
+      createdAt: new Date(now - 7 * 24 * 60 * 60 * 1000),
+    },
+    {
+      buyer: buyer._id,
+      seller: seller._id,
+      listing: sellerListings[2]._id,
+      quantity: 1,
+      itemPrice: 199.0,
+      currency: 'USD',
+      paymentBreakdown: {
+        subtotal: 199.0,
+        shippingCost: 0,
+        buyerProtectionFee: 9.95,
+        buyerProtectionPercent: 5,
+        tax: 0,
+        totalPaid: 208.95,
+        platformFee: 15.92,
+        platformFeePercent: 8,
+        shippingPayout: 0,
+        sellerEarnings: 183.08,
+        paymentIntentId: 'pi_e2e_completed_3',
+      },
+      paymentIntentId: 'pi_e2e_completed_3',
+      status: 'completed',
+      shippingAddress: { fullName: 'E2E Buyer', street1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701', country: 'US' },
+      createdAt: new Date(now - 3 * 24 * 60 * 60 * 1000),
+    },
+  ]);
+
+  // --- Payouts (per-sale commission records; require transaction + listing refs) ---
+  await Payout.create([
+    {
+      seller: seller._id,
+      transaction: txns[0]._id,
+      listing: sellerListings[0]._id,
+      salePrice: 89.99,
+      commissionRate: 0.08,
+      commissionAmount: 7.2,
+      payoutAmount: 82.79,
+      availableBalance: 82.79,
+      amount: 82.79,
+      currency: 'USD',
+      method: 'bank_transfer',
+      status: 'completed',
+      stripePayoutId: 'tr_e2e_payout_1',
+      paymentIntentId: 'pi_e2e_completed_1',
+      paidAt: new Date(now - 8 * 24 * 60 * 60 * 1000),
+      createdAt: new Date(now - 10 * 24 * 60 * 60 * 1000),
+    },
+    {
+      seller: seller._id,
+      transaction: txns[1]._id,
+      listing: sellerListings[1]._id,
+      salePrice: 129.0,
+      commissionRate: 0.08,
+      commissionAmount: 10.32,
+      payoutAmount: 118.68,
+      availableBalance: 118.68,
+      amount: 118.68,
+      currency: 'USD',
+      method: 'bank_transfer',
+      status: 'pending',
+      paymentIntentId: 'pi_e2e_completed_2',
+      createdAt: new Date(now - 7 * 24 * 60 * 60 * 1000),
+    },
+    {
+      seller: seller2._id,
+      transaction: txns[2]._id,
+      listing: sellerListings[2]._id,
+      salePrice: 199.0,
+      commissionRate: 0.08,
+      commissionAmount: 15.92,
+      payoutAmount: 183.08,
+      availableBalance: 183.08,
+      amount: 183.08,
+      currency: 'USD',
+      method: 'stripe_connect',
+      status: 'completed',
+      stripePayoutId: 'tr_e2e_payout_2',
+      paymentIntentId: 'pi_e2e_completed_3',
+      paidAt: new Date(now - 2 * 24 * 60 * 60 * 1000),
+      createdAt: new Date(now - 3 * 24 * 60 * 60 * 1000),
+    },
+  ]);
+
+  // --- Cart (single doc per user; items is an embedded array) ---
+  await Cart.create({
+    user: buyer._id,
+    items: [
+      { listing: sellerListings[0]._id, quantity: 1, addedAt: new Date(now - 2 * 60 * 60 * 1000) },
+      { listing: sellerListings[1]._id, quantity: 1, addedAt: new Date(now - 1 * 60 * 60 * 1000) },
+    ],
+        status: 'active',
+  });
+
+    // --- Orders in various lifecycle states ---
+  // orderItemSchema requires a transaction ref, so wire the seeded txns through.
+  await Order.create([
+    {
+      orderNumber: 'E2E-ORD-001',
+      buyer: buyer._id,
+      sellers: [seller._id],
+      currency: 'USD',
+      items: [{
+        listing: sellerListings[0]._id,
+        transaction: txns[0]._id,
+        seller: seller._id,
+        title: sellerListings[0].title,
+        price: sellerListings[0].price,
+        quantity: 1,
+      }],
+      shipments: [{
+        seller: seller._id,
+        items: [txns[0]._id],
+        status: 'shipped',
+        trackingNumber: 'USPS-E2E-123456789',
+        carrier: 'USPS',
+        shippedAt: new Date(now - 1 * 24 * 60 * 60 * 1000),
+      }],
+      totals: { subtotal: 89.99, shipping: 5.0, protectionFees: 0, discounts: 0, total: 94.99 },
+      payment: { paymentIntentId: 'pi_e2e_ord_1', status: 'captured', currency: 'USD', totalHeld: 94.99 },
+      status: 'shipped',
+      shippingAddress: { fullName: 'E2E Buyer', street1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701', country: 'US' },
+      createdAt: new Date(now - 2 * 24 * 60 * 60 * 1000),
+    },
+    {
+      orderNumber: 'E2E-ORD-002',
+      buyer: buyer._id,
+      sellers: [seller._id],
+      currency: 'USD',
+      items: [{
+        listing: sellerListings[1]._id,
+        transaction: txns[1]._id,
+        seller: seller._id,
+        title: sellerListings[1].title,
+        price: sellerListings[1].price,
+        quantity: 1,
+      }],
+      shipments: [{
+        seller: seller._id,
+        items: [txns[1]._id],
+        status: 'delivered',
+        trackingNumber: 'USPS-E2E-987654321',
+        carrier: 'USPS',
+        shippedAt: new Date(now - 4 * 24 * 60 * 60 * 1000),
+      }],
+      totals: { subtotal: 129.0, shipping: 5.0, protectionFees: 0, discounts: 0, total: 134.0 },
+      payment: { paymentIntentId: 'pi_e2e_ord_2', status: 'captured', currency: 'USD', totalHeld: 134.0 },
+      status: 'completed',
+      shippingAddress: { fullName: 'E2E Buyer', street1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701', country: 'US' },
+      createdAt: new Date(now - 5 * 24 * 60 * 60 * 1000),
+    },
+  ]);
+
+  // --- Offer ---
+  await Offer.create({
+    listing: sellerListings[0]._id,
+    buyer: buyer._id,
+    seller: seller._id,
+    amount: 75.00,
+    status: 'pending',
+    createdAt: new Date(now - 1 * 60 * 60 * 1000),
+  });
+
+  // --- Shipping insurance ---
+  await ShippingInsurance.create({
+    seller: seller._id,
+    transaction: txns[0]._id,
+    itemValue: 89.99,
+    insuredValue: 89.99,
+    premium: 3.00,
+    status: 'active',
+    coverageType: 'standard',
+    expiresAt: new Date(now - 5 * 60 * 60 * 1000),
+  });
+
+  // --- Promo codes (seeded; specs also create their own) ---
+  await Promo.create([
+    {
+      code: `E2E-SEED-${RUN_ID}`,
+      description: 'Seeded E2E test promo',
+      discountType: 'percentage',
+      discountValue: 10,
+      minOrderValue: 30,
+      maxUses: 100,
+      usedCount: 0,
+      isActive: true,
+      seller: seller._id,
+    },
+  ]);
+
+  // --- Collections ---
+  await Collection.create({
+    name: `E2E ${RUN_ID} Collection`,
+    description: 'Seeded E2E test collection',
+    seller: seller._id,
+    listings: [sellerListings[0]._id, sellerListings[1]._id],
+  });
+
+  // --- Ratings / Reviews (seller gets a 5-star review on a completed sale) ---
+  await Rating.create({
+    listing: sellerListings[0]._id,
+    reviewer: buyer._id,
+    seller: seller._id,
+    rating: 5,
+    review: 'Excellent jacket, fast shipping — highly recommend!',
+  });
+
+  // --- Wishlist (buyer has one saved listing) ---
+  await Wishlist.create({
+    user: buyer._id,
+    items: [{ listing: sellerListings[2]._id }],
+  });
+
+  // --- Subscriptions (seller on 'pro' tier) ---
+  await Subscription.create({
+    seller: seller._id,
+    tier: 'pro',
+    status: 'active',
+    billingCycle: 'monthly',
+    price: 29.99,
+    features: { reducedFees: true, analyticsAccess: true, enhancedPromotions: true },
+  });
+
+  // --- Seller Community with a challenge ---
+  await SellerCommunity.create({
+    name: `E2E ${RUN_ID} Community`,
+    description: 'Seeded community for E2E tests',
+    members: [seller._id, seller2._id],
+    inviteCode: `e2e-${RUN_ID}`,
+    challenges: [{
+      title: 'First Sale Challenge',
+      description: 'Make your first sale',
+      startDate: new Date(now - 30 * 24 * 60 * 60 * 1000),
+      endDate: new Date(now - 1 * 24 * 60 * 60 * 1000),
+      rewards: 'Bronze badge',
+      participants: [seller._id],
+    }],
+    achievements: [{ member: seller._id, badge: 'top_seller', awardedAt: new Date(now - 5 * 24 * 60 * 60 * 1000) }],
+  });
+
+  // --- Loyalty program (buyer has 250 points) ---
+  await LoyaltyProgram.create({
+    user: buyer._id,
+    points: 250,
+    tier: 'Gold',
+    pointsHistory: [{ amount: 250, reason: 'purchase', listing: sellerListings[0]._id }],
+  });
+
+  // --- Closed auction (ended, has a winner) ---
+  const closedAuctionEndTime = new Date(now - 1 * 60 * 60 * 1000);
+  await Auction.create({
+    listing: sellerListings[1]._id,
+    seller: seller._id,
+    startTime: new Date(now - 3 * 60 * 60 * 1000),
+    endTime: closedAuctionEndTime,
+    reservePrice: 80,
+    currency: 'USD',
+    currentBid: 130,
+    status: 'closed',
+    bids: [{ bidder: buyer._id, amount: 130, currency: 'USD' }],
+    winner: buyer._id,
+    winningBid: 130,
+  });
+
+  // --- Active auction (future end time) ---
+  await Auction.create({
+    listing: sellerListings[2]._id,
+    seller: seller2._id,
+    startTime: new Date(now - 30 * 60 * 1000),
+    endTime: new Date(now + 30 * 60 * 1000),
+    reservePrice: 100,
+    currency: 'USD',
+    currentBid: 0,
+    status: 'active',
+  });
+
+  // --- Comments on a listing ---
+  await Comment.create({
+    listingId: sellerListings[0]._id,
+    userId: buyer._id,
+    text: 'Love this jacket! #denim #vintage',
+    parentId: null,
+  });
 
   // Seed a few trends so the Trends dashboard has real data
   await Trend.create([

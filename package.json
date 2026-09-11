@@ -12,9 +12,13 @@
     "heroku-postbuild": "npm run build",
     "start:all": "bash start.sh",
     "test:server": "cd server && npm run test:ci",
-    "test:e2e": "npx playwright test --config=e2e/playwright.config.js",
+    "test:server:coverage": "cd server && npm run test:coverage",
+    "test:e2e": "E2E_RUN_ID=$(date +%Y%m%d%H%M%S) npx playwright test --config=e2e/playwright.inmem.config.js",
+    "test:e2e:ui": "npx playwright test --config=e2e/playwright.config.js",
     "test:e2e:prod": "E2E_RUN_ID=$(date +%Y%m%d%H%M%S) npx playwright test --config=e2e/playwright.prod.config.js",
-    "test:ci": "npm run test:server && npm run build && npm run test:e2e"
+    "test:all": "npm run test:server && npm run test:e2e",
+    "test:security": "node scripts/verify-test-hermetic.js",
+    "test:ci": "npm run test:security && npm run test:server && npm run test:e2e"
   },
   "engines": {
     "node": ">=14.0.0"

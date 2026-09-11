@@ -34,7 +34,7 @@ module.exports = defineConfig({
   // last. The server seeds its own data on startup, so no separate setup step
   // is needed. webServer.reuse is false so a fresh seeded DB is used every run.
   webServer: {
-    command: `node ${path.resolve(__dirname, 'server/e2eServer.js')}`,
+    command: `node ${path.resolve(__dirname, '../server/e2eServer.js')}`,
     port: 5001,
     timeout: 60_000,
     reuse: false,

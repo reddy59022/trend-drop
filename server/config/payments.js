@@ -123,11 +123,15 @@ const fetchExchangeRate = async (currency) => {
 const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
   const idempotencyKey = generateIdempotencyKey({ amount, currency, metadata });
   if (!stripe) {
-    // Test/dev mode: return mock payment intent
+    // Test/dev mode: return mock payment intent. Start it UNCONFIRMED
+    // (requires_payment_method) exactly like a freshly created Stripe intent,
+    // so the payment authorization semantics are preserved: a consumer must
+    // call test-confirm (or the browser's Stripe.js) before confirm-batch
+    // will accept it. This is the same contract the real Stripe API enforces.
     const mockId = `pi_mock_${idempotencyKey.replace('idemp_', '')}`;
     const mockIntent = {
       id: mockId,
-      status: 'succeeded',
+      status: 'requires_payment_method',
       amount: Math.round(amount * 100),
       currency: currency.toLowerCase(),
       client_secret: 'cs_test_mock',

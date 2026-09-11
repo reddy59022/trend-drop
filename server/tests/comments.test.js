@@ -69,7 +69,7 @@ describe('v43.0 Community Features', () => {
       .set('Authorization', `Bearer ${userToken}`)
       .send({ text: 'Great dress! #fashion #style' });
     
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(res.body.text).toBe('Great dress! #fashion #style');
     expect(res.body.hashtags).toContain('fashion');
     expect(res.body.hashtags).toContain('style');
@@ -132,7 +132,7 @@ describe('v43.0 Community Features', () => {
       .send({ text: 'Love #trending #fashion #style #trending' });
     
     // Verify the comment was created with hashtags
-    expect(createRes.status).toBe(200);
+    expect(createRes.status).toBe(201);
     expect(createRes.body.hashtags).toBeDefined();
     
     const res = await request(app)
@@ -173,7 +173,7 @@ describe('v43.0 Community Features', () => {
       .set('Authorization', `Bearer ${userToken}`)
       .send({ text: 'This is a reply', parentId });
     
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(res.body.parentId).toBe(parentId);
   });
 
