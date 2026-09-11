@@ -109,7 +109,7 @@ router.post('/:listingId', auth, async (req, res) => {
     const populated = await Comment.findById(comment._id)
       .populate('userId', 'name avatar');
     
-    res.json(populated);
+    res.status(201).json(populated);
   } catch (error) {
     res.status(500).json({ message: 'Failed to create comment' });
   }
