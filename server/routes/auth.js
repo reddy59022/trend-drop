@@ -788,4 +788,25 @@ router.put('/avatar', auth, upload.single('avatar'), async (req, res) => {
   }
 });
 
+// ============================================================
+// DELETE /api/auth/account - Delete own account
+// ============================================================
+router.delete('/account', auth, async (req, res) => {
+  try {
+    const User = require('../models/User');
+    const Listing = require('../models/Listing');
+    const userId = req.user._id;
+
+    // Deactivate listings instead of deleting (preserve marketplace integrity)
+    await Listing.updateMany({ seller: userId }, { $set: { status: 'deleted', available: false } });
+    await User.findByIdAndDelete(userId);
+
+    res.json({ message: 'Account deleted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
 module.exports = router;

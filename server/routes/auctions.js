@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { auth } = require('../middleware/auth');
+const { auth, optionalAuth } = require('../middleware/auth');
 const Auction = require('../models/Auction');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
@@ -71,13 +71,17 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// GET /api/auctions - List auctions with optional filtering
-router.get('/', async (req, res) => {
+// GET /api/auctions - List auctions (optional auth for ?mine=true) with optional filtering
+router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { status, limit = 20, skip = 0 } = req.query;
+    const { status, mine, limit = 20, skip = 0 } = req.query;
     
     const query = {};
     if (status) query.status = status;
+    if (mine === 'true') {
+      if (!req.user?._id) return res.status(401).json({ message: 'Not authorized' });
+      query.seller = req.user._id;
+    }
     
     const auctions = await Auction.find(query)
       .populate('listing', 'title price images')
@@ -290,6 +294,37 @@ router.post('/:id/stream/start', auth, async (req, res) => {
   } catch (error) {
     console.error('Start stream error:', error);
     res.status(500).json({ message: 'Failed to start stream' });
+  }
+});
+
+
+// DELETE /api/auctions/:id - Cancel auction (seller only, before end time)
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const auction = await Auction.findById(req.params.id);
+    if (!auction) {
+      return res.status(404).json({ message: 'Auction not found' });
+    }
+
+    if (String(auction.seller) !== String(req.user._id)) {
+      return res.status(403).json({ message: 'Only seller can cancel auction' });
+    }
+
+    if (['closed', 'cancelled'].includes(auction.status)) {
+      return res.status(400).json({ message: 'Auction is already closed' });
+    }
+
+    if (auction.bids && auction.bids.length > 0) {
+      return res.status(400).json({ message: 'Cannot cancel auction with bids. Close it instead.' });
+    }
+
+    auction.status = 'cancelled';
+    await auction.save();
+
+    res.json({ message: 'Auction cancelled', auction });
+  } catch (error) {
+    console.error('Cancel auction error:', error);
+    res.status(500).json({ message: 'Failed to cancel auction' });
   }
 });
 

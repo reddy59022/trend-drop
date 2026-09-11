@@ -70,7 +70,7 @@ const SellerDashboard = () => {
   const fetchListings = async () => {
     try {
       const api = (await import('../services/api')).default;
-      const res = await api.get('/listings/user/' + user._id);
+      const res = await api.get('/listings/user/' + (user._id || user.id));
       setListings(res.data.listings || []);
     } catch {}
   };

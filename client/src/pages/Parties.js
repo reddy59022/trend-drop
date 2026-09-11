@@ -32,9 +32,9 @@ const Parties = () => {
 
   const fetchParties = async () => {
     try {
-      const url = selectedCategory === 'All' 
-        ? '/api/parties' 
-        : `/api/parties?category=${selectedCategory}`;
+      const url = selectedCategory === 'All'
+        ? '/parties'
+        : `/parties?category=${selectedCategory}`;
       const res = await api.get(url);
       setParties(res.data.parties);
     } catch (error) {
@@ -46,7 +46,7 @@ const Parties = () => {
   const handleCreateParty = async (e) => {
     e.preventDefault();
     try {
-      const res = await api.post('/api/parties', {
+      const res = await api.post('/parties', {
         ...newParty,
         startTime: new Date(newParty.startTime),
         endTime: new Date(newParty.endTime),
@@ -61,7 +61,7 @@ const Parties = () => {
 
   const handleShare = async (partyId) => {
     try {
-      await api.post(`/api/parties/${partyId}/share`);
+      await api.post(`/parties/${partyId}/share`);
       toast.success('Party shared! 📱');
       fetchParties();
     } catch (error) {
@@ -71,7 +71,7 @@ const Parties = () => {
 
   const handleJoin = async (partyId) => {
     try {
-      await api.post(`/api/parties/${partyId}/join`);
+      await api.post(`/parties/${partyId}/join`);
       toast.success('Joined party! 👋');
       fetchParties();
     } catch (error) {

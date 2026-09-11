@@ -290,9 +290,9 @@ export const getAuctions = (params) => api.get('/auctions', { params });
 export const getAuction = (id) => api.get(`/auctions/${id}`);
 export const createAuction = (data) => api.post('/auctions', data);
 export const placeBid = (auctionId, amount) => api.post(`/auctions/${auctionId}/bids`, { amount });
-export const endAuction = (auctionId) => api.post(`/auctions/${auctionId}/end`);
-export const cancelAuction = (auctionId) => api.post(`/auctions/${auctionId}/cancel`);
-export const getMyAuctions = () => api.get('/auctions/my');
+export const endAuction = (auctionId) => api.post(`/auctions/${auctionId}/close`);
+export const cancelAuction = (auctionId) => api.delete(`/auctions/${auctionId}`);
+export const getMyAuctions = () => api.get('/auctions', { params: { mine: 'true' } });
 
 // ====== Price Suggestion AI (v28.0) ======
 export const getPriceSuggestionSettings = () => api.get('/price-suggestions/settings');
