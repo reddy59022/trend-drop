@@ -37,6 +37,19 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+// GET /api/users/me/listings - Get current user's listings (must precede /:id)
+router.get('/me/listings', auth, async (req, res) => {
+  try {
+    const listings = await Listing.find({ seller: req.user._id })
+      .populate('seller', 'name avatar')
+      .sort({ createdAt: -1 });
+    res.json({ listings });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /api/users/feed - Get feed from followed users
 router.get('/feed', auth, async (req, res) => {
   try {
