@@ -41,6 +41,9 @@ if (!process.env.JWT_SECRET) process.env.JWT_SECRET = 'fallback_secret_change_me
 if (!process.env.NODE_ENV) process.env.NODE_ENV = 'test';
 process.env.MONGODB_URI = TEST_MONGO_URI;
 process.env.MONGO_URI = TEST_MONGO_URI;
+// Skip Stripe SDK initialisation so test-confirm uses the global mock
+// store path (no outbound calls to api.stripe.com in unit tests either).
+process.env.SKIP_STRIPE_INIT = 'true';
 
 // Disable Stripe for tests - use mock payment intents instead
 delete process.env.STRIPE_SECRET_KEY;
@@ -48,26 +51,65 @@ delete process.env.STRIPE_WEBHOOK_SECRET;
 // server.js calls dotenv.config() AFTER this file runs, and dotenv only sets
 // vars that are absent — so a deleted var would be re-populated from
 // server/.env (CHANGE_ME). Pin hermetic values instead of deleting.
-process.env.STRIPE_SECRET_KEY = 'sk_test_trenddrop_hermetic';
-process.env.STRIPE_WEBHOOK_SECRET = 'whsec_trenddrop_hermetic';
+// NOTE: Must NOT start with sk_test_/sk_live_ — we want the Stripe SDK
+// uninitialised so test-confirm uses the global mock store path.
+process.env.STRIPE_SECRET_KEY = 'trenddrop_hermetic';
+process.env.STRIPE_WEBHOOK_SECRET = 'trenddrop_hermetic';
 
 // Mock the Stripe SDK entirely: routes must never reach api.stripe.com.
 jest.mock('stripe', () => {
+  // Shared in-memory store so create/retrieve/confirm/capture stay consistent.
+  const intents = global.__mockPaymentIntents || (global.__mockPaymentIntents = {});
+  const transfers = global.__mockTransfers || (global.__mockTransfers = {});
+
   const mockClient = {
     paymentIntents: {
-      create: jest.fn(async (params) => ({
-        id: `pi_test_${Date.now()}`,
-        object: 'payment_intent',
-        status: 'requires_confirmation',
-        ...params,
-      })),
-      confirm: jest.fn(async (id, params) => ({
-        id: typeof id === 'string' ? id : id && id.id,
-        object: 'payment_intent',
-        status: 'succeeded',
-        ...(params || {}),
-      })),
-      retrieve: jest.fn(async (id) => ({ id, object: 'payment_intent', status: 'succeeded' })),
+      create: jest.fn(async (params) => {
+        const id = `pi_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const intent = {
+          id,
+          object: 'payment_intent',
+          status: 'requires_capture',
+          amount: params?.amount ?? 0,
+          currency: params?.currency ?? 'usd',
+          metadata: params?.metadata ?? {},
+          client_secret: `cs_${id}_secret`,
+          ...params,
+        };
+        intents[id] = intent;
+        return intent;
+      }),
+      retrieve: jest.fn(async (id) => {
+        const found = intents[id];
+        if (!found) {
+          const err = new Error('No such payment intent');
+          err.code = 'resource_missing';
+          throw err;
+        }
+        return { ...found };
+      }),
+      confirm: jest.fn(async (id, params) => {
+        const found = intents[id];
+        if (!found) {
+          const err = new Error('No such payment intent');
+          err.code = 'resource_missing';
+          throw err;
+        }
+        const updated = { ...found, status: 'succeeded', ...params };
+        intents[id] = updated;
+        return updated;
+      }),
+      capture: jest.fn(async (id) => {
+        const found = intents[id];
+        if (!found) {
+          const err = new Error('No such payment intent');
+          err.code = 'resource_missing';
+          throw err;
+        }
+        const updated = { ...found, status: 'succeeded' };
+        intents[id] = updated;
+        return updated;
+      }),
     },
     checkout: {
       sessions: {

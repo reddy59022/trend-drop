@@ -19,21 +19,29 @@ async function main() {
   process.env.NODE_ENV = 'production';
   process.env.PORT = process.env.E2E_PORT || '5001';
   process.env.DISABLE_RATE_LIMIT = 'true';
+  process.env.E2E_IN_MEMORY = '1';
   process.env.MONGO_URI = uri;
   process.env.MONGODB_URI = uri;
+  process.env.E2E_IN_MEMORY = '1';
   process.env.JWT_SECRET = 'e2e-test-secret-do-not-use-in-prod';
   process.env.FRONTEND_URL = `http://localhost:${process.env.PORT}`;
   process.env.CLIENT_URL = `http://localhost:${process.env.PORT}`;
+  // Skip Stripe SDK init in in-memory E2E so test-confirm uses the
+  // hermetic mock path (no outbound calls to api.stripe.com).
+  process.env.SKIP_STRIPE_INIT = 'true';
   // Placeholder keys — E2E never touches real external services UNLESS the
   // caller explicitly provides real keys (e.g. Stripe test-mode live checkout
   // in stripe-checkout.spec.js). Only set placeholders when the env var is
   // absent, so real keys passed to e2eServer flow through to the app.
+  // NOTE: Stripe placeholder MUST NOT start with sk_test_/sk_live_ so the
+  // Stripe SDK stays uninitialised in in-memory E2E and test-confirm uses
+  // the hermetic mock path (no outbound calls to api.stripe.com).
   if (!process.env.CLOUDINARY_CLOUD_NAME) process.env.CLOUDINARY_CLOUD_NAME = 'placeholder';
   if (!process.env.CLOUDINARY_API_KEY) process.env.CLOUDINARY_API_KEY = 'placeholder';
   if (!process.env.CLOUDINARY_API_SECRET) process.env.CLOUDINARY_API_SECRET = 'placeholder';
-  if (!process.env.STRIPE_SECRET_KEY) process.env.STRIPE_SECRET_KEY = 'sk_test_placeholder';
-  if (!process.env.STRIPE_PUBLISHABLE_KEY) process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_placeholder';
-  if (!process.env.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = 'whsec_placeholder';
+  if (!process.env.STRIPE_SECRET_KEY) process.env.STRIPE_SECRET_KEY = 'placeholder';
+  if (!process.env.STRIPE_PUBLISHABLE_KEY) process.env.STRIPE_PUBLISHABLE_KEY = 'placeholder';
+  if (!process.env.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = 'placeholder';
   if (!process.env.BREVO_API_KEY) process.env.BREVO_API_KEY = 'xkeysib-placeholder';
   if (!process.env.GOOGLE_CLIENT_ID) process.env.GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
   if (!process.env.REACT_APP_GOOGLE_CLIENT_ID) process.env.REACT_APP_GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
@@ -121,6 +129,7 @@ async function main() {
       likes: [],
       likesCount: 8,
       images: [],
+      currency: 'USD',
       createdAt: new Date(now - 2 * 24 * 60 * 60 * 1000),
     },
     {
@@ -141,6 +150,7 @@ async function main() {
       likes: [],
       likesCount: 22,
       images: [],
+      currency: 'USD',
       createdAt: new Date(now - 5 * 24 * 60 * 60 * 1000),
     },
     {
@@ -161,6 +171,7 @@ async function main() {
       likes: [],
       likesCount: 15,
       images: [],
+      currency: 'USD',
       createdAt: new Date(now - 3 * 24 * 60 * 60 * 1000),
     },
   ]);

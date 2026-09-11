@@ -7,7 +7,7 @@
  */
 const { defineConfig } = require('@playwright/test');
 
-const BASE_URL = process.env.E2E_PROD_BASE_URL || 'https://trend-drop.onrender.com';
+const BASE_URL = process.env.E2E_PROD_BASE_URL || (process.env.IN_MEMORY_E2E === '1' ? 'http://localhost:5001' : 'https://trend-drop.onrender.com');
 
 module.exports = defineConfig({
   testDir: './tests/prod',
