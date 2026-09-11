@@ -16,6 +16,8 @@ const User = require('../models/User');
 const Payout = require('../models/Payout');
 const PendingUser = require('../models/PendingUser');
 const Auction = require('../models/Auction');
+const Return = require('../models/Return');
+
 const { orderStates, timeWindows } = require('./orderLifecycle');
 
 // ──────────────────────────────────────────────
@@ -266,6 +268,12 @@ async function autoProcessReturns() {
         }
         
         await txn.save();
+        // Sync linked Return doc (Returns Center path)
+        try {
+          if (txn.returnDetails?.returnId) {
+            await Return.findByIdAndUpdate(txn.returnDetails.returnId, { $set: { status: 'denied' } });
+          }
+        } catch (e) { console.error('[CRON 5a] Failed to sync Return doc:', e.message); }
         autoRejected++;
       }
     }
@@ -291,12 +299,130 @@ async function autoProcessReturns() {
         };
         
         await txn.save();
+        // Sync linked Return doc (Returns Center path)
+        try {
+          if (txn.returnDetails?.returnId) {
+            await Return.findByIdAndUpdate(txn.returnDetails.returnId, { $set: { status: 'denied' } });
+          }
+        } catch (e) { console.error('[CRON 5b] Failed to sync Return doc:', e.message); }
         autoRefunded++;
       }
     }
 
     if (autoRejected > 0 || autoRefunded > 0) {
       console.log(`[CRON] Auto-processed returns: ${autoRejected} rejected, ${autoRefunded} expired`);
+    }
+
+    // 5c. Auto-refund: return_in_transit + seller never confirms return
+    // received after RETURN_DELIVERY_WINDOW (7 days from buyer ship).
+    // Business rule: a seller cannot hold a buyer's refund hostage by
+    // simply never confirming the returned item arrived.
+    const inTransitReturns = await Transaction.find({
+      status: orderStates.RETURN_IN_TRANSIT,
+      'payout.status': { $ne: 'refunded' },
+    });
+
+    for (const txn of inTransitReturns) {
+      const shippedAt = txn.returnDetails?.buyerShippedAt
+        ? new Date(txn.returnDetails.buyerShippedAt).getTime()
+        : new Date(txn.updatedAt).getTime();
+
+      if (now - shippedAt < timeWindows.RETURN_DELIVERY_WINDOW) continue;
+
+      try {
+        // Restore listing inventory — exact quantity bought
+        await Listing.findByIdAndUpdate(txn.listing, {
+          $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
+          $set: { sold: false, available: true },
+        });
+
+        // Reverse any boost fee owed (boost fee is never charged for a returned order)
+        const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('../routes/orderLifecycle');
+        await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+        await markPayoutRefunded(txn);
+
+        const refundAmount = txn.paymentBreakdown?.totalPaid || 0;
+        const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+
+        // Issue Stripe refund to original payment method
+        const paymentIntentId = txn.payout?.transactionId;
+        if (paymentIntentId) {
+          try {
+            const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
+            const pi = await retrievePaymentIntent(paymentIntentId);
+            if (pi.status === 'succeeded') {
+              await issueRefund(paymentIntentId);
+            } else if (pi.status === 'requires_capture') {
+              await releaseAuthorization(paymentIntentId);
+            }
+          } catch (stripeErr) {
+            console.error('[CRON] Stripe refund on auto-return:', stripeErr.message);
+          }
+        }
+
+        // Notify buyer of refund
+        const buyer = await User.findById(txn.buyer);
+        if (buyer) {
+          buyer.notifications.unshift({
+            type: 'sale',
+            listing: txn.listing,
+            transaction: txn._id,
+            message: `Return auto-refunded. Refund of ${refundAmount} ${txn.currency} has been processed — seller did not confirm return receipt within ${timeWindows.RETURN_DELIVERY_WINDOW / (24 * 60 * 60 * 1000)} days.`,
+          });
+          await buyer.save();
+        }
+
+        // ROBUST: Claw back seller earnings from available or pending balance
+        const seller = await User.findById(txn.seller);
+        if (seller) {
+          const available = seller.balance.available || 0;
+          const pending = seller.balance.pending || 0;
+          let remaining = sellerEarnings;
+          if (available >= remaining) {
+            seller.balance.available = available - remaining;
+            remaining = 0;
+          } else {
+            seller.balance.available = 0;
+            remaining = remaining - available;
+          }
+          if (remaining > 0) {
+            seller.balance.pending = Math.max(0, pending - remaining);
+          }
+          seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - sellerEarnings);
+          seller.notifications.unshift({
+            type: 'sale',
+            listing: txn.listing,
+            transaction: txn._id,
+            message: `Return auto-confirmed after ${timeWindows.RETURN_DELIVERY_WINDOW / (24 * 60 * 60 * 1000)} days without receipt confirmation. ${refundAmount} ${txn.currency} refunded to buyer.`,
+          });
+          await seller.save();
+        }
+
+        txn.status = orderStates.REFUNDED;
+        txn.returnDetails = {
+          ...txn.returnDetails,
+          receivedAt: new Date(),
+          autoRefunded: true,
+          autoRefundedAt: new Date(),
+          autoRefundReason: 'Seller did not confirm return receipt within the delivery window',
+        };
+        txn.payout = { status: 'refunded', processedAt: new Date() };
+        await txn.save();
+
+        // Sync linked Return doc (Returns Center path)
+        try {
+          if (txn.returnDetails?.returnId) {
+            await Return.findByIdAndUpdate(txn.returnDetails.returnId, { $set: { status: 'refunded' } });
+          }
+        } catch (e) { console.error('[CRON 5c] Failed to sync Return doc:', e.message); }
+
+        // Keep consolidated Enterprise Order in sync
+        await syncOrderFromTransaction(txn, 'refunded');
+
+        autoRefunded++;
+      } catch (txnErr) {
+        console.error('[CRON] Auto-refund of unconfirmed return failed:', txnErr.message);
+      }
     }
   } catch (error) {
     console.error('[CRON] Error auto-processing returns:', error.message);

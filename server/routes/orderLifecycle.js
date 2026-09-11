@@ -1382,3 +1382,9 @@ router.get('/:transactionId/lifecycle', auth, validateOrderAccess, async (req, r
 });
 
 module.exports = router;
+
+// Export internal helpers for system jobs (cron auto-refund on
+// unconfirmed return delivery) — not part of the public router API.
+module.exports.reverseBoostFeeOwed = reverseBoostFeeOwed;
+module.exports.markPayoutRefunded = markPayoutRefunded;
+module.exports.syncOrderFromTransaction = syncOrderFromTransaction;

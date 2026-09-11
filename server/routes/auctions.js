@@ -200,48 +200,7 @@ router.post('/:id/bids', auth, async (req, res) => {
 });
 
 // POST /api/auctions/:id/close - Close expired auction (seller/admin only)
-router.post('/:id/close', auth, async (req, res) => {
-  try {
-    const auction = await Auction.findById(req.params.id);
-    if (!auction) {
-      return res.status(404).json({ message: 'Auction not found' });
-    }
-    
-    // Only seller or admin can close
-    const user = await User.findById(req.user._id);
-    if (String(auction.seller) !== String(req.user._id) && user.role !== 'admin') {
-      return res.status(403).json({ message: 'Only seller or admin can close auction' });
-    }
-    
-    // Check auction has ended
-    if (new Date() <= auction.endTime) {
-      return res.status(400).json({ message: 'Auction has not ended yet' });
-    }
-    
-    // Determine winner
-    if (auction.bids.length > 0 && auction.currentBid >= auction.reservePrice) {
-      const highestBid = auction.bids.reduce((max, bid) => bid.amount > max.amount ? bid : max, auction.bids[0]);
-      auction.winner = highestBid.bidder;
-      auction.winningBid = highestBid.amount;
-    }
-    
-    auction.status = 'closed';
-    await auction.save();
-    
-    // Update listing if sold
-    if (auction.winner) {
-      await Listing.findByIdAndUpdate(auction.listing, {
-        sold: true,
-        available: false,
-      });
-    }
-    
-    res.json({ auction });
-  } catch (error) {
-    console.error('Close auction error:', error);
-    res.status(500).json({ message: 'Failed to close auction' });
-  }
-});
+// (Implemented below with server-side order creation for the winner)
 
 // POST /api/auctions/:id/stream/start - Start live stream (seller only)
 router.post('/:id/stream/start', auth, async (req, res) => {
@@ -447,15 +406,32 @@ router.post('/:id/close', auth, async (req, res) => {
       const sellerEarnings = Math.round((winningBid - platformFee) * 100) / 100;
       
       // Create transaction record
+      // NOTE: 'pending_payment' is NOT in the Transaction status enum and would
+      // throw a ValidationError — use 'pending' (unpaid order). Required fields
+      // itemPrice/paymentBreakdown.subtotal/totalPaid/sellerEarnings must be set.
       const transaction = await Transaction.create({
         buyer: winner,
         seller: listing.seller._id,
         listing: listing._id,
         auction: auction._id,
+        quantity: 1,
+        itemPrice: winningBid,
+        currency: winningCurrency,
         amount: winningBid,
         platformFee,
         sellerEarnings,
-        status: 'pending_payment', // Winner needs to pay
+        paymentBreakdown: {
+          subtotal: winningBid,
+          shippingCost: 0,
+          buyerProtectionFee: 0,
+          tax: 0,
+          totalPaid: winningBid,
+          platformFee,
+          platformFeePercent,
+          shippingPayout: 0,
+          sellerEarnings,
+        },
+        status: 'pending', // Winner needs to pay
         paymentStatus: 'pending',
         shippingAddress: null, // Will be collected during checkout
       });

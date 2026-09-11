@@ -64,6 +64,7 @@ const timeWindows = {
   NEW_SELLER_THRESHOLD: 5,                              // First 5 sales subject to hold
   SELLER_RESERVE_PERCENT: 0.10,                         // 10% rolling reserve
   SELLER_RESERVE_HOLD_DAYS: 60 * 24 * 60 * 60 * 1000,  // Reserve held 60 days
+  RETURN_DELIVERY_WINDOW: 7 * 24 * 60 * 60 * 1000,     // 7 days for seller to confirm return received
 };
 
 // Cancellation rules
