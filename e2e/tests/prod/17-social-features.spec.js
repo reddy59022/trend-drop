@@ -3,7 +3,7 @@
  * collections, referrals, subscriptions, seller communities.
  */
 const { test } = require('@playwright/test');
-const { makeApi, loadState, saveState, RUN_ID, expect } = require('./helpers');
+const { makeApi, loadState, saveState, RUN_ID, expect, BASE_URL, ACCOUNTS } = require('./helpers');
 
 test.describe('17 - Social features (production)', () => {
   let api, alexToken, jordanToken, state;
@@ -85,6 +85,94 @@ test.describe('17 - Social features (production)', () => {
     expect(Array.isArray(r.data)).toBe(true);
   });
 
+  // Regression: a comment posted through the UI must appear in the listing’s
+  // comment list (the reported bug gave a green success toast but never showed
+  // the comment, because the page read from the stale embedded listing.comments
+  // array while writes went to the dedicated Comment collection).
+  //
+  // Self-contained: creates its own listing in beforeAll so it passes whether run
+  // as part of the full suite or alone (--grep). The seller (Alex) owns the listing;
+  // the buyer (Jordan) signs in via the UI and posts a comment.
+  //
+  // Uses the Playwright `page` fixture (auto-provided), so each test gets a fresh
+  // browser page. The comment form’s login link goes to /login; after sign-in the
+  // app redirects to /feed, so we re-navigate to the listing before posting.
+  //
+  // NOTE: we avoid waitUntil:'networkidle' because the socket.io WebSocket keeps
+  // the network ‘active’ indefinitely, so we wait for a deterministic on-page
+  // element instead.
+  let commentListingId;
+  test.beforeAll(async () => {
+    // Create a listing owned by the seller (Alex) so Jordan (buyer) can comment.
+    const r = await api.req('post', '/api/listings', {
+      token: alexToken,
+      body: {
+        title: `E2E-Comment-${RUN_ID}`,
+        description: `Browser comment regression listing`,
+        price: 45,
+        originalPrice: 75,
+        category: 'Clothing',
+        brand: 'E2EBrand',
+        size: 'M',
+        condition: 'New with tags',
+        color: 'Black',
+        quantity: 1,
+        domesticShipping: 'flat',
+        shippingCost: 5,
+        shipsFrom: 'US',
+      },
+    });
+    expect(r.status, JSON.stringify(r.data)).toBe(201);
+    commentListingId = (r.data.listing || r.data)._id;
+    state.listings.commentTest = { id: commentListingId };
+    saveState(state);
+  });
+
+  test('comments: browser — post a comment and verify it appears on the listing page', async ({ page }) => {
+    const id = commentListingId;
+    // 1. Load the listing as an unauthenticated viewer and wait for the page
+    //    shell to be ready (back arrow + listing title are always rendered).
+    await page.goto(`${BASE_URL}/listing/${id}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('nav, .back-link, [data-testid="no-comments"], [data-testid="comment-form"]', { timeout: 20_000 });
+
+    // Confirm the comment section is in the empty state before posting.
+    await expect(page.getByTestId('no-comments')).toBeVisible({ timeout: 10_000 });
+
+    // 2. Sign in as the buyer (Jordan) via the login page.
+    //    The comment section shows “Login to leave a comment” — only “Login”
+    //    is inside the anchor, so match the link by its accessible name “Login”.
+    await page.getByRole('link', { name: /^login$/i }).first().click();
+    await page.waitForURL(/login/i, { timeout: 10_000 });
+
+    // Login page uses id="email" / id="password" and a “Sign In” submit button.
+    await page.locator('#email').fill(ACCOUNTS.jordan.email);
+    await page.locator('#password').fill(ACCOUNTS.jordan.password);
+    await page.getByRole('button', { name: /^sign in$/i }).click();
+
+    // After login the app redirects to /feed by default; wait for that to settle.
+    await page.waitForURL(/\/feed|^$/, { timeout: 20_000 }).catch(() => undefined);
+
+    // 3. Return to the same listing as an authenticated buyer.
+    await page.goto(`${BASE_URL}/listing/${id}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('[data-testid="comment-form"]', { timeout: 15_000 });
+
+    const marker = `UI-E2E-${RUN_ID}`;
+    await page.getByTestId('comment-input').fill(marker);
+    await page.getByTestId('comment-submit').click();
+
+    // 4. The success toast should appear.
+    await expect(page.getByText(/comment added!/i)).toBeVisible({ timeout: 10_000 });
+
+    // 5. The newly posted comment must now be visible in the listing’s comment
+    //    list (via realtime push or the post-submit local append) — this is the
+    //    assertion that previously failed.
+    await expect(page.getByText(marker).first()).toBeVisible({ timeout: 15_000 });
+
+    // 6. Confirm it lives inside the comments list region.
+    const list = page.getByTestId('comments-list');
+    await expect(list).toBeVisible({ timeout: 10_000 });
+    await expect(list.getByText(marker)).toBeVisible({ timeout: 10_000 });
+  });
   test('messages: buyer messages seller about a listing', async () => {
     const r = await api.req('post', '/api/messages', {
       token: jordanToken,

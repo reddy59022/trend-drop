@@ -212,5 +212,31 @@ export const countries = [
   { code: 'PE', name: 'Peru', phoneCode: '+51', flag: '\u{1F1F5}\u{1F1EA}' },
 ];
 
+// Normalize a Comment collection document into the shape the comment UI expects.
+// The Comment model stores the author as `userId` (populated into a user subdoc with
+// `name`/`avatar`), while the comment UI reads `comment.user.name` / `comment.user.avatar`.
+export const normalizeComment = (comment) => {
+  if (!comment) return comment;
+  const user =
+    comment.user ||
+    (comment.userId && typeof comment.userId === 'object'
+      ? { name: comment.userId.name, avatar: comment.userId.avatar, _id: comment.userId._id || comment.userId.id }
+      : { name: 'Anonymous', avatar: null, _id: comment.userId?.toString?.() || comment.userId });
+
+  const normalized = {
+    ...comment,
+    user,
+    _id: comment._id?.toString?.() || comment._id,
+    listingId: comment.listingId?.toString?.() || comment.listingId,
+    parentId: comment.parentId?.toString?.() || comment.parentId,
+    userId: user._id,
+  };
+
+  if (normalized.replies?.length) {
+    normalized.replies = normalized.replies.map(normalizeComment);
+  }
+  return normalized;
+};
+
 // Get country by code
 export const getCountryByCode = (code) => countries.find(c => c.code === code) || countries[0];

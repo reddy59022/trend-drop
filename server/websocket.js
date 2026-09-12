@@ -97,6 +97,17 @@ function initializeWebSocket(server) {
       });
     });
 
+    // Listing comment rooms — viewers join to receive realtime comment updates
+    socket.on('listing:join', ({ listingId } = {}) => {
+      if (!listingId) return;
+      socket.join(`listing:${listingId}`);
+    });
+
+    socket.on('listing:leave', ({ listingId } = {}) => {
+      if (!listingId) return;
+      socket.leave(`listing:${listingId}`);
+    });
+
     // ============ AUCTION LIVE STREAM SIGNALING ============
     // WebRTC signaling relay for live stream
     // Join a stream room to exchange SDP offers/answers and ICE candidates
@@ -288,12 +299,22 @@ function sendMessageNotification(conversationId, recipientId, messageData) {
   });
 }
 
+/**
+ * Broadcast an event to everyone in a listing room (realtime comments).
+ * Safe no-op when the WebSocket server has not been initialized.
+ */
+function broadcastToListing(listingId, event, data) {
+  if (!io || !listingId) return;
+  io.to(`listing:${listingId}`).emit(event, data);
+}
+
 module.exports = {
   initializeWebSocket,
   getIO,
   sendNotificationToUser,
   sendNotificationToUsers,
   broadcastToAll,
+  broadcastToListing,
   isUserOnline,
   getOnlineUsers,
   sendMessageNotification,

@@ -1,9 +1,10 @@
-import { defaultAvatar, formatPrice, getConditionColor } from "../utils/helpers";
-import React, { useState, useEffect } from 'react';
+import { defaultAvatar, formatPrice, getConditionColor, normalizeComment } from "../utils/helpers";
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment } from 'react-icons/fa';
 import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { toast } from 'react-toastify';
 import { shareItem, copyText } from '../services/native';
 import MediaCarousel from '../components/MediaCarousel';
@@ -16,6 +17,7 @@ import { useCart } from '../context/CartContext';
 const ListingDetail = () => {
   const { id } = useParams();
   const { user } = useAuth();
+  const { socket } = useSocket();
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const [listing, setListing] = useState(null);
@@ -58,6 +60,17 @@ const ListingDetail = () => {
       setSimilar(res.data.similar || []);
       setComments(res.data.listing.comments || []);
       setLikeCount(res.data.listing.likes?.length || 0);
+
+      // Load comments from the dedicated Comment collection (the listing page writes to this
+      // collection, so the embedded listing.comments array is not the source of truth).
+      try {
+        const cRes = await api.get(`/comments/${id}`);
+        setComments(cRes.data.comments?.map(normalizeComment) || []);
+      } catch (e) {
+        // Fall back to any legacy embedded comments if present
+        setComments((res.data.listing.comments || []).map(normalizeComment));
+      }
+
       // Fetch price history
       try {
         const phRes = await api.get(`/pricehistory/${id}`);
@@ -85,6 +98,31 @@ const ListingDetail = () => {
     }
     setLoading(false);
   };
+
+  // Realtime comment updates: join the listing room so viewers see new/deleted comments live.
+  useEffect(() => {
+    if (!socket || !id) return;
+    socket.emit('listing:join', { listingId: id });
+
+    // Incoming realtime comment events for this listing.
+    const onNew = (created) => {
+      setComments((prev) => {
+        const key = created._id?.toString?.() || created.id?.toString?.();
+        if (!key || prev.some((c) => (c._id || c.id)?.toString?.() === key)) return prev; // dedupe
+        return [normalizeComment(created), ...prev];
+      });
+    };
+    const onDeleted = (commentId) => {
+      setComments((prev) => prev.filter((c) => (c._id || c.id)?.toString?.() !== commentId));
+    };
+    socket.on('comment:new', onNew);
+    socket.on('comment:deleted', onDeleted);
+    return () => {
+      socket.off('comment:new', onNew);
+      socket.off('comment:deleted', onDeleted);
+      socket.emit('listing:leave', { listingId: id });
+    };
+  }, [socket, id]);
 
   const handleLike = async () => {
     if (!user) return toast.error('Please login');

@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const Comment = require('../models/Comment');
+const Listing = require('../models/Listing');
+const User = require('../models/User');
+const { broadcastToListing, sendNotificationToUser } = require('../websocket');
 
 // GET /api/comments/trending - Get trending hashtags (must be before /:listingId)
 router.get('/trending', async (req, res) => {
@@ -84,6 +87,11 @@ router.post('/:listingId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Comment text is required' });
     }
     
+    const listing = await Listing.findById(listingId);
+    if (!listing) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+    
     // If it's a reply, validate parentId
     if (parentId) {
       const parent = await Comment.findById(parentId);
@@ -108,6 +116,32 @@ router.post('/:listingId', auth, async (req, res) => {
     
     const populated = await Comment.findById(comment._id)
       .populate('userId', 'name avatar');
+    
+    // Notify the seller (skipped when the seller comments on their own listing)
+    if (listing.seller.toString() !== req.user._id.toString()) {
+      const notification = {
+        type: 'comment',
+        from: req.user._id,
+        listing: listing._id,
+        message: `${req.user.name} commented on "${listing.title}"`,
+      };
+      try {
+        const seller = await User.findById(listing.seller);
+        if (seller) {
+          seller.notifications.unshift(notification);
+          await seller.save();
+        }
+        sendNotificationToUser(listing.seller.toString(), notification);
+      } catch (notifyError) {
+        console.error('Comment notification error:', notifyError);
+      }
+    }
+    
+    // Realtime: everyone viewing this listing sees the new comment immediately
+    broadcastToListing(listingId, 'comment:new', {
+      listingId: listingId.toString(),
+      comment: populated,
+    });
     
     res.status(201).json(populated);
   } catch (error) {
@@ -161,6 +195,12 @@ router.delete('/:id', auth, async (req, res) => {
     }
     
     await Comment.findByIdAndDelete(id);
+    
+    // Realtime: remove the comment for everyone viewing this listing
+    broadcastToListing(comment.listingId, 'comment:deleted', {
+      listingId: comment.listingId.toString(),
+      commentId: id,
+    });
     
     res.json({ message: 'Comment deleted' });
   } catch (error) {
