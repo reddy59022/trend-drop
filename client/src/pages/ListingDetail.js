@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment } from 'react-icons/fa';
 import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
-import { requestCameraPermission } from '../services/native';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { shareItem, copyText } from '../services/native';
@@ -501,7 +500,9 @@ const ListingDetail = () => {
               <button className="btn btn-outline" onClick={handleShare}>
                 <FaShareAlt /> Share
               </button>
-              {!isOwner && user && listing.seller && (
+              {/* Message Seller lives in the purchase row below for available items;
+                  keep it here only for sold items, where that row is not rendered. */}
+              {!isOwner && user && listing.seller && listing.sold && (
                 <button
                   className="btn btn-outline"
                   onClick={() => setChatModalOpen(true)}
@@ -513,42 +514,25 @@ const ListingDetail = () => {
             </div>
             {!isOwner && !listing.sold && user && (
               <div className="listing-detail-action-row">
-                <button
-                  className="btn btn-outline"
-                  title="Open Virtual Try-On - request camera access and preview this item on you"
-                  onClick={async () => {
-                    const perm = await requestCameraPermission();
-                    if (perm === 'denied') {
-                      toast.warning('Camera blocked - you can still try on with a photo upload.');
-                    }
-                    navigate('/virtual-try-on/' + id);
-                  }}
-                >
-                  Try On
-                </button>
+                {/* Single "Try On" entry point lives in the row above; this purchase
+                    row leads with contact + negotiation + checkout actions. */}
+                {listing.seller && (
+                  <button
+                    className="btn btn-outline btn-lg"
+                    onClick={() => setChatModalOpen(true)}
+                    style={{ color: 'var(--td-primary)', borderColor: 'var(--td-primary)' }}
+                  >
+                    <FaComment /> Message Seller
+                  </button>
+                )}
                 {buyerOffer && buyerOffer.status === 'pending' && (
                   <>
                     <span className="badge badge-warning" style={{ padding: '8px 16px', fontSize: 14 }}>
                       ⏳ Offer pending — awaiting seller response
                     </span>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button className="btn btn-primary btn-lg" onClick={handleAddToBag}>
-                        Add to Bag at {formatPrice(listing.price, listing.currency || 'USD')}
-                      </button>
-                      <button
-                        className="btn btn-outline btn-lg"
-                        title="Open Virtual Try-On - request camera access and preview this item on you"
-                        onClick={async () => {
-                          const perm = await requestCameraPermission();
-                          if (perm === 'denied') {
-                            toast.warning('Camera blocked - you can still try on with a photo upload.');
-                          }
-                          navigate('/virtual-try-on/' + id);
-                        }}
-                      >
-                        Try On
-                      </button>
-                    </div>
+                    <button className="btn btn-primary btn-lg" onClick={handleAddToBag}>
+                      Add to Bag at {formatPrice(listing.price, listing.currency || 'USD')}
+                    </button>
                   </>
                 )}
                 {buyerOffer && buyerOffer.status === 'countered' && (
