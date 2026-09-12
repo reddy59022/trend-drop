@@ -287,3 +287,4 @@ npx cap sync android   # or: npx cap sync ios
 ## License
 
 MIT
+// deploy trigger $(date -u +%Y-%m-%dT%H:%M:%SZ)
