@@ -19,6 +19,7 @@ router.post('/', auth, async (req, res) => {
       participants: { $all: [req.user._id, targetUserId] },
       listing: listingId,
     });
+    const created = !conversation;
     if (conversation) {
       conversation.messages.push({ sender: req.user._id, text });
     } else {
@@ -44,28 +45,85 @@ router.post('/', auth, async (req, res) => {
       data: { type: 'message', conversationId: conversation._id.toString(), listingId: listingId.toString() },
     });
 
-    res.status(201).json(conversation);
+    // 201 only when a NEW conversation is created; 200 when appending to an
+    // existing thread (REST semantics — callers can distinguish the two).
+    res.status(created ? 201 : 200).json(conversation);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// GET /api/messages/conversations - Get all user conversations
+// GET /api/messages/conversations - Get all user conversations grouped by person
 router.get('/conversations', auth, async (req, res) => {
   try {
     const conversations = await Message.find({ participants: req.user._id })
       .populate('participants', 'name avatar')
-      .populate('listing', 'title images price')
+      .populate('listing', 'title images price currency')
       .populate('messages.sender', 'name avatar')
       .sort({ updatedAt: -1 });
 
-    const result = conversations.map(c => {
+    // Group conversations by the other user (not by listing)
+    const groupedByUser = {};
+    
+    conversations.forEach(c => {
+      const otherUser = c.participants.find(p => p && p._id && p._id.toString() !== req.user._id.toString());
+      if (!otherUser) return;
+      
+      const otherUserId = otherUser._id.toString();
+      
+      if (!groupedByUser[otherUserId]) {
+        groupedByUser[otherUserId] = {
+          _id: c._id, // Use the most recent conversation ID
+          otherUser: otherUser,
+          conversations: [],
+          lastMessage: null,
+          unreadCount: 0,
+          updatedAt: c.updatedAt,
+          listing: c.listing,
+          listings: []
+        };
+      }
+      
+      const group = groupedByUser[otherUserId];
+      
+      // Add this conversation to the group
+      group.conversations.push(c);
+      
+      // Track the most recent message across all conversations
       const lastMsg = c.messages[c.messages.length - 1];
-      const unread = c.messages.filter(m => !m.read && m.sender._id.toString() !== req.user._id.toString()).length;
-      const otherUser = c.participants.find(p => p._id.toString() !== req.user._id.toString());
-      return { _id: c._id, listing: c.listing, otherUser, lastMessage: lastMsg, unreadCount: unread, updatedAt: c.updatedAt };
+      if (lastMsg && (!group.lastMessage || new Date(lastMsg.createdAt) > new Date(group.lastMessage.createdAt))) {
+        group.lastMessage = lastMsg;
+        group.updatedAt = c.updatedAt;
+        group._id = c._id;
+        group.listing = c.listing; // Listing context of the latest message
+      }
+      
+      // Sum up unread counts (sender may be a deleted user → fall back to raw id)
+      const unread = c.messages.filter(m => {
+        if (m.read) return false;
+        const senderId = m.sender && m.sender._id ? m.sender._id.toString() : String(m.sender);
+        return senderId !== req.user._id.toString();
+      }).length;
+      group.unreadCount += unread;
+      
+      // Track listings
+      if (c.listing && !group.listings.find(l => l._id.toString() === c.listing._id.toString())) {
+        group.listings.push(c.listing);
+      }
     });
+
+    // Convert to array and sort by most recent activity
+    const result = Object.values(groupedByUser)
+      .map(g => ({
+        ...g,
+        // UI helpers: how many items are discussed in this thread and total
+        // message count, so the list can show "Re: X +1 more item".
+        listingCount: g.listings.length,
+        messageCount: g.conversations.reduce((sum, c) => sum + c.messages.length, 0),
+      }))
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
     res.json(result);
   } catch (error) {
     console.error(error);
@@ -73,7 +131,101 @@ router.get('/conversations', auth, async (req, res) => {
   }
 });
 
-// GET /api/messages/conversation/:userId/:listingId
+// GET /api/messages/conversation/:userId - Get ALL messages with a user (across all listings)
+router.get('/conversation/:userId', auth, async (req, res) => {
+  try {
+    const conversations = await Message.find({
+      participants: { $all: [req.user._id, req.params.userId] },
+    })
+      .populate('participants', 'name avatar')
+      .populate('listing', 'title images price currency')
+      .populate('messages.sender', 'name avatar')
+      .sort({ updatedAt: 1 }); // Oldest first for chronological order
+
+    if (!conversations.length) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    // Combine all messages from all conversations with this user
+    const otherUser = conversations[0].participants.find(
+      p => p && p._id && p._id.toString() !== req.user._id.toString()
+    );
+
+    const allMessages = [];
+    const allListings = [];
+    const offers = [];
+
+    for (const conv of conversations) {
+      // Deleted listings must not break the unified thread — skip that
+      // conversation but keep the rest of the thread intact.
+      if (!conv.listing) continue;
+
+      // Add messages with listing context
+      conv.messages.forEach(msg => {
+        allMessages.push({
+          ...msg.toObject(),
+          listing: conv.listing,
+          conversationId: conv._id
+        });
+      });
+
+      // Track listings
+      if (conv.listing && !allListings.find(l => l._id.toString() === conv.listing._id.toString())) {
+        allListings.push(conv.listing);
+      }
+
+      // Get offers for this listing
+      const offer = await Offer.findOne({
+        listing: conv.listing._id || conv.listing,
+        $or: [
+          { buyer: req.user._id, seller: req.params.userId },
+          { buyer: req.params.userId, seller: req.user._id },
+        ],
+      }).sort({ updatedAt: -1 });
+
+      if (offer) {
+        // Auto-expire if needed
+        const now = new Date();
+        if (offer.expiresAt && now > offer.expiresAt && 
+            (offer.status === 'pending' || offer.status === 'countered' || offer.status === 'buyer_countered')) {
+          offer.status = 'expired';
+          await offer.save();
+        }
+        const listingPlain = typeof conv.listing.toObject === 'function' ? conv.listing.toObject() : conv.listing;
+        offers.push({ ...offer.toObject(), listing: listingPlain });
+      }
+    }
+
+    // Sort messages chronologically
+    allMessages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+    // Mark all messages as read
+    for (const conv of conversations) {
+      let hasUnread = false;
+      conv.messages.forEach(m => {
+        if (m.sender.toString() !== req.user._id.toString() && !m.read) {
+          m.read = true;
+          hasUnread = true;
+        }
+      });
+      if (hasUnread) await conv.save();
+    }
+
+    res.json({
+      _id: conversations[conversations.length - 1]._id,
+      otherUser,
+      messages: allMessages,
+      listings: allListings,
+      offers: offers,
+      conversationIds: conversations.map(c => c._id)
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/messages/conversation/:userId/:listingId - Get messages for specific listing (legacy support)
 router.get('/conversation/:userId/:listingId', auth, async (req, res) => {
   try {
     const conversation = await Message.findOne({

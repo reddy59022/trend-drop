@@ -1,11 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getConversations, getConversation, startConversation, sendMessage, markAsRead } from '../services/api';
+import { getConversations, getConversationWithUser, startConversation } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { defaultAvatar, timeAgo, formatPrice } from '../utils/helpers';
-import { FaEnvelope, FaSearch, FaPaperPlane, FaSpinner, FaTimes, FaStore, FaArrowLeft } from 'react-icons/fa';
+import { FaEnvelope, FaSearch, FaPaperPlane, FaSpinner, FaStore, FaArrowLeft, FaTag, FaClock, FaImage } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import moment from 'moment';
+
+const OFFER_STATUSES = {
+  pending: { color: 'var(--td-warning)', bg: 'rgba(255,176,32,0.12)', label: 'Offer Pending' },
+  countered: { color: 'var(--td-info)', bg: 'rgba(61,155,255,0.12)', label: 'Counter Offer' },
+  buyer_countered: { color: 'var(--td-info)', bg: 'rgba(61,155,255,0.12)', label: 'Counter Sent' },
+  accepted: { color: 'var(--td-success)', bg: 'rgba(16,217,142,0.12)', label: 'Offer Accepted' },
+  declined: { color: 'var(--td-error)', bg: 'rgba(255,77,109,0.12)', label: 'Offer Declined' },
+  expired: { color: 'var(--td-text-tertiary)', bg: 'rgba(148,148,184,0.12)', label: 'Expired' },
+  completed: { color: 'var(--td-success)', bg: 'rgba(16,217,142,0.12)', label: 'Purchased' },
+};
 
 const Messages = () => {
   const { user } = useAuth();
@@ -13,13 +23,17 @@ const Messages = () => {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [activeConversation, setActiveConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const [activeThread, setActiveThread] = useState(null);
+  const [threadMessages, setThreadMessages] = useState([]);
+  const [threadOffers, setThreadOffers] = useState([]);
+  const [threadListings, setThreadListings] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [convLoading, setConvLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const stateRef = useRef(null);
+  stateRef.current = { activeThread, threadListings };
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
@@ -29,57 +43,81 @@ const Messages = () => {
   }, [user, navigate]); // eslint-disable-line
 
   useEffect(() => {
-    if (activeConversation) loadConversation(activeConversation);
-  }, [activeConversation]); // eslint-disable-line
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [threadMessages]);
 
-  const fetchConversations = async () => {
+  const fetchConversations = async (silent) => {
     try {
       const res = await getConversations();
-      setConversations(res.data);
+      const raw = Array.isArray(res.data) ? res.data : [];
+      // Defensive grouping: the API returns one thread per person already, but
+      // merge again client-side as a safety net — GUARANTEED one row per
+      // person, no matter what legacy data exists.
+      const byPerson = new Map();
+      for (const conv of raw) {
+        const other = conv.otherUser || {};
+        const key = other._id || other.id || 'unknown';
+        if (!byPerson.has(key)) {
+          byPerson.set(key, { ...conv, unreadCount: conv.unreadCount || 0 });
+        } else {
+          const g = byPerson.get(key);
+          g.unreadCount += conv.unreadCount || 0;
+          const a = g.lastMessage ? new Date(g.lastMessage.createdAt || 0).getTime() : 0;
+          const b = conv.lastMessage ? new Date(conv.lastMessage.createdAt || 0).getTime() : 0;
+          if (b >= a) { g.lastMessage = conv.lastMessage; g.updatedAt = conv.updatedAt; g.listing = conv.listing || g.listing; }
+        }
+      }
+      const merged = Array.from(byPerson.values()).sort((a, b) => {
+        const ta = a.lastMessage ? new Date(a.lastMessage.createdAt || a.updatedAt || 0).getTime() : 0;
+        const tb = b.lastMessage ? new Date(b.lastMessage.createdAt || b.updatedAt || 0).getTime() : 0;
+        return tb - ta;
+      });
+      setConversations(merged);
     } catch (error) { console.error(error); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   };
 
-  const loadConversation = async (conv) => {
-    if (!user || !conv.listing?._id || !conv.otherUser?._id) return;
+  const openThread = async (thread) => {
+    if (!thread?.otherUser?._id) return;
+    setActiveThread(thread);
     setConvLoading(true);
     try {
-      const res = await getConversation(conv.otherUser._id, conv.listing._id);
-      if (res.data && res.data.messages) {
-        setMessages(res.data.messages);
-        if (res.data._id) { try { await markAsRead(res.data._id); } catch (e) {} }
-      } else {
-        setMessages([]);
-      }
+      // Unified thread: ALL past/current/future messages with this person
+      // across every listing, plus every offer and every listing discussed.
+      // The server auto-marks everything as read on load.
+      const res = await getConversationWithUser(thread.otherUser._id);
+      const data = res.data || {};
+      setThreadMessages(Array.isArray(data.messages) ? data.messages : []);
+      setThreadOffers(Array.isArray(data.offers) ? data.offers : []);
+      setThreadListings(Array.isArray(data.listings) ? data.listings : []);
+      fetchConversations(true);
     } catch (error) {
-      setMessages([]);
+      setThreadMessages([]);
     }
     setConvLoading(false);
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || sending || !activeConversation) return;
+    if (!newMessage.trim() || sending || !activeThread) return;
     setSending(true);
+    const { activeThread: thread, threadListings: listings } = stateRef.current;
     try {
-      const convId = activeConversation._id;
-      if (convId) {
-        await sendMessage(convId, { text: newMessage.trim() });
-      } else {
+      // Send within the context of the most recent listing in this thread so
+      // the message lands on the right per-listing conversation server-side,
+      // while this per-person view keeps everything in one place.
+      const contextListing = thread?.listing?._id ? thread.listing : listings[0];
+      const listingId = contextListing?._id || contextListing?.id;
+      if (listingId) {
         await startConversation({
-          listingId: activeConversation.listing._id,
-          sellerId: activeConversation.otherUser._id,
+          listingId,
+          sellerId: thread.otherUser._id,
           text: newMessage.trim(),
         });
+        setNewMessage('');
+        await openThread(thread);
+        setTimeout(() => inputRef.current?.focus(), 100);
       }
-      setNewMessage('');
-      loadConversation(activeConversation);
-      fetchConversations();
-      setTimeout(() => inputRef.current?.focus(), 100);
     } catch (error) {
       toast.error('Failed to send message');
     } finally {
@@ -88,13 +126,13 @@ const Messages = () => {
   };
 
   const handleSelectConversation = (conv) => {
-    setActiveConversation(conv);
-    setMessages([]);
+    openThread(conv);
   };
 
   const filtered = conversations.filter(c =>
     c.otherUser?.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.listing?.title?.toLowerCase().includes(search.toLowerCase())
+    c.listing?.title?.toLowerCase().includes(search.toLowerCase()) ||
+    c.lastMessage?.text?.toLowerCase().includes(search.toLowerCase())
   );
 
   if (loading) return (
@@ -106,38 +144,65 @@ const Messages = () => {
     </div>
   );
 
-  // Conversation detail view
-  if (activeConversation) {
-    const sellerName = activeConversation.otherUser?.name || 'Unknown';
-    const listing = activeConversation.listing;
+  // Unified thread detail view — one person, all messages, all offers, all listings
+  if (activeThread) {
+    const other = activeThread.otherUser || {};
+    const threadTitle = other.name || 'Unknown';
 
     return (
       <div className="page-container" style={{ maxWidth: 700, margin: '0 auto', padding: '0 16px' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <button onClick={() => setActiveConversation(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: 'var(--td-text)' }}>
+          <button onClick={() => setActiveThread(null)} aria-label="Back to conversations" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: 'var(--td-text)' }}>
             <FaArrowLeft />
           </button>
-          <img src={activeConversation.otherUser?.avatar || defaultAvatar} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--td-border)' }} />
+          <img src={other.avatar || defaultAvatar} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--td-border)' }} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 15 }}>{sellerName}</div>
-            <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}><FaStore size={10} /> Seller</div>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>{threadTitle}</div>
+            <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}><FaStore size={10} /> {threadMessages.length} message{threadMessages.length === 1 ? '' : 's'} · {threadListings.length} item{threadListings.length === 1 ? '' : 's'}</div>
           </div>
-          {listing && (
-            <button onClick={() => navigate(`/listing/${listing._id}`)} style={{ padding: '6px 12px', fontSize: 12, border: '1px solid var(--td-border)', borderRadius: 'var(--td-radius-sm)', background: 'var(--td-surface)', cursor: 'pointer', color: 'var(--td-primary)' }}>
-              View Item
-            </button>
-          )}
         </div>
 
-        {/* Listing info */}
-        {listing && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-md)', border: '1px solid var(--td-border)', marginBottom: 16 }}>
-            {listing.images?.[0] && <img src={listing.images[0]} alt="" style={{ width: 48, height: 48, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover' }} />}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{listing.title}</div>
-              <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>{formatPrice(listing.price, listing.currency || 'USD')}</div>
-            </div>
+        {/* Items discussed in this thread */}
+        {threadListings.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '4px 0 12px', marginBottom: 8 }}>
+            {threadListings.map((l) => (
+              <div key={l._id || l.id} onClick={() => navigate(`/listing/${l._id || l.id}`)} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px 6px 6px', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-full)', border: '1px solid var(--td-border)', cursor: 'pointer' }}>
+                {l.images?.[0]
+                  ? <img src={l.images[0]} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
+                  : <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--td-surface-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaImage size={11} style={{ color: 'var(--td-text-tertiary)' }} /></div>}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>{l.title}</div>
+                  <div style={{ fontSize: 10, color: 'var(--td-text-tertiary)' }}>{formatPrice(l.price, l.currency || 'USD')}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Offers — past and present, 24h expiry shown live */}
+        {threadOffers.length > 0 && (
+          <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {threadOffers.map((o) => {
+              const expired = o.status === 'expired' || (['pending', 'countered', 'buyer_countered'].includes(o.status) && o.expiresAt && new Date(o.expiresAt) < new Date());
+              const cfg = OFFER_STATUSES[expired ? 'expired' : o.status] || OFFER_STATUSES.pending;
+              return (
+                <div key={o._id} style={{ padding: '10px 14px', background: cfg.bg, borderRadius: 'var(--td-radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <FaTag size={12} style={{ color: cfg.color }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--td-text)' }}>Offer: {formatPrice(o.counterAmount || o.amount, o.currency || 'USD')}</span>
+                    {o.listing?.title && <span style={{ fontSize: 11, color: 'var(--td-text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120 }}>· {o.listing.title}</span>}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {expired && <span style={{ fontSize: 11, color: cfg.color, display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> {cfg.label}</span>}
+                    {!expired && o.status === 'pending' && o.expiresAt && (
+                      <span style={{ fontSize: 11, color: cfg.color, display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> {moment(o.expiresAt).fromNow()}</span>
+                    )}
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--td-radius-full)', color: cfg.color, background: 'var(--td-surface)' }}>{cfg.label}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -145,22 +210,24 @@ const Messages = () => {
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px', background: 'var(--td-surface-secondary)', borderRadius: 'var(--td-radius-md)', border: '1px solid var(--td-border)', minHeight: 300, maxHeight: '50vh', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
           {convLoading ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}><FaSpinner className="spinner" /></div>
-          ) : messages.length === 0 ? (
+          ) : threadMessages.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}>
               <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>💬</div>
               <p style={{ fontSize: 14 }}>No messages yet. Start the conversation!</p>
             </div>
           ) : (
             <>
-              {messages.map((msg, i) => {
-                const isOwn = msg.sender?._id === (user?.id || user?._id) || msg.sender === (user?.id || user?._id);
-                const showAvatar = i === 0 || messages[i - 1]?.sender?._id !== msg.sender?._id;
-                const isLast = i === messages.length - 1 || messages[i + 1]?.sender?._id !== msg.sender?._id;
+              {threadMessages.map((msg, i) => {
+                const senderId = msg.sender?._id || msg.sender;
+                const isOwn = senderId === (user?.id || user?._id);
+                const showAvatar = i === 0 || (threadMessages[i - 1].sender?._id || threadMessages[i - 1].sender) !== senderId;
+                const isLast = i === threadMessages.length - 1 || (threadMessages[i + 1].sender?._id || threadMessages[i + 1].sender) !== senderId;
                 return (
                   <div key={msg._id || i} style={{ display: 'flex', justifyContent: isOwn ? 'flex-end' : 'flex-start', alignItems: isOwn ? 'flex-end' : 'flex-start', gap: 8, marginBottom: isLast ? 8 : 2 }}>
-                    {!isOwn && showAvatar && <img src={activeConversation.otherUser?.avatar || defaultAvatar} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
+                    {!isOwn && showAvatar && <img src={other.avatar || defaultAvatar} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
                     {!isOwn && !showAvatar && <div style={{ width: 28, flexShrink: 0 }} />}
                     <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : '#fff', color: isOwn ? '#fff' : 'var(--td-text)', boxShadow: isOwn ? '0 4px 12px rgba(108,59,255,0.3)' : 'var(--td-shadow-sm)' }}>
+                      {msg.listing && <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}><FaTag size={9} /> Re: {msg.listing.title}</div>}
                       <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.text}</div>
                       <div style={{ fontSize: 10, marginTop: 4, opacity: isOwn ? 0.8 : 0.5, textAlign: isOwn ? 'right' : 'left' }}>
                         {timeAgo(msg.createdAt)}
@@ -209,7 +276,7 @@ const Messages = () => {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', borderRadius: 'var(--td-radius-lg)', overflow: 'hidden', border: '1px solid var(--td-border)', background: 'var(--td-surface)' }}>
           {filtered.map((conv, i) => (
-            <div key={conv._id}
+            <div key={conv.otherUser?._id || `c-${i}`}
               style={{
                 display: 'flex', gap: 12, padding: '14px 16px', alignItems: 'center',
                 cursor: 'pointer', borderBottom: i < filtered.length - 1 ? '1px solid var(--td-border-light)' : 'none',
@@ -226,7 +293,11 @@ const Messages = () => {
                   <span style={{ fontWeight: conv.unreadCount > 0 ? 700 : 500, fontSize: 15 }}>{conv.otherUser?.name || 'Unknown'}</span>
                   <span style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>{conv.lastMessage ? timeAgo(conv.updatedAt) : ''}</span>
                 </div>
-                {conv.listing && <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', marginBottom: 2 }}>Re: {conv.listing.title}</div>}
+                {conv.listing && (
+                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', marginBottom: 2 }}>
+                    Re: {conv.listing.title}{conv.listingCount > 1 ? ` +${conv.listingCount - 1} more item${conv.listingCount - 1 === 1 ? '' : 's'}` : ''}
+                  </div>
+                )}
                 <div style={{ fontSize: 13, color: conv.unreadCount > 0 ? 'var(--td-text)' : 'var(--td-text-tertiary)', fontWeight: conv.unreadCount > 0 ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {conv.lastMessage?.text || 'No messages yet'}
                 </div>

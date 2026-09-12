@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FaTimes, FaPaperPlane, FaSpinner, FaStore, FaCheck, FaTimesCircle, FaExchangeAlt, FaClock, FaTag, FaShoppingBag } from 'react-icons/fa';
-import { startConversation, sendMessage, getConversation, markAsRead } from '../services/api';
+import { startConversation, getConversationWithUser } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { defaultAvatar, timeAgo, formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
@@ -12,7 +12,6 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [conversationId, setConversationId] = useState(null);
   const [offer, setOffer] = useState(null);
   const [offerExpired, setOfferExpired] = useState(false);
   const messagesEndRef = useRef(null);
@@ -44,17 +43,24 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
   }, [offer]);
 
   const loadConversation = async () => {
-    if (!user || !listing) return;
+    if (!user || !listing || !seller) return;
     try {
-      const res = await getConversation(seller._id || seller.id, listing._id);
-      if (res.data && res.data.messages) {
-        setMessages(res.data.messages);
-        if (res.data._id) setConversationId(res.data._id);
-        if (res.data.offer) setOffer(res.data.offer);
-        if (res.data._id) { try { await markAsRead(res.data._id); } catch (e) {} }
-      } else {
-        setMessages(res.data ? [res.data] : []);
-      }
+      // Unified thread: ALL past/current/future messages with this person,
+      // across every listing, plus every offer exchanged between us. The
+      // server marks everything as read on load.
+      const res = await getConversationWithUser(seller._id || seller.id);
+      const data = res.data || {};
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+      // Offers come back as an array (one per listing discussed) — surface the
+      // one that belongs to the listing this chat was opened from, falling
+      // back to the newest active offer between the two users.
+      const offers = Array.isArray(data.offers) ? data.offers : [];
+      const currentListingId = listing._id || listing.id;
+      const currentOffer =
+        offers.find((o) => (o.listing?._id || o.listing) === currentListingId) ||
+        offers.find((o) => ['pending', 'countered', 'buyer_countered'].includes(o.status)) ||
+        offers[0] || null;
+      setOffer(currentOffer);
     } catch (error) {
       setMessages([]);
     }
@@ -66,17 +72,14 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
     if (!newMessage.trim() || sending) return;
     setSending(true);
     try {
-      let msg;
-      if (conversationId) {
-        msg = await sendMessage(conversationId, { text: newMessage.trim() });
-      } else {
-        msg = await startConversation({
-          listingId: listing._id,
-          sellerId: seller._id || seller.id,
-          text: newMessage.trim(),
-        });
-        if (msg.data && msg.data._id) setConversationId(msg.data._id);
-      }
+      // Always send via startConversation for THIS listing: the server
+      // find-or-creates the per-listing thread and appends, so every message
+      // stays tied to the right item inside the unified per-person view.
+      await startConversation({
+        listingId: listing._id,
+        sellerId: seller._id || seller.id,
+        text: newMessage.trim(),
+      });
       setNewMessage('');
       loadConversation();
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -207,6 +210,11 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
                     {!isOwn && showAvatar && <img src={seller?.avatar || defaultAvatar} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
                     {!isOwn && !showAvatar && <div style={{ width: 28, flexShrink: 0 }} />}
                     <div style={{ maxWidth: '72%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : '#fff', color: isOwn ? '#fff' : 'var(--td-text)', boxShadow: isOwn ? '0 4px 12px rgba(108,59,255,0.3)' : 'var(--td-shadow-sm)' }}>
+                      {msg.listing && (msg.listing._id || msg.listing) !== (listing?._id || listing?.id) && (
+                        <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <FaTag size={9} /> Re: {msg.listing.title}
+                        </div>
+                      )}
                       <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.text}</div>
                       <div style={{ fontSize: 10, marginTop: 4, opacity: isOwn ? 0.8 : 0.5, textAlign: isOwn ? 'right' : 'left' }}>
                         {timeAgo(msg.createdAt)}

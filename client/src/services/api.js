@@ -118,6 +118,9 @@ export const markAllNotificationsRead = (userId) => api.put(`/users/${userId}/no
 export const startConversation = (data) => api.post('/messages', data);
 export const getConversations = () => api.get('/messages/conversations');
 export const getConversation = (userId, listingId) => api.get(`/messages/conversation/${userId}/${listingId}`);
+// Unified thread with a person: ALL messages across ALL listings + every offer,
+// grouped by the other user (one conversation per person, never per listing).
+export const getConversationWithUser = (userId) => api.get(`/messages/conversation/${userId}`);
 export const sendMessage = (conversationId, data) => api.post(`/messages/${conversationId}`, data);
 export const markAsRead = (conversationId) => api.put(`/messages/read/${conversationId}`);
 
