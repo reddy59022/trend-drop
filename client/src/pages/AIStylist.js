@@ -5,6 +5,7 @@ import { FaRobot, FaHeart, FaSave, FaPlus, FaTrash, FaCalendarAlt, FaShoppingBag
 import { getAIPreferences, updateAIPreferences, getAIRecommendations, generateAIRecommendations, getAITrends, getUserOutfits, createOutfit } from '../services/api';
 import ListingCard from '../components/ListingCard';
 import { toast } from 'react-toastify';
+import { formatPrice } from '../utils/helpers';
 
 const AIStylist = () => {
   const { user } = useAuth();
@@ -266,7 +267,7 @@ const AIStylist = () => {
                   <h3 style={{ margin: 0, color: 'var(--td-primary)' }}>{trend._id}</h3>
                   <div style={{ fontSize: 24, fontWeight: 700, margin: '12px 0' }}>{trend.count} items</div>
                   <div style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}>
-                    Avg. ${trend.avgPrice?.toFixed(2) || 'N/A'}
+                    Avg. {trend.avgPrice != null ? formatPrice(trend.avgPrice, 'USD') : 'N/A'}
                   </div>
                 </div>
               ))}

@@ -166,14 +166,29 @@ router.get('/outfits', auth, async (req, res) => {
 // GET /api/ai-stylist/trends - Get seasonal trends
 router.get('/trends', async (req, res) => {
   try {
+    // GLOBAL CURRENCY STANDARD: listings are priced in their own currency,
+    // so averaging raw prices would mix units. Normalize every price to USD
+    // (rates are quoted per USD, so USD value = price / rate) before the
+    // average — the client converts USD → the user's preferred currency.
+    const { currencies } = require('../config/currencies');
+    const rateDivisor = {
+      $switch: {
+        branches: Object.keys(currencies).map((code) => ({
+          case: { $eq: ['$currency', code] },
+          then: currencies[code].rate || 1,
+        })),
+        default: 1, // missing/unknown currency → treated as USD
+      },
+    };
     const trends = await Listing.aggregate([
       { $match: { available: true, sold: false, createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } },
-      { $group: { _id: '$category', count: { $sum: 1 }, avgPrice: { $avg: '$price' } } },
+      { $group: { _id: '$category', count: { $sum: 1 }, avgPrice: { $avg: { $divide: ['$price', rateDivisor] } } } },
       { $sort: { count: -1 } },
       { $limit: 10 },
     ]);
     res.json(trends);
   } catch (error) {
+    console.error('Trends error:', error);
     res.status(500).json({ message: 'Failed to get trends' });
   }
 });

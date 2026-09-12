@@ -12,10 +12,11 @@ import { defaultAvatar, getConditionColor, formatPrice } from '../utils/helpers'
 const ListingCard = ({ listing }) => {
   const { user } = useAuth();
   const { addToCart } = useCart();
-  const { currency } = useTheme();
+  // Subscribe to currency changes: formatPrice reads the preferred currency
+  // store itself, this keeps the card live inside non-remounted trees too.
+  useTheme();
   
   // User's preferred currency (from context) and item's original currency
-  const userCurrency = currency || 'USD';
   const listingCurrency = listing.currency || 'USD';
   
   const [liked, setLiked] = useState(
@@ -189,10 +190,10 @@ const ListingCard = ({ listing }) => {
 
         <div className="listing-card-price">
           <span className="current-price">
-            {formatPrice(listing.price, userCurrency, listingCurrency)}
+            {formatPrice(listing.price, listingCurrency)}
           </span>
           {listing.originalPrice && (
-            <span className="original-price">{formatPrice(listing.originalPrice, userCurrency, listingCurrency)}</span>
+            <span className="original-price">{formatPrice(listing.originalPrice, listingCurrency)}</span>
           )}
         </div>
 

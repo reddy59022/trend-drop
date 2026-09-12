@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { getCurrencyByCountry } from '../utils/helpers';
+import { setPreferredCurrency } from '../utils/currencyStore';
 import {
   AUTO_SOURCE,
   MANUAL_SOURCE,
@@ -101,6 +102,14 @@ export const ThemeProvider = ({ children }) => {
 
   // Persist the active currency/country for the rest of the app (the source
   // marker decides whether the next app load re-detects from the IP).
+  // Keep the global preferred-currency store (used by formatPrice — the one
+  // conversion point every page renders money through) in sync with the
+  // top-right selection: initial value, manual changes, country switches and
+  // IP auto-detection all flow through this single effect.
+  useEffect(() => {
+    setPreferredCurrency(currency);
+  }, [currency]);
+
   useEffect(() => {
     persistPreference(STORAGE_KEYS.currency, currency, currencySource);
   }, [currency, currencySource]);

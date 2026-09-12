@@ -6,7 +6,7 @@ import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
 import { toast } from 'react-toastify';
 import api, { validatePromo, applyBundleDiscount } from '../services/api';
-import { formatPrice } from '../utils/helpers';
+import { formatPrice, convertAmount } from '../utils/helpers';
 import StripeCheckoutForm from '../components/StripeCheckoutForm';
 import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaPercent, FaBoxes } from 'react-icons/fa';
 
@@ -247,19 +247,26 @@ const Cart = () => {
     const group = sellerGroups[sellerKey];
     const bd = itemBreakdowns[item.listingId];
     group.items.push({ ...item, breakdown: bd });
-    
+
+    // GLOBAL CURRENCY STANDARD: breakdown/price values are denominated in the
+    // ITEM's currency — convert each line to the user's preferred currency
+    // BEFORE summing, otherwise a multi-currency bag totals mixed units.
+    const preferred = currency || 'USD';
+    const itemCurrency = item.currency || 'USD';
+    const toPreferred = (value) => convertAmount(value, itemCurrency, preferred);
+
     if (bd && bd.buyer) {
-      group.subtotal += bd.buyer.itemPrice * item.quantity;
-      group.shipping += bd.buyer.shippingCost * item.quantity;
-      group.protection += bd.buyer.buyerProtectionFee * item.quantity;
-      group.total += bd.buyer.totalPaid * item.quantity;
+      group.subtotal += toPreferred(bd.buyer.itemPrice * item.quantity);
+      group.shipping += toPreferred(bd.buyer.shippingCost * item.quantity);
+      group.protection += toPreferred(bd.buyer.buyerProtectionFee * item.quantity);
+      group.total += toPreferred(bd.buyer.totalPaid * item.quantity);
     } else {
-      group.subtotal += item.price * item.quantity;
-      group.total += item.price * item.quantity;
+      group.subtotal += toPreferred(item.price * item.quantity);
+      group.total += toPreferred(item.price * item.quantity);
     }
   });
   const sellerPackages = Object.values(sellerGroups);
-  
+
   let subtotalItems = 0, totalShipping = 0, totalProtection = 0, grandTotal = 0;
   sellerPackages.forEach(pkg => {
     subtotalItems += pkg.subtotal;
@@ -268,8 +275,12 @@ const Cart = () => {
     grandTotal += pkg.total;
   });
 
-  // Apply bundle discount (visual only - actual discount calculated server-side)
-  const displayTotal = bundleDiscount > 0 ? Math.max(0, grandTotal - bundleDiscount) : grandTotal;
+  // Apply bundle discount (visual only - actual discount calculated server-side).
+  // The server computes discounts on raw item prices (item currency), so the
+  // discount is converted into the preferred currency before it is subtracted
+  // from (and displayed next to) the converted totals.
+  const bundleDiscountPreferred = convertAmount(bundleDiscount, cart[0]?.currency || 'USD', currency || 'USD');
+  const displayTotal = bundleDiscountPreferred > 0 ? Math.max(0, grandTotal - bundleDiscountPreferred) : grandTotal;
 
   return (
     <div className="page-container">
@@ -370,7 +381,7 @@ const Cart = () => {
                           });
                           if (res.data.valid) {
                             setAppliedPromo(res.data.promo);
-                            toast.success(`Promo applied! Save ${formatPrice(res.data.promo.discountAmount, currency || 'USD')}`);
+                            toast.success(`Promo applied! Save ${formatPrice(res.data.promo.discountAmount, cart[0]?.currency || 'USD')}`);
                           }
                         } catch (err) {
                           setPromoError(err.response?.data?.message || 'Invalid promo code');
@@ -381,7 +392,7 @@ const Cart = () => {
                   </div>
                 ) : (
                   <div className="badge badge-success" style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                    <span>Code <strong>{appliedPromo.code}</strong> — Save {formatPrice(appliedPromo.discountAmount, currency || 'USD')}</span>
+                    <span>Code <strong>{appliedPromo.code}</strong> — Save {formatPrice(appliedPromo.discountAmount, cart[0]?.currency || 'USD')}</span>
                     <button className="btn btn-icon btn-ghost" onClick={() => { setAppliedPromo(null); setPromoCode(''); }}
                       style={{ color: '#fff', width: 24, height: 24 }}><FaTrash size={10} /></button>
                   </div>
@@ -398,11 +409,11 @@ const Cart = () => {
                 </div>
                 {bundleDiscounts.map((d, i) => (
                   <div key={i} style={{ fontSize: 11, color: 'var(--td-text-tertiary)', marginTop: 2 }}>
-                    {d.ruleName}: -{formatPrice(d.discountAmount, 'USD')}
+                    {d.ruleName}: -{formatPrice(d.discountAmount, cart[0]?.currency || 'USD')}
                   </div>
                 ))}
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--td-primary)', marginTop: 4 }}>
-                  Total Bundle Savings: -{formatPrice(bundleDiscount, 'USD')}
+                  Total Bundle Savings: -{formatPrice(bundleDiscount, cart[0]?.currency || 'USD')}
                 </div>
               </div>
             )}
@@ -429,13 +440,13 @@ const Cart = () => {
                 {bundleDiscount > 0 && (
                   <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-success)' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaBoxes size={12} /> Bundle Savings</span>
-                    <span>-{formatPrice(bundleDiscount, currency || 'USD')}</span>
+                    <span>-{formatPrice(bundleDiscountPreferred, currency || 'USD')}</span>
                   </div>
                 )}
                 <div style={{ borderTop: '1px solid var(--td-border)', margin: '4px 0', paddingTop: 12 }}>
                   <div className="flex-between">
                     <span style={{ fontWeight: 700, fontSize: 16 }}>Total</span>
-                    <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(displayTotal, cart[0]?.currency || 'USD')}</span>
+                    <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(displayTotal, currency || 'USD')}</span>
                   </div>
                 </div>
               </div>
@@ -486,7 +497,7 @@ const Cart = () => {
                     return (
                       <div key={item.listingId} className="flex-between" style={{ fontSize: 13, padding: '2px 0' }}>
                         <span style={{ color: 'var(--td-text-secondary)' }}>{item.title} × {item.quantity}</span>
-                        <span style={{ fontWeight: 600 }}>{formatPrice(bd?.buyer?.totalPaid || item.price, currency || 'USD')}</span>
+                        <span style={{ fontWeight: 600 }}>{formatPrice(bd?.buyer?.totalPaid || item.price, item.currency || 'USD')}</span>
                       </div>
                     );
                   })}
@@ -497,7 +508,7 @@ const Cart = () => {
                     <StripeCheckoutForm
                       items={cart}
                       shippingInfo={shippingInfo}
-                      totalAmount={serverTotalAmount != null ? formatPrice(serverTotalAmount, 'USD') : formatPrice(displayTotal, 'USD')}
+                      totalAmount={serverTotalAmount != null ? formatPrice(serverTotalAmount, 'USD') : formatPrice(displayTotal, currency || 'USD')}
                       onSuccess={handleSuccess}
                       onCancel={() => setShowForm(false)}
                     />

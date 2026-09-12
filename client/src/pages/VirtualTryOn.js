@@ -11,7 +11,9 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 
 const VirtualTryOn = () => {
   const { user } = useAuth();
-  const { currency } = useTheme();
+  // Subscribe to currency changes (formatPrice reads the preferred-currency
+  // store itself; the routed subtree also remounts on currency switches).
+  useTheme();
   const navigate = useNavigate();
   const { listingId } = useParams();
   
@@ -608,7 +610,7 @@ const VirtualTryOn = () => {
                   <div className="listing-card-content">
                     <h4 className="listing-card-title">{session.listingId?.title}</h4>
                     <p className="listing-card-price">
-                      {formatPrice(session.listingId?.price || 0, currency)}
+                      {formatPrice(session.listingId?.price || 0, session.listingId?.currency || 'USD')}
                     </p>
                     {session.fitAnalysis?.recommendedSize && (
                       <div style={{ marginTop: 'var(--td-space-sm)' }}>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FaTimes, FaSpinner, FaExchangeAlt, FaArrowUp, FaDollarSign } from 'react-icons/fa';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { formatPrice } from '../utils/helpers';
+import { formatPrice, formatPriceRaw } from '../utils/helpers';
 
 /**
  * CounterOfferModal - Reusable counter-offer dialog for Offers page
@@ -64,10 +64,12 @@ const CounterOfferModal = ({
       return 'Please enter a valid amount';
     }
     if (num <= previousAmount) {
-      return `Must be higher than ${formatPrice(previousAmount, currency)}`;
+      return `Must be higher than ${formatPriceRaw(previousAmount, currency)}`;
     }
     if (num < 50) {
-      return 'Counter offer must be at least $50.00';
+      // The typed number is submitted in `currency`, so the floor displays
+      // unconverted (input guidance — see utils/helpers formatPriceRaw).
+      return `Counter offer must be at least ${formatPriceRaw(50, currency)}`;
     }
     return '';
   };
@@ -160,7 +162,7 @@ const CounterOfferModal = ({
                 <input
                   type="number"
                   className={`form-input ${error ? 'form-input-error' : ''}`}
-                  placeholder={`Min: ${formatPrice(minAllowed, currency)}`}
+                  placeholder={`Min: ${formatPriceRaw(minAllowed, currency)}`}
                   value={counterAmount}
                   onChange={handleAmountChange}
                   min={minAllowed}
@@ -172,7 +174,7 @@ const CounterOfferModal = ({
                 />
               </div>
               <div className="form-hint" style={{ marginTop: 6 }}>
-                Must be higher than {formatPrice(previousAmount, currency)} and at least $50.00
+                Must be higher than {formatPriceRaw(previousAmount, currency)} and at least {formatPriceRaw(50, currency)}
               </div>
               {error && (
                 <div className="form-error" style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>

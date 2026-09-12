@@ -3,7 +3,7 @@ import { FaTimes, FaSpinner, FaGavel, FaMoneyBillWave, FaHistory, FaCheck, FaArr
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
-import { formatPrice } from '../utils/helpers';
+import { formatPrice, formatPriceRaw } from '../utils/helpers';
 
 /**
  * OfferModal - Full Counter-Offer Chain Support (v14.0)
@@ -118,7 +118,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
       return;
     }
     if (counterVal <= (offer.counterAmount || offer.amount)) {
-      toast.error(`Counter must be higher than ${formatPrice(offer.counterAmount || offer.amount, offer.currency)}`);
+      toast.error(`Counter must be higher than ${formatPriceRaw(offer.counterAmount || offer.amount, offer.currency)}`);
       return;
     }
 
@@ -313,7 +313,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
                       />
                     </div>
                     <div className="form-hint" style={{ marginTop: 4 }}>
-                      Must be higher than seller's counter of {formatPrice(offer.counterAmount, offer.currency)}
+                      Must be higher than seller's counter of {formatPriceRaw(offer.counterAmount, offer.currency)}
                     </div>
                   </div>
 
@@ -424,7 +424,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
                   />
                 </div>
                 <div className="form-hint" style={{ marginTop: 4 }}>
-                  Offer must be between {formatPrice(minOffer, listing.currency)} and {formatPrice(maxOffer, listing.currency)}
+                  Offer must be between {formatPriceRaw(minOffer, listing.currency)} and {formatPriceRaw(maxOffer, listing.currency)}
                 </div>
               </div>
 

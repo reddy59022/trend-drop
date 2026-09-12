@@ -15,6 +15,10 @@ const Referrals = () => {
   const [settings, setSettings] = useState(null);
   const [copied, setCopied] = useState(false);
   const [shareText, setShareText] = useState('');
+  // Referral reward is a USD-denominated platform policy amount; all
+  // displays go through formatPrice(…, 'USD') so it converts into the
+  // user's preferred currency like every other money value.
+  const rewardAmount = stats?.rewardAmount || settings?.rewardAmount || 10;
 
   useEffect(() => {
     if (!user) return;
@@ -127,9 +131,11 @@ const Referrals = () => {
       {/* Hero */}
       <div className="glass-card" style={{ padding: 'var(--td-space-xl)', marginBottom: 'var(--td-space-lg)', textAlign: 'center', background: 'linear-gradient(135deg, var(--td-primary) 0%, #FF6B81 100%)', color: '#fff' }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>🎁</div>
-        <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Give $10, Get $10</h2>
+        <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>
+          Give {formatPrice(rewardAmount, 'USD')}, Get {formatPrice(rewardAmount, 'USD')}
+        </h2>
         <p style={{ opacity: 0.9, maxWidth: 480, margin: '0 auto 20px' }}>
-          Share your code with friends. When they join AURAVEST, you both earn ${(stats?.rewardAmount || settings?.rewardAmount || 10).toFixed(2)} in credit.
+          Share your code with friends. When they join AURAVEST, you both earn {formatPrice(rewardAmount, 'USD')} in credit.
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
           <div className="badge" style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 20, padding: '8px 16px', fontSize: 13 }}>
@@ -156,7 +162,7 @@ const Referrals = () => {
         <div className="glass-card" style={{ padding: 'var(--td-space-lg)', textAlign: 'center' }}>
           <div style={{ color: 'var(--td-warning)', marginBottom: 8 }}><FaDollarSign size={20} /></div>
           <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Reward Amount</div>
-          <div style={{ fontSize: 20, fontWeight: 800 }}>{formatPrice(stats?.rewardAmount || settings?.rewardAmount || 10, 'USD')}</div>
+          <div style={{ fontSize: 20, fontWeight: 800 }}>{formatPrice(rewardAmount, 'USD')}</div>
         </div>
         <div className="glass-card" style={{ padding: 'var(--td-space-lg)', textAlign: 'center' }}>
           <div style={{ color: stats?.rewardClaimed ? 'var(--td-success)' : 'var(--td-text-tertiary)', marginBottom: 8 }}><FaCheckCircle size={20} /></div>
@@ -231,13 +237,13 @@ const Referrals = () => {
           {!stats?.rewardClaimed && (stats?.uses || 0) > 0 && (
             <div className="glass-card" style={{ padding: 'var(--td-space-lg)', marginBottom: 'var(--td-space-lg)', border: '1px solid var(--td-success)', textAlign: 'center' }}>
               <h3 style={{ color: 'var(--td-success)', marginBottom: 8 }}>
-                <FaCheckCircle /> You earned ${formatPrice(earned, 'USD')}!
+                <FaCheckCircle /> You earned {formatPrice(earned, 'USD')}!
               </h3>
               <p style={{ fontSize: 14, color: 'var(--td-text-secondary)', marginBottom: 16 }}>
                 Claim your reward to add it to your AURAVEST balance.
               </p>
               <button className="btn btn-success" onClick={claimReward}>
-                <FaDollarSign size={14} /> Claim ${formatPrice(earned, 'USD')}
+                <FaDollarSign size={14} /> Claim {formatPrice(earned, 'USD')}
               </button>
             </div>
           )}

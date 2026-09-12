@@ -5,7 +5,7 @@ import { FaGavel, FaClock, FaUser, FaArrowLeft, FaVideo, FaBroadcastTower, FaEye
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
-import { formatPrice } from '../utils/helpers';
+import { formatPrice, formatPriceRaw } from '../utils/helpers';
 import MediaCarousel from '../components/MediaCarousel';
 import CommentSection from '../components/CommentSection';
 
@@ -394,7 +394,7 @@ const AuctionDetail = () => {
     
     const amount = parseFloat(bidAmount);
     if (!amount || amount < effectiveMinBid) {
-      toast.error(`Minimum bid is ${formatPrice(effectiveMinBid, auction.currency || 'USD')}`);
+      toast.error(`Minimum bid is ${formatPriceRaw(effectiveMinBid, auction.currency || 'USD')}`);
       return;
     }
     
@@ -647,7 +647,7 @@ const AuctionDetail = () => {
                   type="number"
                   min={effectiveMinBid}
                   step="1"
-                  placeholder={`Min: ${formatPrice(effectiveMinBid, auction.currency || 'USD')}`}
+                  placeholder={`Min: ${formatPriceRaw(effectiveMinBid, auction.currency || 'USD')}`}
                   value={bidAmount}
                   onChange={(e) => setBidAmount(e.target.value)}
                   className="form-input"
@@ -663,7 +663,10 @@ const AuctionDetail = () => {
                 </button>
               </div>
               <p className="form-hint" style={{ marginTop: 'var(--td-space-sm)' }}>
-                Minimum bid: {formatPrice(effectiveMinBid, auction.currency || 'USD')}
+                Minimum bid: {formatPriceRaw(effectiveMinBid, auction.currency || 'USD')}
+                {' (≈ '}
+                {formatPrice(effectiveMinBid, auction.currency || 'USD')}
+                {')'}
                 {mustMeetReserve && ' (must meet reserve)'}
               </p>
             </div>
@@ -746,7 +749,7 @@ const AuctionDetail = () => {
           <div className="modal-content glass-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400, padding: 'var(--td-space-xl)' }}>
             <h3 style={{ marginBottom: 'var(--td-space-md)' }}>Confirm Bid</h3>
             <p style={{ marginBottom: 'var(--td-space-lg)' }}>
-              Place bid of <strong>{formatPrice(parseFloat(bidAmount), auction.currency || 'USD')}</strong>?
+              Place bid of <strong>{formatPriceRaw(parseFloat(bidAmount), auction.currency || 'USD')}</strong>?
             </p>
             <div style={{ display: 'flex', gap: 'var(--td-space-md)', justifyContent: 'flex-end' }}>
               <button className="btn btn-outline" onClick={() => setShowBidModal(false)}>Cancel</button>

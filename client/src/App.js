@@ -4,7 +4,7 @@ import { useAuth } from './context/AuthContext';
 import { isNative } from './services/native';
 import { deepLinkPath, isOAuthCallbackUrl, isAppPath } from './services/deepLinks';
 import { CartProvider } from './context/CartContext';
-import { ThemeProvider } from './context/ThemeContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { SocketProvider } from './context/SocketContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -79,6 +79,20 @@ const PageLoader = () => (
     <div className="spinner"></div>
   </div>
 );
+
+// GLOBAL CURRENCY RE-RENDER SCOPE.
+// The routed page subtree is remounted whenever the user selects a different
+// currency (top-right selector) or IP auto-detection updates it. This is what
+// makes the ONE global conversion standard (formatPrice in utils/helpers.js)
+// effective on EVERY page — including pages that never consume the theme
+// context and values computed server-side (order totals, dashboard stats):
+// after a currency switch the active page refetches and re-renders all money
+// in the newly selected currency. Navigation chrome (Navbar, Footer,
+// MobileTabBar) stays mounted, so the picker itself is not disturbed.
+const CurrencyScope = ({ children }) => {
+  const { currency } = useTheme();
+  return <React.Fragment key={currency}>{children}</React.Fragment>;
+};
 
 const NativeAppLifecycle = () => {
   const { handleOAuthCallback } = useAuth();
@@ -181,6 +195,7 @@ function App() {
           <ErrorBoundary>
           <Navbar />
           <main className="main-content">
+            <CurrencyScope>
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 {/* Public routes */}
@@ -256,6 +271,7 @@ function App() {
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </Suspense>
+            </CurrencyScope>
           </main>
           <MobileTabBar />
           <Footer />

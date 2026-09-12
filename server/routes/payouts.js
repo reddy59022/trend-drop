@@ -5,9 +5,20 @@ const Transaction = require('../models/Transaction');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const { auth } = require('../middleware/auth');
+const { currencies } = require('../config/currencies');
 
 // Platform commission is 8% of item price (matching payments.js countryCommissions)
 const COMMISSION_RATE = 0.08;
+
+// GLOBAL CURRENCY STANDARD: payouts and transactions are each denominated in
+// their own currency, so aggregates must normalize to USD (the client's base
+// conversion currency) before summing. Rates are quoted per USD, so
+// USD value = amount / rate. Unknown/missing currency → treated as USD.
+const usdNormalized = (amount, currency) => {
+  const value = typeof amount === 'number' && isFinite(amount) ? amount : 0;
+  const rate = (currencies[currency] && currencies[currency].rate) || 1;
+  return value / rate;
+};
 
 // GET /api/payouts/dashboard - Get seller payout dashboard
 router.get('/dashboard', auth, async (req, res) => {
@@ -56,23 +67,26 @@ router.get('/dashboard', auth, async (req, res) => {
     const payoutCommission = (p) => num(p.commissionAmount ?? (p.amount != null ? Math.round(p.amount * COMMISSION_RATE * 100) / 100 : 0));
     const payoutNet = (p) => num(p.payoutAmount ?? (p.amount != null ? p.amount - payoutCommission(p) : 0));
 
-    const totalSales = payouts.reduce((sum, p) => sum + payoutSalePrice(p), 0);
+    // Aggregates are normalized to USD first (each payout may be in a
+    // different currency) so the client's USD → preferred-currency display
+    // conversion stays truthful.
+    const totalSales = payouts.reduce((sum, p) => sum + usdNormalized(payoutSalePrice(p), p.currency), 0);
     const totalSalesCount = completedPayouts.length;
 
     // Completed earnings = only from completed payouts
-    const totalEarnings = completedPayouts.reduce((sum, p) => sum + payoutNet(p), 0);
+    const totalEarnings = completedPayouts.reduce((sum, p) => sum + usdNormalized(payoutNet(p), p.currency), 0);
 
     // Total commission = from all payouts (completed + pending)
-    const totalCommission = payouts.reduce((sum, p) => sum + payoutCommission(p), 0);
+    const totalCommission = payouts.reduce((sum, p) => sum + usdNormalized(payoutCommission(p), p.currency), 0);
 
     // Pending = all pending payouts + transactions without payout records
     const pendingPayouts = payouts.filter(p => p.status === 'pending');
-    const pendingAmount = pendingPayouts.reduce((sum, p) => sum + payoutNet(p), 0);
+    const pendingAmount = pendingPayouts.reduce((sum, p) => sum + usdNormalized(payoutNet(p), p.currency), 0);
 
     // Include transactions not yet in payouts for accurate pending amount
     const pendingFromTransactions = completedTransactions
       .filter(t => !payouts.some(p => p.transaction?.toString() === t._id.toString()))
-      .reduce((sum, t) => sum + (t.paymentBreakdown?.sellerEarnings || 0), 0);
+      .reduce((sum, t) => sum + usdNormalized(t.paymentBreakdown?.sellerEarnings || 0, t.currency), 0);
 
     // NOTE: totalSales + totalEarnings computed from completedPayouts above.
 

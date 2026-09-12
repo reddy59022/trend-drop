@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { FaTruck, FaPlus, FaCalculator, FaPrint, FaSearch } from 'react-icons/fa';
 import api from '../services/api';
+import { formatPrice } from '../utils/helpers';
 
 const AdvancedShipping = () => {
   const { user } = useAuth();
@@ -99,7 +100,7 @@ const AdvancedShipping = () => {
         <div className="glass-card" style={{ padding: 20, marginBottom: 24 }}>
           <h3>Rate Estimate</h3>
           <p>Carrier: {rate.carrier}</p>
-          <p>Estimated Cost: ${rate.estimatedCost}</p>
+          <p>Estimated Cost: {formatPrice(rate.estimatedCost, 'USD')}</p>
           <p>Estimated Days: {rate.estimatedDays}</p>
           {rate.labelUrl && (
             <a href={rate.labelUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary">

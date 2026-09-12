@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { useAuth } from './AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
+import { convertAmount } from '../utils/helpers';
+import { usePreferredCurrency } from '../utils/currencyStore';
 
 // Cart item shape (local, source of truth for the UI):
 // {
@@ -201,8 +203,14 @@ export const CartProvider = ({ children }) => {
     }
   }, [isAuthed, fetchServerCart]);
 
-  // Compute the total amount for the current cart
-  const totalAmount = cart.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0);
+  // Compute the total amount for the current cart in the user's preferred
+  // currency. Item prices are denominated per item currency (a bag can mix
+  // currencies), so each line is converted BEFORE summing.
+  const preferredCurrency = usePreferredCurrency();
+  const totalAmount = cart.reduce(
+    (sum, i) => sum + convertAmount((i.price || 0) * (i.quantity || 1), i.currency || 'USD', preferredCurrency),
+    0
+  );
   const itemCount = cart.reduce((sum, i) => sum + (i.quantity || 1), 0);
 
   return (

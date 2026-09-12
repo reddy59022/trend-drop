@@ -100,67 +100,166 @@ export const currencies = {
   AFN: { symbol: 'AFN', name: 'Afghan Afghani', country: 'AF', rate: 88, decimals: 2 },
 };
 
-// Currency formatting - formats amount in the specified currency
-// If fromCurrency is provided, converts from that currency to target currency
-export const formatPrice = (amount, currencyCode = 'USD', fromCurrency = null) => {
-  if (amount == null) {
-    const curr = currencies[currencyCode] || currencies.USD;
-    return curr.symbol + '0.' + '0'.repeat(curr.decimals || 2);
-  }
-  
-  // If we need to convert from another currency
-  let finalAmount = amount;
-  if (fromCurrency && fromCurrency !== currencyCode) {
-    // Convert from fromCurrency to currencyCode
-    const fromCurr = currencies[fromCurrency];
-    const toCurr = currencies[currencyCode];
-    if (fromCurr && toCurr) {
-      // First convert to USD, then to target
-      const usdAmount = amount / fromCurr.rate;
-      finalAmount = usdAmount * toCurr.rate;
-    }
-  }
-  
+// ============================================================
+// GLOBAL CURRENCY STANDARD (one conversion engine for the app)
+// ============================================================
+// Every money amount rendered anywhere in the UI flows through
+// formatPrice(amount, fromCurrency):
+//   - `amount` is denominated in `fromCurrency` (the record's own
+//     currency: listing.currency, txn.currency, order.currency, …)
+//   - output is ALWAYS converted into the user's preferred currency
+//     (top-right selector, kept in sync by ThemeContext) and formatted
+//     with that currency's symbol/decimals.
+//
+// Two exceptions are handled explicitly:
+//   formatPriceRaw(amount, currencyCode)
+//     → formats WITHOUT conversion. Only for money *input* guidance
+//       (placeholders / "must be higher than" hints next to an input),
+//       where the typed number is submitted in that exact currency.
+//   A 3-argument legacy call formatPrice(amount, target, from)
+//     → `from` wins as the source currency (keeps older call sites
+//       correct; new code should use the 2-argument form).
+//
+// Preferred-currency store: ThemeContext pushes its currency here on
+// mount and on every change (changeCurrency / changeCountry /
+// IP auto-detection), so even components that do not consume the
+// theme context format with the latest selection at render time.
+const readStoredPreferredCurrency = () => {
   try {
-    const curr = currencies[currencyCode] || currencies.USD;
+    const saved = String(localStorage.getItem('currency') || '').trim().toUpperCase();
+    return saved.match(/^[A-Z]{3}$/) && currencies[saved] ? saved : 'USD';
+  } catch (e) {
+    return 'USD'; // private-mode WebView — default USD
+  }
+};
+let preferredCurrency = readStoredPreferredCurrency();
+const currencyListeners = new Set();
+
+// Normalize any currency-ish input to a supported code (USD fallback).
+const normalizeCurrencyCode = (code) => {
+  try {
+    const upper = String(code || '').trim().toUpperCase();
+    return upper.match(/^[A-Z]{3}$/) && currencies[upper] ? upper : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+// Read the user's preferred display currency (defaults to USD).
+export const getPreferredCurrency = () => preferredCurrency;
+
+// Set the user's preferred display currency. Invalid codes fall back to
+// USD; subscribers are only notified on actual changes (idempotent).
+export const setPreferredCurrency = (code) => {
+  const next = normalizeCurrencyCode(code) || 'USD';
+  if (next === preferredCurrency) return preferredCurrency;
+  preferredCurrency = next;
+  currencyListeners.forEach((listener) => {
+    try { listener(); } catch (e) { /* a broken listener never breaks others */ }
+  });
+  return preferredCurrency;
+};
+
+// Subscribe to preferred-currency changes (used by usePreferredCurrency).
+export const subscribePreferredCurrency = (listener) => {
+  currencyListeners.add(listener);
+  return () => currencyListeners.delete(listener);
+};
+
+// Convert an amount between two currencies through the USD base.
+// Rates are quoted as "units of currency per 1 USD" (EUR 0.92 = per USD):
+//   USD → X:  amount * rate[X]      X → USD:  amount / rate[X]
+// Unknown currencies are treated as USD so the amount displays as-is
+// instead of producing NaN. Result is rounded to the target's decimals.
+export const convertAmount = (amount, fromCurrency, toCurrency) => {
+  const value = Number(amount);
+  if (!isFinite(value)) return value;
+  const from = currencies[fromCurrency] || currencies.USD;
+  const to = currencies[toCurrency] || currencies.USD;
+  const usd = value / from.rate;
+  const converted = usd * to.rate;
+  const decimals = to.decimals != null ? to.decimals : 2;
+  const factor = Math.pow(10, decimals);
+  return Math.round(converted * factor) / factor;
+};
+
+// Currency formatting — THE standard display path.
+// Formats `amount` (denominated in fromCurrency) in the user's preferred
+// currency, converting via the shared engine. Never throws.
+export const formatPrice = (amount, fromCurrency = 'USD', legacyFromCurrency = null) => {
+  const target = getPreferredCurrency();
+  const source = normalizeCurrencyCode(legacyFromCurrency || fromCurrency) || 'USD';
+
+  // Null/undefined amounts render a zero value in the preferred currency
+  // (routed through the same formatter so zero-decimal currencies show ¥0).
+  const finalAmount = amount == null ? 0 : convertAmount(amount, source, target);
+
+  try {
+    const curr = currencies[target] || currencies.USD;
     const decimals = curr.decimals != null ? curr.decimals : 2;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: currencyCode,
+      currency: target,
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     }).format(finalAmount);
   } catch (e) {
-    const curr = currencies[currencyCode] || currencies.USD;
+    const curr = currencies[target] || currencies.USD;
     const decimals = curr.decimals || 2;
     return curr.symbol + Number(finalAmount).toFixed(decimals);
   }
 };
 
-// Convert USD amount to target currency
-export const convertFromUSDTo = (usdAmount, targetCurrency) => {
-  const curr = currencies[targetCurrency];
-  if (!curr) return usdAmount;
-  const converted = usdAmount / curr.rate;
-  return Math.round(converted * 100) / 100;
+// Format WITHOUT conversion — the record's own currency, as-is.
+// Reserved for money-INPUT guidance (offer/bid/price fields): the number
+// a user types is submitted in that currency, so hints must not convert.
+export const formatPriceRaw = (amount, currencyCode = 'USD') => {
+  const code = normalizeCurrencyCode(currencyCode) || 'USD';
+  const finalAmount = amount == null ? 0 : Number(amount);
+
+  try {
+    const curr = currencies[code];
+    const decimals = curr && curr.decimals != null ? curr.decimals : 2;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(finalAmount);
+  } catch (e) {
+    const curr = currencies[code] || currencies.USD;
+    const decimals = curr.decimals || 2;
+    return curr.symbol + Number(finalAmount).toFixed(decimals);
+  }
 };
 
-// Convert any amount to USD (base currency)
+// Convert a USD amount into a target currency (shared engine).
+export const convertPrice = (usdAmount, targetCurrency) => {
+  const to = currencies[targetCurrency];
+  if (!to) return usdAmount;
+  return convertAmount(usdAmount, 'USD', targetCurrency);
+};
+
+// Convert an amount from a currency into USD (shared engine).
+// (The previous implementation multiplied by the rate — the WRONG
+// direction; rates are quoted per USD, so X → USD divides.)
 export const convertToUSD = (amount, fromCurrency) => {
-  const curr = currencies[fromCurrency];
-  if (!curr) return amount;
-  const converted = amount * curr.rate;
-  return Math.round(converted * 100) / 100;
+  const from = currencies[fromCurrency];
+  if (!from) return amount;
+  return convertAmount(amount, fromCurrency, 'USD');
 };
 
-// Convert any amount from one currency to another
+// Convert a USD amount into a target currency (legacy name kept working —
+// the previous implementation divided by the rate, i.e. the WRONG direction).
+export const convertFromUSDTo = (usdAmount, targetCurrency) => convertPrice(usdAmount, targetCurrency);
+
+// Convert any amount from one currency to another (shared engine).
 export const convertBetweenCurrencies = (amount, fromCurrency, toCurrency) => {
   if (!fromCurrency || !toCurrency || fromCurrency === toCurrency) return amount;
   const fromCurr = currencies[fromCurrency];
   const toCurr = currencies[toCurrency];
   if (!fromCurr || !toCurr) return amount;
-  const usdAmount = amount / fromCurr.rate;
-  return Math.round(usdAmount * toCurr.rate * 100) / 100;
+  return convertAmount(amount, fromCurrency, toCurrency);
 };
 
 // Country code to currency mapping (mirrors server config/currencies.js
@@ -196,13 +295,6 @@ export const getCurrencyByCountry = (countryCode) => {
   } catch (e) {
     return 'USD';
   }
-};
-
-// Convert price using exchange rates (same as server)
-export const convertPrice = (usdAmount, targetCurrency) => {
-  const curr = currencies[targetCurrency];
-  if (!curr) return usdAmount;
-  return Math.round(usdAmount * curr.rate * 100) / 100;
 };
 
 // Time helpers

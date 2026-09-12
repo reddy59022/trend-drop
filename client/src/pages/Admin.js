@@ -18,6 +18,7 @@ import {
   autoSuspendUsers,
 } from '../services/api';
 import { FaShieldAlt, FaUsers, FaList, FaFlag, FaExchangeAlt, FaSearch, FaTimes, FaCheck, FaBan, FaTrash } from 'react-icons/fa';
+import { formatPrice } from '../utils/helpers';
 
 const Admin = () => {
   const { user } = useAuth();
@@ -215,7 +216,7 @@ const Admin = () => {
                 </div>
                 <div className="glass-card" style={{ padding: 'var(--td-space-lg)', textAlign: 'center' }}>
                   <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Total Commission</div>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--td-primary)' }}>${(dashboard.stats.totalCommission || 0).toFixed(2)}</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--td-primary)' }}>{formatPrice(dashboard.stats.totalCommission || 0, 'USD')}</div>
                 </div>
               </div>
 
@@ -234,7 +235,7 @@ const Admin = () => {
                         <span style={{ color: 'var(--td-text-tertiary)', marginLeft: 8 }}>{t.listing?.title}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span style={{ fontWeight: 600 }}>${t.paymentBreakdown?.totalPaid?.toFixed(2)}</span>
+                        <span style={{ fontWeight: 600 }}>{formatPrice(t.paymentBreakdown?.totalPaid, t.currency || 'USD')}</span>
                         <span className={`badge badge-${t.status === 'completed' ? 'success' : t.status === 'paid' ? 'info' : t.status === 'refunded' ? 'error' : 'warning'}`}>{t.status}</span>
                       </div>
                     </div>
@@ -371,7 +372,7 @@ const Admin = () => {
                       <tr key={l._id} style={{ borderBottom: '1px solid var(--td-border-light)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
                         <td style={{ padding: '12px 16px' }}>{l.title}</td>
                         <td style={{ padding: '12px 16px', color: 'var(--td-text-tertiary)' }}>{l.seller?.name || 'Unknown'}</td>
-                        <td style={{ padding: '12px 16px', fontWeight: 600 }}>${l.price?.toFixed(2)}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 600 }}>{formatPrice(l.price, l.currency || 'USD')}</td>
                         <td style={{ padding: '12px 16px' }}>
                           <span className={`badge badge-${l.sold ? 'error' : 'success'}`}>{l.sold ? 'Sold' : 'Active'}</span>
                         </td>
@@ -464,7 +465,7 @@ const Admin = () => {
                         <td style={{ padding: '12px 16px' }}>{t.buyer?.name || 'Unknown'}</td>
                         <td style={{ padding: '12px 16px' }}>{t.seller?.name || 'Unknown'}</td>
                         <td style={{ padding: '12px 16px', color: 'var(--td-text-tertiary)' }}>{t.listing?.title || 'N/A'}</td>
-                        <td style={{ padding: '12px 16px', fontWeight: 600 }}>${(t.paymentBreakdown?.totalPaid || t.itemPrice || 0).toFixed(2)}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 600 }}>{formatPrice(t.paymentBreakdown?.totalPaid || t.itemPrice || 0, t.currency || 'USD')}</td>
                         <td style={{ padding: '12px 16px' }}>
                           <span className={`badge badge-${t.status === 'completed' ? 'success' : t.status === 'paid' ? 'info' : t.status === 'refunded' ? 'error' : 'warning'}`}>{t.status}</span>
                         </td>

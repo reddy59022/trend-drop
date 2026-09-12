@@ -9,7 +9,9 @@ import { FaHistory, FaTrash, FaSearch } from 'react-icons/fa';
 
 const RecentlyViewed = () => {
   const { user } = useAuth();
-  const { currency } = useTheme();
+  // Subscribe to currency changes (formatPrice reads the preferred-currency
+  // store itself; the routed subtree also remounts on currency switches).
+  useTheme();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -88,7 +90,7 @@ const RecentlyViewed = () => {
               <div className="listing-card-info">
                 <h3 className="listing-card-title">{item.title}</h3>
                 <div className="listing-card-price">
-                  <span className="current-price">{formatPrice(item.price, item.currency, currency)}</span>
+                  <span className="current-price">{formatPrice(item.price, item.currency)}</span>
                 </div>
                 <Link to={`/listing/${item._id}`} className="btn btn-outline btn-sm" style={{ marginTop: 8 }}>
                   View Item

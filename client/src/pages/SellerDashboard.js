@@ -194,10 +194,13 @@ const SellerDashboard = () => {
   if (!dashboard) return <div className="page-container"><div className="empty-state"><h2>Failed to load</h2></div></div>;
 
   const stats = [
-    { label: 'Total Sales', value: formatPrice(dashboard.totalSales || 0, currency || 'USD'), color: 'var(--td-primary)', icon: <FaDollarSign /> },
-    { label: 'Your Earnings', value: formatPrice(dashboard.totalEarnings || 0, currency || 'USD'), color: 'var(--td-success)', icon: <FaChartLine /> },
-    { label: 'Commission', value: formatPrice(dashboard.totalCommission || 0, currency || 'USD'), color: 'var(--td-error)', icon: <FaDollarSign /> },
-    { label: 'Pending Payout', value: formatPrice(dashboard.pendingAmount || 0, currency || 'USD'), color: 'var(--td-warning)', icon: <FaHistory /> },
+    // Dashboard aggregates are USD-normalized server-side (see
+    // server/routes/payouts.js) — display them converted from USD into the
+    // user's preferred currency via the global standard.
+    { label: 'Total Sales', value: formatPrice(dashboard.totalSales || 0, 'USD'), color: 'var(--td-primary)', icon: <FaDollarSign /> },
+    { label: 'Your Earnings', value: formatPrice(dashboard.totalEarnings || 0, 'USD'), color: 'var(--td-success)', icon: <FaChartLine /> },
+    { label: 'Commission', value: formatPrice(dashboard.totalCommission || 0, 'USD'), color: 'var(--td-error)', icon: <FaDollarSign /> },
+    { label: 'Pending Payout', value: formatPrice(dashboard.pendingAmount || 0, 'USD'), color: 'var(--td-warning)', icon: <FaHistory /> },
   ];
 
   const tabs = [

@@ -1,4 +1,4 @@
-import { defaultAvatar, formatPrice, getConditionColor, normalizeComment } from "../utils/helpers";
+import { defaultAvatar, formatPrice, formatPriceRaw, getConditionColor, normalizeComment } from "../utils/helpers";
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment, FaBolt, FaExchangeAlt, FaArrowUp } from 'react-icons/fa';
@@ -736,7 +736,7 @@ const ListingDetail = () => {
         <div className="glass-card" style={{ padding: 'var(--td-space-xl)', maxWidth: 400, width: '100%' }}>
           <h3 style={{ marginBottom: 8 }}>Counter Offer</h3>
           <p style={{ fontSize: 13, color: 'var(--td-text-secondary)', marginBottom: 12 }}>
-            Enter your counter amount (must be higher than {formatPrice(buyerOffer.counterAmount || buyerOffer.amount, buyerOffer.currency || 'USD')})
+            Enter your counter amount (must be higher than {formatPriceRaw(buyerOffer.counterAmount || buyerOffer.amount, buyerOffer.currency || 'USD')})
           </p>
           <input
             type="number"

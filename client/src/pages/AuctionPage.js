@@ -4,7 +4,7 @@ import api from '../services/api';
 import { FaGavel, FaPlus, FaUser, FaTag, FaEye } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
-import { formatPrice } from '../utils/helpers';
+import { formatPrice, formatPriceRaw } from '../utils/helpers';
 import './AuctionPage.css';
 
 const AuctionPage = () => {
@@ -239,7 +239,7 @@ const AuctionPage = () => {
                             type="number"
                             min={auction.currentBid + 1}
                             step="1"
-                            placeholder={`Min: ${formatPrice(auction.currentBid + 1, auction.currency || 'USD')}`}
+                            placeholder={`Min: ${formatPriceRaw(auction.currentBid + 1, auction.currency || 'USD')}`}
                             value={bidAmount[auction._id] || ''}
                             onChange={(e) => setBidAmount({...bidAmount, [auction._id]: e.target.value})}
                             className="bid-input"
