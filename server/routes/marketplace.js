@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getSupportedCountries,
   isCountrySupported,
+  getCurrencyForCountry,
   BLOCKED_REGION_MESSAGE,
 } = require('../config/marketplace');
 
@@ -18,6 +19,12 @@ router.get('/countries', (req, res) => {
 
 // GET /api/marketplace/status?country=XX - Region availability check.
 // Always 200 so clients can render the appropriate screen themselves.
+//
+// Response contract (used by the top-right country + currency selectors on
+// web, iOS and Android — one call auto-selects both from the visitor IP):
+//   country  — IP-resolved country code (or default)
+//   currency — display currency for that country (config-derived, USD fallback)
+//   supported/message/code/source/conflict — region-gate fields (unchanged)
 //
 // Resolution: explicit ?country= hint is honoured ONLY when there is no IP
 // evidence (CDN header / offline DB lookup) saying otherwise — IP wins on
@@ -37,6 +44,7 @@ router.get('/status', (req, res) => {
     const supported = isCountrySupported(country);
     res.json({
       country,
+      currency: getCurrencyForCountry(country),
       supported,
       message: supported ? 'Available in your area' : BLOCKED_REGION_MESSAGE,
       code: supported ? 'REGION_SUPPORTED' : 'REGION_NOT_SUPPORTED',

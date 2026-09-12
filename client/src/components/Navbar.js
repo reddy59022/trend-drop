@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
+import { currencies as CURRENCY_MAP, getCurrencyByCountry } from '../utils/helpers';
 import { 
   FaSearch, 
   FaBars, 
@@ -31,17 +32,38 @@ import {
   FaTag,
 } from 'react-icons/fa';
 
-const currencies = [
-  { code: 'USD', symbol: '$', name: 'US Dollar' },
-  { code: 'EUR', symbol: '€', name: 'Euro' },
-  { code: 'GBP', symbol: '£', name: 'British Pound' },
-  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
-  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
-  { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
-  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
-  { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
-  { code: 'KRW', symbol: '₩', name: 'South Korean Won' },
-  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
+// Currency dropdown: curated popular list first; the ACTIVE currency is
+// always prepended so an IP-auto-selected currency (e.g. CHF/SEK/NOK from
+// the visitor's country) is visible and selectable even when it is outside
+// the popular set. Symbols/names come from the shared helpers map that
+// mirrors server config/currencies.js — single source of truth.
+const POPULAR_CURRENCIES = [
+  'USD', 'EUR', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK',
+  'JPY', 'INR', 'CAD', 'AUD', 'BRL', 'CNY', 'KRW',
+];
+
+const currencyOptions = (active) => {
+  const codes = active && POPULAR_CURRENCIES.indexOf(active) === -1
+    ? [active, ...POPULAR_CURRENCIES]
+    : POPULAR_CURRENCIES.slice();
+  return codes
+    .filter((code) => CURRENCY_MAP[code])
+    .map((code) => ({ code, symbol: CURRENCY_MAP[code].symbol, name: CURRENCY_MAP[code].name }));
+};
+
+// Country dropdown: launch markets from GET /marketplace/countries, with a
+// static fallback for API failures and the auto-detected country prepended
+// whenever it is not already listed (e.g. a visitor from an upcoming market).
+const FALLBACK_COUNTRIES = [
+  { code: 'US', name: 'United States', currency: 'USD', flag: '🇺🇸' },
+  { code: 'GB', name: 'United Kingdom', currency: 'GBP', flag: '🇬🇧' },
+  { code: 'DE', name: 'Germany', currency: 'EUR', flag: '🇩🇪' },
+  { code: 'FR', name: 'France', currency: 'EUR', flag: '🇫🇷' },
+  { code: 'IT', name: 'Italy', currency: 'EUR', flag: '🇮🇹' },
+  { code: 'ES', name: 'Spain', currency: 'EUR', flag: '🇪🇸' },
+  { code: 'NL', name: 'Netherlands', currency: 'EUR', flag: '🇳🇱' },
+  { code: 'CH', name: 'Switzerland', currency: 'CHF', flag: '🇨🇭' },
+  { code: 'SE', name: 'Sweden', currency: 'SEK', flag: '🇸🇪' },
 ];
 
 const languages = [
@@ -60,7 +82,7 @@ const languages = [
 const Navbar = () => {
   const { user, logout } = useAuth();
   const { cart } = useCart();
-  const { theme, toggleTheme, language, changeLanguage, currency, changeCurrency } = useTheme();
+  const { theme, toggleTheme, language, changeLanguage, currency, changeCurrency, country, changeCountry } = useTheme();
   const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0);
   const navigate = useNavigate();
   const location = useLocation();
@@ -71,9 +93,11 @@ const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [countryOpen, setCountryOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [countriesList, setCountriesList] = useState([]);
   
   const searchRef = useRef(null);
   const isFirstRender = useRef(true);
@@ -107,6 +131,27 @@ const Navbar = () => {
       fetchUnread();
     }
   }, [user]);
+
+  // Fetch the launch-market list for the country dropdown. On failure the
+  // static fallback (plus the detected country) still renders the dropdown.
+  useEffect(() => {
+    let mounted = true;
+    api.get('/marketplace/countries')
+      .then((res) => {
+        if (mounted && Array.isArray(res.data) && res.data.length) setCountriesList(res.data);
+      })
+      .catch(() => { /* fallback list is used */ });
+    return () => { mounted = false; };
+  }, []);
+
+  const countryOptions = (() => {
+    const base = countriesList.length ? countriesList : FALLBACK_COUNTRIES;
+    const list = base.filter((c) => c && c.code);
+    if (country && !list.some((c) => c.code === country)) {
+      return [{ code: country, name: country, currency: getCurrencyByCountry(country), flag: '🏳️' }, ...list];
+    }
+    return list;
+  })();
 
   // Debounced search autocomplete
   useEffect(() => {
@@ -164,6 +209,7 @@ const Navbar = () => {
     setMenuOpen(false);
     setDropdownOpen(false);
     setCurrencyOpen(false);
+    setCountryOpen(false);
     setLangOpen(false);
   };
 
@@ -386,22 +432,64 @@ const Navbar = () => {
             {theme === 'dark' ? <FaSun /> : <FaMoon />}
           </button>
 
+          {/* Country Selector — auto-selected from the visitor's IP */}
+          <div className="nav-dropdown">
+            <button
+              className="nav-icon-link global-btn country-btn"
+              onClick={() => { setCountryOpen(!countryOpen); setCurrencyOpen(false); setLangOpen(false); }}
+              title="Select country"
+              aria-label="Select country"
+            >
+              {country ? (
+                <>
+                  <span className="country-flag">{(countryOptions.find(c => c.code === country) || {}).flag || '🏳️'}</span>
+                  <span className="country-code-badge">{country}</span>
+                </>
+              ) : (
+                <span className="country-code-badge">—</span>
+              )}
+            </button>
+
+            {countryOpen && (
+              <div className="country-dropdown">
+                <div className="dropdown-header">Select Country</div>
+                {countryOptions.map(c => (
+                  <button
+                    key={c.code}
+                    className={`country-option ${country === c.code ? 'active' : ''}`}
+                    onClick={() => {
+                      changeCountry(c.code);
+                      // Also switch to the country's currency
+                      if (c.currency) changeCurrency(c.currency);
+                      setCountryOpen(false);
+                    }}
+                  >
+                    <span className="country-flag">{c.flag}</span>
+                    <span className="country-code">{c.code}</span>
+                    <span className="country-name">{c.name}</span>
+                    {country === c.code && <span className="check-mark">✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Currency Selector */}
           <div className="nav-dropdown">
-            <button 
+            <button
               className="nav-icon-link global-btn currency-btn"
-              onClick={() => { setCurrencyOpen(!currencyOpen); setLangOpen(false); }}
+              onClick={() => { setCurrencyOpen(!currencyOpen); setCountryOpen(false); setLangOpen(false); }}
               title="Select currency"
               aria-label="Select currency"
             >
               <FaDollarSign size={12} />
-              <span style={{ fontSize: 11, fontWeight: 700 }}>{currency}</span>
+              <span style={{ fontSize: 11, fontWeight: 700 }}>{country === null ? 'USD' : currency}</span>
             </button>
             
             {currencyOpen && (
               <div className="currency-dropdown">
                 <div className="dropdown-header">Select Currency</div>
-                {currencies.map(c => (
+                {currencyOptions(currency).map(c => (
                   <button
                     key={c.code}
                     className={`currency-option ${currency === c.code ? 'active' : ''}`}

@@ -5,6 +5,7 @@
 // markets (APAC, LATAM, …) can be added without touching middleware, routes
 // or the client.
 const { countries, getCountry } = require('./countries');
+const { countryCurrencyMap } = require('./currencies');
 
 // ISO 3166-1 codes for European markets. Kept adjacent to the EU continent
 // list in config/shipping.js; the launch set is USA + Europe.
@@ -37,9 +38,27 @@ function isCountrySupported(code) {
   return SUPPORTED_MARKET_CODES.includes(code.toUpperCase());
 }
 
+// Resolve the display currency for a country — used by the top-right
+// country/currency auto-selection (web, iOS and Android all consume this
+// through GET /api/marketplace/status). Union of the currency config's
+// country→currency map and the countries config, USD fallback for codes
+// unknown to both. Never throws.
+function getCurrencyForCountry(code) {
+  try {
+    const norm = String(code || '').trim().toUpperCase();
+    if (countryCurrencyMap[norm]) return countryCurrencyMap[norm];
+    const cfg = getCountry(norm);
+    if (cfg && cfg.currency) return cfg.currency;
+    return 'USD';
+  } catch (e) {
+    return 'USD';
+  }
+}
+
 module.exports = {
   SUPPORTED_MARKET_CODES,
   BLOCKED_REGION_MESSAGE,
   getSupportedCountries,
   isCountrySupported,
+  getCurrencyForCountry,
 };
