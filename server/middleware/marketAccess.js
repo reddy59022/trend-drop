@@ -1,16 +1,23 @@
-// Market / region access middleware (Feature 1).
+// Market / region access middleware (Feature 1) + IP-based geo detection.
 //
-// Resolves the requester's country from (in priority order):
-//   1. X-Country-Code header  — client-provided region (mobile/web gate)
-//   2. Bearer token user       — authenticated user profile country
-// If a country is known and is NOT in the supported markets (USA + Europe),
-// the request is rejected with a 403 + enterprise-standard region message.
-// When no country can be determined the request proceeds (catalog stays
-// publicly reachable for geo-unknown clients).
+// Country resolution order (first decisive evidence wins):
+//   1. IP evidence — CDN/proxy geo headers (CF-IPCountry, CloudFront, …) or
+//      offline geoip-lite lookup of the real client IP (server/config/geo.js).
+//      Zero API key, zero billing, O(1) in-process. Identical for web, iOS
+//      and Android (phones just call the API over HTTPS).
+//   2. Authenticated user's profile country (Bearer token).
+//   3. Explicit client hint (X-Country-Code header — native apps may send
+//      SIM/locale region). Accepted only when NO IP evidence exists; when IP
+//      evidence says otherwise, IP wins (anti-spoof).
+//
+// Fail-open: if no country can be determined (private/localhost IP, lookup
+// miss), the request proceeds — the public catalog stays reachable and the
+// client renders the block screen from /marketplace/status instead.
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { getJwtSecret } = require('../config/security');
 const { isCountrySupported, BLOCKED_REGION_MESSAGE } = require('../config/marketplace');
+const { detectCountry } = require('../config/geo');
 
 // Lightweight country lookup for the Bearer token (when present). Runs
 // BEFORE route-level auth so the region gate applies uniformly, including
@@ -32,11 +39,26 @@ const resolveTokenUserCountry = async (req) => {
 };
 
 const resolveRequestCountry = async (req) => {
+  // Layer 1 — IP evidence (CDN header or offline DB lookup). A spoofed
+  // X-Country-Code / ?country= hint can NEVER override this: detectCountry
+  // flags the mismatch and IP wins.
+  try {
+    const detected = detectCountry(req);
+    if (detected && detected.country) return detected.country;
+  } catch (e) { /* fall through to token/hint — fail open */ }
+
+  // Layer 2 — authenticated user profile country.
+  const tokenCountry = await resolveTokenUserCountry(req);
+  if (tokenCountry) return tokenCountry;
+
+  // Layer 3 — explicit client hint (only reached when no IP evidence).
+  // Kept for native apps on networks where IP lookup fails (e.g. carrier
+  // NAT) and for backward compatibility with existing clients/tests.
   const header = req.headers['x-country-code'];
   if (header && typeof header === 'string' && header.trim()) {
     return header.trim().toUpperCase();
   }
-  return resolveTokenUserCountry(req);
+  return null;
 };
 
 const requireSupportedRegion = async (req, res, next) => {

@@ -178,9 +178,9 @@ app.use('/api', assertObjectId);
 const { requireSupportedRegion } = require('./middleware/marketAccess');
 app.use('/api', (req, res, next) => {
   if (
-    req.path.startsWith('/api/auth') ||
-    req.path.startsWith('/api/marketplace') ||
-    req.path.startsWith('/api/config')
+    req.path.startsWith('/auth') ||
+    req.path.startsWith('/marketplace') ||
+    req.path.startsWith('/config')
   ) {
     return next();
   }
