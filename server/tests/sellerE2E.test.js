@@ -454,6 +454,12 @@ describe('SELLER TYPE B — Enterprise Multi-Seller Order', () => {
     expect(r.status).toBe(200);
     expect(r.body.paymentIntentId).toBeDefined();
 
+    // Stripe.js-equivalent confirmation: transitions the (mock) intent to
+    // requires_capture so confirm-batch sees an authorized payment. Same
+    // 3-step contract the web/iOS/Android clients use.
+    await request(app).post('/api/payments/test-confirm').set('Authorization', `Bearer ${buyerToken}`)
+      .send({ paymentIntentId: r.body.paymentIntentId });
+
     // Confirmation step creates the transactions + consolidated order
     const r2 = await request(app).post('/api/payments/confirm-batch').set('Authorization', `Bearer ${buyerToken}`)
       .send({

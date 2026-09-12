@@ -96,35 +96,43 @@ async function buySingle(buyerToken, listingId, overrides = {}) {
   return r;
 }
 
-function mockPaymentIntent(status = 'succeeded') {
-  const id = `pi_mock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  if (!global.__mockPaymentIntents) global.__mockPaymentIntents = {};
-  global.__mockPaymentIntents[id] = { id, status, amount: 0 };
-  return { id, status };
-}
-
 const shippingAddress = {
   fullName: 'Batch Buyer', street1: '456 Oak Ave', city: 'Dallas', state: 'TX', postalCode: '75201', country: 'US', phone: '555-0123',
 };
 
+/**
+ * Batch purchase follows the REAL two-phase checkout contract:
+ *   STEP 1  POST /api/transactions/batch      → authorizes, returns paymentIntentId
+ *                                             (mock intent starts at requires_payment_method,
+ *                                             exactly like a freshly created Stripe intent)
+ *   STEP 2  POST /api/payments/test-confirm   → server-side TEST-mode authorization
+ *                                             (simulates the browser's Stripe.js confirm);
+ *                                             intent transitions to requires_capture
+ *   STEP 3  POST /api/payments/confirm-batch  → validates status, captures, fulfills
+ *                                             → 201 { orderId, transactions }
+ * Skipping STEP 2 makes confirm-batch (correctly) reject with 400
+ * "Payment not authorized. Status: requires_payment_method".
+ */
 async function buyBatch(buyerToken, listingIds, quantities) {
   const items = listingIds.map((id, i) => ({ listingId: id, quantity: quantities[i] || 1 }));
-  const pi = mockPaymentIntent('succeeded');
   const r = await request(app)
     .post('/api/transactions/batch')
     .set('Authorization', `Bearer ${buyerToken}`)
     .send({ items, shippingAddress });
-  if (r.body.paymentIntentId) {
-    // confirm-batch
-    const r2 = await request(app)
-      .post('/api/payments/confirm-batch')
-      .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ paymentIntentId: r.body.paymentIntentId, items, shippingAddress });
-    if (r2.body.orderId) testOrderIds.push(r2.body.orderId);
-    (r2.body.transactions || []).forEach(t => t._id && testTxnIds.push(t._id));
-    return r2;
-  }
-  return r;
+  if (!r.body.paymentIntentId) return r;
+  // STEP 2: Stripe.js-equivalent confirmation (must be the buyer — ownership gate)
+  await request(app)
+    .post('/api/payments/test-confirm')
+    .set('Authorization', `Bearer ${buyerToken}`)
+    .send({ paymentIntentId: r.body.paymentIntentId });
+  // STEP 3: confirm-batch
+  const r2 = await request(app)
+    .post('/api/payments/confirm-batch')
+    .set('Authorization', `Bearer ${buyerToken}`)
+    .send({ paymentIntentId: r.body.paymentIntentId, items, shippingAddress });
+  if (r2.body.orderId) testOrderIds.push(r2.body.orderId);
+  (r2.body.transactions || []).forEach(t => t._id && testTxnIds.push(t._id));
+  return r2;
 }
 
 async function shipSingle(sellerToken, transactionId) {
