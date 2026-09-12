@@ -52,6 +52,13 @@ const offerSchema = new mongoose.Schema({
     enum: ['buyer', 'seller', null],
     default: null,
   },
+  // Feature 4 — provenance: set when auto-respond handled this offer
+  // (auto-accepted at/above least price, auto-countered to least price,
+  // or auto-offer sent to likers). Powers the ⚡ badge in the Offers UI.
+  autoResponded: {
+    type: Boolean,
+    default: false,
+  },
   // CRITICAL: The final accepted price (set when seller accepts)
   // This is the price the buyer can purchase at
   acceptedPrice: {

@@ -1,7 +1,7 @@
 import { defaultAvatar, formatPrice, getConditionColor, normalizeComment } from "../utils/helpers";
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment } from 'react-icons/fa';
+import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment, FaBolt, FaExchangeAlt, FaArrowUp } from 'react-icons/fa';
 import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -374,29 +374,46 @@ const ListingDetail = () => {
             {/* Feature 4 — auto-respond badge visible to buyers (not the owner).
                 Shows the instant-offer guarantee + least price in listing currency. */}
             {!isOwner && listing.autoRespond?.enabled && listing.autoRespond?.minPrice != null && (
-              <div className="glass-card" style={{
-                padding: '10px 14px', marginTop: 12,
-                border: '1px solid var(--td-success)',
-                background: 'rgba(0, 200, 83, 0.06)',
-                fontSize: 13, display: 'flex', alignItems: 'center', gap: 8,
+              <div style={{
+                padding: 'var(--td-space-md) var(--td-space-lg)',
+                marginTop: 12,
+                borderRadius: 'var(--td-radius-lg)',
+                border: '2px solid var(--td-success)',
+                background: 'linear-gradient(135deg, rgba(16,217,142,0.08) 0%, rgba(16,217,142,0.02) 100%)',
+                display: 'flex', alignItems: 'center', gap: 12,
               }}>
-                <span style={{ fontSize: 16 }}>⚡</span>
-                <span>
-                  <strong>Instant offers enabled.</strong>{' '}
-                  {formatPrice(listing.autoRespond.minPrice, listing.currency || 'USD')} or more is accepted automatically;
-                  lower offers get an instant counter at {formatPrice(listing.autoRespond.minPrice, listing.currency || 'USD')}.
-                </span>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--td-success)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}>
+                  <FaBolt size={16} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--td-success)', marginBottom: 2 }}>Instant Offer Enabled</div>
+                  <div style={{ fontSize: 13, color: 'var(--td-text-secondary)', lineHeight: 1.4 }}>
+                    Offers at <strong>{formatPrice(listing.autoRespond.minPrice, listing.currency || 'USD')}</strong> or more are accepted automatically. Lower offers receive an instant counter.
+                    {listing.autoRespond.autoOfferToLikers && <span style={{ display: 'block', marginTop: 4, fontSize: 12, color: 'var(--td-primary)' }}>This seller auto-sends offers to likers!</span>}
+                  </div>
+                </div>
               </div>
             )}
             {/* Feature 4 — owner-only view of their own auto-respond config. */}
             {isOwner && listing.autoRespond?.enabled && (
-              <div className="glass-card" style={{
-                padding: '10px 14px', marginTop: 12,
-                border: '1px dashed var(--td-border)',
-                fontSize: 13, color: 'var(--td-text-secondary)',
+              <div style={{
+                padding: 'var(--td-space-md) var(--td-space-lg)', marginTop: 12,
+                borderRadius: 'var(--td-radius-lg)',
+                border: '2px dashed var(--td-success)',
+                background: 'rgba(16,217,142,0.04)',
+                display: 'flex', alignItems: 'center', gap: 12,
               }}>
-                ⚙️ Auto Respond is ON for this listing — least price {formatPrice(listing.autoRespond.minPrice, listing.currency || 'USD')}
-                {listing.autoRespond.autoOfferToLikers ? ' · auto-offer sent to likers' : ''}. Only you can see this.
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(16,217,142,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--td-success)', flexShrink: 0 }}>
+                  <FaExchangeAlt size={14} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--td-success)', marginBottom: 2 }}>Auto Respond Active</div>
+                  <div style={{ fontSize: 13, color: 'var(--td-text-secondary)' }}>
+                    Minimum auto-accept price: <strong>{formatPrice(listing.autoRespond.minPrice, listing.currency || 'USD')}</strong>
+                    {listing.autoRespond.autoOfferToLikers && <span> &middot; Auto-offer sent to likers</span>}
+                    <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: 'var(--td-text-tertiary)' }}>Only you can see this.</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>

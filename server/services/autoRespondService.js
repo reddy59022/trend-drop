@@ -85,12 +85,14 @@ async function applyAutoRespondToOffer(offer, listing) {
     offer.acceptedAt = new Date();
     offer.acceptedBy = 'seller';
     offer.acceptedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    offer.autoResponded = true;
     await offer.save();
     return 'accepted';
   }
   offer.status = 'countered';
   offer.counterAmount = least;
   offer.lastCounterBy = 'seller';
+  offer.autoResponded = true;
   offer.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   if (!Array.isArray(offer.counterHistory)) offer.counterHistory = [];
   offer.counterHistory.push({ amount: least, counteredBy: 'seller', message: (ar.message && String(ar.message)) || "Auto-counter at the seller least price" });

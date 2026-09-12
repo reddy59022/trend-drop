@@ -171,6 +171,43 @@ router.get('/user/:userId', async (req, res) => {
   }
 });
 
+// PATCH /api/listings/bulk/auto-respond (Feature 4)
+// Bulk auto-respond toggle for ALL of the seller's unsold listings.
+// Bulk-enable stamps each listing with minPrice = its own price
+// ("auto-accept offers at or above list price"). Bulk-disable turns
+// autoRespond off while preserving minPrice/autoOfferToLikers settings.
+// Registered before /:id routes so "bulk" is never parsed as an id.
+router.patch('/bulk/auto-respond', auth, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ message: 'enabled (boolean) is required' });
+    }
+    const listings = await Listing.find({ seller: req.user._id, sold: false });
+    let updated = 0;
+    for (const listing of listings) {
+      const current = (listing.autoRespond && typeof listing.autoRespond.toObject === 'function')
+        ? listing.autoRespond.toObject()
+        : (listing.autoRespond || {});
+      if (enabled) {
+        listing.autoRespond = { ...current, enabled: true, minPrice: Number(listing.price), currency: listing.currency || 'USD' };
+      } else {
+        listing.autoRespond = { ...current, enabled: false };
+      }
+      await listing.save();
+      updated += 1;
+    }
+    res.json({
+      message: `Auto-respond ${enabled ? 'enabled' : 'disabled'} for ${updated} listing${updated === 1 ? '' : 's'}`,
+      updated,
+      listings: listings.map((l) => ({ _id: l._id, autoRespond: l.autoRespond })),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /api/listings/my - Get current user's unsold listings (for auction creation)
 router.get('/my', auth, async (req, res) => {
   try {
@@ -761,6 +798,7 @@ router.post('/:id/like', auth, async (req, res) => {
             buyerMessage: 'Auto-offer to liker',
             counterHistory: [{ amount: least, counteredBy: 'seller', message: 'Auto-offer to liker' }],
             lastCounterBy: 'seller',
+            autoResponded: true,
           });
           const likerUser = await User.findById(req.user._id);
           if (likerUser) {

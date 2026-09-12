@@ -225,4 +225,59 @@ describe('Feature 4 — Auto-respond / enterprise auto-offer', () => {
     expect(off.status).toBe(200);
     expect(off.body.listing.autoRespond.enabled).toBe(false);
   });
+
+  test('AR.12 auto-accepted, auto-countered and liker auto-offers carry the autoResponded provenance flag (powers ⚡ badge)', async () => {
+    const accepted = await Offer.findOne({ listing: arListing._id, buyer: buyer._id, status: 'accepted' });
+    expect(accepted).toBeDefined();
+    expect(accepted.autoResponded).toBe(true);
+
+    const countered = await Offer.findOne({ listing: arListing._id, buyer: buyer._id, status: 'countered' });
+    expect(countered).toBeDefined();
+    expect(countered.autoResponded).toBe(true);
+
+    const likerOffer = await Offer.findOne({ listing: arListing._id, buyer: liker._id });
+    expect(likerOffer).toBeDefined();
+    expect(likerOffer.autoResponded).toBe(true);
+
+    // Plain (non auto-respond) offers must NOT be flagged.
+    const manual = await Offer.findOne({ listing: plainListing._id, buyer: buyer._id });
+    expect(manual).toBeDefined();
+    expect(manual.autoResponded).toBe(false);
+  });
+
+  test('AR.13 PATCH /api/listings/bulk/auto-respond enables auto-respond for ALL seller listings (minPrice = list price)', async () => {
+    const res = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true });
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBeGreaterThanOrEqual(2);
+
+    const refreshed = await Listing.find({ _id: { $in: [arListing._id, plainListing._id] } });
+    for (const l of refreshed) {
+      expect(l.autoRespond.enabled).toBe(true);
+      expect(l.autoRespond.minPrice).toBe(l.price);
+      expect(l.autoRespond.currency).toBe('USD');
+    }
+  });
+
+  test('AR.14 PATCH /api/listings/bulk/auto-respond requires a boolean enabled and rejects invalid bodies', async () => {
+    const res = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: 'yes' });
+    expect(res.status).toBe(400);
+  });
+
+  test('AR.15 PATCH /api/listings/bulk/auto-respond disabled=false turns auto-respond OFF for all seller listings', async () => {
+    const res = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: false });
+    expect(res.status).toBe(200);
+    const refreshed = await Listing.find({ _id: { $in: [arListing._id, plainListing._id] } });
+    for (const l of refreshed) {
+      expect(l.autoRespond.enabled).toBe(false);
+    }
+  });
 });

@@ -182,12 +182,18 @@ const Offers = () => {
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8 }}>
             <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Offered</span><br /><strong style={{ fontSize: 16, color: 'var(--td-primary)' }}>{formatPrice(offer.amount, offer.currency || 'USD')}</strong></div>
             {offer.counterAmount && offer.status !== 'accepted' && (
-              <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Counter</span><br /><strong style={{ fontSize: 16 }}>{formatPrice(offer.counterAmount, offer.currency || 'USD')}</strong></div>
+              <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Counter</span><br /><strong style={{ fontSize: 16, color: 'var(--td-accent)' }}>{formatPrice(offer.counterAmount, offer.currency || 'USD')}</strong></div>
             )}
             {offer.status === 'accepted' && offer.acceptedPrice && (
-              <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Accepted Price</span><br /><strong style={{ fontSize: 16, color: 'var(--td-success)' }}>{formatPrice(offer.acceptedPrice, offer.currency || 'USD')}</strong></div>
+              <div><span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Final</span><br /><strong style={{ fontSize: 16, color: 'var(--td-success)' }}>{formatPrice(offer.acceptedPrice, offer.currency || 'USD')}</strong></div>
             )}
           </div>
+          {/* Counter-offer history indicator */}
+          {offer.counterHistory && offer.counterHistory.length > 0 && (
+            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--td-text-tertiary)' }}>
+              <FaExchangeAlt size={9} /> {offer.counterHistory.length} counter{offer.counterHistory.length > 1 ? 's' : ''} exchanged
+            </div>
+          )}
           <span className={`offer-status ${getStatusColor(offer.status)}`} style={{ marginTop: 8 }}>{getStatusLabel(offer.status)}</span>
           {/* Feature 4 — auto-respond provenance: flag auto-accepted / auto-countered
               offers so sellers and buyers can tell they were handled instantly. */}

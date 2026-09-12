@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { getPayoutDashboard, getCommissionInfo, getRatingsBySeller, getBundleRules, createBundleRule, updateBundleRule, deleteBundleRule, getPromos, createPromo, updatePromo, deletePromo, sendOfferToLikers, getBulkOffers } from '../services/api';
+import api from '../services/api';
 import StarRating from '../components/StarRating';
 import ShopBoostCard from '../components/ShopBoostCard';
 import { formatPrice } from '../utils/helpers';
 import { useTheme } from '../context/ThemeContext';
-import { FaStore, FaDollarSign, FaChartLine, FaHistory, FaRocket, FaQuestionCircle, FaTags, FaBoxes, FaBullhorn, FaTrash, FaPlus, FaEdit, FaTimes, FaCheckCircle, FaSpinner } from 'react-icons/fa';
+import { FaStore, FaDollarSign, FaChartLine, FaHistory, FaRocket, FaQuestionCircle, FaTags, FaBoxes, FaBullhorn, FaTrash, FaPlus, FaEdit, FaTimes, FaCheckCircle, FaSpinner, FaExchangeAlt, FaToggleOn, FaToggleOff } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 
 const SellerDashboard = () => {
@@ -36,6 +37,10 @@ const SellerDashboard = () => {
   const [selectedListing, setSelectedListing] = useState('');
   const [offerToLikersForm, setOfferToLikersForm] = useState({ discountType: 'percentage', discountValue: 10, validHours: 48 });
   const [sendingOffer, setSendingOffer] = useState(false);
+
+  // Auto-respond state (Feature 4)
+  const [bulkAutoRespond, setBulkAutoRespond] = useState(false);
+  const [savingBulkAutoRespond, setSavingBulkAutoRespond] = useState(false);
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
@@ -70,9 +75,12 @@ const SellerDashboard = () => {
 
   const fetchListings = async () => {
     try {
-      const api = (await import('../services/api')).default;
       const res = await api.get('/listings/user/' + (user._id || user.id));
-      setListings(res.data.listings || []);
+      const rows = res.data.listings || [];
+      setListings(rows);
+      // Reflect reality in the bulk toggle: ON when every listing has
+      // auto-respond enabled (Feature 4).
+      setBulkAutoRespond(rows.length > 0 && rows.every((l) => l.autoRespond?.enabled === true));
     } catch {}
   };
 
@@ -162,6 +170,18 @@ const SellerDashboard = () => {
     finally { setSendingOffer(false); }
   };
 
+  // Auto-respond bulk toggle (Feature 4)
+  const handleBulkToggleAutoRespond = async () => {
+    setSavingBulkAutoRespond(true);
+    try {
+      await api.patch('/listings/bulk/auto-respond', { enabled: !bulkAutoRespond });
+      setBulkAutoRespond(!bulkAutoRespond);
+      toast.success(`Auto-respond ${!bulkAutoRespond ? 'enabled' : 'disabled'} for all listings`);
+      fetchListings();
+    } catch { toast.info('Configure auto-respond on each listing via the Edit page.'); }
+    setSavingBulkAutoRespond(false);
+  };
+
   if (loading) return (
     <div className="page-container">
       <h1 className="page-title"><FaStore /> Seller Dashboard</h1>
@@ -185,6 +205,7 @@ const SellerDashboard = () => {
     { id: 'bundles', label: 'Bundle Rules', icon: FaBoxes },
     { id: 'promos', label: 'Promo Codes', icon: FaTags },
     { id: 'offer-likers', label: 'Offers to Likers', icon: FaBullhorn },
+    { id: 'auto-respond', label: 'Auto Respond', icon: FaExchangeAlt },
   ];
 
   const categories = ['Women', 'Men', 'Kids', 'Electronics', 'Home', 'Beauty', 'Accessories'];
@@ -487,6 +508,73 @@ const SellerDashboard = () => {
           <button className="btn btn-primary" disabled={!selectedListing || sendingOffer} onClick={handleSendOfferToLikers}>
             {sendingOffer ? <><FaSpinner className="spin" /> Sending...</> : <><FaBullhorn /> Send Offer to Likers</>}
           </button>
+        </div>
+      )}
+
+      {/* ===== TAB: Auto Respond (Feature 4) ===== */}
+      {activeTab === 'auto-respond' && (
+        <div className="glass-card" style={{ padding: 'var(--td-space-xl)', borderRadius: 'var(--td-radius-xl)' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 'var(--td-radius-lg)', background: 'linear-gradient(135deg, var(--td-primary) 0%, var(--td-primary-light) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}>
+              <FaExchangeAlt size={20} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, marginBottom: 4 }}>Auto Respond &amp; Smart Offers</h3>
+              <p style={{ fontSize: 13, color: 'var(--td-text-tertiary)', margin: 0, lineHeight: 1.5 }}>
+                Automatically accept offers at or above your minimum price. Send instant offers to everyone who likes your listings.
+              </p>
+            </div>
+          </div>
+
+          {/* Bulk toggle */}
+          <div style={{ padding: 'var(--td-space-md)', background: 'var(--td-surface-secondary)', borderRadius: 'var(--td-radius-md)', marginBottom: 20, border: '1px solid var(--td-border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Auto-Respond All Listings</div>
+                <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Automatically accept offers at or above the listing price</div>
+              </div>
+              <button className={`btn ${bulkAutoRespond ? 'btn-primary' : 'btn-outline'}`} onClick={handleBulkToggleAutoRespond} disabled={savingBulkAutoRespond} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {savingBulkAutoRespond ? <FaSpinner className="spin" /> : bulkAutoRespond ? <FaToggleOn size={16} /> : <FaToggleOff size={16} />}
+                {bulkAutoRespond ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+          </div>
+
+          {/* Per-listing auto-respond status */}
+          <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Per-Listing Auto Respond</h4>
+          {listings.length === 0 ? (
+            <div className="empty-state" style={{ padding: 30 }}>
+              <div className="empty-state-icon">📦</div>
+              <h3>No listings yet</h3>
+              <p>Create a listing to enable auto-respond for it.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {listings.map(l => {
+                const ar = l.autoRespond || {};
+                const isEnabled = ar.enabled === true;
+                return (
+                  <div key={l._id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 'var(--td-space-md)', borderRadius: 'var(--td-radius-md)', border: '1px solid var(--td-border)', background: isEnabled ? 'rgba(16,217,142,0.04)' : 'var(--td-surface)' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 'var(--td-radius-sm)', background: 'var(--td-surface-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                      {l.images && l.images[0] ? <img src={l.images[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <FaStore size={14} color="var(--td-text-tertiary)" />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>
+                        {formatPrice(l.price, l.currency || 'USD')}
+                        {isEnabled && ar.minPrice ? ` \u00b7 min ${formatPrice(ar.minPrice, l.currency || 'USD')}` : ''}
+                        {isEnabled && ar.autoOfferToLikers ? ' \u00b7 \ud83d\udce8 auto-offer to likers' : ''}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--td-radius-full)', background: isEnabled ? 'var(--td-success)' : 'var(--td-surface-tertiary)', color: isEnabled ? '#fff' : 'var(--td-text-tertiary)', whiteSpace: 'nowrap' }}>
+                      {isEnabled ? 'ON' : 'OFF'}
+                    </span>
+                    <Link to={'/sell/edit/' + l._id} className="btn btn-outline btn-sm" style={{ fontSize: 11 }}>Configure</Link>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
