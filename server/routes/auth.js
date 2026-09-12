@@ -52,13 +52,24 @@ const userResponse = (user, token) => ({
 // ============================================================
 router.post('/register', upload.single('avatar'), async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, country: requestedCountry } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email, and password are required' });
     }
     if (password.length < 8) {
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    // Feature 1 — market availability: only USA + European countries may
+    // register. Default to 'US' when the client does not send a country.
+    const { isCountrySupported } = require('../config/marketplace');
+    const country = requestedCountry ? String(requestedCountry).toUpperCase() : 'US';
+    if (!isCountrySupported(country)) {
+      return res.status(400).json({
+        message: "TrendDrop isn't available in your area yet. Currently supporting the United States and European countries.",
+        code: 'REGION_NOT_SUPPORTED',
+      });
     }
 
     // Check if user exists
@@ -119,6 +130,7 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
       email: email.toLowerCase(),
       password,
       avatar,
+      country,
       verificationToken,
       verificationTokenExpires,
       expiresAt: verificationTokenExpires,

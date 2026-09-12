@@ -104,6 +104,31 @@ router.post('/', auth, async (req, res) => {
       await seller.save();
     }
 
+    // Feature 4 — auto-respond: auto-accept at/above the least price, or
+    // auto-counter to the least price. Buyer gets a follow-up notification.
+    const { applyAutoRespondToOffer } = require('../services/autoRespondService');
+    const autoResult = await applyAutoRespondToOffer(offer, listing);
+    if (autoResult !== 'none') {
+      const buyerUser = await User.findById(req.user._id);
+      if (buyerUser) {
+        buyerUser.notifications.unshift(autoResult === 'accepted'
+          ? {
+              type: 'offer',
+              from: listing.seller,
+              listing: listing._id,
+              message: `Great news! Your offer of ${offerCurrency} ${numericAmount} on "${listing.title}" was auto-accepted. Proceed to purchase.`,
+            }
+          : {
+              type: 'offer',
+              from: listing.seller,
+              listing: listing._id,
+              message: `Seller auto-countered your offer with ${offerCurrency} ${offer.counterAmount} on "${listing.title}"`,
+            });
+        await buyerUser.save();
+      }
+      await offer.populate(['buyer', 'seller', 'listing']);
+    }
+
     await offer.populate(['buyer', 'seller', 'listing']);
     res.status(201).json(offer);
   } catch (error) {

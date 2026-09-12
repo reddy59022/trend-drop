@@ -8,6 +8,7 @@ import imageCompression from 'browser-image-compression';
 import { countries, formatPrice } from '../utils/helpers';
 import { useTheme } from '../context/ThemeContext';
 import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
+import { getFeatureFlags } from '../services/features';
 
 // Boost tier configuration (same as Sell.js)
 const BOOST_TIERS = {
@@ -41,6 +42,20 @@ const EditListing = () => {
   const [enableBoost, setEnableBoost] = useState(false);
   const [selectedBoostTier, setSelectedBoostTier] = useState('standard');
   const [boostDuration, setBoostDuration] = useState(14);
+
+  // Feature 4 — auto-respond / enterprise auto-offer (least price in listing currency).
+  const [autoRespondEnabled, setAutoRespondEnabled] = useState(false);
+  const [autoRespondMinPrice, setAutoRespondMinPrice] = useState('');
+  const [autoOfferToLikers, setAutoOfferToLikers] = useState(false);
+
+  // Feature 2 — international shipping flag. When disabled the toggle is
+  // greyed out and the listing stays domestic-only.
+  const [intlShippingAllowed, setIntlShippingAllowed] = useState(true);
+  useEffect(() => {
+    getFeatureFlags()
+      .then((flags) => setIntlShippingAllowed(flags.internationalShippingEnabled !== false))
+      .catch(() => { /* keep enabled by default */ });
+  }, []);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -99,6 +114,17 @@ const EditListing = () => {
         setEnableBoost(true);
         setSelectedBoostTier(listingData.boost.tier || 'standard');
         setBoostDuration(listingData.boost.durationDays || 14);
+      }
+
+      // Feature 4 — initialize auto-respond state from existing listing
+      if (listingData.autoRespond?.enabled) {
+        setAutoRespondEnabled(true);
+        setAutoRespondMinPrice(listingData.autoRespond.minPrice ?? '');
+        setAutoOfferToLikers(listingData.autoRespond.autoOfferToLikers === true);
+      } else {
+        setAutoRespondEnabled(false);
+        setAutoRespondMinPrice('');
+        setAutoOfferToLikers(false);
       }
       
       setFormData({
@@ -200,6 +226,14 @@ const EditListing = () => {
         data.append('boostDuration', boostDuration);
       } else if (!enableBoost && listing?.boost?.active) {
         data.append('removeBoost', 'true');
+      }
+
+      // Feature 4 — auto-respond / enterprise auto-offer (least price).
+      data.append('autoRespondEnabled', autoRespondEnabled ? 'true' : 'false');
+      if (autoRespondEnabled) {
+        if (autoRespondMinPrice) data.append('autoRespondMinPrice', autoRespondMinPrice);
+        data.append('autoRespondCurrency', currency || 'USD');
+        data.append('autoRespondAutoOfferToLikers', autoOfferToLikers ? 'true' : 'false');
       }
 
       Object.keys(formData).forEach(key => {
@@ -397,7 +431,8 @@ const EditListing = () => {
               </div>
               <div className="form-group">
                 <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" name="internationalShipping" checked={formData.internationalShipping} onChange={e => setFormData(prev => ({ ...prev, internationalShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> International
+                  <input type="checkbox" name="internationalShipping" checked={formData.internationalShipping && intlShippingAllowed} disabled={!intlShippingAllowed} onChange={e => setFormData(prev => ({ ...prev, internationalShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> International
+                  {!intlShippingAllowed && <p className="form-hint" style={{ color: 'var(--td-text-tertiary)' }}>International shipping is currently unavailable.</p>}
                 </label>
               </div>
               <div className="form-group">
@@ -437,6 +472,60 @@ const EditListing = () => {
                   <option value="draft">Draft</option>
                 </select>
               </div>
+            </div>
+
+            {/* Feature 4 — Auto Respond (enterprise auto-offer). Only the
+                listing author configures this; buyers see instant-offer hints
+                on the listing page. */}
+            <div style={{
+              padding: 'var(--td-space-md)',
+              background: autoRespondEnabled ? 'rgba(255, 56, 92, 0.06)' : 'var(--td-surface)',
+              borderRadius: 'var(--td-radius-sm)',
+              border: `2px solid ${autoRespondEnabled ? 'var(--td-primary)' : 'var(--td-border)'}`,
+              marginTop: 'var(--td-space-md)',
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={autoRespondEnabled}
+                  onChange={(e) => setAutoRespondEnabled(e.target.checked)}
+                  style={{ accentColor: 'var(--td-primary)', width: 20, height: 20 }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>Auto Respond — instant offers (Enterprise)</div>
+                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
+                    Set the least price you'll accept. Offers at/above it are auto-accepted; lower offers get an automatic counter at your least price.
+                  </div>
+                </div>
+              </label>
+              {autoRespondEnabled && (
+                <div className="form-grid" style={{ marginTop: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Least price you'll accept * ({currency || 'USD'})</label>
+                    <input
+                      type="number"
+                      value={autoRespondMinPrice}
+                      onChange={(e) => setAutoRespondMinPrice(e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                      className="form-input"
+                    />
+                    <p className="form-hint">Must be in the listing currency and no higher than the listing price.</p>
+                  </div>
+                  <div className="form-group">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 28 }}>
+                      <input
+                        type="checkbox"
+                        checked={autoOfferToLikers}
+                        onChange={(e) => setAutoOfferToLikers(e.target.checked)}
+                        style={{ accentColor: 'var(--td-primary)', width: 18, height: 18 }}
+                      />
+                      <span style={{ fontSize: 13 }}>Auto-send this offer to anyone who likes the item</span>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

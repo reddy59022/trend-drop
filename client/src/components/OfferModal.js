@@ -365,6 +365,23 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
             </>
           )}
 
+          {/* Feature 4 — auto-respond hint: buyers see the instant-offer guarantee
+              before sending, in the listing currency. */}
+          {canMakeOffer && listing?.autoRespond?.enabled && listing?.autoRespond?.minPrice != null && (
+            <div className="glass-card" style={{
+              padding: '10px 14px', marginBottom: 16,
+              border: '1px solid var(--td-success)',
+              background: 'rgba(0, 200, 83, 0.06)',
+              fontSize: 13, display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: 16 }}>⚡</span>
+              <span>
+                <strong>Instant offers:</strong> {formatPrice(listing.autoRespond.minPrice, listing.currency)} or more is
+                accepted automatically; lower offers get an instant counter at {formatPrice(listing.autoRespond.minPrice, listing.currency)}.
+              </span>
+            </div>
+          )}
+
           {/* New Offer Form */}
           {canMakeOffer && (
             <form onSubmit={handleSubmit}>

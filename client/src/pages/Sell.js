@@ -9,6 +9,7 @@ import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarS
 import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
 import { countries, formatPrice } from '../utils/helpers';
 import { useTheme } from '../context/ThemeContext';
+import { getFeatureFlags } from '../services/features';
 
 const steps = [
   { id: 'photos', label: 'Photos', icon: FaCamera },
@@ -71,6 +72,20 @@ const Sell = () => {
     NL: 9.99, SE: 9.99, PL: 9.99, ZA: 18.99, CN: 18.99,
     NZ: 18.99, CH: 9.99,
   };
+
+  // Feature 4 — auto-respond / enterprise auto-offer (least price in listing currency).
+  const [autoRespondEnabled, setAutoRespondEnabled] = useState(false);
+  const [autoRespondMinPrice, setAutoRespondMinPrice] = useState('');
+  const [autoOfferToLikers, setAutoOfferToLikers] = useState(false);
+
+  // Feature 2 — international shipping flag. When disabled the toggle is
+  // greyed out and listing creation stays domestic-only.
+  const [intlShippingAllowed, setIntlShippingAllowed] = useState(true);
+  useEffect(() => {
+    getFeatureFlags()
+      .then((flags) => setIntlShippingAllowed(flags.internationalShippingEnabled !== false))
+      .catch(() => { /* keep enabled by default */ });
+  }, []);
   const defaultShippingLabels = {
     US: 'Domestic (USPS)', CA: 'North America', GB: 'Europe', DE: 'Europe',
     FR: 'Europe', AU: 'Asia-Pacific', JP: 'Asia-Pacific', IN: 'Asia-Pacific',
@@ -182,6 +197,14 @@ const Sell = () => {
       if (enableBoost && selectedBoostTier) {
         data.append('boostTier', selectedBoostTier);
         data.append('boostDuration', boostDuration);
+      }
+
+      // Feature 4 — auto-respond / enterprise auto-offer (least price).
+      data.append('autoRespondEnabled', autoRespondEnabled ? 'true' : 'false');
+      if (autoRespondEnabled) {
+        if (autoRespondMinPrice) data.append('autoRespondMinPrice', autoRespondMinPrice);
+        data.append('autoRespondCurrency', currency || 'USD');
+        data.append('autoRespondAutoOfferToLikers', autoOfferToLikers ? 'true' : 'false');
       }
       
       const res = await api.post('/listings', data, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -361,7 +384,8 @@ const Sell = () => {
               <div className="form-group"><label className="form-label">Ships From</label><select name="shipsFrom" value={formData.shipsFrom} onChange={handleChange} className="form-input">{countries.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Weight</label><div style={{ display: 'flex', gap: 8 }}><input type="number" name="weight" value={formData.weight} onChange={handleChange} min="0.1" step="0.1" className="form-input" style={{ flex: 1 }} /><select name="weightUnit" value={formData.weightUnit} onChange={handleChange} className="form-input" style={{ width: 80 }}><option value="kg">kg</option><option value="lb">lb</option><option value="oz">oz</option></select></div></div>
               <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="domesticShipping" checked={formData.domesticShipping} onChange={e => setFormData(prev => ({ ...prev, domesticShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> Domestic</label></div>
-              <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="internationalShipping" checked={formData.internationalShipping} onChange={e => setFormData(prev => ({ ...prev, internationalShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> International</label></div>
+              <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="internationalShipping" checked={formData.internationalShipping && intlShippingAllowed} disabled={!intlShippingAllowed} onChange={e => setFormData(prev => ({ ...prev, internationalShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> International</label>
+                {!intlShippingAllowed && <p className="form-hint" style={{ color: 'var(--td-text-tertiary)' }}>International shipping is currently unavailable.</p>}</div>
                <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="freeShipping" checked={formData.freeShipping} onChange={e => setFormData(prev => ({ ...prev, freeShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> Free Shipping</label></div>
                <div className="form-group full-width">
                  <label className="form-label">Shipping Fee ({currency || 'USD'})</label>
@@ -397,6 +421,60 @@ const Sell = () => {
             <div className="form-grid">
               <div className="form-group"><label className="form-label">Listing Price * ({currency || 'USD'})</label><input type="number" name="price" value={formData.price} onChange={handleChange} placeholder="0.00" min="0" step="0.01" required className="form-input" />{formData.price > 0 && <p className="form-hint">You'll earn ~{formatPrice(formData.price * 0.9, currency || 'USD')} after 10% fee</p>}</div>
               <div className="form-group"><label className="form-label">Original Price</label><input type="number" name="originalPrice" value={formData.originalPrice} onChange={handleChange} placeholder="0.00" min="0" step="0.01" className="form-input" /></div>
+            </div>
+
+            {/* Feature 4 — Auto Respond (enterprise auto-offer). Only the
+                listing author configures this; buyers see instant-offer hints
+                on the listing page. */}
+            <div style={{
+              padding: 'var(--td-space-md)',
+              background: autoRespondEnabled ? 'rgba(255, 56, 92, 0.06)' : 'var(--td-surface)',
+              borderRadius: 'var(--td-radius-sm)',
+              border: `2px solid ${autoRespondEnabled ? 'var(--td-primary)' : 'var(--td-border)'}`,
+              marginTop: 'var(--td-space-md)',
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={autoRespondEnabled}
+                  onChange={(e) => setAutoRespondEnabled(e.target.checked)}
+                  style={{ accentColor: 'var(--td-primary)', width: 20, height: 20 }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>Auto Respond — instant offers (Enterprise)</div>
+                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
+                    Set the least price you'll accept. Offers at/above it are auto-accepted; lower offers get an automatic counter at your least price.
+                  </div>
+                </div>
+              </label>
+              {autoRespondEnabled && (
+                <div className="form-grid" style={{ marginTop: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Least price you'll accept * ({currency || 'USD'})</label>
+                    <input
+                      type="number"
+                      value={autoRespondMinPrice}
+                      onChange={(e) => setAutoRespondMinPrice(e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                      className="form-input"
+                    />
+                    <p className="form-hint">Must be in the listing currency and no higher than the listing price.</p>
+                  </div>
+                  <div className="form-group">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 28 }}>
+                      <input
+                        type="checkbox"
+                        checked={autoOfferToLikers}
+                        onChange={(e) => setAutoOfferToLikers(e.target.checked)}
+                        style={{ accentColor: 'var(--td-primary)', width: 18, height: 18 }}
+                      />
+                      <span style={{ fontSize: 13 }}>Auto-send this offer to anyone who likes the item</span>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 12, marginTop: 'var(--td-space-lg)' }}>
               <button type="button" className="btn btn-outline" onClick={() => setCurrentStep(2)}>← Back</button>

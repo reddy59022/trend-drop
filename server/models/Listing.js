@@ -176,6 +176,19 @@ const listingSchema = new mongoose.Schema({
     durationDays: { type: Number, default: 14 },
     fee: { type: Number, default: 0 },
     priorityScore: { type: Number, default: 0 },
+    // Feature 3 — who boosted this listing:
+    //   'listing' → individual boost (default; also after shop revert)
+    //   'shop'    → boost applied ONLY by the seller's "boost whole shop"
+    //   'both'    → individually boosted AND shop-boosted
+    source: { type: String, enum: ['listing', 'shop', 'both', ''], default: 'listing' },
+    // Set when the seller bought an individual boost for THIS listing
+    // (never flipped by the shop-toggle materializer — drives source).
+    individuallyBoosted: { type: Boolean, default: false },
+    // Set when the shop toggle materialized onto this listing.
+    shopBoostApplied: { type: Boolean, default: false },
+    // Pre-shop values so a 'both' listing can revert cleanly.
+    originalTier: { type: String, default: '' },
+    originalPriorityScore: { type: Number, default: 0 },
     // ITEM-LEVEL BOOST FEE LEDGER
     // Boost fees are tied to THIS listing only — never cross-subsidized
     // from a seller's other earnings. Every sale adds to `owed`; every
@@ -202,6 +215,20 @@ const listingSchema = new mongoose.Schema({
   // Track when offers were shared to likers
   offerSharedAt: {
     type: Date,
+  },
+  // Feature 4 — Auto-respond / enterprise auto-offer.
+  // Sellers set a LEAST price they will accept. When enabled:
+  //   - offers >= least price are auto-accepted
+  //   - offers < least price are auto-countered to the least price
+  //   - (optional) likers automatically receive an accepted offer at the
+  //     least price
+  // The least price is always expressed in the listing's currency.
+  autoRespond: {
+    enabled: { type: Boolean, default: false },
+    minPrice: { type: Number, min: 0, default: 0 },
+    currency: { type: String, default: 'USD' },
+    autoOfferToLikers: { type: Boolean, default: false },
+    message: { type: String, default: '', maxlength: 200 },
   },
 }, { timestamps: true });
 

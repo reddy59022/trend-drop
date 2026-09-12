@@ -525,6 +525,24 @@ async function expireOffers() {
 }
 
 // ──────────────────────────────────────────────
+// JOB 9: Auto-Expire Shop Boosts (daily at 4:00 AM)
+// Feature 3 — expired "boost whole shop" toggles are turned off and the
+// listings revert to their individual boost state.
+// ──────────────────────────────────────────────
+async function expireShopBoosts() {
+  try {
+    const { expireExpiredShopBoosts } = require('../services/shopBoostService');
+    const count = await expireExpiredShopBoosts();
+    if (count > 0) {
+      console.log(`[CRON] Auto-expired ${count} shop boost(s)`);
+    }
+    return count;
+  } catch (error) {
+    console.error('[CRON] Error expiring shop boosts:', error.message);
+  }
+}
+
+// ──────────────────────────────────────────────
 // Initialize all cron jobs
 // ──────────────────────────────────────────────
 function initCronJobs() {
@@ -589,6 +607,13 @@ function initCronJobs() {
     expireOffers();
   });
   console.log('[CRON] Offer auto-expiration scheduled (every 30 minutes)');
+
+  // Job 9: Auto-expire shop boosts daily at 4:00 AM
+  // '0 4 * * *' = at 4:00 AM every day
+  cron.schedule('0 4 * * *', () => {
+    expireShopBoosts();
+  });
+  console.log('[CRON] Shop boost auto-expiration scheduled (daily at 4:00 AM)');
 }
 
 module.exports = {
@@ -601,4 +626,5 @@ module.exports = {
   activateAuctions,
   closeAuctions,
   expireOffers,
+  expireShopBoosts,
 };

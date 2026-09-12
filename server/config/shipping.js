@@ -351,6 +351,20 @@ const simulateTrackingUpdate = (currentStatus, daysSinceLabel) => {
   return currentStatus;
 };
 
+// ============================================================
+// International shipping allowance (Feature 2)
+// Flag: INTERNATIONAL_SHOPPING_ENABLED (default OFF = domestic-only).
+// ============================================================
+const { isInternationalShippingEnabled } = require('./features');
+
+// Whether a shipment from fromCountry to toCountry is permitted.
+// Same-country is ALWAYS allowed; cross-country requires the flag ON.
+const isInternationalAllowed = (fromCountry, toCountry) => {
+  if (!fromCountry || !toCountry) return true;
+  if (String(fromCountry).toUpperCase() === String(toCountry).toUpperCase()) return true;
+  return isInternationalShippingEnabled();
+};
+
 module.exports = {
   carriers,
   shippingZones,
@@ -361,4 +375,5 @@ module.exports = {
   generateLabel,
   trackingStatuses,
   simulateTrackingUpdate,
+  isInternationalAllowed,
 };

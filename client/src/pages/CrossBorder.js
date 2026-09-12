@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaGlobeAmericas, FaPlus, FaSave, FaBox } from 'react-icons/fa';
+import { FaGlobeAmericas, FaPlus, FaSave, FaBox, FaInfoCircle } from 'react-icons/fa';
 import api from '../services/api';
+import { getFeatureFlags } from '../services/features';
 
 const CrossBorder = () => {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ const CrossBorder = () => {
     shippingPartners: [],
   });
   const [availableCountries, setAvailableCountries] = useState([]);
+  const [intlShippingEnabled, setIntlShippingEnabled] = useState(true);
 
   useEffect(() => {
     if (!user) {
@@ -22,6 +24,9 @@ const CrossBorder = () => {
       return;
     }
     fetchData();
+    getFeatureFlags()
+      .then((flags) => setIntlShippingEnabled(flags.internationalShippingEnabled !== false))
+      .catch(() => { /* keep enabled by default */ });
   }, [user, navigate]);
 
   const fetchData = async () => {
@@ -109,6 +114,27 @@ const CrossBorder = () => {
           <p style={{ color: 'var(--td-text-secondary)', fontSize: 14 }}>
             Connect with international shipping partners for seamless cross-border sales
           </p>
+          {!intlShippingEnabled && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '12px 16px',
+                borderRadius: 'var(--td-radius-sm)',
+                border: '1px solid var(--td-border)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                fontSize: 13,
+                color: 'var(--td-text-secondary)',
+              }}
+            >
+              <FaInfoCircle size={16} style={{ color: 'var(--td-primary)' }} />
+              <span>
+                International shipping is currently disabled on the platform.
+                Cross-country sales will be enabled soon.
+              </span>
+            </div>
+          )}
         </div>
 
         <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>

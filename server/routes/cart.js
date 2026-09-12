@@ -168,6 +168,26 @@ router.post('/checkout', auth, async (req, res) => {
 
     const toCountry = shippingAddress?.country || buyer.country || 'US';
 
+    // ============================================================
+    // Feature 2 — International shipping flag.
+    // When disabled, every item in the cart may only ship WITHIN the
+    // seller's own country. Validated for ALL items before anything is
+    // created so a mixed cart never partially commits.
+    // ============================================================
+    const { isInternationalAllowed } = require('../config/shipping');
+    for (const item of cart.items) {
+      const l = await Listing.findById(item.listing._id || item.listing);
+      if (!l) continue;
+      const s = await User.findById(l.seller).select('country');
+      const sellerCountry = s?.country || l.shipsFrom || 'US';
+      if (!isInternationalAllowed(sellerCountry, toCountry)) {
+        return res.status(400).json({
+          supported: false,
+          message: "International shipping is currently disabled. Items can only be shipped within the seller's country.",
+        });
+      }
+    }
+
     // Process each item in cart
     const createdTransactions = [];
 

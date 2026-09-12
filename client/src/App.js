@@ -1,5 +1,5 @@
-import React, { Suspense, lazy, useEffect } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import React, { Suspense, lazy, useEffect, useRef } from 'react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { isNative } from './services/native';
 import { deepLinkPath, isOAuthCallbackUrl, isAppPath } from './services/deepLinks';
@@ -11,6 +11,7 @@ import Footer from './components/Footer';
 import MobileTabBar from './components/MobileTabBar';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
+import { checkRegionStatus } from './services/marketAccess';
 
 // Performance: Lazy load pages - they only load when navigated to
 const Home = lazy(() => import('./pages/Home'));
@@ -71,6 +72,7 @@ const CreateAuctionPage = lazy(() => import('./pages/CreateAuction'));
 const AuctionDetail = lazy(() => import('./pages/AuctionDetail'));
 const SellerBadgesPage = lazy(() => import('./pages/SellerBadges'));
 const FraudProtectionPage = lazy(() => import('./pages/FraudProtection'));
+const UnsupportedRegionPage = lazy(() => import('./pages/UnsupportedRegion'));
 
 const PageLoader = () => (
   <div className="page-loader">
@@ -128,12 +130,38 @@ const NativeAppLifecycle = () => {
 };
 
 function App() {
-  const { loading, registerPushToken } = useAuth();
+  const { loading, registerPushToken, user } = useAuth();
+  const navigate = useNavigate();
+  const regionCheckedFor = useRef(null);
+
   useEffect(() => {
     if (!isNative()) return;
     const t = setTimeout(() => { registerPushToken(); }, 3000);
     return () => clearTimeout(t);
   }, [registerPushToken]);
+
+  // ============================================================
+  // Market availability gate (Feature 1) — USA + Europe only.
+  // Checks the user's region once per country; unsupported regions
+  // are redirected to the enterprise "not available in your area"
+  // screen. Anonymous visitors with no known region pass through —
+  // the server enforces the region gate authoritatively.
+  // ============================================================
+  useEffect(() => {
+    if (loading || typeof window === 'undefined' || !window.location) return;
+    if (window.location.pathname === '/unavailable') return;
+    const stored = localStorage.getItem('td_region_country');
+    const country = (user && user.country) || stored;
+    if (!country) return;
+    const countryKey = String(country).toUpperCase();
+    if (regionCheckedFor.current === countryKey) return;
+    regionCheckedFor.current = countryKey;
+    checkRegionStatus(user)
+      .then((status) => {
+        if (status && status.supported === false) navigate('/unavailable');
+      })
+      .catch(() => { /* fail open — server still enforces */ });
+  }, [loading, user, navigate]);
 
   if (loading) {
     return (
@@ -220,6 +248,9 @@ function App() {
 
                 {/* Admin-only routes */}
                 <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>} />
+
+                {/* Region-unavailable screen (Feature 1) */}
+                <Route path="/unavailable" element={<UnsupportedRegionPage />} />
 
                 {/* 404 catch-all */}
                 <Route path="*" element={<NotFoundPage />} />

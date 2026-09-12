@@ -168,8 +168,32 @@ app.use('/api', (req, res, next) => {
 const { assertObjectId } = require('./utils/validators');
 app.use('/api', assertObjectId);
 
+// ===========================================================================
+// Market availability gate (Feature 1) — USA + European countries only.
+// Enforced for every /api route EXCEPT the ones a blocked visitor must be
+// able to reach: auth (so existing unsupported-country users can still log
+// in and see the region message), marketplace config (so the client can
+// render the block screen), and public feature config.
+// ===========================================================================
+const { requireSupportedRegion } = require('./middleware/marketAccess');
+app.use('/api', (req, res, next) => {
+  if (
+    req.path.startsWith('/api/auth') ||
+    req.path.startsWith('/api/marketplace') ||
+    req.path.startsWith('/api/config')
+  ) {
+    return next();
+  }
+  return requireSupportedRegion(req, res, next);
+});
+
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
+// Marketplace region endpoints (never region-gated)
+app.use('/api/marketplace', require('./routes/marketplace'));
+// Public feature flags (Feature 2) — never region-gated so blocked-region
+// clients can still read what features they would get.
+app.use('/api/config', require('./routes/features'));
 // Bulk listing management routes MUST be mounted before main listings route to avoid ID conflict
 app.use('/api/listings', require('./routes/bulkListings'));
 app.use('/api/listings', require('./routes/listings'));
@@ -191,6 +215,8 @@ app.use('/api/payouts', require('./routes/payouts'));
 app.use('/api/shipping', require('./routes/shipping'));
 // Boost configuration endpoint (client needs to fetch tier info, fees, etc.)
 app.use('/api/boost', require('./routes/boost'));
+// Shop Boost routes (Feature 3 — boost whole shop toggle)
+app.use('/api/shop-boost', require('./routes/shopBoost'));
 // Admin routes (user management, platform oversight)
 app.use('/api/admin', require('./routes/admin'));
 // Saved search routes
@@ -331,6 +357,8 @@ if (process.env.NODE_ENV === 'production') {
         avatar: pending.avatar,
         emailVerified: true,
         authProvider: 'email',
+        // Feature 1: propagate the country chosen at registration.
+        country: pending.country || 'US',
       });
       await PendingUser.deleteOne({ _id: pending._id });
       return res.redirect(`${process.env.FRONTEND_URL}/login?verified=1`);

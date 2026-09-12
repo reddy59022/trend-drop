@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { getPayoutDashboard, getCommissionInfo, getRatingsBySeller, getBundleRules, createBundleRule, updateBundleRule, deleteBundleRule, getPromos, createPromo, updatePromo, deletePromo, sendOfferToLikers, getBulkOffers } from '../services/api';
 import StarRating from '../components/StarRating';
+import ShopBoostCard from '../components/ShopBoostCard';
 import { formatPrice } from '../utils/helpers';
 import { useTheme } from '../context/ThemeContext';
 import { FaStore, FaDollarSign, FaChartLine, FaHistory, FaRocket, FaQuestionCircle, FaTags, FaBoxes, FaBullhorn, FaTrash, FaPlus, FaEdit, FaTimes, FaCheckCircle, FaSpinner } from 'react-icons/fa';
@@ -233,6 +234,9 @@ const SellerDashboard = () => {
               </div>
             ))}
           </div>
+
+          {/* Feature 3 — Boost Whole Shop toggle */}
+          <ShopBoostCard />
 
           {/* Reviews & Quick Links */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 'var(--td-space-lg)' }}>

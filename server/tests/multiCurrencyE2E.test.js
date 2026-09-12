@@ -2,7 +2,7 @@
  * MULTI-CURRENCY FULL E2E MATRIX — 5 currencies, every scenario mixed
  *
  * Proves zero bugs across the ENTIRE checkout + settlement flow:
- *  - Big Bang Matrix: 1 buyer, 5 sellers, USD/CAD/GBP/EUR/JPY, 1 order,
+ *  - Big Bang Matrix: 1 buyer, 5 sellers, USD/GBP/EUR (supported markets only), 1 order,
  *    5 shipments, mixed quantities — every penny verbatim.
  *  - Direction Matrix: 6 seller→buyer country pairs (domestic + cross-border)
  *    with exact per-currency charges, fees, earnings.
@@ -39,7 +39,7 @@ const US_ADDRESS = {
 // ---------- Deterministic expectations (independent arithmetic) ----------
 function zoneOf(from, to) {
   if (from === to) return 1;
-  const cont = { US: 'NA', CA: 'NA', GB: 'EU', DE: 'EU', JP: 'ASIA' };
+  const cont = { US: 'NA', GB: 'EU', DE: 'EU', FR: 'EU', ES: 'EU' };
   return cont[from] === cont[to] ? 2 : 3;
 }
 function expectedShipping(fromCountry, toCountry, weightKg, price) {
@@ -56,7 +56,7 @@ function expectedShipping(fromCountry, toCountry, weightKg, price) {
   const insurance = round2(price * 0.02);
   return round2(base + weightCharge + insurance);
 }
-const CURRENCY_LIMITS = { US: [0.5, 500, 'USD'], CA: [0.75, 650, 'CAD'], GB: [0.4, 400, 'GBP'], DE: [0.5, 450, 'EUR'], JP: [50, 75000, 'JPY'] };
+const CURRENCY_LIMITS = { US: [0.5, 500, 'USD'], FR: [0.5, 450, 'EUR'], GB: [0.4, 400, 'GBP'], DE: [0.5, 450, 'EUR'], ES: [0.5, 450, 'EUR'] };
 function expectedFee(country, price) {
   const [min, max] = CURRENCY_LIMITS[country];
   return Math.max(min, Math.min(round2(price * 0.08), max));
@@ -126,7 +126,7 @@ afterAll(async () => {
   // Do NOT disconnect — jest.setup.js afterAll cleans DB between files
 });
 
-describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5 shipments', () => {
+describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/GBP/EUR) + 1 order + 5 shipments', () => {
   let orderId;
 
   beforeAll(async () => {
@@ -138,10 +138,10 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5
     // Seed one seller per currency
     for (const s of [
       { name: 'MXUS', country: 'US', price: 100, stock: 8 },
-      { name: 'MXCA', country: 'CA', price: 100, stock: 7 },
+      { name: 'MXFR', country: 'FR', price: 100, stock: 7 },
       { name: 'MXGB', country: 'GB', price: 100, stock: 6 },
       { name: 'MXDE', country: 'DE', price: 100, stock: 5 },
-      { name: 'MXJP', country: 'JP', price: 100, stock: 4 },
+      { name: 'MXES', country: 'ES', price: 100, stock: 4 },
     ]) {
       const u = await makeUser(s.name, mkEmail(`seller_${s.country}`), s.country, CURRENCY_LIMITS[s.country][2]);
       const l = await makeListing(u.user, s.price, s.stock, 1); // 1kg each
@@ -151,8 +151,8 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5
     }
   });
 
-  test('G1 5-currency mixed-qty checkout: order totals EXACT (subtotal 900, shipping 126.20, protection 45, total 1071.20)', async () => {
-    const quantities = { US: 2, CA: 2, GB: 1, DE: 3, JP: 1 };
+  test('G1 5-currency mixed-qty checkout: order totals EXACT (subtotal 900, shipping 141.20, protection 45, total 1086.20)', async () => {
+    const quantities = { US: 2, FR: 2, GB: 1, DE: 3, ES: 1 };
     const items = sellerRefs.map((s) => ({ listingId: s.listing._id, quantity: quantities[s.country] }));
     const pi = mockPi();
     const res = await confirmBatch(buyerToken, items, pi);
@@ -164,10 +164,10 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5
 
     expect(order.orderNumber).toMatch(/^TD-/);
     expect(order.totals.subtotal).toBe(900);
-    expect(round2(order.totals.shipping)).toBe(126.2);
+    expect(round2(order.totals.shipping)).toBe(141.2);
     expect(order.totals.protectionFees).toBe(45);
     expect(order.totals.discounts).toBe(0);           // NO promo → NOTHING may hide in "discounts"
-    expect(order.totals.total).toBe(1071.2);          // what buyer's card is actually charged
+    expect(order.totals.total).toBe(1086.2);          // what buyer's card is actually charged
     expect(order.payment.status).toBe('captured');
     expect(order.payment.paymentIntentId).toBe(pi);
     expect(order.shipments).toHaveLength(5);
@@ -176,13 +176,13 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5
   });
 
   test('G2 every seller is credited EXACTLY in their own currency (no USD leakage, no qty leak)', async () => {
-    const quantities = { US: 2, CA: 2, GB: 1, DE: 3, JP: 1 };
+    const quantities = { US: 2, FR: 2, GB: 1, DE: 3, ES: 1 };
     const expected = {
       US: expectedBreakdown('US', 'US', 100, 2, 2),   // combined weight 2kg
-      CA: expectedBreakdown('CA', 'US', 100, 2, 2),
+      FR: expectedBreakdown('FR', 'US', 100, 2, 2),
       GB: expectedBreakdown('GB', 'US', 100, 1, 1),
       DE: expectedBreakdown('DE', 'US', 100, 3, 3),
-      JP: expectedBreakdown('JP', 'US', 100, 1, 1),
+      ES: expectedBreakdown('ES', 'US', 100, 1, 1),
     };
     for (const s of sellerRefs) {
       const exp = expected[s.country];
@@ -211,7 +211,7 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5
   });
 
   test('G3 inventory decremented EXACTLY per country (8→6, 7→5, 6→5, 5→2, 4→3)', async () => {
-    const after = { US: 6, CA: 5, GB: 5, DE: 2, JP: 3 };
+    const after = { US: 6, FR: 5, GB: 5, DE: 2, ES: 3 };
     for (const s of sellerRefs) {
       const l = await Listing.findById(s.listing._id);
       expect(l.quantity).toBe(after[s.country]);
@@ -235,7 +235,7 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5
 
   test('G5 order virtuals + API shape: totalAmount mirrors totals.total for confirmation UI', async () => {
     const dbOrder = await Order.findById(orderId);
-    expect(dbOrder.totalAmount).toBe(1071.2);
+    expect(dbOrder.totalAmount).toBe(1086.2);
     const res = await request(app).get('/api/orders').set('Authorization', `Bearer ${buyerToken}`);
     expect(res.status).toBe(200);
     const buyerOrder = res.body.orders.find((o) => o._id === orderId);
@@ -243,7 +243,7 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5
     expect(buyerOrder.role).toBe('buyer');
     expect(buyerOrder.allowedActions).toContain('view_order');
     expect(buyerOrder.allowedActions).toContain('view_tracking');
-    expect(round2(buyerOrder.totalAmount)).toBe(1071.2);
+    expect(round2(buyerOrder.totalAmount)).toBe(1086.2);
   });
 
   test('G6 per-seller shipment isolation: 403 for wrong seller, ship own only, status derivation', async () => {
@@ -295,11 +295,11 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/CAD/GBP/EUR/JPY) + 1 order + 5
 describe('DIRECTION MATRIX: every seller→buyer country pair charges/settles EXACTLY', () => {
   const pairs = [
     { seller: 'US', buyer: 'US', price: 60, qty: 1, weight: 0.5 },   // domestic
-    { seller: 'CA', buyer: 'CA', price: 60, qty: 1, weight: 0.5 },   // domestic CAD
+    { seller: 'FR', buyer: 'FR', price: 60, qty: 1, weight: 0.5 },   // domestic EUR
     { seller: 'GB', buyer: 'GB', price: 60, qty: 1, weight: 0.5 },   // domestic GBP
     { seller: 'US', buyer: 'GB', price: 60, qty: 1, weight: 0.5 },   // cross-atlantic
-    { seller: 'CA', buyer: 'DE', price: 60, qty: 1, weight: 0.5 },   // NA→EU
-    { seller: 'JP', buyer: 'US', price: 60, qty: 1, weight: 0.5 },   // ASIA→NA
+    { seller: 'FR', buyer: 'DE', price: 60, qty: 1, weight: 0.5 },   // EU→EU
+    { seller: 'ES', buyer: 'US', price: 60, qty: 1, weight: 0.5 },   // EU→NA
   ];
 
   beforeAll(async () => {
@@ -343,12 +343,12 @@ describe('DIRECTION MATRIX: every seller→buyer country pair charges/settles EX
     }
   });
 
-  test('D2 domestic CA buyer pays nothing in USD — totalPaid uses CAD fee schedule', async () => {
-    const p = pairs[1]; // CA→CA
+  test('D2 domestic FR buyer pays nothing in USD — totalPaid uses EUR fee schedule', async () => {
+    const p = pairs[1]; // FR→FR
     const txns = await Transaction.find({ seller: p.sellerId });
     expect(txns).toHaveLength(1);
-    expect(txns[0].currency).toBe('CAD');
-    expect(txns[0].paymentBreakdown.platformFee).toBeGreaterThanOrEqual(0.75); // CAD min fee
+    expect(txns[0].currency).toBe('EUR');
+    expect(txns[0].paymentBreakdown.platformFee).toBeGreaterThanOrEqual(0.5); // EUR min fee
   });
 });
 

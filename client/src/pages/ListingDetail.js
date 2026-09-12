@@ -371,6 +371,34 @@ const ListingDetail = () => {
                 <FaHeart /> {likeCount} likes
               </div>
             </div>
+            {/* Feature 4 — auto-respond badge visible to buyers (not the owner).
+                Shows the instant-offer guarantee + least price in listing currency. */}
+            {!isOwner && listing.autoRespond?.enabled && listing.autoRespond?.minPrice != null && (
+              <div className="glass-card" style={{
+                padding: '10px 14px', marginTop: 12,
+                border: '1px solid var(--td-success)',
+                background: 'rgba(0, 200, 83, 0.06)',
+                fontSize: 13, display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{ fontSize: 16 }}>⚡</span>
+                <span>
+                  <strong>Instant offers enabled.</strong>{' '}
+                  {formatPrice(listing.autoRespond.minPrice, listing.currency || 'USD')} or more is accepted automatically;
+                  lower offers get an instant counter at {formatPrice(listing.autoRespond.minPrice, listing.currency || 'USD')}.
+                </span>
+              </div>
+            )}
+            {/* Feature 4 — owner-only view of their own auto-respond config. */}
+            {isOwner && listing.autoRespond?.enabled && (
+              <div className="glass-card" style={{
+                padding: '10px 14px', marginTop: 12,
+                border: '1px dashed var(--td-border)',
+                fontSize: 13, color: 'var(--td-text-secondary)',
+              }}>
+                ⚙️ Auto Respond is ON for this listing — least price {formatPrice(listing.autoRespond.minPrice, listing.currency || 'USD')}
+                {listing.autoRespond.autoOfferToLikers ? ' · auto-offer sent to likers' : ''}. Only you can see this.
+              </div>
+            )}
           </div>
 
           {/* Meta Grid */}

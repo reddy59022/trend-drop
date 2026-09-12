@@ -16,6 +16,9 @@ const PendingUserSchema = new mongoose.Schema({
   expiresAt: { type: Date, required: true },
   // Backwards-compatible alias used by verification lookups.
   verificationTokenExpires: { type: Date },
+  // Country selected at registration (Feature 1: market availability).
+  // Propagated to the User document on email verification.
+  country: { type: String, default: 'US', maxlength: 2 },
 }, { timestamps: true });
 
 // Hash the password whenever it is set/changed on a PendingUser document.

@@ -56,13 +56,14 @@ router.get('/feed', auth, async (req, res) => {
     const { page = 1, limit = 20 } = req.query;
     const user = await User.findById(req.user._id);
 
+    // Feature 3 — boosted (incl. shop-boosted) listings surface first, then newest.
     const listings = await Listing.find({
       seller: { $in: user.following },
       available: true,
       sold: false,
     })
       .populate('seller', 'name avatar')
-      .sort({ createdAt: -1 })
+      .sort({ 'boost.priorityScore': -1, createdAt: -1 })
       .limit(Number(limit))
       .skip((Number(page) - 1) * Number(limit));
 
@@ -73,7 +74,11 @@ router.get('/feed', auth, async (req, res) => {
     });
 
     res.json({
-      listings,
+      listings: listings.map((l) => {
+        const doc = l.toObject ? l.toObject() : l;
+        doc.boosted = doc.boost && doc.boost.active === true;
+        return doc;
+      }),
       totalPages: Math.ceil(total / Number(limit)),
       currentPage: Number(page),
       total,

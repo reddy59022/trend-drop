@@ -5,9 +5,21 @@ const User = require('../models/User');
 const { auth, optionalAuth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { paginate } = require('../utils/pagination');
+const { isInternationalShippingEnabled } = require('../config/features');
+const { hasActiveShopBoost, applyShopBoostToSeller } = require('../services/shopBoostService');
+const { parseAutoRespondBody, buildAutoRespondForCreate } = require('../services/autoRespondService');
 
-const LISTING_LIST_FIELDS = 'title price originalPrice images videoUrl seller category brand size condition likes sold createdAt status';
+const LISTING_LIST_FIELDS = 'title price originalPrice images videoUrl seller category brand size condition likes sold createdAt status boost';
 const USER_PUBLIC_FIELDS = 'name avatar';
+
+// Feature 3 — expose a computed `boosted` boolean on catalog docs so cards
+// can render the boost badge (works for individual + shop-boosted items).
+const markBoosted = (doc) => {
+  if (doc && typeof doc === 'object') {
+    doc.boosted = doc.boost && doc.boost.active === true;
+  }
+  return doc;
+};
 
 // Listing image uploads.
 // In test mode (or when Cloudinary credentials are absent) files are NOT
@@ -65,7 +77,7 @@ router.get('/', optionalAuth, async (req, res) => {
       ];
     }
 
-    let sortOption = { createdAt: -1 };
+    let sortOption = { 'boost.priorityScore': -1, createdAt: -1 }; // Feature 3: boosted first
     if (sort === 'price_low') sortOption = { price: 1 };
     else if (sort === 'price_high') sortOption = { price: -1 };
     else if (sort === 'popular') sortOption = { likesCount: -1 };
@@ -80,6 +92,8 @@ router.get('/', optionalAuth, async (req, res) => {
       populate: { path: 'seller', select: USER_PUBLIC_FIELDS },
       lean: true,
     });
+
+    if (Array.isArray(result.docs)) result.docs.forEach(markBoosted);
 
     res.json({ listings: result.docs, ...result.pagination });
   } catch (error) {
@@ -111,12 +125,14 @@ router.get('/search', optionalAuth, async (req, res) => {
       page: pageNum,
       limit: limitNum,
       maxLimit: 50,
-      sort: { createdAt: -1 },
+      sort: { 'boost.priorityScore': -1, createdAt: -1 },
       filter: query,
       select: LISTING_LIST_FIELDS,
       populate: { path: 'seller', select: USER_PUBLIC_FIELDS },
       lean: true,
     });
+
+    if (Array.isArray(result.docs)) result.docs.forEach(markBoosted);
     res.json({ listings: result.docs, ...result.pagination });
   } catch (error) {
     console.error(error);
@@ -239,6 +255,15 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       return res.status(400).json({ message: 'Minimum listing price is $5.00' });
     }
 
+    // Feature 2 — international shipping flag: when disabled, listings may
+    // NOT declare cross-country shipping.
+    const wantsInternational = internationalShipping === 'true' || internationalShipping === true;
+    if (wantsInternational && !isInternationalShippingEnabled()) {
+      return res.status(400).json({
+        message: "International shipping is currently disabled. This listing can only ship within the seller's country.",
+      });
+    }
+
     let boostData = { active: false, tier: '', durationDays: 14, fee: 0, priorityScore: 0 };
 
     if (boostTier && ['standard', 'premium', 'elite'].includes(boostTier)) {
@@ -257,6 +282,14 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
     }
 
     const isDraft = status === 'draft';
+
+    // Feature 4 — auto-respond / enterprise auto-offer at creation.
+    const arParsed = parseAutoRespondBody(req.body);
+    const arBuild = buildAutoRespondForCreate(arParsed, { price: Number(price), currency: currency || 'USD' });
+    if (arBuild.error) {
+      return res.status(400).json({ message: arBuild.error });
+    }
+
     const listing = await Listing.create({
       seller: req.user._id,
       title,
@@ -284,10 +317,17 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       available: !isDraft,
       quantity: quantity ? Number(quantity) : 1,
       boost: boostData,
+      autoRespond: arBuild.autoRespond,
     });
 
-    await listing.populate('seller', 'name avatar');
-    res.status(201).json({ listing });
+    // Feature 3 — if the seller has an active shop boost, the new listing
+    // joins the shop boost (basic tier, highest priority) automatically.
+    if (await hasActiveShopBoost(req.user._id)) {
+      await applyShopBoostToSeller(req.user._id);
+    }
+
+    const savedListing = await Listing.findById(listing._id).populate('seller', 'name avatar');
+    res.status(201).json({ listing: savedListing });
   } catch (error) {
     console.error(error);
     if (error.name === 'ValidationError') {
@@ -395,7 +435,16 @@ router.put('/:id', auth, (req, res, next) => {
 
     const shippingUpdate = {};
     if (domesticShipping !== undefined) shippingUpdate.domestic = domesticShipping === 'true' || domesticShipping === true;
-    if (internationalShipping !== undefined) shippingUpdate.international = internationalShipping === 'true' || internationalShipping === true;
+    if (internationalShipping !== undefined) {
+      shippingUpdate.international = internationalShipping === 'true' || internationalShipping === true;
+      // Feature 2 — international shipping flag: when disabled, listings may
+      // NOT switch on cross-country shipping.
+      if (shippingUpdate.international && !isInternationalShippingEnabled()) {
+        return res.status(400).json({
+          message: "International shipping is currently disabled. This listing can only ship within the seller's country.",
+        });
+      }
+    }
     if (freeShipping !== undefined) shippingUpdate.freeShipping = freeShipping === 'true' || freeShipping === true;
     if (shippingCost !== undefined) shippingUpdate.shippingCost = Number(shippingCost);
     
@@ -405,7 +454,7 @@ router.put('/:id', auth, (req, res, next) => {
 
     // Boost handling
     if (removeBoost === 'true' || removeBoost === true) {
-      updateData.boost = { active: false, tier: '', durationDays: 14, fee: 0, priorityScore: 0 };
+      updateData.boost = { active: false, tier: '', durationDays: 14, fee: 0, priorityScore: 0, individuallyBoosted: false };
     } else if (boostTier && ['standard', 'premium', 'elite'].includes(boostTier)) {
       const { calculateBoostFee } = require('../config/boost');
       const listingPrice = updateData.price || listing.price;
@@ -419,12 +468,29 @@ router.put('/:id', auth, (req, res, next) => {
         durationDays: duration,
         fee: boostInfo.fee,
         priorityScore: boostInfo.priorityScore,
+        individuallyBoosted: true, // Feature 3
       };
     } else if (updateData.price && listing.boost && listing.boost.active) {
       const { calculateBoostFee } = require('../config/boost');
       const boostInfo = calculateBoostFee(updateData.price, listing.boost.tier, listing.boost.durationDays || 14);
       const boostObj = listing.boost.toObject ? listing.boost.toObject() : listing.boost;
       updateData.boost = { ...boostObj, fee: boostInfo.fee };
+    }
+
+    // Feature 4 — auto-respond / enterprise auto-offer during edit.
+    const { buildAutoRespondForUpdate } = require('../services/autoRespondService');
+    const arParsedEdit = parseAutoRespondBody(req.body);
+    if (arParsedEdit.provided) {
+      const arBuildEdit = buildAutoRespondForUpdate(arParsedEdit, listing.autoRespond, {
+        effectivePrice: updateData.price || listing.price,
+        listingCurrency: listing.currency || 'USD',
+      });
+      if (arBuildEdit.error) {
+        return res.status(400).json({ message: arBuildEdit.error });
+      }
+      if (arBuildEdit.autoRespond) {
+        updateData.autoRespond = arBuildEdit.autoRespond;
+      }
     }
 
     const oldPrice = listing.price;
@@ -490,6 +556,13 @@ router.put('/:id', auth, (req, res, next) => {
       }
     }
 
+    // Feature 3 — if the seller has an active shop boost, keep the listing
+    // joined (e.g. after disabling/enabling individual boost or repricing).
+    if (await hasActiveShopBoost(listing.seller)) {
+      await applyShopBoostToSeller(listing.seller);
+      listing = await Listing.findById(listing._id).populate('seller', 'name avatar');
+    }
+
     res.json({ listing });
   } catch (error) {
     console.error(error);
@@ -541,7 +614,9 @@ router.post('/:id/boost', auth, async (req, res) => {
     if (listing.seller.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
-    if (listing.boost?.active) {
+    // Feature 3: a shop-boosted listing (source 'shop') may still be upgraded
+    // with an individual boost; an already-individually-boosted listing can't.
+    if (listing.boost?.active && (listing.boost.source || 'listing') !== 'shop') {
       return res.status(400).json({ message: 'Listing is already boosted' });
     }
 
@@ -556,12 +631,22 @@ router.post('/:id/boost', auth, async (req, res) => {
       durationDays: durationDays || 14,
       fee: boostInfo.fee,
       priorityScore: boostInfo.priorityScore,
+      source: listing.boost?.source || 'listing',
+      individuallyBoosted: true, // Feature 3: truthful individual-boost flag
     };
     await listing.save();
 
+    // Feature 3: keep the listing joined to an active shop boost (bumps
+    // priority to the shop-max level and marks the source 'both').
+    if (await hasActiveShopBoost(listing.seller)) {
+      await applyShopBoostToSeller(listing.seller);
+    }
+
+    const boosted = await Listing.findById(listing._id);
+
     res.json({
       message: `Listing boosted with ${boostInfo.tier}!`,
-      boost: listing.boost,
+      boost: boosted.boost,
       fee: boostInfo.fee,
       features: boostInfo.features,
     });
@@ -581,8 +666,14 @@ router.post('/:id/deactivate-boost', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    listing.boost = { active: false, tier: '', durationDays: 14, fee: 0, priorityScore: 0 };
+    listing.boost = { active: false, tier: '', durationDays: 14, fee: 0, priorityScore: 0, source: listing.boost?.source || 'listing', individuallyBoosted: false };
     await listing.save();
+
+    // Feature 3: if the seller's shop boost is active, the listing stays
+    // boosted (all items are shop-boosted) — only the individual part is removed.
+    if (await hasActiveShopBoost(listing.seller)) {
+      await applyShopBoostToSeller(listing.seller);
+    }
 
     res.json({ message: 'Boost deactivated' });
   } catch (error) {
@@ -638,6 +729,48 @@ router.post('/:id/like', auth, async (req, res) => {
             message: `${req.user.name} liked your listing "${listing.title}"`,
           });
           await seller.save();
+        }
+      }
+
+      // Feature 4 — likers automatically receive an accepted offer at the
+      // least price when the seller enabled auto-offer to likers.
+      if (liked && listing.autoRespond && listing.autoRespond.enabled === true
+        && listing.autoRespond.autoOfferToLikers === true
+        && Number(listing.autoRespond.minPrice) > 0
+        && listing.seller.toString() !== req.user._id.toString()) {
+        const Offer = require('../models/Offer');
+        const existingLikerOffer = await Offer.findOne({
+          listing: listing._id,
+          buyer: req.user._id,
+          status: { $in: ['pending', 'countered', 'buyer_countered', 'accepted'] },
+        });
+        if (!existingLikerOffer) {
+          const least = Number(listing.autoRespond.minPrice);
+          const likerOffer = await Offer.create({
+            listing: listing._id,
+            buyer: req.user._id,
+            seller: listing.seller,
+            amount: least,
+            currency: listing.currency || 'USD',
+            status: 'accepted',
+            acceptedPrice: least,
+            acceptedAt: new Date(),
+            acceptedBy: 'seller',
+            acceptedUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            buyerMessage: 'Auto-offer to liker',
+            counterHistory: [{ amount: least, counteredBy: 'seller', message: 'Auto-offer to liker' }],
+            lastCounterBy: 'seller',
+          });
+          const likerUser = await User.findById(req.user._id);
+          if (likerUser) {
+            likerUser.notifications.unshift({
+              type: 'offer',
+              from: listing.seller,
+              listing: listing._id,
+              message: `Good news! The seller sent you an offer of ${likerOffer.currency} ${least} on "${listing.title}". Proceed to purchase.`,
+            });
+            await likerUser.save();
+          }
         }
       }
     }

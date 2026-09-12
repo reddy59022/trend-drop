@@ -189,6 +189,13 @@ const Offers = () => {
             )}
           </div>
           <span className={`offer-status ${getStatusColor(offer.status)}`} style={{ marginTop: 8 }}>{getStatusLabel(offer.status)}</span>
+          {/* Feature 4 — auto-respond provenance: flag auto-accepted / auto-countered
+              offers so sellers and buyers can tell they were handled instantly. */}
+          {offer.autoResponded && (
+            <span className="offer-status" style={{ marginTop: 4, background: 'rgba(0, 200, 83, 0.12)', color: 'var(--td-success)', fontSize: 11 }}>
+              ⚡ Auto-respond {offer.status === 'accepted' ? '(auto-accepted)' : offer.status === 'countered' ? '(auto-countered)' : ''}
+            </span>
+          )}
           {(offer.status === 'pending' || offer.status === 'countered' || offer.status === 'buyer_countered') && !isOfferExpired(offer) && (
             <p style={{ fontSize: 11, color: 'var(--td-text-tertiary)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
               <FaClock size={10} /> {getTimeRemaining(offer)}
