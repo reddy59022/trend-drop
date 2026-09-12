@@ -53,17 +53,23 @@ router.get('/me/listings', auth, async (req, res) => {
 // GET /api/users/feed - Get feed from followed users
 router.get('/feed', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, sort } = req.query;
     const user = await User.findById(req.user._id);
 
-    // Feature 3 — boosted (incl. shop-boosted) listings surface first, then newest.
+    // Determine sort option based on user selection
+    let sortOption = { 'boost.priorityScore': -1, createdAt: -1 }; // Feature 3: boosted first
+    if (sort === 'price_low') sortOption = { price: 1 };
+    else if (sort === 'price_high') sortOption = { price: -1 };
+    else if (sort === 'popular') sortOption = { likesCount: -1 };
+    else if (sort === 'newest') sortOption = { createdAt: -1 };
+
     const listings = await Listing.find({
       seller: { $in: user.following },
       available: true,
       sold: false,
     })
       .populate('seller', 'name avatar')
-      .sort({ 'boost.priorityScore': -1, createdAt: -1 })
+      .sort(sortOption)
       .limit(Number(limit))
       .skip((Number(page) - 1) * Number(limit));
 
@@ -197,7 +203,8 @@ router.get('/:id/closet', async (req, res) => {
     let sortOption = { createdAt: -1 };
     if (sort === 'price_low') sortOption = { price: 1 };
     else if (sort === 'price_high') sortOption = { price: -1 };
-    else if (sort === 'popular') sortOption = { 'likes.length': -1 };
+    else if (sort === 'popular') sortOption = { likesCount: -1 };
+    else if (sort === 'newest') sortOption = { createdAt: -1 };
 
     const listings = await Listing.find({
       seller: req.params.id,

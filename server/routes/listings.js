@@ -81,6 +81,7 @@ router.get('/', optionalAuth, async (req, res) => {
     if (sort === 'price_low') sortOption = { price: 1 };
     else if (sort === 'price_high') sortOption = { price: -1 };
     else if (sort === 'popular') sortOption = { likesCount: -1 };
+    else if (sort === 'newest') sortOption = { createdAt: -1 };
 
     const result = await paginate(Listing, {
       page: pageNum,
