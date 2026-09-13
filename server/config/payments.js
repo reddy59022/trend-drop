@@ -176,6 +176,23 @@ const retrievePaymentIntent = async (paymentIntentId) => {
   return stripe.paymentIntents.retrieve(paymentIntentId);
 };
 
+// Strict intent lookup for fulfillment gates (Bug B2). Unlike
+// retrievePaymentIntent — which fabricates 'succeeded' for unknown ids in
+// mock mode — this returns the ACTUAL stored/real intent, or null when it
+// does not exist. Money-moving gates (e.g. cart checkout) must use this so a
+// fabricated/unknown id can never fulfil an order for free.
+const findPaymentIntent = async (paymentIntentId) => {
+  if (global.__mockPaymentIntents && global.__mockPaymentIntents[paymentIntentId]) {
+    return global.__mockPaymentIntents[paymentIntentId];
+  }
+  if (!stripe) return null; // mock mode: unknown id -> not found
+  try {
+    return await stripe.paymentIntents.retrieve(paymentIntentId);
+  } catch (e) {
+    return null;
+  }
+};
+
 // Cancel/Release an authorization (if fulfillment fails)
 const releaseAuthorization = async (paymentIntentId) => {
   try {
@@ -333,6 +350,7 @@ module.exports = {
   authorizePaymentIntent,
   capturePaymentIntent,
   retrievePaymentIntent,
+  findPaymentIntent,
   releaseAuthorization,
   isWebhookSignatureRequired,
   getWebhookSecret,

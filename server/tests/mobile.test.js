@@ -67,8 +67,10 @@ describe('v42.0 Enhanced Mobile Experience', () => {
   });
 
   test('v42.4 - Should get shipping estimate for international', async () => {
+    // GB is a supported international market (US + Europe). CA is not in the
+    // supported-market list, so ?country=CA trips the region-access gate (403).
     const res = await request(app)
-      .get('/api/mobile/shipping-estimate?country=CA&weight=1');
+      .get('/api/mobile/shipping-estimate?country=GB&weight=1');
     
     expect(res.status).toBe(200);
     expect(res.body.shippingCost).toBeGreaterThan(0);

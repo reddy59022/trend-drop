@@ -130,7 +130,7 @@ describe('Abandoned Cart Recovery', () => {
   });
 
   describe('POST /api/cart/checkout', () => {
-    it('CART.6 should convert cart to order', async () => {
+    it('CART.6 should convert cart to order (with an authorized payment)', async () => {
       await Cart.create({
         user: userId,
         items: [{ listing: listingId, quantity: 1 }],
@@ -138,9 +138,17 @@ describe('Abandoned Cart Recovery', () => {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
 
+      // Bug B2 gate: cart checkout requires a real, authorized payment
+      // intent. Inject one into the mock payment store like a real
+      // create-intent would, then pass its id.
+      const piId = `pi_cart6_${Date.now()}`;
+      if (!global.__mockPaymentIntents) global.__mockPaymentIntents = {};
+      global.__mockPaymentIntents[piId] = { id: piId, status: 'succeeded', amount: 5000 };
+
       const res = await request(app)
         .post('/api/cart/checkout')
-        .set('Authorization', `Bearer ${userToken}`);
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ paymentIntentId: piId });
 
       expect(res.statusCode).toBe(200);
       expect(res.body.transaction).toBeDefined();

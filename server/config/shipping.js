@@ -342,11 +342,15 @@ const simulateTrackingUpdate = (currentStatus, daysSinceLabel) => {
 
   if (currentIndex === -1 || currentIndex >= statusOrder.length - 1) return currentStatus;
 
-  // Auto-advance based on days
-  if (daysSinceLabel >= 5 && currentIndex < 3) return statusOrder[3].code;
-  if (daysSinceLabel >= 3 && currentIndex < 2) return statusOrder[2].code;
-  if (daysSinceLabel >= 1 && currentIndex < 1) return statusOrder[1].code;
-  if (daysSinceLabel >= 0 && currentIndex < 1) return statusOrder[1].code;
+  // Auto-advance based on days. Now reaches the FULL chain including
+  // out_for_delivery and delivered (Bug B3: previously capped at
+  // in_transit_local, so the post-fulfillment lifecycle was unreachable
+  // without a carrier webhook).
+  if (daysSinceLabel >= 7 && currentIndex < 5) return statusOrder[5].code; // delivered
+  if (daysSinceLabel >= 5 && currentIndex < 4) return statusOrder[4].code; // out_for_delivery
+  if (daysSinceLabel >= 3 && currentIndex < 3) return statusOrder[3].code; // in_transit_local
+  if (daysSinceLabel >= 1 && currentIndex < 2) return statusOrder[2].code; // in_transit
+  if (daysSinceLabel >= 0 && currentIndex < 1) return statusOrder[1].code; // picked_up
 
   return currentStatus;
 };

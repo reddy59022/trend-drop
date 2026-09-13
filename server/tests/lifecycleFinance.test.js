@@ -63,6 +63,10 @@ async function seedListing(seller, overrides = {}) {
 beforeAll(async () => {
   const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/trend-drop-test';
   if (mongoose.connection.readyState === 0) await mongoose.connect(uri);
+  // This suite exercises multi-currency CROSS-BORDER flows (GB seller -> US
+  // buyer etc.). The payment international-shipping gate (Bug B1 fix) blocks
+  // cross-border purchases while the flag is OFF, so enable it for the run.
+  process.env.INTERNATIONAL_SHOPPING_ENABLED = 'true';
   const re = /lifecycle/;
   await Promise.all([
     User.deleteMany({ email: re }),
@@ -79,6 +83,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  process.env.INTERNATIONAL_SHOPPING_ENABLED = '';
   const re = /lifecycle/;
   await Promise.all([
     User.deleteMany({ email: re }),

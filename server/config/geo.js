@@ -249,25 +249,34 @@ function lookupCountryForIp(ip) {
   }
 }
 
-function detectCountry(req) {
+function detectCountry(req, opts = {}) {
   try {
     geoMetrics.total += 1;
     const ip = getRequestIp(req);
     const fromHeaders = getCountryFromHeaders(req);
     if (fromHeaders) {
       if (ip) cacheIp(ip, fromHeaders.country);
-      return withHintAudit(req, { country: fromHeaders.country, source: fromHeaders.source, ip: ip || null });
+      return withHintAudit(req, { country: fromHeaders.country, source: fromHeaders.source, ip: ip || null }, opts);
     }
     const cached = ip ? getCachedIp(ip) : undefined;
     if (cached !== undefined) {
-      if (cached) return withHintAudit(req, { country: cached, source: 'ip-cache', ip: ip || null });
+      if (cached) return withHintAudit(req, { country: cached, source: 'ip-cache', ip: ip || null }, opts);
     } else if (ip) {
       const fromIp = lookupCountryForIp(ip);
-      if (fromIp) { cacheIp(ip, fromIp); return withHintAudit(req, { country: fromIp, source: ipSource(), ip: ip || null }); }
+      if (fromIp) { cacheIp(ip, fromIp); return withHintAudit(req, { country: fromIp, source: ipSource(), ip: ip || null }, opts); }
       cacheIp(ip, null);
     }
     const headers = (req && req.headers) || {};
-    const hinted = normalizeCountryCode(headers['x-country-code']) || normalizeCountryCode(req && req.query && req.query.country);
+    // Layer-3 client hint: the X-Country-Code HEADER (explicit native-app
+    // assertion). The ?country= QUERY param is NOT consumed here by default —
+    // it is a business parameter reused by many endpoints (platform-fee,
+    // shipping-estimate, ...) and treating it as a region hint globally made
+    // the market-access gate 403 legitimate lookups (Bug: unsupported-market
+    // fee/quote requests). Only the /api/marketplace/status route reads the
+    // ?country= hint itself (with anti-spoof), and callers that explicitly
+    // opt in via opts.ignoreQueryHint=false may keep the query behavior.
+    const hinted = normalizeCountryCode(headers['x-country-code'])
+      || (opts.ignoreQueryHint ? null : normalizeCountryCode(req && req.query && req.query.country));
     if (hinted) { geoMetrics.hintHits += 1; return { country: hinted, source: 'client-hint', ip: ip || null }; }
     const fromHost = getCountryFromHostRegion(req);
     if (fromHost) return { country: fromHost.country, source: fromHost.source, ip: ip || null };
@@ -279,7 +288,7 @@ function detectCountry(req) {
 // Compare IP-evidence country against the Layer-3 client hint so callers can
 // spot spoofed headers / VPN-vs-SIM mismatches. Returns { country, source,
 // ip, hint?, conflict? }. IP evidence always wins; the hint is audit-only.
-function withHintAudit(req, resolved) {
+function withHintAudit(req, resolved, opts = {}) {
   try {
     const src = resolved.source || '';
     if (src.indexOf('header') === 0) geoMetrics.headerHits += 1;
@@ -287,7 +296,7 @@ function withHintAudit(req, resolved) {
     else if (src === 'ip-cache') geoMetrics.ipHits += 1; // cache IS ip evidence
     const headers = (req && req.headers) || {};
     const hinted = normalizeCountryCode(headers['x-country-code'])
-      || normalizeCountryCode(req && req.query && req.query.country);
+      || (opts.ignoreQueryHint ? null : normalizeCountryCode(req && req.query && req.query.country));
     if (!hinted) return resolved;
     if (hinted === resolved.country) return { country: resolved.country, source: resolved.source, ip: resolved.ip || null, hint: hinted };
     geoMetrics.conflicts += 1;

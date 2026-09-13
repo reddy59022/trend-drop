@@ -143,7 +143,34 @@ router.delete('/items/:id', auth, async (req, res) => {
 // POST /api/cart/checkout - Convert cart to order (creates transaction)
 router.post('/checkout', auth, async (req, res) => {
   try {
-    const { shippingAddress } = req.body;
+    const { shippingAddress, paymentIntentId } = req.body;
+
+    // ============================================================
+    // PAYMENT GATE (Bug B2): a cart must never be fulfilled without a real,
+    // authorized payment. Before this gate the endpoint created transactions,
+    // marked listings sold and credited sellers with NO charge at all — an
+    // authenticated buyer could "checkout" a cart and never pay.
+    // Never trust a client-supplied id: verify the intent against the payment
+    // backend so only genuinely authorized payments proceed.
+    // ============================================================
+    if (!paymentIntentId) {
+      return res.status(400).json({
+        message: 'A confirmed paymentIntentId is required. Use /api/payments/create-intent + /api/payments/confirm-batch instead.',
+      });
+    }
+    const { findPaymentIntent } = require('../config/payments');
+    let pi;
+    try {
+      pi = await findPaymentIntent(paymentIntentId);
+    } catch (piErr) {
+      console.error('Cart checkout intent lookup error:', piErr.message);
+      return res.status(400).json({ message: 'Payment intent could not be verified' });
+    }
+    if (!pi || !['requires_capture', 'succeeded'].includes(pi.status)) {
+      return res.status(400).json({
+        message: `Payment not authorized. Status: ${pi?.status || 'unknown'}`,
+      });
+    }
 
     const cart = await Cart.findOne({ user: req.user._id, status: 'active' })
       .populate('items.listing');
@@ -235,6 +262,7 @@ router.post('/checkout', auth, async (req, res) => {
           platformFeePercent: breakdown.seller.platformFeePercent,
           shippingPayout: breakdown.seller.shippingPayout,
           sellerEarnings: breakdown.seller.sellerEarnings,
+          paymentIntentId,
         },
         shippingAddress: {
           fullName: shippingAddress?.fullName || buyer.name,
@@ -257,6 +285,7 @@ router.post('/checkout', auth, async (req, res) => {
           trackingHistory: label.statusHistory,
         },
         status: 'shipped',
+        payout: { status: 'pending', transactionId: paymentIntentId },
       });
 
       createdTransactions.push(transaction);

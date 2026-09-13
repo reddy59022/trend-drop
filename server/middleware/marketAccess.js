@@ -41,9 +41,11 @@ const resolveTokenUserCountry = async (req) => {
 const resolveRequestCountry = async (req) => {
   // Layer 1 — IP evidence (CDN header or offline DB lookup). A spoofed
   // X-Country-Code / ?country= hint can NEVER override this: detectCountry
-  // flags the mismatch and IP wins.
+  // flags the mismatch and IP wins. The global gate ignores the ?country=
+  // query hint (it is a business parameter on many endpoints) — see
+  // requireSupportedRegion.
   try {
-    const detected = detectCountry(req);
+    const detected = detectCountry(req, { ignoreQueryHint: true });
     if (detected && detected.country) return detected.country;
   } catch (e) { /* fall through to token/hint — fail open */ }
 
@@ -63,6 +65,11 @@ const resolveRequestCountry = async (req) => {
 
 const requireSupportedRegion = async (req, res, next) => {
   try {
+    // The gate must only consider REAL evidence of where the user is (IP,
+    // bearer-token country, X-Country-Code header). It must NOT consume the
+    // generic ?country= query param — many business endpoints legitimately
+    // reuse it (platform-fee?country=, shipping-estimate?country=) and doing
+    // so 403'd unsupported-market lookups on public endpoints.
     const country = await resolveRequestCountry(req);
     if (country && !isCountrySupported(country)) {
       return res.status(403).json({

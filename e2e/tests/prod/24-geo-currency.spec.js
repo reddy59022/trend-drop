@@ -83,7 +83,16 @@ test.describe('Geo auto-selection of top-right country + currency', () => {
   });
 
   test('24.6 switching country from the top-right switches to its currency', async ({ page }) => {
-    await page.addInitScript(() => localStorage.clear());
+    await page.addInitScript(() => {
+      // Clear ONLY on the first load. A manual country/currency choice must
+      // survive a reload (its whole purpose); clearing localStorage again on
+      // reload would erase the persisted manual selection and re-trigger IP
+      // auto-detection, making the reload assertion impossible.
+      if (!sessionStorage.getItem('geo-cleared')) {
+        sessionStorage.setItem('geo-cleared', '1');
+        localStorage.clear();
+      }
+    });
     await page.route('**/api/marketplace/status**', fulfillGeo('GB', 'GBP'));
     await page.goto('/');
     await expectGeoSelected(page, 'GB', 'GBP');

@@ -80,6 +80,13 @@ async function createUser(name, email) {
 
 // Create a listing via the API like the client does (multipart form)
 async function apiCreateListing(token, overrides = {}) {
+  // Respect the INTERNATIONAL_SHOPPING_ENABLED feature flag: when the flag is
+  // OFF (the default in test) a listing declaring cross-country shipping is
+  // correctly rejected by the route, so the helper must adapt. Tests that
+  // explicitly want international shipping pass internationalShipping: 'true'
+  // and are responsible for enabling the flag first.
+  const { isInternationalShippingEnabled } = require('../config/features');
+  const intlEnabled = isInternationalShippingEnabled();
   const payload = {
     title: 'Seller E2E Item',
     description: 'Seller e2e description',
@@ -92,7 +99,7 @@ async function apiCreateListing(token, overrides = {}) {
     weight: '1',
     shipsFrom: 'US',
     domesticShipping: 'true',
-    internationalShipping: 'true',
+    internationalShipping: intlEnabled ? 'true' : 'false',
     quantity: '5',
     ...overrides,
   };

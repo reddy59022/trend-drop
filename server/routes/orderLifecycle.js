@@ -1199,6 +1199,156 @@ router.post('/:transactionId/dispute', auth, validateOrderAccess, async (req, re
 });
 
 // ============================================================
+// POST /api/orders/:transactionId/resolve-dispute
+// Enterprise standard: a filed dispute MUST be resolvable. The seller (or an
+// admin) resolves with either a full buyer refund ('refund') or a release of
+// funds to the seller ('release' / 'reject'). Without this endpoint a dispute
+// could be filed but never closed — money stuck forever.
+// State machine: disputed → refunded | dispute_resolved
+// ============================================================
+router.post('/:transactionId/resolve-dispute', auth, validateOrderAccess, async (req, res) => {
+  try {
+    const txn = req.transaction;
+    const { resolution, notes } = req.body;
+
+    if (!isValidTransition(txn.status, orderStates.DISPUTED) &&
+        !isValidTransition(txn.status, orderStates.REFUNDED) &&
+        !isValidTransition(txn.status, orderStates.DISPUTE_RESOLVED)) {
+      return res.status(400).json({ message: `Cannot resolve dispute from '${txn.status}'` });
+    }
+    if (txn.status !== orderStates.DISPUTED) {
+      return res.status(400).json({ message: `Order is not disputed (status: ${txn.status})` });
+    }
+    // Only the counter-party (seller) or an admin may resolve a dispute.
+    if (req.orderRole !== 'seller' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only the seller or an admin can resolve a dispute' });
+    }
+    const normalized = String(resolution || '').toLowerCase();
+    if (!['refund', 'release', 'reject'].includes(normalized)) {
+      return res.status(400).json({ message: "resolution must be 'refund', 'release', or 'reject'" });
+    }
+
+    if (normalized === 'refund') {
+      // Full buyer refund — same robust claw-back as the return flow.
+      await Listing.findByIdAndUpdate(txn.listing, {
+        $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
+        $set: { sold: false, available: true },
+      });
+      await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+      await markPayoutRefunded(txn);
+
+      const refundAmount = txn.paymentBreakdown.totalPaid || 0;
+      const sellerEarnings = txn.paymentBreakdown.sellerEarnings || 0;
+
+      let stripeRefundResult = null;
+      const paymentIntentId = txn.payout?.transactionId;
+      if (paymentIntentId) {
+        try {
+          const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
+          const pi = await retrievePaymentIntent(paymentIntentId);
+          if (pi.status === 'succeeded') {
+            stripeRefundResult = await issueRefund(paymentIntentId);
+          } else if (pi.status === 'requires_capture') {
+            stripeRefundResult = await releaseAuthorization(paymentIntentId);
+          }
+        } catch (stripeErr) {
+          console.error('Stripe refund on dispute resolution:', stripeErr.message);
+        }
+      }
+
+      const buyer = await User.findById(txn.buyer);
+      if (buyer) {
+        buyer.notifications.unshift({
+          type: 'sale',
+          listing: txn.listing,
+          transaction: txn._id,
+          message: `Dispute resolved in your favor. Refund of ${refundAmount} ${txn.currency} processed.`,
+        });
+        await buyer.save();
+      }
+
+      const seller = await User.findById(txn.seller);
+      if (seller) {
+        const available = seller.balance.available || 0;
+        const pending = seller.balance.pending || 0;
+        let remaining = sellerEarnings;
+        if (available >= remaining) {
+          seller.balance.available = available - remaining;
+          remaining = 0;
+        } else {
+          seller.balance.available = 0;
+          remaining = remaining - available;
+        }
+        if (remaining > 0) {
+          seller.balance.pending = Math.max(0, pending - remaining);
+        }
+        seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - sellerEarnings);
+        seller.notifications.unshift({
+          type: 'sale',
+          listing: txn.listing,
+          transaction: txn._id,
+          message: `Dispute resolved with a refund. ${refundAmount} ${txn.currency} returned to the buyer.`,
+        });
+        await seller.save();
+      }
+
+      txn.status = orderStates.REFUNDED;
+      txn.dispute = {
+        ...txn.dispute,
+        resolvedAt: new Date(),
+        resolution: 'refund',
+        resolutionNotes: notes || '',
+      };
+      txn.payout = { status: 'refunded', processedAt: new Date() };
+      await txn.save();
+      await syncOrderFromTransaction(txn, 'refunded');
+
+      return res.json({
+        message: 'Dispute resolved with a full buyer refund.',
+        transaction: txn,
+        resolution: 'refund',
+        refundAmount,
+        stripeRefund: stripeRefundResult,
+      });
+    }
+
+    // 'release' / 'reject' — dispute resolved in the seller's favor.
+    txn.status = orderStates.DISPUTE_RESOLVED;
+    txn.dispute = {
+      ...txn.dispute,
+      resolvedAt: new Date(),
+      resolution: 'release',
+      resolutionNotes: notes || '',
+    };
+    await txn.save();
+    await syncOrderFromTransaction(txn, 'dispute_resolved');
+
+    const buyer = await User.findById(txn.buyer);
+    if (buyer) {
+      buyer.notifications.unshift({
+        type: 'sale',
+        listing: txn.listing,
+        transaction: txn._id,
+        message: 'Dispute resolved in the seller\'s favor. Funds will be released to the seller.',
+      });
+      await buyer.save();
+    }
+
+    return res.json({
+      message: 'Dispute resolved in the seller\'s favor.',
+      transaction: txn,
+      resolution: 'release',
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
+// POST /api/orders/auto-process - SYSTEM ONLY
+
+// ============================================================
 // POST /api/orders/auto-process - SYSTEM ONLY
 // Processes all auto-advancements:
 // 1. delivered + 3 days → auto buyer_confirmed

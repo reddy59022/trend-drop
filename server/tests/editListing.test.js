@@ -24,6 +24,9 @@ describe('Edit Listing - Full Field Update', () => {
   let testUser, testListing, token;
 
   beforeAll(async () => {
+    // The full-field update test toggles internationalShipping=true; enable
+    // the international-shipping flag for this suite so that edit succeeds.
+    process.env.INTERNATIONAL_SHOPPING_ENABLED = 'true';
     const result = await createUser('EditSeller', 'editlisting@test.com');
     testUser = result.user;
     token = result.token;
@@ -59,6 +62,7 @@ describe('Edit Listing - Full Field Update', () => {
   });
 
   afterAll(async () => {
+    process.env.INTERNATIONAL_SHOPPING_ENABLED = '';
     const re = /editlisting@test.com/;
     await Promise.all([
       User.deleteMany({ email: re }),

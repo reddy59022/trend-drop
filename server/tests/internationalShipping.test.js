@@ -27,6 +27,13 @@ const { isInternationalShippingEnabled, getPublicFeatures } = require('../config
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 const mkEmail = (p) => `${p}_intl_${Date.now()}@test.com`;
 
+function mockPi(status = 'requires_capture') {
+  const id = `pi_intl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  if (!global.__mockPaymentIntents) global.__mockPaymentIntents = {};
+  global.__mockPaymentIntents[id] = { id, status, amount: 5000 };
+  return id;
+}
+
 let seller, buyer, sellerToken, buyerToken;
 const testUserIds = [];
 const testListingIds = [];
@@ -156,7 +163,7 @@ describe('Feature 2 — International shipping flag', () => {
     const res = await request(app)
       .post('/api/cart/checkout')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ shippingAddress: { fullName: 'Buyer', street1: '1 St', city: 'Berlin', country: 'DE', postalCode: '10115' } });
+      .send({ paymentIntentId: mockPi(), shippingAddress: { fullName: 'Buyer', street1: '1 St', city: 'Berlin', country: 'DE', postalCode: '10115' } });
 
     expect(res.status).toBe(400);
     expect(res.body.message.toLowerCase()).toContain('international');
@@ -183,7 +190,7 @@ describe('Feature 2 — International shipping flag', () => {
     const res = await request(app)
       .post('/api/cart/checkout')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ shippingAddress: { fullName: 'Buyer', street1: '1 St', city: 'NY', country: 'US', postalCode: '10001' } });
+      .send({ paymentIntentId: mockPi(), shippingAddress: { fullName: 'Buyer', street1: '1 St', city: 'NY', country: 'US', postalCode: '10001' } });
 
     expect(res.status).toBe(200);
   });
@@ -206,7 +213,7 @@ describe('Feature 2 — International shipping flag', () => {
     const res = await request(app)
       .post('/api/cart/checkout')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ shippingAddress: { fullName: 'Buyer', street1: '1 St', city: 'London', country: 'GB', postalCode: 'SW1' } });
+      .send({ paymentIntentId: mockPi(), shippingAddress: { fullName: 'Buyer', street1: '1 St', city: 'London', country: 'GB', postalCode: 'SW1' } });
 
     expect(res.status).toBe(200);
   });

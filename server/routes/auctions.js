@@ -471,9 +471,11 @@ router.post('/:id/close', auth, async (req, res) => {
         auction: populatedAuction,
         transaction: {
           _id: transaction._id,
-          amount: transaction.amount,
-          platformFee: transaction.platformFee,
-          sellerEarnings: transaction.sellerEarnings,
+          // Mongoose strict mode strips non-schema top-level fields, so the
+          // authoritative money numbers live in paymentBreakdown / itemPrice.
+          amount: transaction.itemPrice,
+          platformFee: transaction.paymentBreakdown.platformFee,
+          sellerEarnings: transaction.paymentBreakdown.sellerEarnings,
           status: transaction.status,
         },
       });

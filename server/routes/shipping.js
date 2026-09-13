@@ -526,10 +526,10 @@ router.post('/auto-track', async (req, res) => {
         txn.status = newStatus === 'delivered' ? 'delivered' : newStatus;
         if (newStatus === 'delivered') {
           txn.shipping.actualDelivery = new Date();
-          // Auto-complete after 3 days of delivery
-          const deliveryDate = new Date();
-          deliveryDate.setDate(deliveryDate.getDate() + 3);
-          txn.autoTracking.nextCheck = deliveryDate;
+          // Bug B5: the old code called deliveryDate.setDate(...) which is not
+          // a JS Date method and would throw here. Schedule the next auto-check
+          // (the buyer-confirmation window is enforced by /api/orders/auto-process).
+          txn.autoTracking.nextCheck = new Date(Date.now() + 24 * 60 * 60 * 1000);
         }
         txn.shipping.trackingHistory.push({
           status: newStatus,
@@ -550,6 +550,65 @@ router.post('/auto-track', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error running auto-tracking' });
+  }
+});
+
+// POST /api/shipping/tracking-event - Carrier webhook: advance a shipment.
+// Signed with x-tracking-secret (TRACKING_WEBHOOK_SECRET, dev default for
+// local/e2e). Idempotent and forward-only: a delivery event can never regress
+// an already-delivered order, and duplicate events are recorded harmlessly.
+// This closes Bug B3 - before this endpoint there was NO public way to move a
+// shipment to 'delivered', so receive/return/dispute flows were unreachable.
+router.post('/tracking-event', async (req, res) => {
+  try {
+    const secret = process.env.TRACKING_WEBHOOK_SECRET || 'trenddrop-tracking-dev';
+    if (!req.get('x-tracking-secret') || req.get('x-tracking-secret') !== secret) {
+      return res.status(403).json({ message: 'Invalid tracking webhook secret' });
+    }
+    const { transactionId, status, trackingNumber, timestamp, location, description } = req.body;
+    if (!transactionId || !status) {
+      return res.status(400).json({ message: 'transactionId and status are required' });
+    }
+    const txn = await Transaction.findById(transactionId);
+    if (!txn) return res.status(404).json({ message: 'Transaction not found' });
+
+    const statusOrder = trackingStatuses.filter(s => s.sortOrder >= 0).sort((a, b) => a.sortOrder - b.sortOrder);
+    const eventIndex = statusOrder.findIndex(s => s.code === status);
+    if (eventIndex === -1) {
+      return res.status(400).json({ message: `Invalid tracking status: ${status}` });
+    }
+
+    // Current tracking position (label_created is the pre-dispatch position).
+    const currentTracking = txn.status === 'shipped' ? 'picked_up' : txn.status;
+    const currentIndex = statusOrder.findIndex(s => s.code === currentTracking);
+
+    // Append the event to history (carriers legitimately post duplicate events).
+    txn.shipping.trackingHistory = txn.shipping.trackingHistory || [];
+    txn.shipping.trackingHistory.push({
+      status,
+      label: trackingStatuses.find(s => s.code === status)?.label || status,
+      description: description || trackingStatuses.find(s => s.code === status)?.description || '',
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
+      location: location || null,
+    });
+    txn.shipping.trackingHistory = txn.shipping.trackingHistory.slice(-50);
+
+    // Advance the transaction status only when the event moves it forward.
+    if (currentIndex === -1 || eventIndex >= currentIndex) {
+      if (status === 'delivered') {
+        txn.status = 'delivered';
+        txn.shipping.actualDelivery = timestamp ? new Date(timestamp) : new Date();
+      } else if (txn.status !== 'delivered' && ['in_transit', 'in_transit_local', 'out_for_delivery'].includes(status)) {
+        txn.status = status;
+      }
+      if (trackingNumber) txn.shipping.trackingNumber = trackingNumber;
+    }
+
+    await txn.save();
+    res.json({ message: `Tracking event '${status}' recorded`, status, transactionId: txn._id });
+  } catch (error) {
+    console.error('Tracking event error:', error);
+    res.status(500).json({ message: 'Error recording tracking event' });
   }
 });
 
@@ -587,19 +646,22 @@ router.post('/confirm-received', auth, async (req, res) => {
     // NOTE: totalSales/totalPurchases and balance changes happen in orderLifecycle auto-complete
     await transaction.save();
 
-    // BUG 5: Auto-create Payout record on completion
+    // BUG B4: auto-created payout must use the SAME 8% platform commission
+    // as config/payments.js + routes/payouts.js (was hardcoded 10%, which
+    // would have overpaid sellers by 2% on any transaction missing a payout).
     try {
       const existingPayout = await Payout.findOne({ transaction: transaction._id });
       if (!existingPayout) {
         const salePrice = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0;
-        const commissionAmount = Math.round(salePrice * 0.10 * 100) / 100;
+        const commissionRate = 0.08; // platform commission
+        const commissionAmount = Math.round(salePrice * commissionRate * 100) / 100;
         const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
         await Payout.create({
           seller: transaction.seller,
           transaction: transaction._id,
           listing: transaction.listing,
           salePrice,
-          commissionRate: 0.10,
+          commissionRate,
           commissionAmount,
           payoutAmount,
           status: 'pending',

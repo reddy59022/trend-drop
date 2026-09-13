@@ -21,7 +21,10 @@ beforeAll(async () => {
   if (mongoose.connection.readyState !== 1) {
     await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/trenddrop_test');
   }
-  
+  // Cross-border multi-currency flows (US buyer <-> DE/GB/JP/CA sellers):
+  // enable the international-shipping flag for the payment gate (Bug B1).
+  process.env.INTERNATIONAL_SHOPPING_ENABLED = 'true';
+
   const seedBase = `multi_${Date.now()}_`;
   
   admin = await User.create({
@@ -76,6 +79,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  process.env.INTERNATIONAL_SHOPPING_ENABLED = '';
   if (admin) await User.findByIdAndDelete(admin._id);
   if (seller) await User.findByIdAndDelete(seller._id);
   if (buyer) await User.findByIdAndDelete(buyer._id);

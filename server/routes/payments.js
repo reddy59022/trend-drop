@@ -22,6 +22,7 @@ const {
   issueRefund,
   fetchExchangeRate,
 } = require('../config/payments');
+const { isInternationalAllowed } = require('../config/shipping');
 const { boostConfig } = require('../config/boost');
 
 // Flat per-sale boost fee: price × tier.feePercent / 100
@@ -147,6 +148,18 @@ router.post('/create-intent', auth, async (req, res) => {
       const seller = await User.findById(listing.seller);
       const sellerCountry = seller?.country || listing.shipsFrom || 'US';
       const toCountry = buyerCountry || shippingAddress?.country || req.user.country || 'US';
+
+      // Feature 2 — international-shipping gate: when the flag is disabled,
+      // cross-border purchases are rejected BEFORE any intent is created
+      // (parity with listing creation + the legacy cart checkout). Same-country
+      // shipping is always allowed.
+      if (!isInternationalAllowed(sellerCountry, toCountry)) {
+        return res.status(400).json({
+          supported: false,
+          message: "International shipping is currently disabled. Items can only be shipped within the seller's country.",
+          failedItem: item.listingId,
+        });
+      }
 
       // Determine price (offer price or listing price)
       let salePrice = listing.price;
@@ -379,7 +392,18 @@ router.post('/confirm-batch', auth, async (req, res) => {
       const seller = await User.findById(listing.seller);
       const sellerCountry = seller?.country || listing.shipsFrom || 'US';
       const toCountry = shippingAddress?.country || req.user.country || 'US';
-      
+
+      // Feature 2 — international-shipping gate (defense-in-depth parity with
+      // create-intent): re-validate cross-border shipping BEFORE any DB writes,
+      // so a batch can never partially commit a cross-border item.
+      if (!isInternationalAllowed(sellerCountry, toCountry)) {
+        return res.status(400).json({
+          supported: false,
+          message: "International shipping is currently disabled. Items can only be shipped within the seller's country.",
+          failedItem: item.listingId,
+        });
+      }
+
       // Offer price validation
       let salePrice = listing.price;
       let offer = null;
@@ -856,6 +880,16 @@ router.post('/confirm', auth, async (req, res) => {
     const seller = await User.findById(listing.seller);
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
     const toCountry = shippingAddress?.country || req.user.country || 'US';
+
+    // Feature 2 — international-shipping gate (parity with create-intent and
+    // confirm-batch): reject cross-border single-item purchases when disabled.
+    if (!isInternationalAllowed(sellerCountry, toCountry)) {
+      return res.status(400).json({
+        supported: false,
+        message: "International shipping is currently disabled. Items can only be shipped within the seller's country.",
+      });
+    }
+
     const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
 
     const { generateLabel, getPreferredCarrier } = require('../config/shipping');

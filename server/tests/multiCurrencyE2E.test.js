@@ -112,9 +112,13 @@ const createdListings = [];
 beforeAll(async () => {
   const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/trend-drop-test';
   if (mongoose.connection.readyState === 0) await mongoose.connect(uri);
+  // Cross-border multi-currency flows (US buyer <-> FR/GB/DE/ES sellers):
+  // enable the international-shipping flag for the payment gate (Bug B1).
+  process.env.INTERNATIONAL_SHOPPING_ENABLED = 'true';
 });
 
 afterAll(async () => {
+  process.env.INTERNATIONAL_SHOPPING_ENABLED = '';
   const buyer = await User.findOne({ email: mkEmail('buyer') });
   const ids = { seller: sellerRefs.map((s) => s.user._id), buyer: buyer ? buyer._id : null };
   await Listing.deleteMany({ _id: { $in: createdListings } });
