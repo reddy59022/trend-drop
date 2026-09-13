@@ -72,24 +72,42 @@ const markPayoutRefunded = async (txn) => {
 // ============================================================
 // Shared helper: when a transaction underneath an Enterprise Order
 // is cancelled/refunded/completed, keep the consolidated Order in sync.
-// If ALL shipments are refunded → Order = 'refunded' + payment refunded.
+// If ALL shipments are refunded → Order = 'refunded' + payment refunded
+// + cancellation audit trail. Shipments left with zero items are marked
+// 'cancelled' so they never look outstanding.
 // ============================================================
-const syncOrderFromTransaction = async (txn, newStatus) => {
+const syncOrderFromTransaction = async (txn, newStatus, refundAmount = 0) => {
   try {
     const orders = await Order.find({ 'items.transaction': txn._id });
     for (const order of orders) {
       let touched = false;
 
       if (newStatus === 'refunded') {
-        // Remove the refunded txn from any shipment it belongs to
+        // Remove the refunded txn from any shipment it belongs to; a
+        // shipment left with no items is fully cancelled → mark it so.
         (order.shipments || []).forEach((s) => {
           const idx = (s.items || []).findIndex((id) => id && id.toString() === txn._id.toString());
           if (idx >= 0) { s.items.splice(idx, 1); touched = true; }
+          if ((s.items || []).length === 0 && s.status !== 'cancelled') {
+            s.status = 'cancelled';
+            touched = true;
+          }
         });
         // Remove the refunded item from the consolidated items list
         const before = order.items.length;
         order.items = (order.items || []).filter((it) => !(it.transaction && it.transaction.toString() === txn._id.toString()));
         if (order.items.length !== before) touched = true;
+
+        // Accumulate the cancellation audit trail on the consolidated order
+        // (running total — equals the full captured amount once every item
+        // of the order has been refunded).
+        if (!order.cancellation) order.cancellation = {};
+        order.cancellation.cancelledBy = txn.cancellation?.cancelledBy || 'buyer';
+        order.cancellation.reason = txn.cancellation?.reason || order.cancellation.reason || null;
+        order.cancellation.cancelledAt = txn.cancellation?.cancelledAt || new Date();
+        order.cancellation.currency = txn.currency || order.currency || 'USD';
+        order.cancellation.refundAmount = Math.round(((order.cancellation.refundAmount || 0) + (refundAmount || 0)) * 100) / 100;
+        touched = true;
 
         // If EVERY shipment + item is refunded → final state
         const anyRemaining = (order.shipments || []).some((s) => s.items.length > 0) || order.items.length > 0;
@@ -211,16 +229,25 @@ router.post('/:id/ship', auth, async (req, res) => {
       return res.status(400).json({ message: 'Shipment already shipped' });
     }
 
+    // A shipment whose items were all refunded/cancelled has nothing to ship.
+    if (shipment.status === 'cancelled' || !(shipment.items || []).length) {
+      return res.status(400).json({ message: 'Shipment was cancelled — nothing to ship' });
+    }
+
     shipment.status = 'shipped';
     if (trackingNumber) shipment.trackingNumber = trackingNumber;
     if (carrier) shipment.carrier = carrier;
     shipment.shippedAt = new Date();
     await order.save();
 
-    // Sync underlying transactions to shipped with tracking
+    // RACE-SAFETY: only transition transactions that are still eligible for
+    // dispatch ('paid'/'processing'). A transaction claimed by an in-flight
+    // or completed cancellation must NEVER be stomped back to 'shipped' —
+    // that would ship an order whose money was already refunded to the buyer.
+    let shippedCount = 0;
     try {
-      await Transaction.updateMany(
-        { _id: { $in: shipment.items } },
+      const syncRes = await Transaction.updateMany(
+        { _id: { $in: shipment.items }, status: { $in: ['paid', 'processing'] } },
         {
           $set: {
             status: 'shipped',
@@ -229,6 +256,24 @@ router.post('/:id/ship', auth, async (req, res) => {
           },
         }
       );
+      shippedCount = syncRes.modifiedCount ?? syncRes.nModified ?? 0;
+      const cancelGuard = await Transaction.countDocuments({
+        _id: { $in: shipment.items },
+        status: { $in: ['cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'refunded'] },
+      });
+      if (cancelGuard > 0) {
+        // Another party cancelled (part of) this shipment while we were
+        // shipping — refuse the dispatch so money and goods never diverge.
+        if (shippedCount > 0) {
+          await Transaction.updateMany(
+            { _id: { $in: shipment.items }, status: 'shipped', 'shipping.trackingNumber': trackingNumber || '' },
+            { $set: { status: 'paid' } }
+          );
+        }
+        return res.status(409).json({
+          message: 'This shipment was cancelled while dispatching. Order not shipped.',
+        });
+      }
     } catch (syncErr) {
       console.error('Transaction sync error:', syncErr.message);
     }
@@ -313,114 +358,214 @@ router.get('/:transactionId/status', auth, validateOrderAccess, async (req, res)
 
 // ============================================================
 // POST /api/orders/:transactionId/cancel
-// CRITICAL: Validates state machine transition before touching money
-// Refund: buyer.balance.available += refundAmount (money goes TO buyer)
+// CRITICAL: Validates state machine transition before touching money.
+//
+// ENTERPRISE IMMEDIATE-CANCELLATION CONTRACT (zero-sum, exactly-once):
+//   1. ATOMIC CLAIM — the pre-shipment → cancelled transition is claimed
+//      with a guarded findOneAndUpdate, so concurrent double-clicks /
+//      racing requests can NEVER double-refund or double-restore inventory.
+//      A losing request is answered idempotently (200 alreadyCancelled)
+//      with zero side effects.
+//   2. STRIPE REFUND FIRST — full amount (item + shipping + protection)
+//      back to the buyer's original payment method. On Stripe failure the
+//      claim is reverted and NOTHING is moved (502, retryable).
+//   3. LEDGER UNWIND — seller pending clawback (exact credited amount,
+//      net of boost fee), buyer + seller notifications, inventory restore
+//      (exact quantity), boost-fee reversal, payouts → refunded.
+//   4. ORDER SYNC — consolidated Order → refunded + payment refunded +
+//      emptied shipment 'cancelled' + cancellation audit trail.
+//
+// Money: capture → [cancel] → refund to buyer; seller pending clawed back;
+// nobody gains, nobody loses.
 // ============================================================
 router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res) => {
   try {
-    const txn = req.transaction;
+    const txn0 = req.transaction;
     const role = req.orderRole;
     const { reason, evidence } = req.body;
 
     const cancelState = role === 'buyer' ? orderStates.CANCELLED_BY_BUYER : orderStates.CANCELLED_BY_SELLER;
 
-    // State machine validation - CRITICAL safety check
-    if (!isValidTransition(txn.status, cancelState)) {
+    // Pre-shipment eligible states per role (mirrors the state machine):
+    //   buyer  → 'paid'      (processing = seller preparing, buyer locked out)
+    //   seller → 'paid' | 'processing'
+    const eligibleFrom = role === 'buyer' ? [orderStates.PAID] : [orderStates.PAID, orderStates.PROCESSING];
+
+    // IDEMPOTENT ACK: the order is already cancelled/refunded. Never re-run
+    // side effects (no double refund, no double inventory restore). This MUST
+    // be checked before the state-machine guard so a retried/double-clicked
+    // cancel is answered cleanly instead of as a transition error.
+    const terminalCancelStates = [
+      orderStates.CANCELLED_BY_BUYER, orderStates.CANCELLED_BY_SELLER,
+      orderStates.AUTO_CANCELLED, orderStates.REFUNDED,
+    ];
+    if (terminalCancelStates.includes(txn0.status)) {
+      return res.json({
+        message: 'Order was already cancelled and refunded.',
+        transaction: txn0,
+        alreadyCancelled: true,
+        refundAmount: txn0.cancellation?.refundAmount ?? 0,
+        refundType: 'full',
+      });
+    }
+
+    // State machine validation - CRITICAL safety check (clear error surface)
+    if (!isValidTransition(txn0.status, cancelState)) {
       return res.status(400).json({
-        message: `Cannot cancel from '${txn.status}'. ${cancellationRules[role]?.afterShipment?.reason || ''}`
+        message: `Cannot cancel from '${txn0.status}'. ${cancellationRules[role]?.afterShipment?.reason || ''}`
       });
     }
 
     // Only allow cancellation before shipment
-    const isBeforeShipment = ['paid', 'processing'].includes(txn.status);
-    if (!isBeforeShipment) {
+    if (!eligibleFrom.includes(txn0.status)) {
       return res.status(400).json({ message: cancellationRules[role].afterShipment?.reason || 'Cannot cancel after shipment' });
     }
 
-    // Calculate refund: buyer gets back everything including shipping
-    const paymentIntentId = txn.payout?.transactionId;
-    let stripeRefundResult = null;
-    const refundAmount = txn.paymentBreakdown.totalPaid || 0;
-    const { releaseAuthorization, issueRefund } = require('../config/payments');
+    // ---- STEP 1: ATOMIC CLAIM (exactly-once side effects) ----------------
+    const claimed = await Transaction.findOneAndUpdate(
+      { _id: txn0._id, status: { $in: eligibleFrom } },
+      { $set: { status: cancelState } },
+      { new: false } // returns the PRE-claim document (original status)
+    );
 
-    // Issue proper Stripe refund/release
-    if (paymentIntentId) {
-      try {
-        // Check if payment was captured (succeeded) or just authorized
-        const { retrievePaymentIntent } = require('../config/payments');
-        const pi = await retrievePaymentIntent(paymentIntentId);
-        if (pi.status === 'succeeded') {
-          // Payment was captured - issue a full refund
-          stripeRefundResult = await issueRefund(paymentIntentId);
-        } else if (pi.status === 'requires_capture') {
-          // Payment only authorized - release the authorization
-          stripeRefundResult = await releaseAuthorization(paymentIntentId);
-        }
-      } catch (stripeErr) {
-        console.error('Stripe refund/release error:', stripeErr.message);
+    if (!claimed) {
+      // We lost the race — someone else transitioned the transaction.
+      const fresh = await Transaction.findById(txn0._id);
+      const terminalCancelStates = [
+        orderStates.CANCELLED_BY_BUYER, orderStates.CANCELLED_BY_SELLER, orderStates.REFUNDED,
+      ];
+      if (fresh && terminalCancelStates.includes(fresh.status)) {
+        // Idempotent ack: the order is already cancelled & refunded. NEVER
+        // re-run side effects (no double refund, no double restore).
+        return res.json({
+          message: 'Order was already cancelled and refunded.',
+          transaction: fresh,
+          alreadyCancelled: true,
+          refundAmount: fresh.cancellation?.refundAmount ?? 0,
+          refundType: 'full',
+        });
       }
-    }
-
-    // Notify buyer of refund
-    const buyer = await User.findById(txn.buyer);
-    if (buyer) {
-      buyer.notifications.unshift({
-        type: 'sale',
-        listing: txn.listing,
-        transaction: txn._id,
-        message: `Order cancelled. Refund of ${refundAmount} ${txn.currency} has been processed to your original payment method.`,
+      return res.status(400).json({
+        message: `Cannot cancel from '${fresh?.status || 'unknown'}'. ${cancellationRules[role]?.afterShipment?.reason || ''}`
       });
-      await buyer.save();
     }
 
-    // Remove pending earnings from seller
-    const seller = await User.findById(txn.seller);
-    if (seller) {
-      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - (txn.paymentBreakdown.sellerEarnings || 0));
+    const originalStatus = claimed.status; // pre-claim state (for revert)
+    claimed.status = cancelState;          // align memory with the claimed DB state
 
+    // ---- STEP 2: FULL REFUND TO THE BUYER (original payment method) ------
+    const paymentIntentId = claimed.payout?.transactionId;
+    const refundAmount = Math.round((claimed.paymentBreakdown?.totalPaid || 0) * 100) / 100;
+    let stripeRefundResult = null;
+    try {
+      const { retrievePaymentIntent, releaseAuthorization, issueRefund } = require('../config/payments');
+      if (paymentIntentId) {
+        const pi = await retrievePaymentIntent(paymentIntentId);
+        if (pi.status === 'requires_capture') {
+          // Payment only authorized (not yet captured) — release the hold.
+          stripeRefundResult = await releaseAuthorization(paymentIntentId);
+        } else {
+          // Payment captured — issue a FULL refund.
+          stripeRefundResult = await issueRefund(paymentIntentId, refundAmount);
+        }
+        if (stripeRefundResult && stripeRefundResult.status && !['succeeded', 'pending', 'cancelled'].includes(stripeRefundResult.status)) {
+          throw new Error(`Stripe refund not accepted (status: ${stripeRefundResult.status})`);
+        }
+      } else {
+        // No payment intent recorded — nothing to reverse at Stripe, but the
+        // order must still unwind. Record it so finance can audit.
+        stripeRefundResult = { status: 'skipped', reason: 'no_payment_intent' };
+      }
+    } catch (stripeErr) {
+      // COMPENSATING ACTION: nothing has moved in our ledger yet — revert
+      // the atomic claim so the buyer can retry the cancellation cleanly.
+      console.error('Stripe refund/release failed, reverting cancel claim:', stripeErr.message);
+      await Transaction.updateOne(
+        { _id: txn0._id, status: cancelState },
+        {
+          $set: {
+            status: originalStatus,
+            'cancellation.cancelledBy': claimed.cancellation?.cancelledBy ?? null,
+            'cancellation.reason': claimed.cancellation?.reason ?? null,
+            'cancellation.cancelledAt': claimed.cancellation?.cancelledAt ?? null,
+            'cancellation.refundAmount': claimed.cancellation?.refundAmount ?? null,
+          },
+        }
+      );
+      return res.status(502).json({
+        message: 'Refund could not be processed right now. The order was NOT cancelled — please try again.',
+      });
+    }
+
+    // ---- STEP 3: LEDGER UNWIND (no gain, no loss for anyone) -------------
+    const clawback = Math.round((claimed.paymentBreakdown?.sellerEarnings || 0) * 100) / 100;
+
+    // 3a. Seller: claw back the EXACT amount credited at checkout (already
+    //     net of any boost fee — parity with payments.js). Never negative.
+    const seller = await User.findById(claimed.seller);
+    if (seller) {
+      seller.balance.pending = Math.max(0, Math.round(((seller.balance.pending || 0) - clawback) * 100) / 100);
       if (role === 'seller') {
         seller.stats.strikes = (seller.stats.strikes || 0) + 1;
         seller.notifications.unshift({
           type: 'sale',
-          listing: txn.listing,
-          transaction: txn._id,
+          listing: claimed.listing,
+          transaction: claimed._id,
           message: `Order cancelled by you. Strike ${seller.stats.strikes}/3 before suspension.`,
+        });
+      } else {
+        seller.notifications.unshift({
+          type: 'sale',
+          listing: claimed.listing,
+          transaction: claimed._id,
+          message: `Order cancelled by the buyer before shipment. ${refundAmount} ${claimed.currency} fully refunded. Your pending earnings were reversed.`,
         });
       }
       await seller.save();
     }
 
-    // Restore listing inventory - ZERO-LEAKAGE: restore EXACT quantity bought
-    await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
+    // 3b. Buyer: confirm the refund (original payment method)
+    const buyer = await User.findById(claimed.buyer);
+    if (buyer) {
+      buyer.notifications.unshift({
+        type: 'refund',
+        listing: claimed.listing,
+        transaction: claimed._id,
+        message: `Order cancelled. Full refund of ${refundAmount} ${claimed.currency} has been processed to your original payment method.`,
+      });
+      await buyer.save();
+    }
+
+    // 3c. Inventory: restore the EXACT quantity bought (zero-leakage).
+    const restoredQty = claimed.quantity || 1;
+    await Listing.findByIdAndUpdate(claimed.listing, {
+      $inc: { quantity: restoredQty, quantitySold: -restoredQty },
       $set: { sold: false, available: true },
     });
 
-    // ROBUST: Boost fee is never charged for a cancelled order.
-    // Reverse the listing-level boost fee (item-level, never cross-subsidized).
-    // Idempotent — only reverses what is actually owed.
-    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+    // 3d. Boost fee is never charged for a cancelled order (idempotent reversal).
+    await reverseBoostFeeOwed(claimed.listing, claimed.paymentBreakdown?.boostFee || 0);
 
-    // ROBUST: Mark any payout records refunded so auto-complete /
-    // cron can never release funds for a cancelled order.
-    await markPayoutRefunded(txn);
+    // 3e. Payout records → refunded so auto-complete/cron can never release
+    //     funds for a cancelled order; also flag the transaction payout.
+    await markPayoutRefunded(claimed);
 
-    // Update transaction status
-    txn.status = cancelState;
-    txn.cancellation = {
+    // ---- STEP 4: FINALIZE TRANSACTION + CONSOLIDATED ORDER ---------------
+    claimed.payout.status = 'refunded';
+    claimed.cancellation = {
       cancelledBy: role,
-      reason: reason || `Cancelled by ${role}`,
+      reason: reason || evidence || `Cancelled by ${role}`,
       cancelledAt: new Date(),
       refundAmount,
     };
-    await txn.save();
+    await claimed.save();
 
     // Keep the consolidated Enterprise Order in sync (full refund → refunded)
-    await syncOrderFromTransaction(txn, 'refunded');
+    await syncOrderFromTransaction(claimed, 'refunded', refundAmount);
 
     res.json({
-      message: `Order cancelled. Refund of ${refundAmount} ${txn.currency} will be processed.`,
-      transaction: txn,
+      message: `Order cancelled. Full refund of ${refundAmount} ${claimed.currency} has been processed to your original payment method.`,
+      transaction: claimed,
       refundAmount,
       refundType: 'full',
       stripeRefund: stripeRefundResult,

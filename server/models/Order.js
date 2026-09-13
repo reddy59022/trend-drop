@@ -16,7 +16,7 @@ const shipmentSchema = new mongoose.Schema({
   shippingCost: { type: Number, default: 0 },
   currency: { type: String, default: 'USD' },
   labelStatus: { type: String, enum: ['created', 'pending', 'failed'], default: 'created' },
-  status: { type: String, enum: ['pending', 'ready', 'shipped', 'in_transit', 'delivered', 'confirmed'], default: 'pending' },
+  status: { type: String, enum: ['pending', 'ready', 'shipped', 'in_transit', 'delivered', 'confirmed', 'cancelled'], default: 'pending' },
   trackingNumber: { type: String, default: '' },
   carrier: { type: String, default: '' },
   trackingUrl: { type: String, default: '' },
@@ -48,8 +48,11 @@ function getAllowedOrderActions(order, role, userId) {
 
   if (role === 'buyer') {
     actions.push('view_order', 'view_tracking', 'contact_support');
+    // A shipment that is fully cancelled no longer blocks cancelling the
+    // remaining (other-seller) shipments of the same consolidated order.
+    const cancellableShipment = (s) => s.status === 'pending' || s.status === 'ready' || s.status === 'cancelled';
     if (order.payment && order.payment.status === 'captured' &&
-        (order.shipments || []).every((s) => s.status === 'pending' || s.status === 'ready')) {
+        (order.shipments || []).every(cancellableShipment)) {
       actions.push('cancel_within_window');
     }
   } else if (role === 'seller') {
@@ -80,6 +83,16 @@ const orderSchema = new mongoose.Schema({
     currency: { type: String, default: 'USD' },
     totalHeld: { type: Number, default: 0 },
   },
+  // Cancellation audit trail (set by the order lifecycle when a full or
+  // partial refund/cancel settles). refundAmount accumulates across all
+  // refunded transactions in this consolidated order.
+  cancellation: {
+    cancelledBy: { type: String, default: null },   // 'buyer' | 'seller'
+    reason: { type: String, default: null },
+    cancelledAt: { type: Date, default: null },
+    refundAmount: { type: Number, default: 0 },
+    currency: { type: String, default: null },
+  },
   status: {
     type: String,
     enum: ['confirmed', 'partially_shipped', 'shipped', 'completed', 'cancelled', 'refunded'],
@@ -109,9 +122,13 @@ const orderSchema = new mongoose.Schema({
 
 function deriveStatus(shipments) {
   if (!shipments || shipments.length === 0) return 'confirmed';
-  const shipped = shipments.filter((s) => ['shipped', 'in_transit', 'delivered', 'confirmed'].includes(s.status));
+  // Fully-cancelled shipments are terminal — they are neither in-flight nor
+  // outstanding, so they must not force a 'partially_shipped' derivation.
+  const active = shipments.filter((s) => s.status !== 'cancelled' && (s.items || []).length > 0);
+  if (active.length === 0) return 'confirmed';
+  const shipped = active.filter((s) => ['shipped', 'in_transit', 'delivered', 'confirmed'].includes(s.status));
   if (shipped.length === 0) return 'confirmed';
-  if (shipped.length === shipments.length) return 'shipped';
+  if (shipped.length === active.length) return 'shipped';
   return 'partially_shipped';
 }
 

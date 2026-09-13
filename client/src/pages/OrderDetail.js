@@ -698,22 +698,70 @@ const OrderDetail = () => {
           ) : null}
 
           {/* ===== Buyer Actions ===== */}
-          {(isBuyer && ['paid', 'shipped', 'in_transit', 'out_for_delivery'].includes(viewOrder.status)) ? (
-            <div className="glass-card" style={{ padding: 'var(--td-space-lg)', borderLeft: '3px solid var(--td-success)' }}>
-              <h3 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Order Actions</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <button className="btn btn-success btn-block"
-                  onClick={() => handleAction('confirm', { transactionId: primaryTransactionId })}
-                  disabled={actionLoading === `confirm:${primaryTransactionId}`}>
-                  {actionLoading === `confirm:${primaryTransactionId}` ? <FaSpinner className="spinner-sm" /> : <FaCheckCircle size={14} />} I've Received the Item
-                </button>
-                <button className="btn btn-outline btn-block" style={{ color: 'var(--td-error)' }}
-                  onClick={() => askPrompt('Reason for cancellation:', 'e.g. Changed my mind', async (reason) => {
-                    await handleAction('cancel', { transactionId: primaryTransactionId, reason });
-                  }, 'Cancel Order')}
-                  disabled={actionLoading === `cancel:${primaryTransactionId}`}>
-                  {actionLoading === `cancel:${primaryTransactionId}` ? <FaSpinner className="spinner-sm" /> : <FaTimesCircle size={14} />} Cancel Order
-                </button>
+          {/* ENTERPRISE GATING: only surface actions the server state machine
+              actually accepts. Cancel Order is only valid BEFORE shipment
+              (order 'confirmed'/'paid' — consolidated or legacy); Confirm
+              Receipt only AFTER delivery. Showing a cancel button on a
+              shipped order always 400'd server-side — never show dead actions. */}
+          {(() => {
+            const terminalStates = ['cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'refunded'];
+            const orderStatus = viewOrder.status;
+            const canCancel = !terminalStates.includes(orderStatus) &&
+              ['paid', 'confirmed'].includes(orderStatus) &&
+              (viewOrder.payment?.status !== 'refunded') &&
+              (!(order.items && order.items.length) || order.items.length > 0);
+            const canConfirm = orderStatus === 'delivered';
+            if (!isBuyer || (!canCancel && !canConfirm)) return null;
+            return (
+              <div className="glass-card" style={{ padding: 'var(--td-space-lg)', borderLeft: '3px solid var(--td-success)' }}>
+                <h3 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Order Actions</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {canConfirm && (
+                    <button className="btn btn-success btn-block"
+                      onClick={() => handleAction('confirm', { transactionId: primaryTransactionId })}
+                      disabled={actionLoading === `confirm:${primaryTransactionId}`}>
+                      {actionLoading === `confirm:${primaryTransactionId}` ? <FaSpinner className="spinner-sm" /> : <FaCheckCircle size={14} />} I've Received the Item
+                    </button>
+                  )}
+                  {canCancel && (
+                    <button className="btn btn-outline btn-block" style={{ color: 'var(--td-error)' }}
+                      onClick={() => askPrompt('Reason for cancellation:', 'e.g. Changed my mind', async (reason) => {
+                        await handleAction('cancel', { transactionId: primaryTransactionId, reason });
+                      }, 'Cancel Order')}
+                      disabled={actionLoading === `cancel:${primaryTransactionId}`}>
+                      {actionLoading === `cancel:${primaryTransactionId}` ? <FaSpinner className="spinner-sm" /> : <FaTimesCircle size={14} />} Cancel Order
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ===== Refund Summary (order cancelled/refunded within window) ===== */}
+          {isBuyer && ['cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'refunded'].includes(viewOrder.status) ? (
+            <div className="glass-card" style={{ padding: 'var(--td-space-lg)', borderLeft: '3px solid var(--td-error)' }}>
+              <h3 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Refund Summary</h3>
+              <div style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="flex-between">
+                  <span style={{ color: 'var(--td-text-secondary)' }}>Status</span>
+                  <span style={{ fontWeight: 700, color: 'var(--td-error)' }}>{viewOrder.status === 'refunded' ? 'Fully Refunded' : 'Cancelled'}</span>
+                </div>
+                <div className="flex-between">
+                  <span style={{ color: 'var(--td-text-secondary)' }}>Refund Amount</span>
+                  <span style={{ fontWeight: 700, color: 'var(--td-error)' }}>
+                    {formatPrice(
+                      viewOrder.cancellation?.refundAmount != null
+                        ? viewOrder.cancellation.refundAmount
+                        : viewOrder.paymentBreakdown?.totalPaid != null
+                          ? viewOrder.paymentBreakdown.totalPaid
+                          : viewOrder.itemPrice,
+                      viewOrder.currency || 'USD'
+                    )}
+                  </span>
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--td-text-secondary)' }}>
+                  Your full payment has been returned to your original payment method. Sellers were not paid for this order.
+                </p>
               </div>
             </div>
           ) : null}
