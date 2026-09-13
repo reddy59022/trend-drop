@@ -969,3 +969,4 @@ router.post('/:id/relist', auth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.uploadListingImages = uploadListingImages;

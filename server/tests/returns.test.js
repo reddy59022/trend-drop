@@ -90,7 +90,7 @@ describe('Returns & Refund Management', () => {
   });
 
   test('RET.1 - Buyer should not return without auth', async () => {
-    const res = await request(app).post('/api/returns').send({ transactionId, reason: 'Defective' });
+    const res = await request(app).post('/api/returns').send({ transactionId, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
     expect(res.status).toBe(401);
   });
 
@@ -98,7 +98,7 @@ describe('Returns & Refund Management', () => {
     const res = await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Item not as described', description: 'Wrong color received' });
+      .send({ transactionId, reason: 'Item not as described', description: 'Wrong color received', images: ['https://example.com/photo.jpg'] });
     expect(res.status).toBe(201);
     expect(res.body.status).toBe('pending');
     expect(res.body.reason).toBe('Item not as described');
@@ -110,12 +110,12 @@ describe('Returns & Refund Management', () => {
     const res = await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Item not as described' });
+      .send({ transactionId, reason: 'Item not as described', images: ['https://example.com/photo.jpg'] });
     expect(res.status).toBe(201);
     const dup = await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Changed mind' });
+      .send({ transactionId, reason: 'Changed mind', images: ['https://example.com/photo.jpg'] });
     expect(dup.status).toBe(400);
   });
 
@@ -123,7 +123,7 @@ describe('Returns & Refund Management', () => {
     await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Defective' });
+      .send({ transactionId, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
     const res = await request(app)
       .get('/api/returns')
       .set('Authorization', `Bearer ${sellerToken}`);
@@ -136,7 +136,7 @@ describe('Returns & Refund Management', () => {
     await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Defective' });
+      .send({ transactionId, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
     const res = await request(app)
       .get('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`);
@@ -148,7 +148,7 @@ describe('Returns & Refund Management', () => {
     const created = await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Defective' });
+      .send({ transactionId, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
     const res = await request(app)
       .put(`/api/returns/${created.body._id}/approve`)
       .set('Authorization', `Bearer ${sellerToken}`);
@@ -160,7 +160,7 @@ describe('Returns & Refund Management', () => {
     const created = await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Item not as described' });
+      .send({ transactionId, reason: 'Item not as described', images: ['https://example.com/photo.jpg'] });
     await request(app)
       .put(`/api/returns/${created.body._id}/approve`)
       .set('Authorization', `Bearer ${sellerToken}`);
@@ -177,7 +177,7 @@ describe('Returns & Refund Management', () => {
     const created = await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Defective' });
+      .send({ transactionId, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
     await request(app)
       .put(`/api/returns/${created.body._id}/approve`)
       .set('Authorization', `Bearer ${sellerToken}`);
@@ -194,7 +194,7 @@ describe('Returns & Refund Management', () => {
     const created = await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Item not as described' });
+      .send({ transactionId, reason: 'Item not as described', images: ['https://example.com/photo.jpg'] });
     await request(app)
       .put(`/api/returns/${created.body._id}/approve`)
       .set('Authorization', `Bearer ${sellerToken}`);
@@ -213,11 +213,11 @@ describe('Returns & Refund Management', () => {
     const created = await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ transactionId, reason: 'Changed mind' });
+      .send({ transactionId, reason: 'Changed mind', images: ['https://example.com/photo.jpg'] });
     const res = await request(app)
       .put(`/api/returns/${created.body._id}/deny`)
       .set('Authorization', `Bearer ${sellerToken}`)
-      .send({ reason: 'Item is exactly as described' });
+      .send({ reason: 'Item is exactly as described', images: ['https://example.com/photo.jpg'] });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('denied');
   });

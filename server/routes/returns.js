@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
+const upload = require('../middleware/upload');
 const Return = require('../models/Return');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
@@ -8,27 +9,62 @@ const Listing = require('../models/Listing');
 const { orderStates, isValidTransition } = require('../config/orderLifecycle');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
 
-// POST /api/returns - Create a return request (buyer only)
-router.post('/', auth, async (req, res) => {
+// Reuse the listing image pipeline (Cloudinary in prod, deterministic mock in test).
+const { uploadListingImages } = (() => {
+  const mod = require('./listings');
+  return { uploadListingImages: mod.uploadListingImages || (async (files) => (files || []).map((f) => `test://return-image/${Date.now()}-${f.originalname}`)) };
+})();
+
+// POST /api/returns - Create a return request (buyer only).
+// Accepts BOTH JSON (images = array of URLs) and multipart/form-data with
+// image files (field name: images). ENTERPRISE STANDARD: 1-5 photos required
+// so support/seller can review the item condition BEFORE approval.
+router.post('/', auth, (req, res, next) => {
+  const ct = req.headers['content-type'] || '';
+  if (ct.includes('multipart/form-data')) {
+    upload.array('images', 5)(req, res, (err) => {
+      if (err) return res.status(400).json({ message: `Image upload failed: ${err.message}` });
+      next();
+    });
+  } else {
+    next();
+  }
+}, async (req, res) => {
   try {
-    const { transactionId, reason, description } = req.body;
+    let { transactionId, reason, description, images } = req.body;
+    // Multipart: files land in req.files; merge with any JSON-string images.
+    if (req.files && req.files.length) {
+      const uploadedUrls = await uploadListingImages(req.files);
+      images = uploadedUrls;
+    } else if (typeof images === 'string' && images.trim().startsWith('[')) {
+      try { images = JSON.parse(images); } catch { images = []; }
+    }
     const transaction = await Transaction.findById(transactionId);
     if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
     if (transaction.buyer.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
+    const existing = await Return.findOne({ transaction: transactionId });
+    if (existing) return res.status(400).json({ message: 'Return already exists for this transaction' });
     if (!['completed', 'delivered'].includes(transaction.status)) {
       return res.status(400).json({ message: 'Transaction must be completed before returning' });
     }
     if (!isValidTransition(transaction.status, orderStates.RETURN_REQUESTED)) {
       return res.status(400).json({ message: 'Cannot request return from current order status' });
     }
-    const existing = await Return.findOne({ transaction: transactionId });
-    if (existing) return res.status(400).json({ message: 'Return already exists for this transaction' });
+    // ENTERPRISE STANDARD: buyer must attach 1-5 photos so support/seller can
+    // review the item condition BEFORE approval. Fewer than 1 or more than 5
+    // is rejected outright.
+    const rawImgs = Array.isArray(images) ? images.filter((u) => typeof u === 'string' && u.trim()) : [];
+    if (rawImgs.length < 1 || rawImgs.length > 5) {
+      return res.status(400).json({ message: 'Please attach 1 to 5 photos of the item with your return request' });
+    }
+    const imgs = rawImgs.slice(0, 5);
     const refundAmount = transaction.itemPrice || transaction.paymentBreakdown?.subtotal || 0;
     const returnRequest = await Return.create({
       transaction: transactionId, buyer: req.user._id, seller: transaction.seller,
       listing: transaction.listing, reason, description: description || '', refundAmount,
+      images: imgs,
     });
     // Sync to Transaction lifecycle
     transaction.status = orderStates.RETURN_REQUESTED;
@@ -51,13 +87,80 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
+// GET /api/returns/eligible - Transactions eligible for a return request.
+// ENTERPRISE STANDARD eligibility rules:
+//   1. Buyer owns the transaction
+//   2. Status is delivered/completed (the item physically arrived)
+//   3. Still inside the return window (delivered + RETURN_WINDOW_DAYS)
+//   4. No return request already exists for the transaction
+router.get('/eligible', auth, async (req, res) => {
+  try {
+    const RETURN_WINDOW_DAYS = 3;
+    const cutoff = new Date(Date.now() - RETURN_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const txns = await Transaction.find({
+      buyer: req.user._id,
+      status: { $in: ['delivered', 'completed', 'buyer_confirmed'] },
+    })
+      .populate('listing', 'title images price')
+      .populate('seller', 'name')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const existingReturns = await Return.find({ buyer: req.user._id }).select('transaction status').lean();
+    const returnedTxnIds = new Set(existingReturns.map((r) => String(r.transaction)));
+
+    // Delivery date: prefer actualDelivery, fall back to buyerConfirmed.at or
+    // updatedAt. A transaction delivered before the cutoff is OUT of window.
+    const eligible = [];
+    const ineligible = [];
+    for (const t of txns) {
+      if (returnedTxnIds.has(String(t._id))) {
+        ineligible.push({ transactionId: t._id, title: t.listing?.title || 'Item', reason: 'Return already requested' });
+        continue;
+      }
+      const deliveredAt = t.shipping?.actualDelivery || t.buyerConfirmed?.confirmedAt || t.updatedAt || t.createdAt;
+      if (deliveredAt && new Date(deliveredAt) < cutoff) {
+        ineligible.push({ transactionId: t._id, title: t.listing?.title || 'Item', reason: `Return window closed (${RETURN_WINDOW_DAYS} days after delivery)` });
+        continue;
+      }
+      eligible.push({
+        transactionId: t._id,
+        title: t.listing?.title || 'Item',
+        image: t.listing?.images?.[0] || null,
+        price: t.itemPrice,
+        currency: t.currency || 'USD',
+        seller: t.seller?.name || '',
+        status: t.status,
+        deliveredAt,
+        returnWindowEnds: deliveredAt ? new Date(new Date(deliveredAt).getTime() + RETURN_WINDOW_DAYS * 24 * 60 * 60 * 1000) : null,
+        daysRemaining: deliveredAt ? Math.max(0, RETURN_WINDOW_DAYS - Math.floor((Date.now() - new Date(deliveredAt).getTime()) / (24 * 60 * 60 * 1000))) : RETURN_WINDOW_DAYS,
+      });
+    }
+    res.json({ eligible, ineligible, returnWindowDays: RETURN_WINDOW_DAYS });
+  } catch (error) {
+    console.error('Get eligible returns error:', error);
+    res.status(500).json({ message: 'Failed to fetch eligible returns' });
+  }
+});
+
 // GET /api/returns - Get returns for current user (buyer or seller)
+// PRIVACY: the generated return label URL is visible ONLY to the buyer.
+// The return tracking number is visible to BOTH buyer and seller so the
+// seller can track the inbound shipment.
 router.get('/', auth, async (req, res) => {
   try {
     const returns = await Return.find({ $or: [{ buyer: req.user._id }, { seller: req.user._id }] })
       .populate('listing', 'title images price').populate('buyer', 'name avatar')
       .populate('seller', 'name avatar').sort({ createdAt: -1 });
-    res.json(returns);
+    const isBuyerOf = (r) => String(r.buyer?._id || r.buyer) === String(req.user._id);
+    res.json(returns.map((r) => {
+      const obj = r.toObject ? r.toObject() : r;
+      if (!isBuyerOf(obj)) {
+        // Seller view: hide the label URL, keep the tracking number.
+        obj.returnLabel = undefined;
+      }
+      return obj;
+    }));
   } catch (error) {
     console.error('Get returns error:', error);
     res.status(500).json({ message: 'Failed to fetch returns' });
@@ -65,6 +168,8 @@ router.get('/', auth, async (req, res) => {
 });
 
 // GET /api/returns/:id - Get single return details
+// PRIVACY: the return label URL is visible ONLY to the buyer; the tracking
+// number is visible to both buyer and seller.
 router.get('/:id', auth, async (req, res) => {
   try {
     const returnRequest = await Return.findById(req.params.id)
@@ -74,7 +179,11 @@ router.get('/:id', auth, async (req, res) => {
     if (returnRequest.buyer._id.toString() !== userId && returnRequest.seller._id.toString() !== userId) {
       return res.status(403).json({ message: 'Not authorized' });
     }
-    res.json(returnRequest);
+    const obj = returnRequest.toObject ? returnRequest.toObject() : returnRequest;
+    if (returnRequest.buyer._id.toString() !== userId) {
+      obj.returnLabel = undefined; // seller must not see the buyer's label URL
+    }
+    res.json(obj);
   } catch (error) {
     console.error('Get return error:', error);
     res.status(500).json({ message: 'Failed to fetch return' });
@@ -93,6 +202,23 @@ router.put('/:id/approve', auth, async (req, res) => {
       return res.status(400).json({ message: 'Return is not in pending status' });
     }
     returnRequest.status = 'approved';
+    // ENTERPRISE STANDARD: generate a return shipping label the moment the
+    // seller approves. The label (URL + return tracking number) is stored on
+    // the return record; the URL is visible only to the buyer, the tracking
+    // number is visible to BOTH buyer and seller for inbound tracking.
+    let label;
+    try {
+      const { generateReturnLabel } = require('../services/returnLabelService');
+      label = await generateReturnLabel(returnRequest);
+      returnRequest.returnLabel = label.labelUrl || '';
+      returnRequest.returnTrackingNumber = label.trackingNumber || '';
+      returnRequest.labelCarrier = label.label || '';
+      returnRequest.labelCost = label.cost || 0;
+      returnRequest.labelGeneratedAt = new Date();
+      await returnRequest.save();
+    } catch (labelErr) {
+      console.error('Return label generation failed (approval continues):', labelErr.message);
+    }
     await returnRequest.save();
     // Sync to Transaction lifecycle
     const txn = await Transaction.findById(returnRequest.transaction);
@@ -104,11 +230,18 @@ router.put('/:id/approve', auth, async (req, res) => {
     try {
       const buyer = await User.findById(returnRequest.buyer);
       if (buyer) {
-        buyer.notifications.push({ type: 'sale', from: req.user._id, listing: returnRequest.listing, message: 'Your return request has been approved. Please ship the item back.', read: false });
+        const labelMsg = returnRequest.returnTrackingNumber
+          ? ` Your prepaid return label is ready in the Returns Center — tracking number ${returnRequest.returnTrackingNumber}.`
+          : '';
+        buyer.notifications.push({ type: 'sale', from: req.user._id, listing: returnRequest.listing, message: `Your return request has been approved.${labelMsg} Please ship the item back.`, read: false });
         await buyer.save();
       }
     } catch (e) { console.error('Notify buyer approve:', e.message); }
-    res.json(returnRequest);
+    // PRIVACY: the seller triggered the approval, so strip the buyer-only
+    // label URL from the seller's response (tracking number stays visible).
+    const approvedObj = returnRequest.toObject ? returnRequest.toObject() : returnRequest;
+    approvedObj.returnLabel = undefined;
+    res.json(approvedObj);
   } catch (error) {
     console.error('Approve return error:', error);
     res.status(500).json({ message: 'Failed to approve return' });

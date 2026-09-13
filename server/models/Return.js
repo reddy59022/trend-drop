@@ -56,6 +56,22 @@ const returnSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  returnTrackingNumber: {
+    type: String,
+    default: '',
+  },
+  labelCarrier: {
+    type: String,
+    default: '',
+  },
+  labelCost: {
+    type: Number,
+    default: 0,
+  },
+  labelGeneratedAt: {
+    type: Date,
+    default: null,
+  },
   sellerResponse: {
     type: String,
     default: '',
