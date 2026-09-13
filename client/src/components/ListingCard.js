@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FaHeart, FaShoppingBag, FaCheckCircle, FaBolt, FaPlay } from 'react-icons/fa';
+import { FaHeart, FaShoppingBag, FaCheckCircle, FaPlay } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
@@ -151,11 +151,6 @@ const ListingCard = ({ listing }) => {
         {listing.videoUrl && (
           <span className="video-badge">
             <FaPlay size={10} /> Video
-          </span>
-        )}
-        {listing.boosted && (
-          <span className="boost-badge">
-            <FaBolt size={10} /> BOOSTED
           </span>
         )}
         {discount > 0 && (

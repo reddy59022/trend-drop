@@ -340,11 +340,7 @@ const ListingDetail = () => {
         <div className="listing-detail-right">
           {/* Header */}
           <div className="listing-detail-header">
-            {listing.boost && listing.boost.active && (
-              <span className="boost-badge" style={{ position: 'relative', top: 0, left: 0, display: 'inline-flex', marginBottom: 8 }}>
-                ★ BOOSTED
-              </span>
-            )}
+
             <h1>{listing.title}</h1>
             <div className="listing-detail-price">
               {buyerOffer && buyerOffer.status === 'accepted' && (

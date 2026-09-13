@@ -21,7 +21,7 @@ async function confirmWithTestCard(api, pi, token) {
 
 test.describe('32 · Full return flow (enterprise standard)', () => {
   let api, state, sellerToken, buyerToken;
-  let listingId, txnId, returnId;
+  let listingId, orderId, txnId, returnId;
 
   test.beforeAll(async () => {
     api = await makeApi();
@@ -45,31 +45,34 @@ test.describe('32 · Full return flow (enterprise standard)', () => {
     });
     expect(ci.status).toBe(200);
     await confirmWithTestCard(api, ci.data.paymentIntentId, buyerToken);
-    const conf = await api.req('post', '/api/payments/confirm', {
-      token: buyerToken, body: { paymentIntentId: ci.data.paymentIntentId, listingId, shippingAddress: SHIPPING },
+    const conf = await api.req('post', '/api/payments/confirm-batch', {
+      token: buyerToken, body: { paymentIntentId: ci.data.paymentIntentId, items: [{ listingId }], shippingAddress: SHIPPING },
     });
     expect([200, 201]).toContain(conf.status);
-    txnId = String((conf.data.transaction || conf.data)._id ?? (conf.data.transaction || conf.data).id);
+    expect(conf.data.orders).toBeTruthy();
+    orderId = String(conf.data.orders[0]._id);
+    txnId = String(conf.data.transactions[0]._id);
   });
 
   test('S32.2 mark transaction delivered', async () => {
-    const ship = await api.req('post', `/api/orders/${txnId}/ship`, {
+    const ship = await api.req('post', `/api/orders/${orderId}/ship`, {
       token: sellerToken, body: { shipmentIndex: 0, trackingNumber: `S32-${RUN_ID}`, carrier: 'UPS' },
     });
     expect(ship.status).toBe(200);
+    // Carrier webhook advances the shipment shipped → delivered.
     const t = await api.req('post', '/api/shipping/tracking-event', {
-      token: sellerToken, headers: { 'x-tracking-secret': 'trenddrop-tracking-dev' },
-      body: { transactionId: txnId, status: 'delivered', carrier: 'UPS' },
+      headers: { 'x-tracking-secret': 'trenddrop-tracking-dev' },
+      body: { transactionId: txnId, status: 'delivered', trackingNumber: `S32-${RUN_ID}` },
     });
-    expect([200, 201]).toContain(t.status);
+    expect(t.status).toBe(200);
   });
 
   test('S32.3 eligible returns shows the delivered item', async () => {
     const r = await api.req('get', '/api/returns/eligible', { token: buyerToken });
     expect(r.status).toBe(200);
-    expect(r.body.returnWindowDays).toBe(3);
-    expect(r.body.eligible.length).toBeGreaterThanOrEqual(1);
-    const found = r.body.eligible.find((e) => e.transactionId === txnId);
+    expect(r.data.returnWindowDays).toBe(3);
+    expect(r.data.eligible.length).toBeGreaterThanOrEqual(1);
+    const found = r.data.eligible.find((e) => e.transactionId === txnId);
     expect(found).toBeTruthy();
     expect(found.daysRemaining).toBeGreaterThan(0);
   });
@@ -79,35 +82,50 @@ test.describe('32 · Full return flow (enterprise standard)', () => {
       token: buyerToken, body: { transactionId: txnId, reason: 'Item not as described' },
     });
     expect(r.status).toBe(400);
-    expect(r.body.message).toMatch(/photo/i);
+    expect(r.data.message).toMatch(/photo/i);
   });
 
-  test('S32.5 return creation with >5 photos is rejected', async () => {
+  test('S32.5 return with more than 5 photos is rejected', async () => {
     const images = Array.from({ length: 6 }, (_, i) => `https://example.com/photo${i}.jpg`);
     const r = await api.req('post', '/api/returns', {
       token: buyerToken, body: { transactionId: txnId, reason: 'Item not as described', images },
     });
+    expect(r.status).toBe(400);
+    expect(r.data.message).toMatch(/photo/i);
+  });
+
+  test('S32.6 buyer creates return with 5 photos', async () => {
+    const images = Array.from({ length: 5 }, (_, i) => `https://example.com/photo${i}.jpg`);
+    const r = await api.req('post', '/api/returns', {
+      token: buyerToken, body: { transactionId: txnId, reason: 'Item not as described', images },
+    });
+    expect(r.status).toBe(201);
+    returnId = r.data._id;
+    expect(r.data.images.length).toBe(5);
+    expect(r.data.status).toBe('pending');
+  });
 
   test('S32.7 seller approves return -> label generated', async () => {
     const r = await api.req('put', `/api/returns/${returnId}/approve`, {
       token: sellerToken, body: { sellerResponse: 'Approved' },
     });
     expect(r.status).toBe(200);
-    expect(r.body.status).toBe('approved');
-    expect(r.body.returnLabel).toBeTruthy();
-    expect(r.body.returnTrackingNumber).toBeTruthy();
-    expect(r.body.labelCarrier).toBeTruthy();
+    expect(r.data.status).toBe('approved');
+    // NOTE: the approve response strips the buyer-only label URL by design;
+    // the tracking number + carrier stay visible to the seller.
+    expect(r.data.returnTrackingNumber).toBeTruthy();
+    expect(r.data.labelCarrier).toBeTruthy();
   });
 
   test('S32.8 buyer can see label URL; seller cannot', async () => {
     const buyerView = await api.req('get', `/api/returns/${returnId}`, { token: buyerToken });
     expect(buyerView.status).toBe(200);
-    expect(buyerView.body.returnLabel).toBeTruthy();
-    expect(buyerView.body.returnTrackingNumber).toBeTruthy();
+    expect(buyerView.data.returnLabel).toBeTruthy();
+    expect(buyerView.data.returnTrackingNumber).toBeTruthy();
     const sellerView = await api.req('get', `/api/returns/${returnId}`, { token: sellerToken });
     expect(sellerView.status).toBe(200);
-    expect(sellerView.body.returnLabel).toBeUndefined();
-    expect(sellerView.body.returnTrackingNumber).toBeTruthy();
+    expect(sellerView.data.returnLabel).toBeUndefined();
+    expect(sellerView.data.returnTrackingNumber).toBeTruthy();
   });
 
   test('S32.9 buyer ships item back', async () => {
@@ -115,7 +133,7 @@ test.describe('32 · Full return flow (enterprise standard)', () => {
       token: buyerToken, body: { trackingNumber: '1ZRETURN123' },
     });
     expect(r.status).toBe(200);
-    expect(r.body.status).toBe('shipped');
+    expect(r.data.status).toBe('shipped');
   });
 
   test('S32.10 seller confirms receipt -> refunded + inventory restored', async () => {
@@ -123,7 +141,7 @@ test.describe('32 · Full return flow (enterprise standard)', () => {
       token: sellerToken, body: { inspectionNotes: 'OK' },
     });
     expect(r.status).toBe(200);
-    expect(r.body.status).toBe('refunded');
+    expect(r.data.status).toBe('refunded');
     const listing = await api.req('get', `/api/listings/${listingId}`);
     const l = listing.data.listing || listing.data;
     expect(l.quantity).toBe(3);
@@ -135,31 +153,15 @@ test.describe('32 · Full return flow (enterprise standard)', () => {
       token: buyerToken, body: { transactionId: txnId, reason: 'Changed mind', images: ['https://example.com/p.jpg'] },
     });
     expect(r.status).toBe(400);
-    expect(r.body.message).toMatch(/already exists/i);
+    expect(r.data.message).toMatch(/already exists/i);
   });
 
   test('S32.12 non-participant cannot access return', async () => {
-    const uniqueEmail = `other-${RUN_ID}@trenddrop.test`;
-    await api.req('post', '/api/auth/register', { body: { name: 'Other', email: uniqueEmail, password: 'E2ePass123!' } });
-    const login = await api.req('post', '/api/auth/login', { body: { email: uniqueEmail, password: 'E2ePass123!' } });
-    const otherToken = login.data.token;
+    // seller2 is a seeded, email-verified account that is neither the buyer
+    // nor the seller of this return (new registrations cannot log in until
+    // their email is verified, so a seeded third account is used instead).
+    const otherToken = await api.login('seller2');
     const r = await api.req('get', `/api/returns/${returnId}`, { token: otherToken });
     expect(r.status).toBe(403);
-  });
-});
-
-    expect(r.status).toBe(400);
-    expect(r.body.message).toMatch(/photo/i);
-  });
-
-  test('S32.6 buyer creates return with 2 photos', async () => {
-    const images = ['https://example.com/return-photo1.jpg', 'https://example.com/return-photo2.jpg'];
-    const r = await api.req('post', '/api/returns', {
-      token: buyerToken, body: { transactionId: txnId, reason: 'Item not as described', description: 'Looks different', images },
-    });
-    expect(r.status).toBe(201);
-    returnId = r.body._id;
-    expect(r.body.images.length).toBe(2);
-    expect(r.body.status).toBe('pending');
   });
 });
