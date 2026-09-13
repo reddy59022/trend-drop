@@ -106,7 +106,8 @@ const EditListing = () => {
       setPreviews(listingData.images || []);
       setVideoUrl(listingData.videoUrl || '');
       if (listingData.videoUrl) {
-        setVideoPreview(parseVideoUrl(listingData.videoUrl));
+        const initialParsed = parseVideoUrl(listingData.videoUrl);
+        setVideoPreview(initialParsed && initialParsed.platform !== 'unknown' ? initialParsed : null);
       }
       
       // Initialize boost state from existing listing
@@ -316,7 +317,10 @@ const EditListing = () => {
                   const url = e.target.value;
                   setVideoUrl(url);
                   if (url.trim()) {
-                    setVideoPreview(parseVideoUrl(url));
+                    const parsed = parseVideoUrl(url);
+                    // Only known platforms count (see Sell.js): 'unknown'
+                    // strings must NOT satisfy the media requirement.
+                    setVideoPreview(parsed && parsed.platform !== 'unknown' ? parsed : null);
                   } else {
                     setVideoPreview(null);
                   }

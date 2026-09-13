@@ -286,7 +286,10 @@ const Sell = () => {
                     setVideoUrl(url);
                     if (url.trim()) {
                       const parsed = parseVideoUrl(url);
-                      setVideoPreview(parsed);
+                      // Only known platforms count as a linked video: parseVideoUrl
+                      // returns { platform: 'unknown' } for unrecognized strings,
+                      // which must NOT satisfy the media requirement.
+                      setVideoPreview(parsed && parsed.platform !== 'unknown' ? parsed : null);
                     } else {
                       setVideoPreview(null);
                     }
