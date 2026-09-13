@@ -236,7 +236,7 @@ const ReturnsCenter = () => {
               <textarea className="form-input" style={{ minHeight: 80 }} placeholder="Tell the seller what went wrong..." maxLength={1000}
                 value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
             </div>
-            <button type="submit" className="btn btn-primary" disabled={uploadingImages}>
+            <button type="submit" className="btn btn-primary">
               <FaDollarSign size={14} /> Submit Return Request
             </button>
           </form>
