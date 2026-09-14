@@ -26,9 +26,10 @@ describe('ShopBoostCard', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/shop-boost'));
   });
   test('active boost shows the Active label and toggles off', async () => {
-    api.get.mockResolvedValue({ data: { shopBoost: { active: true, endDate: new Date(Date.now()+864e5).toISOString() } } });
+    api.get.mockResolvedValue({ data: { shopBoost: { active: true, endDate: new Date(Date.now()+864e5).toISOString() }, boostedListings: 5 } });
     render(<ShopBoostCard />);
     expect(await screen.findByText('Active')).toBeInTheDocument();
+    expect(await screen.findByText('5')).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: /Turn Off/i }));
     await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/shop-boost/deactivate'));
   });

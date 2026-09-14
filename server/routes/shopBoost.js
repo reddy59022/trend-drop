@@ -87,7 +87,19 @@ router.get('/', auth, async (req, res) => {
     if (!shopBoost) {
       shopBoost = await ShopBoost.create({ seller: req.user._id, active: false });
     }
-    res.json({ shopBoost });
+
+    // Count boosted listings (same logic as POST endpoint) so the frontend
+    // can display the count on page reload.
+    const boosted = shopBoost.active
+      ? await Listing.countDocuments({
+          seller: req.user._id,
+          available: true,
+          sold: false,
+          'boost.active': true,
+        })
+      : 0;
+
+    res.json({ shopBoost, boostedListings: boosted });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
