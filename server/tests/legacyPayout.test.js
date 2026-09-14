@@ -273,4 +273,49 @@ describe('Legacy Payout Normalization', () => {
       r.body.totalCommission + r.body.totalEarnings, 2
     );
   });
+
+  // TEST: Payouts created with OLD buggy formula (salePrice=amount, payout=amount-amount*0.08)
+  // These need to be detected and fixed on read
+  test('LN.7 Old buggy payouts: detected and corrected on read', async () => {
+    // Simulate a payout created with the OLD buggy code:
+    // salePrice was set to amount (wrong), payoutAmount was amount - amount*0.08 (wrong)
+    const buggyAmount = 200;
+    const buggySalePrice = buggyAmount;  // OLD BUG: treated amount as salePrice
+    const buggyCommission = Math.round(buggyAmount * 0.08 * 100) / 100;  // 16
+    const buggyPayout = Math.round((buggyAmount - buggyCommission) * 100) / 100;  // 184
+    
+    await Payout.collection.insertOne({
+      seller: sellerId,
+      transaction: new mongoose.Types.ObjectId(),
+      listing: new mongoose.Types.ObjectId(),
+      amount: buggyAmount,
+      salePrice: buggySalePrice,      // BUG: should be 217.39, not 200
+      commissionAmount: buggyCommission, // BUG: should be 17.39, not 16
+      payoutAmount: buggyPayout,        // BUG: should be 200, not 184
+      currency: 'USD',
+      status: 'completed',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const r = await request(app)
+      .get('/api/payouts/dashboard')
+      .set('Authorization', `Bearer ${sellerToken}`);
+
+    expect(r.status).toBe(200);
+    
+    // After correction:
+    // salePrice should = 200 / 0.92 = 217.39
+    // commission should = 217.39 * 0.08 = 17.39
+    // payout should = 200 (the amount)
+    const expectedSalePrice = Math.round(buggyAmount / (1 - 0.08) * 100) / 100;
+    expect(r.body.totalSales).toBeCloseTo(expectedSalePrice, 2);
+    expect(r.body.totalEarnings).toBeCloseTo(buggyAmount, 2);  // Should be 200, not 184
+    expect(r.body.totalCommission).toBeCloseTo(Math.round(expectedSalePrice * 0.08 * 100) / 100, 2);
+    
+    // INVARIANT: totalSales = totalCommission + totalEarnings
+    expect(r.body.totalSales).toBeCloseTo(
+      r.body.totalCommission + r.body.totalEarnings, 2
+    );
+  });
 });

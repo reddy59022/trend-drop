@@ -60,6 +60,22 @@ router.get('/dashboard', auth, async (req, res) => {
         doc.commissionAmount = doc.commissionAmount ?? legacyCommission;
         doc.payoutAmount = doc.payoutAmount ?? legacyPayoutAmount;
       }
+      // ALSO fix payouts where amount is set but payoutAmount looks incorrect
+      // (was calculated with old buggy formula: payout = amount - amount*0.08)
+      // Detect: if payoutAmount + commissionAmount != salePrice, re-derive from amount
+      else if (doc.amount != null && doc.salePrice != null && doc.payoutAmount != null) {
+        const expectedPayout = Math.round(doc.amount / (1 - COMMISSION_RATE) * 100) / 100 - 
+          Math.round(doc.amount * COMMISSION_RATE / (1 - COMMISSION_RATE) * 100) / 100;
+        // If payoutAmount doesn't match what it should be (within rounding tolerance)
+        // and salePrice looks like it was set to amount (old bug), fix it
+        if (Math.abs(doc.payoutAmount - doc.amount) > 0.01 && 
+            Math.abs(doc.salePrice - doc.amount) < 0.01) {
+          // Old bug: salePrice was set to amount, payoutAmount was too low
+          doc.salePrice = Math.round(doc.amount / (1 - COMMISSION_RATE) * 100) / 100;
+          doc.commissionAmount = Math.round(doc.salePrice * COMMISSION_RATE * 100) / 100;
+          doc.payoutAmount = doc.amount;
+        }
+      }
       return doc;
     });
     payouts = normalized;
