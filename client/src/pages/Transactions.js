@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { getTransactions as fetchTransactionsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -270,14 +270,6 @@ function Transactions() {
                 {/* Expanded Detail */}
                 {isExpanded && (
                   <div style={{ padding: '0 var(--td-space-md) var(--td-space-md)', borderTop: '1px solid var(--td-border-light)', animation: 'fadeIn 0.2s ease-out' }}>
-                    {/* Shipping Label */}
-                    {!isBuyer && (txn.shipping?.trackingNumber || txn.shipping?.labelCreated) && (
-                      <button className="btn btn-primary btn-sm" onClick={async (e) => {
-                        e.stopPropagation();
-                        try { const res = await api.get(`/shipping/label/${txn._id}`, { responseType: 'blob' }); const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' })); const link = document.createElement('a'); link.href = url; link.download = `label-${txn._id}.pdf`; document.body.appendChild(link); link.click(); link.remove(); } catch { toast.error('Download failed'); }
-                      }}><FaDownload size={12} /> Download Label</button>
-                    )}
-
                     {/* Tracking */}
                     {txn.shipping?.trackingNumber && (
                       <div style={{ background: 'var(--td-surface-secondary)', padding: 12, borderRadius: 'var(--td-radius-sm)', marginTop: 12, marginBottom: 12, fontSize: 13 }}>
