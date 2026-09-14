@@ -222,5 +222,10 @@ transactionSchema.index({ status: 1 });
 transactionSchema.index({ 'shipping.trackingNumber': 1 });
 transactionSchema.index({ 'autoTracking.nextCheck': 1, status: 1 });
 transactionSchema.index({ 'disputeInfo.stripeDisputeId': 1 });
+// Compound indexes for paginated status-filtered queries (enterprise scale)
+transactionSchema.index({ buyer: 1, status: 1, createdAt: -1 });
+transactionSchema.index({ seller: 1, status: 1, createdAt: -1 });
+transactionSchema.index({ buyer: 1, createdAt: -1, _id: -1 });
+transactionSchema.index({ seller: 1, createdAt: -1, _id: -1 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

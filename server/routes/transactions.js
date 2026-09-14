@@ -597,23 +597,83 @@ router.post('/offer/:offerId', auth, async (req, res) => {
   }
 });
 
-// GET /api/transactions - Get user's transactions
+// GET /api/transactions - Get user's transactions (paginated + status filter)
+// Query params:
+//   type: 'all' | 'bought' | 'sold'  (default: 'all')
+//   status: single status or comma-separated list (e.g. 'paid,processing')
+//   page: page number (default: 1)
+//   limit: items per page (default: 20, max: 100)
+//
+// Default status filters applied when no explicit status is provided:
+//   sold   -> ['paid', 'processing']              (sold & ready to ship)
+//   bought -> ['paid', 'processing', 'shipped', 'in_transit']  (active orders)
+//   all    -> no status filter
 router.get('/', auth, async (req, res) => {
   try {
-    const { type } = req.query; // 'bought' or 'sold'
-    let query = { $or: [{ buyer: req.user._id }, { seller: req.user._id }] };
-    if (type === 'bought') query = { buyer: req.user._id };
-    if (type === 'sold') query = { seller: req.user._id };
+    const { type = 'all', status } = req.query;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 20), 100);
 
-    const transactions = await Transaction.find(query)
-      .populate('buyer', 'name avatar country')
-      .populate('seller', 'name avatar country')
-      .populate('listing', 'title images price currency category brand')
-      .sort({ createdAt: -1 });
+    // Build base query by role
+    let query = {};
+    if (type === 'bought') {
+      query.buyer = req.user._id;
+    } else if (type === 'sold') {
+      query.seller = req.user._id;
+    } else {
+      query.$or = [{ buyer: req.user._id }, { seller: req.user._id }];
+    }
 
-    res.json(transactions);
+    // Build status filter
+    if (status) {
+      // Explicit status filter from client
+      const statusList = status.split(',').map(s => s.trim()).filter(Boolean);
+      query.status = { $in: statusList };
+    } else {
+      // Apply default status filter based on type
+      if (type === 'sold') {
+        // Default: sold items that are paid/processing (ready to ship)
+        query.status = { $in: ['paid', 'processing'] };
+      } else if (type === 'bought') {
+        // Default: active bought items (in progress)
+        query.status = { $in: ['paid', 'processing', 'shipped', 'in_transit'] };
+      }
+      // type === 'all' -> no status filter (show everything)
+    }
+
+    // Execute paginated query
+    const skip = (page - 1) * limit;
+
+    const [transactions, total] = await Promise.all([
+      Transaction.find(query)
+        .populate('buyer', 'name avatar country')
+        .populate('seller', 'name avatar country')
+        .populate('listing', 'title images price currency category brand')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Transaction.countDocuments(query),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({
+      transactions,
+      pagination: {
+        total,
+        totalPages,
+        currentPage: page,
+        limit,
+        hasMore: page < totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+        nextPage: page < totalPages ? page + 1 : null,
+        prevPage: page > 1 ? page - 1 : null,
+      },
+    });
   } catch (error) {
-    console.error(error);
+    console.error('GET /transactions error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

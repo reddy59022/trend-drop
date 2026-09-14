@@ -1,40 +1,117 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import api from '../services/api';
+import { getTransactions as fetchTransactionsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { toast } from 'react-toastify';
 import { formatPrice, getStatusColor, getStatusLabel, formatDate } from '../utils/helpers';
-import { FaTruck, FaCheckCircle, FaClock, FaBox, FaShoppingBag, FaDownload, FaChevronDown, FaChevronUp } from 'react-icons/fa';
+import { FaTruck, FaCheckCircle, FaClock, FaBox, FaShoppingBag, FaChevronDown, FaChevronUp, FaChevronLeft, FaChevronRight, FaFilter } from 'react-icons/fa';
+
+// All possible transaction statuses grouped by category for the filter UI
+const STATUS_GROUPS = [
+  { label: 'Sold & Ready to Ship', statuses: ['paid', 'processing'] },
+  { label: 'In Transit', statuses: ['shipped', 'in_transit', 'out_for_delivery'] },
+  { label: 'Delivered', statuses: ['delivered', 'completed', 'buyer_confirmed'] },
+  { label: 'Cancelled / Refunded', statuses: ['cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled', 'refunded'] },
+  { label: 'Returns', statuses: ['returned', 'return_requested', 'return_accepted', 'return_rejected', 'return_in_transit', 'return_delivered'] },
+  { label: 'Disputed / Chargeback', statuses: ['disputed', 'dispute_resolved', 'chargeback_open', 'chargeback_won', 'chargeback_lost'] },
+];
+
+// Default status filters per type tab
+const DEFAULT_STATUSES = {
+  sold: ['paid', 'processing'],           // sold & ready to ship
+  bought: ['paid', 'processing', 'shipped', 'in_transit'], // active orders
+  all: null,                              // no filter (show everything)
+};
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 function Transactions() {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState(null); // null = use default for type
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [pagination, setPagination] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
 
-  useEffect(() => { fetchTransactions(); }, [filter]); // eslint-disable-line
+  const getStatusFilterString = useCallback(() => {
+    if (statusFilter && statusFilter.length > 0) return statusFilter.join(',');
+    const defaults = DEFAULT_STATUSES[filter];
+    return defaults ? defaults.join(',') : '';
+  }, [statusFilter, filter]);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const params = filter !== 'all' ? `?type=${filter}` : '';
-      const res = await api.get(`/transactions${params}`);
-      setTransactions(res.data);
-    } catch (err) { console.error(err); }
+      const params = { type: filter, page, limit };
+      const statusStr = getStatusFilterString();
+      if (statusStr) params.status = statusStr;
+      const res = await fetchTransactionsApi(params);
+      setTransactions(res.data.transactions);
+      setPagination(res.data.pagination);
+    } catch (err) {
+      console.error('Failed to fetch transactions:', err);
+      setError('Failed to load transactions. Please try again.');
+      setTransactions([]);
+      setPagination(null);
+    }
     setLoading(false);
+  }, [filter, page, limit, getStatusFilterString]);
+
+  // Fetch on filter, page, or limit change
+  useEffect(() => { fetchTransactions(); }, [fetchTransactions]); // eslint-disable-line
+
+  // When type filter changes, reset status filter to defaults and go to page 1
+  const handleFilterChange = (newFilter) => {
+    setFilter(newFilter);
+    setStatusFilter(null); // reset to default for this type
+    setPage(1);
+    setExpandedId(null);
+  };
+
+  // When status filter changes, reset to page 1
+  const handleStatusChange = (statuses) => {
+    setStatusFilter(statuses);
+    setPage(1);
+    setShowStatusDropdown(false);
+    setExpandedId(null);
+  };
+
+  // Clear status filter (show all statuses for current type)
+  const handleClearStatusFilter = () => {
+    setStatusFilter([]);
+    setPage(1);
+    setExpandedId(null);
+  };
+
+  // Handle page size change
+  const handleLimitChange = (newLimit) => {
+    setLimit(newLimit);
+    setPage(1);
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'shipped': case 'in_transit': return <FaTruck />;
+      case 'shipped': case 'in_transit': case 'out_for_delivery': return <FaTruck />;
       case 'delivered': case 'completed': case 'buyer_confirmed': return <FaCheckCircle />;
       case 'paid': case 'processing': return <FaClock />;
       default: return <FaBox />;
     }
   };
 
-  if (loading) return (
+  const activeStatuses = statusFilter !== null ? statusFilter : (DEFAULT_STATUSES[filter] || []);
+
+  const getActiveStatusLabel = () => {
+    if (activeStatuses.length === 0) return 'All Statuses';
+    if (activeStatuses.length === 1) return getStatusLabel(activeStatuses[0]);
+    return `${activeStatuses.length} Statuses`;
+  };
+
+  if (loading && transactions.length === 0) return (
     <div className="page-container">
       <h1 className="page-title"><FaShoppingBag /> My Orders</h1>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -48,24 +125,117 @@ function Transactions() {
       <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}><FaShoppingBag /> My Orders</h1>
 
       {/* Filter Tabs */}
-      <div className="tabs" style={{ marginBottom: 'var(--td-space-lg)' }}>
+      <div className="tabs" style={{ marginBottom: 'var(--td-space-md)' }}>
         {['all', 'bought', 'sold'].map(f => (
-          <button key={f} className={`tab ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
+          <button key={f} className={`tab ${filter === f ? 'active' : ''}`} onClick={() => handleFilterChange(f)}>
             {f === 'all' ? '📦 All' : f === 'bought' ? '🛒 Bought' : '💰 Sold'}
           </button>
         ))}
       </div>
 
-      {transactions.length === 0 ? (
+      {/* Status Filter + Page Size Row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 'var(--td-space-md)', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative' }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <FaFilter /> {getActiveStatusLabel()}
+            {activeStatuses.length > 0 && filter !== 'all' && (
+              <span style={{ fontSize: 10, background: 'var(--td-primary)', color: '#fff', borderRadius: 8, padding: '1px 6px' }}>default</span>
+            )}
+          </button>
+          {showStatusDropdown && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 100,
+              background: 'var(--td-bg-primary)', border: '1px solid var(--td-border)',
+              borderRadius: 'var(--td-radius-md)', boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+              minWidth: 260, maxHeight: 400, overflowY: 'auto',
+            }}>
+              <div
+                onClick={handleClearStatusFilter}
+                style={{
+                  padding: '10px 14px', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+                  borderBottom: '1px solid var(--td-border)',
+                  background: activeStatuses.length === 0 ? 'var(--td-primary-light)' : 'transparent',
+                  color: activeStatuses.length === 0 ? 'var(--td-primary)' : 'var(--td-text-primary)',
+                }}
+              >
+                ✓ All Statuses
+              </div>
+              {STATUS_GROUPS.map(group => (
+                <div key={group.label}>
+                  <div style={{ padding: '8px 14px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--td-text-tertiary)', letterSpacing: 0.5 }}>{group.label}</div>
+                  {group.statuses.map(status => {
+                    const isActive = activeStatuses.includes(status);
+                    return (
+                      <div
+                        key={status}
+                        onClick={() => handleStatusChange([status])}
+                        style={{
+                          padding: '8px 14px 8px 24px', cursor: 'pointer', fontSize: 13,
+                          background: isActive ? 'var(--td-primary-light)' : 'transparent',
+                          color: isActive ? 'var(--td-primary)' : 'var(--td-text-primary)',
+                          fontWeight: isActive ? 600 : 400,
+                        }}
+                      >
+                        {isActive ? '✓ ' : ''}{getStatusLabel(status)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--td-text-secondary)' }}>
+          <span>Show:</span>
+          <select
+            value={limit}
+            onChange={(e) => handleLimitChange(Number(e.target.value))}
+            style={{
+              padding: '4px 8px', borderRadius: 'var(--td-radius-sm)',
+              border: '1px solid var(--td-border)', background: 'var(--td-bg-primary)',
+              color: 'var(--td-text-primary)', fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+        {pagination && (
+          <div style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>
+            {pagination.total.toLocaleString()} order{pagination.total !== 1 ? 's' : ''}
+            {pagination.totalPages > 1 && ` · Page ${pagination.currentPage} of ${pagination.totalPages}`}
+          </div>
+        )}
+      </div>
+
+      {error && !loading && (
+        <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
+          <div className="empty-state-icon">⚠️</div>
+          <h2>Something went wrong</h2>
+          <p>{error}</p>
+          <button className="btn btn-primary" onClick={fetchTransactions}>Retry</button>
+        </div>
+      )}
+
+      {!loading && !error && transactions.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
           <div className="empty-state-icon">📦</div>
-          <h2>No orders yet</h2>
-          <p>Your transaction history will appear here</p>
-          <Link to="/feed" className="btn btn-primary">Browse Items</Link>
+          <h2>No orders found</h2>
+          <p>{activeStatuses.length > 0 ? 'No orders match the selected filters. Try a different status.' : 'Your transaction history will appear here'}</p>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {activeStatuses.length > 0 && (
+              <button className="btn btn-secondary" onClick={handleClearStatusFilter}>Clear Status Filter</button>
+            )}
+            <Link to="/feed" className="btn btn-primary">Browse Items</Link>
+          </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {transactions.map(txn => {
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {transactions.map(txn => {
             const isBuyer = (txn.buyer?._id?.toString() || txn.buyer?.toString()) === (user?.id || user?._id)?.toString();
             const isExpanded = expandedId === txn._id;
             const breakdown = txn.paymentBreakdown || {};
@@ -149,7 +319,49 @@ function Transactions() {
               </div>
             );
           })}
-        </div>
+          </div>
+
+          {/* Pagination Controls */}
+          {pagination && pagination.totalPages > 1 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              marginTop: 'var(--td-space-lg)', padding: 'var(--td-space-md)',
+              flexWrap: 'wrap',
+            }}>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => setPage(1)}
+                disabled={page === 1}
+                style={{ opacity: page === 1 ? 0.5 : 1, minWidth: 36 }}
+              >«</button>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={!pagination.hasPrevPage}
+                style={{ opacity: !pagination.hasPrevPage ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <FaChevronLeft /> Prev
+              </button>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--td-text-primary)', padding: '0 8px' }}>
+                {pagination.currentPage} / {pagination.totalPages}
+              </span>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => setPage(p => p + 1)}
+                disabled={!pagination.hasNextPage}
+                style={{ opacity: !pagination.hasNextPage ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                Next <FaChevronRight />
+              </button>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => setPage(pagination.totalPages)}
+                disabled={page === pagination.totalPages}
+                style={{ opacity: page === pagination.totalPages ? 0.5 : 1, minWidth: 36 }}
+              >»</button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

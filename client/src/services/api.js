@@ -202,6 +202,9 @@ export const getAdminTransactions = (params) => api.get('/admin/transactions', {
 export const adminRefundTransaction = (id) => api.post(`/admin/transactions/${id}/refund`);
 export const autoSuspendUsers = () => api.post('/admin/auto-suspend');
 
+// ====== Transactions ======
+export const getTransactions = (params) => api.get('/transactions', { params });
+
 // ====== Bundle Discounts (Section 28a) ======
 export const createBundleRule = (data) => api.post('/offers/bundle', data);
 export const getBundleRules = () => api.get('/offers/bundle');
