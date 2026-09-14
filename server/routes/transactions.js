@@ -612,7 +612,8 @@ router.get('/', auth, async (req, res) => {
   try {
     const { type = 'all', status } = req.query;
     const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 20), 100);
+    const rawLimit = parseInt(req.query.limit);
+    const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 20 : rawLimit), 100);
 
     // Build base query by role
     let query = {};
