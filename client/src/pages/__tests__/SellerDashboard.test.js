@@ -132,7 +132,25 @@ describe('SellerDashboard page', () => {
     expect(pctInput).toHaveValue(10);
 
     fireEvent.click(screen.getByRole('button', { name: /Update All/i }));
-    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/listings/bulk/auto-respond', { enabled: true, percentOff: 10 }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/listings/bulk/auto-respond', { enabled: true, percentOff: 10, autoOfferToLikers: true }));
+  });
+
+  test('auto respond bulk auto-offer-to-likers checkbox defaults ON and can be turned off', async () => {
+    api.patch.mockResolvedValue({ data: { message: 'Auto-respond enabled for 1 listings (5% off)', updated: 1 } });
+    renderPage(<SellerDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: /Auto Respond/i }));
+
+    const likersCheckbox = await screen.findByRole('checkbox', { name: /auto-offer to likers/i });
+    expect(likersCheckbox).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: /Update All/i }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/listings/bulk/auto-respond', { enabled: true, percentOff: 5, autoOfferToLikers: true }));
+
+    // Uncheck → payload carries autoOfferToLikers: false
+    fireEvent.click(likersCheckbox);
+    expect(likersCheckbox).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: /Update All/i }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/listings/bulk/auto-respond', { enabled: true, percentOff: 5, autoOfferToLikers: false }));
   });
 
   test('auto respond bulk percentage Update All surfaces errors', async () => {

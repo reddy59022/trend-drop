@@ -42,6 +42,7 @@ const SellerDashboard = () => {
   const [bulkAutoRespond, setBulkAutoRespond] = useState(false);
   const [savingBulkAutoRespond, setSavingBulkAutoRespond] = useState(false);
   const [bulkAutoRespondPercent, setBulkAutoRespondPercent] = useState(5);
+  const [bulkAutoOfferLikers, setBulkAutoOfferLikers] = useState(true);
   const [savingBulkPercent, setSavingBulkPercent] = useState(false);
 
   useEffect(() => {
@@ -189,6 +190,7 @@ const SellerDashboard = () => {
   // Auto-respond bulk update as a percentage off list price (Feature 4).
   // Enables auto-respond for ALL listings with minPrice = price × (1 - percent/100).
   // Default 5% (seller accepts offers at 95% of list price). User can enter any number 0–100.
+  // autoOfferToLikers (default ON): likers instantly receive an accepted offer at minPrice.
   const handleBulkUpdateAutoPercent = async () => {
     const pct = Number(bulkAutoRespondPercent);
     if (isNaN(pct) || pct < 0 || pct > 100) {
@@ -197,7 +199,11 @@ const SellerDashboard = () => {
     }
     setSavingBulkPercent(true);
     try {
-      const res = await api.patch('/listings/bulk/auto-respond', { enabled: true, percentOff: pct });
+      const res = await api.patch('/listings/bulk/auto-respond', {
+        enabled: true,
+        percentOff: pct,
+        autoOfferToLikers: bulkAutoOfferLikers,
+      });
       setBulkAutoRespond(true);
       toast.success(res.data.message || `Auto-respond enabled for all listings (${pct}% off)`);
       fetchListings();
@@ -600,6 +606,16 @@ const SellerDashboard = () => {
                 {listings.length > 0 ? `Will set min price to ${100 - Number(bulkAutoRespondPercent || 0)}% of list price for ${listings.length} listing${listings.length === 1 ? '' : 's'}.` : 'No listings to update.'}
               </div>
             </div>
+            <label htmlFor="bulk-auto-offer-likers" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+              <input
+                id="bulk-auto-offer-likers"
+                type="checkbox"
+                checked={bulkAutoOfferLikers}
+                onChange={e => setBulkAutoOfferLikers(e.target.checked)}
+                style={{ accentColor: 'var(--td-primary)', width: 16, height: 16 }}
+              />
+              <span style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}>📨 Auto-offer to likers — likers instantly receive an accepted offer at the minimum price</span>
+            </label>
           </div>
 
           {/* Per-listing auto-respond status */}

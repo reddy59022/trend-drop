@@ -178,6 +178,10 @@ router.get('/user/:userId', async (req, res) => {
 //   - percentOff omitted  → minPrice = price ("auto-accept offers at or above list price")
 // Bulk-disable turns autoRespond off while preserving minPrice/autoOfferToLikers settings.
 // percentOff must be a number between 0 and 100 (inclusive) when provided.
+// autoOfferToLikers (boolean, optional): whether likers automatically receive
+// an accepted offer at minPrice. Defaults to TRUE on bulk-enable — enabling
+// auto-respond across the shop implies likers get instant offers (the
+// per-listing "📨 auto-offer to likers" badge). Bulk-disable preserves it.
 //
 // IMPLEMENTATION NOTE: the update runs as an atomic aggregation-pipeline
 // updateMany instead of per-listing save(). Document.save() runs FULL-document
@@ -189,7 +193,7 @@ router.get('/user/:userId', async (req, res) => {
 // Registered before /:id routes so "bulk" is never parsed as an id.
 router.patch('/bulk/auto-respond', auth, async (req, res) => {
   try {
-    const { enabled, percentOff } = req.body;
+    const { enabled, percentOff, autoOfferToLikers } = req.body;
     if (typeof enabled !== 'boolean') {
       return res.status(400).json({ message: 'enabled (boolean) is required' });
     }
@@ -202,6 +206,14 @@ router.patch('/bulk/auto-respond', auth, async (req, res) => {
         return res.status(400).json({ message: 'percentOff must be a number between 0 and 100' });
       }
       percentOffValue = parsed;
+    }
+
+    // autoOfferToLikers: optional boolean; default TRUE on bulk-enable.
+    let likersBool;
+    if (autoOfferToLikers !== undefined && autoOfferToLikers !== null && autoOfferToLikers !== '') {
+      likersBool = (autoOfferToLikers === true || autoOfferToLikers === 'true');
+    } else {
+      likersBool = true; // bulk-enable implies likers get auto offers
     }
 
     const filter = { seller: req.user._id, sold: false };
@@ -218,7 +230,7 @@ router.patch('/bulk/auto-respond', auth, async (req, res) => {
               enabled: true,
               minPrice: { $round: [{ $multiply: [{ $ifNull: ['$price', 0] }, keepFactor] }, 2] },
               currency: { $ifNull: ['$currency', 'USD'] },
-              autoOfferToLikers: { $ifNull: ['$autoRespond.autoOfferToLikers', false] },
+              autoOfferToLikers: { $literal: likersBool },
               message: { $ifNull: ['$autoRespond.message', ''] },
             },
           },
@@ -231,11 +243,12 @@ router.patch('/bulk/auto-respond', auth, async (req, res) => {
 
     const updatedListings = await Listing.find(filter).select('_id autoRespond');
     const updated = updatedListings.length;
-    const suffix = enabled && percentOffValue !== null ? ` (${percentOffValue}% off)` : '';
+    const suffix = enabled ? ` (${percentOffValue !== null ? `${percentOffValue}% off` : 'at list price'}${likersBool ? ', auto-offer to likers' : ''})` : '';
     res.json({
       message: `Auto-respond ${enabled ? 'enabled' : 'disabled'} for ${updated} listing${updated === 1 ? '' : 's'}${suffix}`,
       updated,
       percentOff: percentOffValue,
+      autoOfferToLikers: enabled ? likersBool : undefined,
       listings: updatedListings.map((l) => ({ _id: l._id, autoRespond: l.autoRespond })),
     });
   } catch (error) {
@@ -764,65 +777,67 @@ router.post('/:id/like', auth, async (req, res) => {
     }
 
     const Wishlist = require('../models/Wishlist');
-    const index = listing.likes.indexOf(req.user._id);
-    let liked = false;
-    
-    if (index > -1) {
-      listing.likes.splice(index, 1);
-      listing.likesCount = Math.max(0, (listing.likesCount || 0) - 1);
-      liked = false;
-      
-      let wishlist = await Wishlist.findOne({ user: req.user._id });
-      if (wishlist) {
-        wishlist.items = wishlist.items.filter(i => i.listing.toString() !== req.params.id);
-        await wishlist.save();
-      }
-    } else {
-      listing.likes.push(req.user._id);
-      listing.likesCount = (listing.likesCount || 0) + 1;
-      liked = true;
+    const userId = req.user._id;
+    const alreadyLiked = (listing.likes || []).some((l) => l.toString() === userId.toString());
+    const liked = !alreadyLiked;
 
-      let wishlist = await Wishlist.findOne({ user: req.user._id });
-      if (!wishlist) {
-        wishlist = await Wishlist.create({ user: req.user._id, items: [{ listing: req.params.id }] });
-      } else {
-        const exists = wishlist.items.find(i => i.listing.toString() === req.params.id);
-        if (!exists) {
-          wishlist.items.push({ listing: req.params.id });
-          await wishlist.save();
-        }
-      }
+    // NOTE: every write below is an ATOMIC update (no document.save()). A
+    // full save() runs Mongoose full-document validation, and seeded/legacy
+    // listings & users can carry schema-invalid legacy fields (e.g. weight
+    // < 0.1 from the original simplified seed schema) — saving those docs
+    // throws ValidationError and 500s the like flow.
 
-      if (listing.seller.toString() !== req.user._id.toString()) {
-        const seller = await User.findById(listing.seller);
-        if (seller) {
-          seller.notifications.unshift({
-            type: 'like',
-            from: req.user._id,
-            listing: listing._id,
-            message: `${req.user.name} liked your listing "${listing.title}"`,
-          });
-          await seller.save();
-        }
+    if (liked) {
+      // Atomic like: append the user (dedup) and recompute likesCount from
+      // the array itself (also heals any legacy count drift).
+      const grown = { $setUnion: [{ $ifNull: ['$likes', []] }, [userId]] };
+      await Listing.updateOne({ _id: listing._id }, [
+        { $set: { likes: grown, likesCount: { $size: grown } } },
+      ]);
+
+      // Wishlist: push the listing only when it is not already present.
+      // The 'items.listing != id' filter + upsert covers both the
+      // missing-wishlist and existing-wishlist cases atomically.
+      await Wishlist.updateOne(
+        { user: userId, 'items.listing': { $ne: listing._id } },
+        { $push: { items: { listing: listing._id, addedAt: new Date() } } },
+        { upsert: true }
+      );
+
+      if (listing.seller.toString() !== userId.toString()) {
+        // Atomic notification prepend ($position: 0 == unshift).
+        await User.findByIdAndUpdate(listing.seller, {
+          $push: {
+            notifications: {
+              $each: [{
+                type: 'like',
+                from: userId,
+                listing: listing._id,
+                message: `${req.user.name} liked your listing "${listing.title}"`,
+              }],
+              $position: 0,
+            },
+          },
+        });
       }
 
       // Feature 4 — likers automatically receive an accepted offer at the
       // least price when the seller enabled auto-offer to likers.
-      if (liked && listing.autoRespond && listing.autoRespond.enabled === true
+      if (listing.autoRespond && listing.autoRespond.enabled === true
         && listing.autoRespond.autoOfferToLikers === true
         && Number(listing.autoRespond.minPrice) > 0
-        && listing.seller.toString() !== req.user._id.toString()) {
+        && listing.seller.toString() !== userId.toString()) {
         const Offer = require('../models/Offer');
         const existingLikerOffer = await Offer.findOne({
           listing: listing._id,
-          buyer: req.user._id,
+          buyer: userId,
           status: { $in: ['pending', 'countered', 'buyer_countered', 'accepted'] },
         });
         if (!existingLikerOffer) {
           const least = Number(listing.autoRespond.minPrice);
           const likerOffer = await Offer.create({
             listing: listing._id,
-            buyer: req.user._id,
+            buyer: userId,
             seller: listing.seller,
             amount: least,
             currency: listing.currency || 'USD',
@@ -836,22 +851,42 @@ router.post('/:id/like', auth, async (req, res) => {
             lastCounterBy: 'seller',
             autoResponded: true,
           });
-          const likerUser = await User.findById(req.user._id);
-          if (likerUser) {
-            likerUser.notifications.unshift({
-              type: 'offer',
-              from: listing.seller,
-              listing: listing._id,
-              message: `Good news! The seller sent you an offer of ${likerOffer.currency} ${least} on "${listing.title}". Proceed to purchase.`,
-            });
-            await likerUser.save();
-          }
+          // Atomic notification prepend for the liker.
+          await User.findByIdAndUpdate(userId, {
+            $push: {
+              notifications: {
+                $each: [{
+                  type: 'offer',
+                  from: listing.seller,
+                  listing: listing._id,
+                  message: `Good news! The seller sent you an offer of ${likerOffer.currency} ${least} on "${listing.title}". Proceed to purchase.`,
+                }],
+                $position: 0,
+              },
+            },
+          });
         }
       }
+    } else {
+      // Atomic unlike: remove the user and recompute likesCount.
+      const remaining = {
+        $filter: {
+          input: { $ifNull: ['$likes', []] },
+          as: 'l',
+          cond: { $ne: ['$$l', userId] },
+        },
+      };
+      await Listing.updateOne({ _id: listing._id }, [
+        { $set: { likes: remaining, likesCount: { $size: remaining } } },
+      ]);
+      await Wishlist.updateOne(
+        { user: userId },
+        { $pull: { items: { listing: listing._id } } }
+      );
     }
 
-    await listing.save();
-    res.json({ likes: listing.likes, liked });
+    const fresh = await Listing.findById(listing._id).select('likes');
+    res.json({ likes: fresh ? fresh.likes : listing.likes, liked });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

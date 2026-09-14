@@ -22,17 +22,19 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 const mkEmail = (p) => `${p}_auto_${Date.now()}@test.com`;
 
 let seller, buyer, liker, sellerToken, buyerToken, likerToken;
+let liker2, liker2Token, liker3, liker3Token;
 const testUserIds = [];
 const testListingIds = [];
+
+const mk = (name, email) => User.create({
+  name, email: mkEmail(email), password: 'password123', emailVerified: true,
+  country: 'US', currency: 'USD',
+});
 
 beforeAll(async () => {
   if (mongoose.connection.readyState !== 1) {
     await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/trenddrop_test');
   }
-  const mk = async (name, email) => User.create({
-    name, email: mkEmail(email), password: 'password123', emailVerified: true,
-    country: 'US', currency: 'USD',
-  });
   seller = await mk('ARSeller', 'seller'); testUserIds.push(seller._id);
   buyer = await mk('ARBuyer', 'buyer'); testUserIds.push(buyer._id);
   liker = await mk('ARLiker', 'liker'); testUserIds.push(liker._id);
@@ -416,5 +418,134 @@ describe('Feature 4 — Auto-respond / enterprise auto-offer', () => {
     expect(refreshed.autoRespond.enabled).toBe(true);
     expect(refreshed.autoRespond.minPrice).toBe(28.5); // 30 × 0.95
     expect(refreshed.autoRespond.currency).toBe('USD');
+  });
+
+  test('AR.22 bulk update enables auto-offer to likers by default → a fresh liker instantly receives an accepted offer at minPrice', async () => {
+    // Production regression: bulk-enable must turn ON autoOfferToLikers
+    // (likers get instant offers), otherwise liking does nothing for buyers.
+    const res = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true, percentOff: 5 });
+    expect(res.status).toBe(200);
+    expect(res.body.autoOfferToLikers).toBe(true);
+
+    const afterBulk = await Listing.findById(arListing._id);
+    expect(afterBulk.autoRespond.enabled).toBe(true);
+    expect(afterBulk.autoRespond.autoOfferToLikers).toBe(true);
+    expect(afterBulk.autoRespond.minPrice).toBe(95); // 100 × 0.95
+
+    // A fresh liker likes the listing → auto-offer arrives instantly.
+    liker2 = await mk('ARLiker2', 'liker2');
+    testUserIds.push(liker2._id);
+    liker2Token = jwt.sign({ id: liker2._id }, JWT_SECRET, { expiresIn: '30d' });
+
+    const likeRes = await request(app)
+      .post(`/api/listings/${arListing._id}/like`)
+      .set('Authorization', `Bearer ${liker2Token}`);
+    expect(likeRes.status).toBe(200);
+    expect(likeRes.body.liked).toBe(true);
+
+    const offer = await Offer.findOne({ listing: arListing._id, buyer: liker2._id });
+    expect(offer).toBeDefined();
+    expect(offer.status).toBe('accepted');
+    expect(offer.amount).toBe(95);
+    expect(offer.acceptedPrice).toBe(95);
+    expect(offer.currency).toBe('USD');
+    expect(offer.autoResponded).toBe(true);
+
+    const liker2Doc = await User.findById(liker2._id);
+    expect(liker2Doc.notifications.some((n) => n.type === 'offer')).toBe(true);
+  });
+
+  test('AR.22b explicit autoOfferToLikers=false → likers do NOT get offers', async () => {
+    const off = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true, percentOff: 10, autoOfferToLikers: false });
+    expect(off.status).toBe(200);
+    expect(off.body.autoOfferToLikers).toBe(false);
+
+    const afterOff = await Listing.findById(arListing._id);
+    expect(afterOff.autoRespond.autoOfferToLikers).toBe(false);
+    expect(afterOff.autoRespond.minPrice).toBe(90); // 100 × 0.90
+
+    liker3 = await mk('ARLiker3', 'liker3');
+    testUserIds.push(liker3._id);
+    liker3Token = jwt.sign({ id: liker3._id }, JWT_SECRET, { expiresIn: '30d' });
+
+    const like3 = await request(app)
+      .post(`/api/listings/${arListing._id}/like`)
+      .set('Authorization', `Bearer ${liker3Token}`);
+    expect(like3.status).toBe(200);
+    expect(like3.body.liked).toBe(true);
+    const noOffer = await Offer.findOne({ listing: arListing._id, buyer: liker3._id });
+    expect(noOffer).toBeNull();
+  });
+
+  test('AR.23 liking (and unliking) a seeded/legacy listing with schema-invalid fields succeeds — atomic ops, no full-document save', async () => {
+    // Same legacy-doc class as AR.21, but for the LIKE flow: the endpoint
+    // used to run listing.save()/user.save() (full-document validation),
+    // which throws on schema-invalid legacy docs and 500s the like.
+    const raw = await Listing.collection.insertOne({
+      seller: seller._id,
+      title: 'Legacy Like Item (weight 0.05)',
+      description: 'Seeded via the simplified seed schema',
+      price: 40,
+      category: 'Beauty',
+      condition: 'Good',
+      shipsFrom: 'US',
+      sold: false,
+      available: true,
+      quantity: 1,
+      weight: 0.05, // violates real schema min: 0.1
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const legacyId = raw.insertedId;
+    testListingIds.push(legacyId);
+
+    // Sanity: full-document save() on this doc throws (what 500'd likes before).
+    const doc = await Listing.findById(legacyId);
+    let saveThrew = false;
+    try {
+      doc.likesCount = 1;
+      await doc.save();
+    } catch { saveThrew = true; }
+    expect(saveThrew).toBe(true);
+
+    // Like must succeed anyway.
+    const likeRes = await request(app)
+      .post(`/api/listings/${legacyId}/like`)
+      .set('Authorization', `Bearer ${liker2Token}`);
+    expect(likeRes.status).toBe(200);
+    expect(likeRes.body.liked).toBe(true);
+    expect(likeRes.body.likes.some((l) => l.toString() === liker2._id.toString())).toBe(true);
+
+    const afterLike = await Listing.findById(legacyId);
+    expect(afterLike.likesCount).toBe(1);
+    expect(afterLike.likes.some((l) => l.toString() === liker2._id.toString())).toBe(true);
+
+    // Wishlist got the item (no auto-respond on this listing → no offer).
+    const Wishlist = require('../models/Wishlist');
+    const wl = await Wishlist.findOne({ user: liker2._id });
+    expect(wl).toBeDefined();
+    expect(wl.items.some((i) => i.listing.toString() === legacyId.toString())).toBe(true);
+    const noOffer = await Offer.findOne({ listing: legacyId, buyer: liker2._id });
+    expect(noOffer).toBeNull();
+
+    // Seller received the like notification.
+    const sellerDoc = await User.findById(seller._id);
+    expect(sellerDoc.notifications.some((n) => n.type === 'like' && n.listing && n.listing.toString() === legacyId.toString())).toBe(true);
+
+    // Unlike.
+    const unlikeRes = await request(app)
+      .post(`/api/listings/${legacyId}/like`)
+      .set('Authorization', `Bearer ${liker2Token}`);
+    expect(unlikeRes.status).toBe(200);
+    expect(unlikeRes.body.liked).toBe(false);
+    const afterUnlike = await Listing.findById(legacyId);
+    expect(afterUnlike.likesCount).toBe(0);
+    expect(afterUnlike.likes.length).toBe(0);
   });
 });
