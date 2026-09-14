@@ -178,6 +178,14 @@ router.get('/user/:userId', async (req, res) => {
 //   - percentOff omitted  → minPrice = price ("auto-accept offers at or above list price")
 // Bulk-disable turns autoRespond off while preserving minPrice/autoOfferToLikers settings.
 // percentOff must be a number between 0 and 100 (inclusive) when provided.
+//
+// IMPLEMENTATION NOTE: the update runs as an atomic aggregation-pipeline
+// updateMany instead of per-listing save(). Document.save() runs FULL-document
+// validation, and seeded/legacy listings can carry schema-invalid legacy
+// fields (e.g. weight < 0.1 from the original seed data) — a full save on
+// those docs throws ValidationError and 500s the whole bulk update. Pipeline
+// updates only touch the autoRespond path, skip full-document validation,
+// and complete in a single DB round trip for any number of listings.
 // Registered before /:id routes so "bulk" is never parsed as an id.
 router.patch('/bulk/auto-respond', auth, async (req, res) => {
   try {
@@ -196,32 +204,42 @@ router.patch('/bulk/auto-respond', auth, async (req, res) => {
       percentOffValue = parsed;
     }
 
-    const listings = await Listing.find({ seller: req.user._id, sold: false });
-    let updated = 0;
-    for (const listing of listings) {
-      const current = (listing.autoRespond && typeof listing.autoRespond.toObject === 'function')
-        ? listing.autoRespond.toObject()
-        : (listing.autoRespond || {});
-      if (enabled) {
-        const minPrice = percentOffValue !== null
-          ? Math.round(Number(listing.price) * (1 - percentOffValue / 100) * 100) / 100
-          : Number(listing.price);
-        listing.autoRespond = { ...current, enabled: true, minPrice, currency: listing.currency || 'USD' };
-      } else {
-        listing.autoRespond = { ...current, enabled: false };
-      }
-      await listing.save();
-      updated += 1;
+    const filter = { seller: req.user._id, sold: false };
+
+    if (enabled) {
+      // Per-listing minPrice in one atomic pass (MongoDB ≥ 4.2 pipeline update):
+      //   minPrice = price × (100 - percentOff) / 100, rounded to 2 decimals.
+      // Legacy behavior (percentOff omitted) → factor 1 → minPrice = price.
+      const keepFactor = percentOffValue !== null ? (100 - percentOffValue) / 100 : 1;
+      await Listing.updateMany(filter, [
+        {
+          $set: {
+            autoRespond: {
+              enabled: true,
+              minPrice: { $round: [{ $multiply: [{ $ifNull: ['$price', 0] }, keepFactor] }, 2] },
+              currency: { $ifNull: ['$currency', 'USD'] },
+              autoOfferToLikers: { $ifNull: ['$autoRespond.autoOfferToLikers', false] },
+              message: { $ifNull: ['$autoRespond.message', ''] },
+            },
+          },
+        },
+      ]);
+    } else {
+      // Bulk-disable: turn OFF while preserving minPrice/autoOfferToLikers/message.
+      await Listing.updateMany(filter, { $set: { 'autoRespond.enabled': false } });
     }
-    const suffix = percentOffValue !== null ? ` (${percentOffValue}% off)` : '';
+
+    const updatedListings = await Listing.find(filter).select('_id autoRespond');
+    const updated = updatedListings.length;
+    const suffix = enabled && percentOffValue !== null ? ` (${percentOffValue}% off)` : '';
     res.json({
-      message: `Auto-respond ${enabled ? 'enabled' : 'disabled'} for ${updated} listing${updated === 1 ? '' : 's'}${enabled ? suffix : ''}`,
+      message: `Auto-respond ${enabled ? 'enabled' : 'disabled'} for ${updated} listing${updated === 1 ? '' : 's'}${suffix}`,
       updated,
       percentOff: percentOffValue,
-      listings: listings.map((l) => ({ _id: l._id, autoRespond: l.autoRespond })),
+      listings: updatedListings.map((l) => ({ _id: l._id, autoRespond: l.autoRespond })),
     });
   } catch (error) {
-    console.error(error);
+    console.error('Bulk auto-respond error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

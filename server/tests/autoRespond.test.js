@@ -370,4 +370,51 @@ describe('Feature 4 — Auto-respond / enterprise auto-offer', () => {
     // 99.99 * 0.75 = 74.9925 → rounds to 74.99
     expect(refreshed.autoRespond.minPrice).toBe(74.99);
   });
+
+  test('AR.21 bulk auto-respond still succeeds for seeded/legacy listings that violate non-autoRespond schema fields (weight < 0.1)', async () => {
+    // Production regression: server/seed.js creates listings through a
+    // simplified schema with weight below the real model's min (0.1).
+    // A per-listing save() runs FULL-document validation and throws on those
+    // docs, 500ing the whole bulk update. Insert one the same way the seed
+    // does (raw collection insert, bypassing Mongoose validation).
+    const raw = await Listing.collection.insertOne({
+      seller: seller._id,
+      title: 'Legacy Seed Item (weight 0.05)',
+      description: 'Seeded via the simplified seed schema',
+      price: 30,
+      category: 'Beauty',
+      condition: 'Good',
+      shipsFrom: 'US',
+      sold: false,
+      available: true,
+      quantity: 1,
+      weight: 0.05, // violates real schema min: 0.1
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const legacyId = raw.insertedId;
+    testListingIds.push(legacyId);
+
+    // Sanity: a full-document save() on this doc must fail — this is exactly
+    // what 500'd production before the pipeline-update fix.
+    const doc = await Listing.findById(legacyId);
+    let saveThrew = false;
+    try {
+      doc.autoRespond = { enabled: true, minPrice: 10 };
+      await doc.save();
+    } catch { saveThrew = true; }
+    expect(saveThrew).toBe(true);
+
+    // The bulk update must still succeed (pipeline update skips full-doc validation).
+    const res = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true, percentOff: 5 });
+    expect(res.status).toBe(200);
+
+    const refreshed = await Listing.findById(legacyId);
+    expect(refreshed.autoRespond.enabled).toBe(true);
+    expect(refreshed.autoRespond.minPrice).toBe(28.5); // 30 × 0.95
+    expect(refreshed.autoRespond.currency).toBe('USD');
+  });
 });

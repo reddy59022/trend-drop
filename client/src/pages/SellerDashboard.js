@@ -180,7 +180,9 @@ const SellerDashboard = () => {
       setBulkAutoRespond(!bulkAutoRespond);
       toast.success(`Auto-respond ${!bulkAutoRespond ? 'enabled' : 'disabled'} for all listings`);
       fetchListings();
-    } catch { toast.info('Configure auto-respond on each listing via the Edit page.'); }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Configure auto-respond on each listing via the Edit page.');
+    }
     setSavingBulkAutoRespond(false);
   };
 
@@ -199,7 +201,9 @@ const SellerDashboard = () => {
       setBulkAutoRespond(true);
       toast.success(res.data.message || `Auto-respond enabled for all listings (${pct}% off)`);
       fetchListings();
-    } catch { toast.error('Failed to bulk-update auto-respond.'); }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to bulk-update auto-respond.');
+    }
     setSavingBulkPercent(false);
   };
 
