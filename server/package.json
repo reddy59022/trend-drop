@@ -57,5 +57,8 @@
     "nodemon": "^2.0.22",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.2.2"
+  },
+  "optionalDependencies": {
+    "gcp-metadata": "^7.0.1"
   }
 }
