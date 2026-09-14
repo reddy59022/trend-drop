@@ -39,13 +39,26 @@ router.get('/dashboard', auth, async (req, res) => {
 
     // Normalize legacy-schema docs so downstream code and the client always
     // see salePrice/commissionAmount/payoutAmount.
+    // 
+    // LEGACY SCHEMA FIX: Old seed data stored `amount` as the NET payout
+    // (what the seller receives), NOT the gross salePrice. The previous
+    // code incorrectly treated `amount` as salePrice, which made:
+    //   salePrice = amount            (wrong: understated gross)
+    //   commissionAmount = amount*0.08 (wrong: 8% of net, not gross)
+    //   payoutAmount = amount - commission (wrong: net - fake commission)
+    // 
+    // CORRECT interpretation: `amount` = payoutAmount (net earnings).
+    // Derive the gross salePrice backwards: salePrice = amount / (1 - rate)
+    // so that salePrice = commissionAmount + payoutAmount holds.
     const normalized = payouts.map(p => {
       const doc = p.toObject ? p.toObject() : p;
       if (doc.payoutAmount == null && doc.amount != null) {
-        const legacyCommission = Math.round(doc.amount * COMMISSION_RATE * 100) / 100;
-        doc.salePrice = doc.salePrice ?? doc.amount;
+        // Legacy: `amount` is the net payout (payoutAmount), not gross salePrice.
+        const legacyPayoutAmount = doc.amount;
+        const legacyCommission = Math.round(legacyPayoutAmount * COMMISSION_RATE / (1 - COMMISSION_RATE) * 100) / 100;
+        doc.salePrice = doc.salePrice ?? Math.round(legacyPayoutAmount / (1 - COMMISSION_RATE) * 100) / 100;
         doc.commissionAmount = doc.commissionAmount ?? legacyCommission;
-        doc.payoutAmount = doc.payoutAmount ?? Math.round((doc.amount - legacyCommission) * 100) / 100;
+        doc.payoutAmount = doc.payoutAmount ?? legacyPayoutAmount;
       }
       return doc;
     });
