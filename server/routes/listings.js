@@ -173,16 +173,29 @@ router.get('/user/:userId', async (req, res) => {
 
 // PATCH /api/listings/bulk/auto-respond (Feature 4)
 // Bulk auto-respond toggle for ALL of the seller's unsold listings.
-// Bulk-enable stamps each listing with minPrice = its own price
-// ("auto-accept offers at or above list price"). Bulk-disable turns
-// autoRespond off while preserving minPrice/autoOfferToLikers settings.
+// Bulk-enable stamps each listing with minPrice derived from percentOff:
+//   - percentOff provided → minPrice = price × (1 - percentOff/100) (rounded to cents)
+//   - percentOff omitted  → minPrice = price ("auto-accept offers at or above list price")
+// Bulk-disable turns autoRespond off while preserving minPrice/autoOfferToLikers settings.
+// percentOff must be a number between 0 and 100 (inclusive) when provided.
 // Registered before /:id routes so "bulk" is never parsed as an id.
 router.patch('/bulk/auto-respond', auth, async (req, res) => {
   try {
-    const { enabled } = req.body;
+    const { enabled, percentOff } = req.body;
     if (typeof enabled !== 'boolean') {
       return res.status(400).json({ message: 'enabled (boolean) is required' });
     }
+
+    // Validate percentOff when provided (must be a number 0..100).
+    let percentOffValue = null;
+    if (percentOff !== undefined && percentOff !== null && percentOff !== '') {
+      const parsed = Number(percentOff);
+      if (isNaN(parsed) || parsed < 0 || parsed > 100) {
+        return res.status(400).json({ message: 'percentOff must be a number between 0 and 100' });
+      }
+      percentOffValue = parsed;
+    }
+
     const listings = await Listing.find({ seller: req.user._id, sold: false });
     let updated = 0;
     for (const listing of listings) {
@@ -190,16 +203,21 @@ router.patch('/bulk/auto-respond', auth, async (req, res) => {
         ? listing.autoRespond.toObject()
         : (listing.autoRespond || {});
       if (enabled) {
-        listing.autoRespond = { ...current, enabled: true, minPrice: Number(listing.price), currency: listing.currency || 'USD' };
+        const minPrice = percentOffValue !== null
+          ? Math.round(Number(listing.price) * (1 - percentOffValue / 100) * 100) / 100
+          : Number(listing.price);
+        listing.autoRespond = { ...current, enabled: true, minPrice, currency: listing.currency || 'USD' };
       } else {
         listing.autoRespond = { ...current, enabled: false };
       }
       await listing.save();
       updated += 1;
     }
+    const suffix = percentOffValue !== null ? ` (${percentOffValue}% off)` : '';
     res.json({
-      message: `Auto-respond ${enabled ? 'enabled' : 'disabled'} for ${updated} listing${updated === 1 ? '' : 's'}`,
+      message: `Auto-respond ${enabled ? 'enabled' : 'disabled'} for ${updated} listing${updated === 1 ? '' : 's'}${enabled ? suffix : ''}`,
       updated,
+      percentOff: percentOffValue,
       listings: listings.map((l) => ({ _id: l._id, autoRespond: l.autoRespond })),
     });
   } catch (error) {

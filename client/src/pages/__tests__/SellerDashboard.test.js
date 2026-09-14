@@ -112,4 +112,51 @@ describe('SellerDashboard page', () => {
     renderPage(<SellerDashboard />);
     await waitFor(() => expect(document.body).not.toBeEmptyDOMElement());
   });
+
+  test('auto respond tab shows bulk percentage input defaulting to 5', async () => {
+    renderPage(<SellerDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: /Auto Respond/i }));
+    const pctInput = await screen.findByLabelText(/Bulk auto-respond percentage/i);
+    expect(pctInput).toBeInTheDocument();
+    expect(pctInput).toHaveValue(5);
+    expect(screen.getByText('Bulk Update Minimum Price')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Update All/i })).toBeInTheDocument();
+  });
+
+  test('auto respond bulk percentage input can be changed and calls API on Update All', async () => {
+    api.patch.mockResolvedValue({ data: { message: 'Auto-respond enabled for 1 listings (10% off)', updated: 1 } });
+    renderPage(<SellerDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: /Auto Respond/i }));
+    const pctInput = await screen.findByLabelText(/Bulk auto-respond percentage/i);
+    fireEvent.change(pctInput, { target: { value: '10' } });
+    expect(pctInput).toHaveValue(10);
+
+    fireEvent.click(screen.getByRole('button', { name: /Update All/i }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/listings/bulk/auto-respond', { enabled: true, percentOff: 10 }));
+  });
+
+  test('auto respond bulk percentage Update All surfaces errors', async () => {
+    api.patch.mockRejectedValue(new Error('server error'));
+    renderPage(<SellerDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: /Auto Respond/i }));
+    await screen.findByLabelText(/Bulk auto-respond percentage/i);
+    fireEvent.click(screen.getByRole('button', { name: /Update All/i }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalled());
+  });
+
+  test('auto respond bulk percentage reflects listing count in helper text', async () => {
+    renderPage(<SellerDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: /Auto Respond/i }));
+    await screen.findByLabelText(/Bulk auto-respond percentage/i);
+    // sampleListing returns 1 listing by default → "1 listing" (singular)
+    expect(await screen.findByText(/95% of list price for 1 listing/)).toBeInTheDocument();
+  });
+
+  test('auto respond bulk percentage shows no-listings helper when seller has none', async () => {
+    api.get.mockResolvedValue({ data: { listings: [] } });
+    renderPage(<SellerDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: /Auto Respond/i }));
+    await screen.findByLabelText(/Bulk auto-respond percentage/i);
+    expect(await screen.findByText('No listings to update.')).toBeInTheDocument();
+  });
 });

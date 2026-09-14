@@ -41,6 +41,8 @@ const SellerDashboard = () => {
   // Auto-respond state (Feature 4)
   const [bulkAutoRespond, setBulkAutoRespond] = useState(false);
   const [savingBulkAutoRespond, setSavingBulkAutoRespond] = useState(false);
+  const [bulkAutoRespondPercent, setBulkAutoRespondPercent] = useState(5);
+  const [savingBulkPercent, setSavingBulkPercent] = useState(false);
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
@@ -180,6 +182,25 @@ const SellerDashboard = () => {
       fetchListings();
     } catch { toast.info('Configure auto-respond on each listing via the Edit page.'); }
     setSavingBulkAutoRespond(false);
+  };
+
+  // Auto-respond bulk update as a percentage off list price (Feature 4).
+  // Enables auto-respond for ALL listings with minPrice = price × (1 - percent/100).
+  // Default 5% (seller accepts offers at 95% of list price). User can enter any number 0–100.
+  const handleBulkUpdateAutoPercent = async () => {
+    const pct = Number(bulkAutoRespondPercent);
+    if (isNaN(pct) || pct < 0 || pct > 100) {
+      toast.error('Enter a percentage between 0 and 100');
+      return;
+    }
+    setSavingBulkPercent(true);
+    try {
+      const res = await api.patch('/listings/bulk/auto-respond', { enabled: true, percentOff: pct });
+      setBulkAutoRespond(true);
+      toast.success(res.data.message || `Auto-respond enabled for all listings (${pct}% off)`);
+      fetchListings();
+    } catch { toast.error('Failed to bulk-update auto-respond.'); }
+    setSavingBulkPercent(false);
   };
 
   if (loading) return (
@@ -540,6 +561,40 @@ const SellerDashboard = () => {
                 {savingBulkAutoRespond ? <FaSpinner className="spin" /> : bulkAutoRespond ? <FaToggleOn size={16} /> : <FaToggleOff size={16} />}
                 {bulkAutoRespond ? 'Enabled' : 'Disabled'}
               </button>
+            </div>
+          </div>
+
+          {/* Bulk update as percentage off list price */}
+          <div style={{ padding: 'var(--td-space-md)', background: 'var(--td-surface-secondary)', borderRadius: 'var(--td-radius-md)', marginBottom: 20, border: '1px solid var(--td-border)' }}>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Bulk Update Minimum Price</div>
+              <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>Set auto-respond minimum for ALL listings as a percentage off the list price. Default 5%.</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label htmlFor="bulk-auto-respond-pct" style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>Discount</label>
+                <input
+                  id="bulk-auto-respond-pct"
+                  className="form-input"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={bulkAutoRespondPercent}
+                  onChange={e => setBulkAutoRespondPercent(e.target.value)}
+                  placeholder="5"
+                  style={{ width: 80 }}
+                  aria-label="Bulk auto-respond percentage off list price"
+                />
+                <span style={{ fontSize: 13, fontWeight: 600 }}>%</span>
+              </div>
+              <button className="btn btn-primary" onClick={handleBulkUpdateAutoPercent} disabled={savingBulkPercent} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {savingBulkPercent ? <FaSpinner className="spin" /> : <FaCheckCircle />}
+                {savingBulkPercent ? 'Updating...' : 'Update All'}
+              </button>
+              <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>
+                {listings.length > 0 ? `Will set min price to ${100 - Number(bulkAutoRespondPercent || 0)}% of list price for ${listings.length} listing${listings.length === 1 ? '' : 's'}.` : 'No listings to update.'}
+              </div>
             </div>
           </div>
 

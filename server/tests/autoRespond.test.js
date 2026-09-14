@@ -280,4 +280,94 @@ describe('Feature 4 — Auto-respond / enterprise auto-offer', () => {
       expect(l.autoRespond.enabled).toBe(false);
     }
   });
+
+  test('AR.16 PATCH /api/listings/bulk/auto-respond with percentOff=5 enables auto-respond with minPrice = 95% of list price', async () => {
+    const res = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true, percentOff: 5 });
+    expect(res.status).toBe(200);
+    expect(res.body.percentOff).toBe(5);
+    expect(res.body.updated).toBeGreaterThanOrEqual(2);
+    expect(res.body.message).toContain('5% off');
+
+    const refreshed = await Listing.find({ _id: { $in: [arListing._id, plainListing._id] } });
+    for (const l of refreshed) {
+      expect(l.autoRespond.enabled).toBe(true);
+      const expectedMin = Math.round(Number(l.price) * 0.95 * 100) / 100;
+      expect(l.autoRespond.minPrice).toBe(expectedMin);
+      expect(l.autoRespond.currency).toBe('USD');
+    }
+  });
+
+  test('AR.17 PATCH /api/listings/bulk/auto-respond with percentOff=0 sets minPrice = list price', async () => {
+    const res = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true, percentOff: 0 });
+    expect(res.status).toBe(200);
+    expect(res.body.percentOff).toBe(0);
+
+    const refreshed = await Listing.find({ _id: { $in: [arListing._id, plainListing._id] } });
+    for (const l of refreshed) {
+      expect(l.autoRespond.enabled).toBe(true);
+      expect(l.autoRespond.minPrice).toBe(Number(l.price));
+    }
+  });
+
+  test('AR.18 PATCH /api/listings/bulk/auto-respond rejects percentOff outside 0..100', async () => {
+    const neg = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true, percentOff: -5 });
+    expect(neg.status).toBe(400);
+
+    const over = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true, percentOff: 150 });
+    expect(over.status).toBe(400);
+
+    const nan = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true, percentOff: 'abc' });
+    expect(nan.status).toBe(400);
+  });
+
+  test('AR.19 PATCH /api/listings/bulk/auto-respond without percentOff keeps legacy minPrice = list price', async () => {
+    const res = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true });
+    expect(res.status).toBe(200);
+    expect(res.body.percentOff).toBeNull();
+
+    const refreshed = await Listing.find({ _id: { $in: [arListing._id, plainListing._id] } });
+    for (const l of refreshed) {
+      expect(l.autoRespond.enabled).toBe(true);
+      expect(l.autoRespond.minPrice).toBe(Number(l.price));
+    }
+  });
+
+  test('AR.20 PATCH /api/listings/bulk/auto-respond with percentOff=25 applies correctly to fractional prices', async () => {
+    // Create a listing with a fractional price to verify rounding to cents.
+    const frac = await Listing.create({
+      seller: seller._id, title: 'Fractional Item', description: 'd', price: 99.99,
+      category: 'Accessories', condition: 'Good', currency: 'USD',
+      available: true, quantity: 3, shipsFrom: 'US',
+    });
+    testListingIds.push(frac._id);
+
+    const res = await request(app)
+      .patch('/api/listings/bulk/auto-respond')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ enabled: true, percentOff: 25 });
+    expect(res.status).toBe(200);
+
+    const refreshed = await Listing.findById(frac._id);
+    expect(refreshed.autoRespond.enabled).toBe(true);
+    // 99.99 * 0.75 = 74.9925 → rounds to 74.99
+    expect(refreshed.autoRespond.minPrice).toBe(74.99);
+  });
 });

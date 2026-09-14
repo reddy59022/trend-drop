@@ -51,4 +51,35 @@ test.describe('Seller business flows', () => {
     const option = page.locator('select option', { hasText: 'Vintage Denim Jacket' }).first();
     await expect(option).toHaveCount(1, { timeout: 20_000 });
   });
+
+  test('Auto Respond tab bulk-updates minimum price by percentage', async ({ page }) => {
+    await page.goto('/seller-dashboard');
+    await expect(page.getByText(/dashboard|overview/i).first()).toBeVisible({ timeout: 20_000 });
+
+    // Open the Auto Respond tab
+    await page.getByRole('button', { name: /auto respond/i }).first().click();
+
+    // The bulk percentage input should be present with default value 5
+    const pctInput = page.getByLabel(/Bulk auto-respond percentage/i);
+    await expect(pctInput).toBeVisible({ timeout: 15_000 });
+    await expect(pctInput).toHaveValue('5');
+
+    // Change to 10% and click Update All
+    await pctInput.fill('10');
+    await expect(pctInput).toHaveValue('10');
+
+    // Click the Update All button (intercept the API call to verify payload)
+    const patchPromise = page.waitForResponse(
+      r => r.url().includes('/api/listings/bulk/auto-respond') && r.request().method() === 'PATCH',
+      { timeout: 15_000 }
+    );
+    await page.getByRole('button', { name: /update all/i }).first().click();
+    const response = await patchPromise;
+    expect(response.status()).toBe(200);
+
+    // Verify the request body included percentOff: 10
+    const postData = response.request().postDataJSON();
+    expect(postData.enabled).toBe(true);
+    expect(postData.percentOff).toBe(10);
+  });
 });
