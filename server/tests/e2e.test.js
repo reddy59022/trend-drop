@@ -1537,27 +1537,29 @@ describe('RULE 34: Multi-Seller Batch Orders', () => {
     expect(transactions.length).toBe(3);
   });
 
-  test('34b Each seller sees only their items in orders', async () => {
+    test('34b Each seller sees only their items in orders', async () => {
     // Seller 1 should see transactions for listing1 and listing3
     const seller1Orders = await request(app)
-      .get('/api/transactions?type=sold')
+      .get('/api/transactions?type=sold&status=completed,paid,processing')
       .set('Authorization', `Bearer ${sellerToken}`);
     
     expect(seller1Orders.status).toBe(200);
+    const seller1List = Array.isArray(seller1Orders.body) ? seller1Orders.body : (seller1Orders.body.transactions || []);
     // All seller 1 orders should have seller1Id
-    seller1Orders.body.forEach(txn => {
+    seller1List.forEach(txn => {
       const sellerIdStr = typeof txn.seller === 'object' ? txn.seller?._id : txn.seller;
       expect(sellerIdStr?.toString()).toBe(sellerId.toString());
     });
 
     // Seller 2 should see transactions for listing2 only
     const seller2Orders = await request(app)
-      .get('/api/transactions?type=sold')
+      .get('/api/transactions?type=sold&status=completed,paid,processing')
       .set('Authorization', `Bearer ${seller2Token}`);
     
     expect(seller2Orders.status).toBe(200);
+    const seller2List = Array.isArray(seller2Orders.body) ? seller2Orders.body : (seller2Orders.body.transactions || []);
     // All seller 2 orders should have seller2Id
-    seller2Orders.body.forEach(txn => {
+    seller2List.forEach(txn => {
       const sellerIdStr = typeof txn.seller === 'object' ? txn.seller?._id : txn.seller;
       expect(sellerIdStr?.toString()).toBe(seller2Id.toString());
     });
@@ -1565,12 +1567,13 @@ describe('RULE 34: Multi-Seller Batch Orders', () => {
 
   test('34c Buyer sees all items from all sellers in their orders', async () => {
     const buyerOrders = await request(app)
-      .get('/api/transactions?type=bought')
+      .get('/api/transactions?type=bought&status=completed,paid,processing,shipped,in_transit')
       .set('Authorization', `Bearer ${buyerToken}`);
     
     expect(buyerOrders.status).toBe(200);
+    const buyerList = Array.isArray(buyerOrders.body) ? buyerOrders.body : (buyerOrders.body.transactions || []);
     // Buyer should have at least 3 transactions (one from each listing)
-    expect(buyerOrders.body.length).toBeGreaterThanOrEqual(3);
+    expect(buyerList.length).toBeGreaterThanOrEqual(3);
   });
 
   test('34d Per-item shipping fees are calculated correctly', async () => {

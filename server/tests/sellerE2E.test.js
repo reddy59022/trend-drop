@@ -580,8 +580,8 @@ describe('SELLER DASHBOARD — Complete Business Demonstration', () => {
     expect(r.body.commissionRate).toBe(0.08);
   });
 
-  test('D4. Transaction ledger lists seller sales', async () => {
-    const r = await request(app).get('/api/transactions?type=sold').set('Authorization', `Bearer ${sellerToken}`);
+    test('D4. Transaction ledger lists seller sales', async () => {
+    const r = await request(app).get('/api/transactions?type=sold&status=completed,paid,processing').set('Authorization', `Bearer ${sellerToken}`);
     expect(r.status).toBe(200);
     const list = Array.isArray(r.body) ? r.body : (r.body.transactions || []);
     expect(list.length).toBeGreaterThan(0);
