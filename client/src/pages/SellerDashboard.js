@@ -217,20 +217,20 @@ const SellerDashboard = () => {
     <div className="page-container">
       <h1 className="page-title"><FaStore /> Seller Dashboard</h1>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-        {[...Array(4)].map((_, i) => <div key={i} className="skeleton" style={{ height: 100, borderRadius: 'var(--td-radius-lg)' }} />)}
+        {[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 100, borderRadius: 'var(--td-radius-lg)' }} />)}
       </div>
     </div>
   );
 
   if (!dashboard) return <div className="page-container"><div className="empty-state"><h2>Failed to load</h2></div></div>;
 
+  // Seller-facing cards. The platform's commission cut (dashboard.totalCommission)
+  // is intentionally NOT shown to sellers — it's an internal/platform figure.
+  // Money accuracy: Total Sales is gross, Your Earnings is realized (completed),
+  // Pending Payout is owed-but-not-yet-released.
   const stats = [
-    // Dashboard aggregates are USD-normalized server-side (see
-    // server/routes/payouts.js) — display them converted from USD into the
-    // user's preferred currency via the global standard.
     { label: 'Total Sales', value: formatPrice(dashboard.totalSales || 0, 'USD'), color: 'var(--td-primary)', icon: <FaDollarSign /> },
     { label: 'Your Earnings', value: formatPrice(dashboard.totalEarnings || 0, 'USD'), color: 'var(--td-success)', icon: <FaChartLine /> },
-    { label: 'Commission', value: formatPrice(dashboard.totalCommission || 0, 'USD'), color: 'var(--td-error)', icon: <FaDollarSign /> },
     { label: 'Pending Payout', value: formatPrice(dashboard.pendingAmount || 0, 'USD'), color: 'var(--td-warning)', icon: <FaHistory /> },
   ];
 

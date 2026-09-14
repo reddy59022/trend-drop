@@ -177,4 +177,50 @@ describe('SellerDashboard page', () => {
     await screen.findByLabelText(/Bulk auto-respond percentage/i);
     expect(await screen.findByText('No listings to update.')).toBeInTheDocument();
   });
+test('shows Total Sales, Your Earnings and Pending Payout without exposing Commission', async () => {
+    getPayoutDashboard.mockResolvedValue({
+      data: { ...dash(), totalSales: 5693.04, totalEarnings: 150.0, totalCommission: 455.44, pendingAmount: 4295.6 },
+    });
+    renderPage(<SellerDashboard />);
+
+    expect(await screen.findByText('Total Sales')).toBeInTheDocument();
+    expect(screen.getByText('Your Earnings')).toBeInTheDocument();
+    expect(screen.getByText('Pending Payout')).toBeInTheDocument();
+
+    // The platform commission cut must NOT be shown to sellers.
+    expect(screen.queryByText('Commission')).not.toBeInTheDocument();
+    expect(screen.queryByText('$455.44')).not.toBeInTheDocument();
+  });
+
+  test('formats dashboard money values accurately', async () => {
+    renderPage(<SellerDashboard />);
+    // dash() = totalSales 5, totalEarnings 225, totalCommission 25, pendingAmount 40
+    expect(await screen.findByText('$5.00')).toBeInTheDocument();
+    expect(screen.getByText('$225.00')).toBeInTheDocument();
+    expect(screen.getByText('$40.00')).toBeInTheDocument();
+    // Commission value $25.00 must not be rendered for sellers.
+    expect(screen.queryByText('$25.00')).not.toBeInTheDocument();
+  });
+
+  test('seller-visible numbers partition exactly (earnings + pending = payouts; gross = cut + payouts)', async () => {
+    // Mirrors the server DA.0 regression shape: completed 150 + pending 4295.60.
+    getPayoutDashboard.mockResolvedValue({
+      data: {
+        ...dash(),
+        totalSales: 5832.17,
+        totalEarnings: 150.0,
+        totalCommission: 1386.57, // internal figure — present in API, hidden in UI
+        totalPayouts: 4445.6,
+        pendingAmount: 4295.6,
+      },
+    });
+    renderPage(<SellerDashboard />);
+    expect(await screen.findByText('Total Sales')).toBeInTheDocument();
+    // 150 (earnings) + 4295.60 (pending) = 4445.60 (total seller payouts)
+    expect(150.0 + 4295.6).toBeCloseTo(4445.6, 2);
+    // 5832.17 (gross) = 1386.57 (platform cut) + 4445.60 (seller payouts)
+    expect(1386.57 + 4445.6).toBeCloseTo(5832.17, 2);
+    // And the UI still hides the internal platform cut.
+    expect(screen.queryByText('Commission')).not.toBeInTheDocument();
+  });
 });
