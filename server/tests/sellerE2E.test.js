@@ -25,6 +25,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -137,6 +138,7 @@ async function createListing(sellerId, overrides = {}) {
 async function buy(buyerTokenArg, listingId) {
   const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${buyerTokenArg}`)
     .send({
+      paymentIntentId: authorizedPaymentIntent(),
       listingId,
       shippingAddress: { fullName: 'B', street1: '456 St', city: 'City', state: 'NY', postalCode: '10001', country: 'US' },
       buyerCountry: 'US',

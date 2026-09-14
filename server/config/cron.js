@@ -515,10 +515,15 @@ async function expireOffers() {
         $set: { status: 'expired' }
       }
     );
-    if (result.modifiedCount > 0) {
-      console.log(`[CRON] Auto-expired ${result.modifiedCount} offers`);
+    const accepted = await Offer.updateMany(
+      { acceptedUntil: { $lt: now }, status: 'accepted' },
+      { $set: { status: 'expired' } }
+    );
+    const total = (result.modifiedCount || 0) + (accepted.modifiedCount || 0);
+    if (total > 0) {
+      console.log(`[CRON] Auto-expired ${total} offers`);
     }
-    return result.modifiedCount;
+    return total;
   } catch (error) {
     console.error('[CRON] Error expiring offers:', error.message);
   }

@@ -14,6 +14,7 @@
 
 const request = require('supertest');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const mongoose = require('mongoose');
 const Offer = require('../models/Offer');
 const Listing = require('../models/Listing');
@@ -208,7 +209,8 @@ describe('Full Negotiation → Transaction Flow', () => {
     // Create transaction via offer endpoint
     const txnRes = await request(app)
       .post(`/api/transactions/offer/${offer._id}`)
-      .set('Authorization', `Bearer ${buyerToken}`);
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ paymentIntentId: authorizedPaymentIntent() });
     expect(txnRes.status).toBe(201);
     expect(txnRes.body.transaction).toBeDefined();
     expect(txnRes.body.transaction.itemPrice).toBe(80);
@@ -562,7 +564,8 @@ describe('Revenue Protection via Offers', () => {
     // Create transaction via the offer
     const txnRes = await request(app)
       .post(`/api/transactions/offer/${oId}`)
-      .set('Authorization', `Bearer ${buyerToken}`);
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ paymentIntentId: authorizedPaymentIntent() });
     expect(txnRes.status).toBe(201);
     const txn = txnRes.body.transaction;
 

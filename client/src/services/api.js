@@ -284,7 +284,7 @@ export const addItemToCart = (data) => api.post('/cart/items', data);
 // Backend POST /cart/items replaces quantity (no separate PUT endpoint)
 export const updateCartItem = (listingId, quantity) => api.post('/cart/items', { listingId, quantity });
 export const removeCartItem = (listingId) => api.delete(`/cart/items/${listingId}`);
-export const cartCheckout = (shippingAddress) => api.post('/cart/checkout', { shippingAddress });
+export const cartCheckout = (shippingAddress, paymentIntentId) => api.post('/cart/checkout', { shippingAddress, paymentIntentId });
 
 // ====== Fraud Detection ======
 export const checkFraud = (data) => api.post('/fraud/check', data);

@@ -140,5 +140,24 @@ describe('CC · Cart checkout requires a real authorized payment', () => {
     expect(res.status).toBe(400);
     expect(await Transaction.findOne({ listing: l._id })).toBeNull();
   });
+
+  test('CC.6 one authorized intent cannot fund a second cart checkout (no replay)', async () => {
+    // First purchase consumes the authorization.
+    const l1 = await mkListing(seller._id);
+    await seedCart(l1._id);
+    const pi = mockPi('requires_capture');
+    expect((await checkout({ paymentIntentId: pi, shippingAddress: US_ADDRESS })).status).toBe(200);
+
+    // Replaying the SAME intent against another listing must be refused —
+    // otherwise a single authorization buys the whole catalogue for free.
+    const l2 = await mkListing(seller._id);
+    await seedCart(l2._id);
+    const replay = await checkout({ paymentIntentId: pi, shippingAddress: US_ADDRESS });
+    expect(replay.status).toBe(400);
+    expect(await Transaction.findOne({ listing: l2._id })).toBeNull();
+    const after = await Listing.findById(l2._id);
+    expect(after.quantity).toBe(5);
+    expect(after.sold).toBe(false);
+  });
 });
 

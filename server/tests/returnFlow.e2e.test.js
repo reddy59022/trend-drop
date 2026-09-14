@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
 const app = require('../server.js');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 const PASS = bcrypt.hashSync('Pass1234!', 10);
 const US = { fullName: 'U', street1: '1 St', city: 'C', state: 'S', postalCode: '11111', country: 'US' };
@@ -32,7 +33,7 @@ async function makeListing(seller, price, qty = 5) {
 async function buy(buyerToken, listingId) {
   const r = await request(app).post('/api/transactions')
     .set('Authorization', 'Bearer ' + buyerToken)
-    .send({ listingId, shippingAddress: { ...US }, buyerCountry: 'US' });
+    .send({ paymentIntentId: authorizedPaymentIntent(), listingId, shippingAddress: { ...US }, buyerCountry: 'US' });
   return r.body;
 }
 

@@ -9,7 +9,7 @@
  * Self-sufficient: creates its own listings.
  */
 const { test } = require('@playwright/test');
-const { makeApi, loadState, saveState, RUN_ID, expect } = require('./helpers');
+const { makeApi, loadState, saveState, RUN_ID, ACCOUNTS, expect } = require('./helpers');
 
 const SHIPPING = {
   fullName: 'E2E Buyer', street1: '200 Market St', city: 'Austin', state: 'TX',
@@ -36,7 +36,21 @@ test.describe('26 · Buyer full journey (multi-seller cart -> checkout -> cancel
       }
     }
 
-    // Create 3 listings: 2 from alex, 1 from jordan (multi-seller)
+    // Create 3 listings: 2 from alex, 1 from a THIRD party (multi-seller).
+    // The buyer must never own a listing in this cart: a seller cannot buy
+    // their own item (POST /api/cart/items rejects self-listings, matching the
+    // purchase gates in /api/payments/create-intent and /api/transactions).
+    // Use the third seeded account when the target has one, otherwise fall
+    // back to alex so the scenario still runs on production, which seeds
+    // only the Alex/Jordan accounts.
+    let thirdSellerToken = sellerToken;
+    if (ACCOUNTS.seller2) {
+      const s2 = await api.req('post', '/api/auth/login', {
+        body: { email: ACCOUNTS.seller2.email, password: ACCOUNTS.seller2.password },
+      });
+      if (s2.status === 200 && s2.data.token) thirdSellerToken = s2.data.token;
+    }
+
     const mk = (title, price, tok) => api.req('post', '/api/listings', {
       token: tok,
       body: { title, description: 'E2E item', price, category: 'Men', brand: 'E2E',
@@ -45,7 +59,7 @@ test.describe('26 · Buyer full journey (multi-seller cart -> checkout -> cancel
     });
     const ra = await mk(`S26 ${RUN_ID} A`, 50, sellerToken);
     const rb = await mk(`S26 ${RUN_ID} B`, 75, sellerToken);
-    const rc = await mk(`S26 ${RUN_ID} C`, 30, buyerToken); // jordan as seller
+    const rc = await mk(`S26 ${RUN_ID} C`, 30, thirdSellerToken);
     listingA = (ra.data.listing || ra.data)._id;
     listingB = (rb.data.listing || rb.data)._id;
     listingC = (rc.data.listing || rc.data)._id;

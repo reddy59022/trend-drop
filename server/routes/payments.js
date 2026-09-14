@@ -342,8 +342,17 @@ router.post('/confirm-batch', auth, async (req, res) => {
     // Deduplicate - check if already processed (include txn ids + order id so
     // the client can route back to the already-created order on retry/3DS
     // replays across Web/iOS/Android without double-charging).
+    //
+    // SECURITY: an intent may only ever produce money state ONCE, whichever
+    // endpoint consumed it. The Payout lookup alone is NOT sufficient because
+    // the legacy purchase paths (POST /api/transactions, /guest and
+    // /offer/:id) record the intent on the Transaction but create no Payout —
+    // replaying the same intent here would otherwise capture and credit twice.
+    const existingTxn = await Transaction.findOne({
+      'paymentBreakdown.paymentIntentId': paymentIntentId,
+    }).select('_id');
     const existingPayout = await Payout.findOne({ paymentIntentId });
-    if (existingPayout) {
+    if (existingPayout || existingTxn) {
       const dupTxns = await Transaction.find({ 'paymentBreakdown.paymentIntentId': paymentIntentId }).select('_id');
       const dupOrder = await Order.findOne({ 'payment.paymentIntentId': paymentIntentId }).select('_id');
       return res.status(200).json({

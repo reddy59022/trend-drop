@@ -5,6 +5,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -74,6 +75,7 @@ describe('Guest Checkout', () => {
     const res = await request(app)
       .post('/api/transactions/guest')
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: guestListing._id,
         buyerEmail: 'guestbuyer@example.com',
         buyerName: 'Guest Buyer',
@@ -102,6 +104,7 @@ describe('Guest Checkout', () => {
     const res = await request(app)
       .post('/api/transactions/guest')
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: guestListing._id,
         buyerEmail: 'guest2@example.com',
         buyerName: 'Guest Two',
@@ -130,6 +133,7 @@ describe('Guest Checkout', () => {
     const res = await request(app)
       .post('/api/transactions/guest')
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: guestListing._id,
         buyerEmail: 'invalid-email',
         buyerName: 'Guest',
@@ -152,6 +156,7 @@ describe('Guest Checkout', () => {
     const res = await request(app)
       .post('/api/transactions/guest')
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: guestListing._id,
         buyerEmail: 'guest@example.com',
         buyerName: 'Guest',
@@ -169,6 +174,7 @@ describe('Guest Checkout', () => {
     await request(app)
       .post('/api/transactions/guest')
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: guestListing._id,
         buyerEmail: `guest_inv_${Date.now()}@example.com`,
         buyerName: 'Inventory Guest',
@@ -191,6 +197,7 @@ describe('Guest Checkout', () => {
     const res = await request(app)
       .post('/api/transactions/guest')
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: guestListing._id,
         buyerEmail: `guest_breakdown_${Date.now()}@example.com`,
         buyerName: 'Breakdown Guest',
@@ -220,6 +227,7 @@ describe('Guest Checkout', () => {
     const res1 = await request(app)
       .post('/api/transactions/guest')
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: guestListing._id,
         buyerEmail: email1,
         buyerName: 'Multi Guest 1',
@@ -241,6 +249,7 @@ describe('Guest Checkout', () => {
     const res2 = await request(app)
       .post('/api/transactions/guest')
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: guestListing._id,
         buyerEmail: email2,
         buyerName: 'Multi Guest 2',
@@ -286,6 +295,7 @@ describe('Guest Checkout', () => {
     const res = await request(app)
       .post('/api/transactions/guest')
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: freshListing._id,
         buyerEmail: guestEmail,
         buyerName: 'Retrieve Guest',

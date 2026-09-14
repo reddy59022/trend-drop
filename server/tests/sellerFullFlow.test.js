@@ -16,6 +16,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -91,7 +92,7 @@ async function buySingle(buyerToken, listingId, overrides = {}) {
   const r = await request(app)
     .post('/api/transactions')
     .set('Authorization', `Bearer ${buyerToken}`)
-    .send({ listingId, shippingAddress, buyerCountry: 'US', quantity: overrides.qty || 1 });
+    .send({ paymentIntentId: authorizedPaymentIntent(), listingId, shippingAddress, buyerCountry: 'US', quantity: overrides.qty || 1 });
   if (r.body._id) testTxnIds.push(r.body._id);
   return r;
 }

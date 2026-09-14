@@ -5,6 +5,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -74,7 +75,7 @@ describe('Shipping Labels (EasyPost Integration)', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: testListing._id, buyerCountry: 'GB' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: testListing._id, buyerCountry: 'GB' });
     expect(txnRes.status).toBe(201);
     localTxn = txnRes.body;
     testTransaction = localTxn;
@@ -104,7 +105,7 @@ describe('Shipping Labels (EasyPost Integration)', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: testListing._id, buyerCountry: 'GB' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: testListing._id, buyerCountry: 'GB' });
     const txn = txnRes.body;
 
     // Generate label
@@ -128,7 +129,7 @@ describe('Shipping Labels (EasyPost Integration)', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: testListing._id, buyerCountry: 'GB' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: testListing._id, buyerCountry: 'GB' });
     const txn = txnRes.body;
     testTransaction = txn;
 
@@ -152,7 +153,7 @@ describe('Shipping Labels (EasyPost Integration)', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: testListing._id, buyerCountry: 'GB' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: testListing._id, buyerCountry: 'GB' });
     const txn = txnRes.body;
     testTransaction = txn;
 

@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const request = require('supertest');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -93,11 +94,11 @@ describe('Concurrent Purchase Tests', () => {
       request(app)
         .post('/api/transactions')
         .set('Authorization', `Bearer ${buyer1Token}`)
-        .send({ listingId: listing._id, buyerCountry: 'US' }),
+        .send({ paymentIntentId: authorizedPaymentIntent(), listingId: listing._id, buyerCountry: 'US' }),
       request(app)
         .post('/api/transactions')
         .set('Authorization', `Bearer ${buyer2Token}`)
-        .send({ listingId: listing._id, buyerCountry: 'US' }),
+        .send({ paymentIntentId: authorizedPaymentIntent(), listingId: listing._id, buyerCountry: 'US' }),
     ]);
 
     const successes = [res1, res2].filter(r => r.status === 201);
@@ -125,9 +126,9 @@ describe('Concurrent Purchase Tests', () => {
     const multiQtyListing = listingRes.body.listing;
 
     const [r1, r2, r3] = await Promise.all([
-      request(app).post('/api/transactions').set('Authorization', `Bearer ${buyer1Token}`).send({ listingId: multiQtyListing._id, buyerCountry: 'US' }),
-      request(app).post('/api/transactions').set('Authorization', `Bearer ${buyer2Token}`).send({ listingId: multiQtyListing._id, buyerCountry: 'US' }),
-      request(app).post('/api/transactions').set('Authorization', `Bearer ${buyer1Token}`).send({ listingId: multiQtyListing._id, buyerCountry: 'US' }),
+      request(app).post('/api/transactions').set('Authorization', `Bearer ${buyer1Token}`).send({ paymentIntentId: authorizedPaymentIntent(), listingId: multiQtyListing._id, buyerCountry: 'US' }),
+      request(app).post('/api/transactions').set('Authorization', `Bearer ${buyer2Token}`).send({ paymentIntentId: authorizedPaymentIntent(), listingId: multiQtyListing._id, buyerCountry: 'US' }),
+      request(app).post('/api/transactions').set('Authorization', `Bearer ${buyer1Token}`).send({ paymentIntentId: authorizedPaymentIntent(), listingId: multiQtyListing._id, buyerCountry: 'US' }),
     ]);
 
     const successes = [r1, r2, r3].filter(r => r.status === 201);

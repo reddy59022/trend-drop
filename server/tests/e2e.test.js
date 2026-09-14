@@ -6,6 +6,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Offer = require('../models/Offer');
@@ -39,7 +40,7 @@ async function createListing(sellerId, overrides = {}) {
   return l;
 }
 async function buy(buyerToken, listingId) {
-  const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${buyerToken}`).send({ listingId, shippingAddress: { fullName: 'B', street1: '456 St', city: 'City', state: 'NY', postalCode: '10001', country: 'US' }, buyerCountry: 'US' });
+  const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${buyerToken}`).send({ paymentIntentId: authorizedPaymentIntent(), listingId, shippingAddress: { fullName: 'B', street1: '456 St', city: 'City', state: 'NY', postalCode: '10001', country: 'US' }, buyerCountry: 'US' });
   if (r.status !== 201) console.log('BUY_NON201', r.status, JSON.stringify(r.body));
   return r.body;
 }
@@ -261,7 +262,7 @@ describe('RULE 4: Payments', () => {
     expect(r.body.seller.platformFee).toBe(8); expect(r.body.seller.sellerEarnings).toBe(92);
   });
   test('4h Cannot buy own', async () => {
-    const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${sellerToken}`).send({ listingId, shippingAddress: { country: 'US' } });
+    const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${sellerToken}`).send({ paymentIntentId: authorizedPaymentIntent(), listingId, shippingAddress: { country: 'US' } });
     expect(r.status).toBe(400);
   });
 });
@@ -305,7 +306,7 @@ describe('RULE 5: Orders', () => {
   });
   test('5g Out of stock fails', async () => {
     const l = await createListing(sellerId, { quantity: 0, title: 'E2E Test OOS' });
-    const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${buyerToken}`).send({ listingId: l._id, shippingAddress: { country: 'US' }, buyerCountry: 'US' });
+    const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${buyerToken}`).send({ paymentIntentId: authorizedPaymentIntent(), listingId: l._id, shippingAddress: { country: 'US' }, buyerCountry: 'US' });
     expect(r.status).toBe(400);
   });
   test('5h Multi-purchase decrement', async () => {

@@ -193,6 +193,39 @@ const findPaymentIntent = async (paymentIntentId) => {
   }
 };
 
+// Verify that a payment intent was authorized for THIS buyer and THESE items.
+//
+// Binding data (metadata.buyerId / metadata.itemIds) is written by
+// create-intent, so when it is present it is authoritative:
+//   - an intent authorized for a $5 item must never fulfil a $500 order
+//   - buyer A's authorization must never be spendable by buyer B
+// Intents created without binding metadata (legacy rows, test mocks) are
+// allowed through for backwards compatibility; callers still enforce
+// single-use separately so such an intent cannot be replayed.
+//
+// Returns { ok, reason }.
+const verifyIntentBinding = (intent, { buyerId, listingIds } = {}) => {
+  if (!intent) return { ok: false, reason: 'Payment intent could not be verified' };
+  const md = intent.metadata || {};
+
+  if (md.buyerId && buyerId && String(md.buyerId) !== String(buyerId)) {
+    return { ok: false, reason: 'This payment was authorized by a different account.' };
+  }
+
+  if (md.itemIds) {
+    const authorized = String(md.itemIds)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const requested = (listingIds || []).map((id) => String(id));
+    if (requested.length && !requested.every((id) => authorized.includes(id))) {
+      return { ok: false, reason: 'This payment was not authorized for these items.' };
+    }
+  }
+
+  return { ok: true };
+};
+
 // Cancel/Release an authorization (if fulfillment fails)
 const releaseAuthorization = async (paymentIntentId) => {
   try {
@@ -351,6 +384,7 @@ module.exports = {
   capturePaymentIntent,
   retrievePaymentIntent,
   findPaymentIntent,
+  verifyIntentBinding,
   releaseAuthorization,
   isWebhookSignatureRequired,
   getWebhookSecret,

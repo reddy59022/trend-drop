@@ -1,5 +1,6 @@
 const request = require('supertest');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const mongoose = require('mongoose');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
@@ -57,6 +58,7 @@ describe('Payment Currency & Amount Validation', () => {
       const transactionRes = await request(app)
         .post('/api/transactions/guest')
         .send({
+          paymentIntentId: authorizedPaymentIntent(),
           listingId: testListing._id,
           buyerEmail: 'guest1@test.com',
           buyerName: 'Guest Buyer',
@@ -95,6 +97,7 @@ describe('Payment Currency & Amount Validation', () => {
       const transRes = await request(app)
         .post('/api/transactions/guest')
         .send({
+          paymentIntentId: authorizedPaymentIntent(),
           listingId: usdListing._id,
           buyerEmail: 'guest2@test.com',
           buyerName: 'Guest Buyer USD',
@@ -130,6 +133,7 @@ describe('Payment Currency & Amount Validation', () => {
       const transRes = await request(app)
         .post('/api/transactions/guest')
         .send({
+          paymentIntentId: authorizedPaymentIntent(),
           listingId: jpyListing._id,
           buyerEmail: 'guest3@test.com',
           buyerName: 'Guest Buyer JPY',

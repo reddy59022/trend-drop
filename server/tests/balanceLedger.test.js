@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const request = require('supertest');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -74,7 +75,7 @@ describe('Seller Balance Ledger Tests', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: testListing._id, buyerCountry: 'US' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: testListing._id, buyerCountry: 'US' });
     expect(txnRes.status).toBe(201);
     testTransaction = txnRes.body;
 
@@ -103,7 +104,7 @@ describe('Seller Balance Ledger Tests', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: cancelListing._id, buyerCountry: 'US' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: cancelListing._id, buyerCountry: 'US' });
     const cancelTxn = txnRes.body;
 
     const pendingBefore = (await User.findById(seller._id)).balance.pending;
@@ -168,7 +169,7 @@ describe('Seller Balance Ledger Tests', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: returnListing._id, buyerCountry: 'US' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: returnListing._id, buyerCountry: 'US' });
     const returnTxn = txnRes.body;
 
     const returnTxnDoc = await Transaction.findById(returnTxn._id);

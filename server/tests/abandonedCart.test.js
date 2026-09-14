@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 
 let userToken;
 let userId;
+let sellerId;
 let listingId;
 
 async function createUser(email) {
@@ -30,14 +31,19 @@ describe('Abandoned Cart Recovery', () => {
   beforeEach(async () => {
     const user = await createUser(`cart_user_${Date.now()}@example.com`);
     userId = user._id;
-    
+
+    // The listing must belong to a DIFFERENT user: a seller cannot add their
+    // own listing to a cart (bug B2 guard on POST /api/cart/items).
+    const sellerUser = await createUser(`cart_seller_${Date.now()}@example.com`);
+    sellerId = sellerUser._id;
+
     const listing = await Listing.create({
       title: 'Test Item',
       description: 'Test',
       price: 50,
       category: 'Men',
       condition: 'Good',
-      seller: userId,
+      seller: sellerId,
       available: true,
       sold: false,
       status: 'active',
@@ -49,9 +55,9 @@ describe('Abandoned Cart Recovery', () => {
   });
 
   afterEach(async () => {
-    await Cart.deleteMany({ user: userId });
-    await Listing.deleteMany({ seller: userId });
-    await User.deleteMany({ _id: userId });
+    await Cart.deleteMany({ user: { $in: [userId, sellerId] } });
+    await Listing.deleteMany({ seller: { $in: [userId, sellerId] } });
+    await User.deleteMany({ _id: { $in: [userId, sellerId] } });
   });
 
   describe('GET /api/cart', () => {
@@ -97,7 +103,7 @@ describe('Abandoned Cart Recovery', () => {
         price: 50,
         category: 'Men',
         condition: 'Good',
-        seller: userId,
+        seller: sellerId,
         available: false,
         sold: true,
         status: 'sold',

@@ -7,8 +7,69 @@ const Offer = require('../models/Offer');
 const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
-const { calculatePaymentBreakdown, authorizePaymentIntent } = require('../config/payments');
+const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding } = require('../config/payments');
 const { boostConfig } = require('../config/boost');
+
+// TDD-B1: legacy transaction endpoints must verify a real authorized payment
+// before creating any money state (parity with /api/cart/checkout gate).
+// `context.listingIds` binds the intent to the items it was authorized for.
+// Returns { ok:true, pi } or sends 400 and returns { ok:false }.
+async function gateLegacyPayment(req, res, context = {}) {
+  const { paymentIntentId } = req.body || {};
+  if (!paymentIntentId) {
+    res.status(400).json({ message: 'A confirmed paymentIntentId is required for purchase.' });
+    return { ok: false };
+  }
+  let pi;
+  try {
+    pi = await findPaymentIntent(paymentIntentId);
+  } catch (e) {
+    res.status(400).json({ message: 'Payment intent could not be verified' });
+    return { ok: false };
+  }
+  if (!pi || !['requires_capture', 'succeeded'].includes(pi.status)) {
+    res.status(400).json({ message: `Payment not authorized. Status: ${pi?.status || 'unknown'}` });
+    return { ok: false };
+  }
+  // TDD-B1: the intent must have been authorized for THIS buyer and THESE
+  // items — otherwise a $5 authorization could be redeemed for a $500 item,
+  // or another account could spend an intent it never authorized.
+  const binding = verifyIntentBinding(pi, {
+    buyerId: req.user ? req.user._id : undefined, // guests have no identity to compare
+    listingIds: context.listingIds,
+  });
+  if (!binding.ok) {
+    res.status(400).json({ message: binding.reason });
+    return { ok: false };
+  }
+  // TDD-B1: a single authorized intent must fund exactly ONE purchase. Without
+  // this, the same authorized id could be replayed against every listing the
+  // buyer wants for free (the legacy paths create no Payout to deduplicate on).
+  const alreadyUsed = await Transaction.findOne({
+    'paymentBreakdown.paymentIntentId': pi.id,
+  }).select('_id');
+  if (alreadyUsed) {
+    res.status(400).json({ message: 'This payment has already been used for another purchase.' });
+    return { ok: false };
+  }
+  return { ok: true, pi };
+}
+
+// TDD-B4: accepted offers expire 24h after acceptance (acceptedUntil).
+// Returns { offer, finalPrice } or sends 400 { ok:false }.
+async function resolveAcceptedOfferForPurchase(listingId, buyerId, res) {
+  const offer = await Offer.findOne({ listing: listingId, buyer: buyerId, status: 'accepted' });
+  if (!offer) return { offer: null, finalPrice: null };
+  if (offer.acceptedUntil && new Date(offer.acceptedUntil).getTime() < Date.now()) {
+    offer.status = 'expired';
+    try { await offer.save(); } catch (e) {}
+    res.status(400).json({ message: 'Accepted offer has expired. Please make a new offer.' });
+    return { ok: false };
+  }
+  // acceptedPrice is authoritative (set at accept time); fall back for legacy docs.
+  const finalPrice = offer.acceptedPrice ?? offer.counterAmount ?? offer.amount;
+  return { offer, finalPrice };
+}
 
 // Flat per-sale boost fee: price × tier.feePercent / 100
 // Charged ONLY upon successful sale (never upfront)
@@ -108,7 +169,7 @@ router.post('/guest', async (req, res) => {
     }
 
     // Validate shipping address
-    if (!shippingAddress.fullName || !shippingAddress.street1 || !shippingAddress.city || 
+    if (!shippingAddress.fullName || !shippingAddress.street1 || !shippingAddress.city ||
         !shippingAddress.state || !shippingAddress.postalCode || !shippingAddress.country) {
       return res.status(400).json({ message: 'Complete shipping address is required' });
     }
@@ -128,6 +189,11 @@ router.post('/guest', async (req, res) => {
     if (listing.quantity <= 0) {
       return res.status(400).json({ message: 'Out of stock' });
     }
+
+    // TDD-B1: guest checkout must also present a verified authorized payment
+    // (validated before any inventory/seller-state mutation).
+    const gate = await gateLegacyPayment(req, res, { listingIds: [listingId] });
+    if (!gate.ok) return;
 
     // Create or find guest user
     let guestUser = await User.findOne({ email: buyerEmail.toLowerCase() });
@@ -192,6 +258,10 @@ router.post('/guest', async (req, res) => {
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
         boostFee,
         boostTier: listing.boost?.tier || '',
+        // TDD-B1: record the funding intent so a single authorization can
+        // never be replayed for a second purchase (and so confirm-batch
+        // dedupe sees guest purchases).
+        paymentIntentId: gate.pi.id,
       },
       shippingAddress: {
         fullName: shippingAddress.fullName,
@@ -276,17 +346,18 @@ router.post('/', auth, async (req, res) => {
         return res.status(400).json({ message: 'Out of stock' });
       }
 
-    // Determine if there is an accepted offer for this buyer and listing (any accepted status).
-    // If present, use its negotiated price instead of the listing's default price.
-    // Also link the offer to the transaction for tracking.
-    const existingOffer = await Offer.findOne({
-      listing: listingId,
-      buyer: req.user._id,
-      status: 'accepted',
-    });
-    const finalPrice = existingOffer ? (existingOffer.counterAmount || existingOffer.amount) : listing.price;
-    const isNegotiated = !!existingOffer;
-    const negotiatedPrice = isNegotiated ? (existingOffer.counterAmount || existingOffer.amount) : null;
+      // TDD-B4: accepted offer price = acceptedPrice (authoritative); expired offers rejected.
+      // Also link the offer to the transaction for tracking.
+      const resolved = await resolveAcceptedOfferForPurchase(listingId, req.user._id, res);
+      if (resolved.ok === false) return;
+      const existingOffer = resolved.offer;
+      const finalPrice = existingOffer ? resolved.finalPrice : listing.price;
+      const isNegotiated = !!existingOffer;
+      const negotiatedPrice = isNegotiated ? resolved.finalPrice : null;
+
+      // TDD-B1: verify authorized payment BEFORE any money/inventory state.
+      const gate = await gateLegacyPayment(req, res, { listingIds: [listingId] });
+      if (!gate.ok) return;
 
       // Get seller info for country
       const seller = await User.findById(listing.seller);
@@ -331,6 +402,7 @@ router.post('/', auth, async (req, res) => {
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
         boostFee,
         boostTier: listing.boost?.tier || '',
+        paymentIntentId: gate.pi.id,
       },
       shippingAddress: {
         fullName: shippingAddress?.fullName || req.user.name,
@@ -483,8 +555,14 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     if (offer.status !== 'accepted') {
       return res.status(400).json({ message: 'Offer not accepted yet' });
     }
-    // Use the agreed price: counterAmount if present, otherwise original amount
-    const finalPrice = offer.counterAmount || offer.amount;
+    // TDD-B4: acceptedUntil expiry enforced; acceptedPrice authoritative.
+    if (offer.acceptedUntil && new Date(offer.acceptedUntil).getTime() < Date.now()) {
+      offer.status = 'expired';
+      try { await offer.save(); } catch (e) {}
+      return res.status(400).json({ message: 'Accepted offer has expired. Please make a new offer.' });
+    }
+    // Use the agreed price: acceptedPrice authoritative, legacy fallback.
+    const finalPrice = offer.acceptedPrice ?? offer.counterAmount ?? offer.amount;
 
     const listing = await Listing.findById(offer.listing);
     if (!listing) {
@@ -493,6 +571,9 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     if (!listing.available || listing.sold || (listing.quantity !== undefined && listing.quantity <= 0)) {
       return res.status(400).json({ message: 'Listing not available for purchase' });
     }
+    // TDD-B1: verify authorized payment BEFORE any money/inventory state.
+    const offerGate = await gateLegacyPayment(req, res, { listingIds: [offer.listing] });
+    if (!offerGate.ok) return;
 
     const seller = await User.findById(listing.seller);
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
@@ -525,6 +606,8 @@ router.post('/offer/:offerId', auth, async (req, res) => {
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
         boostFee,
         boostTier: listing.boost?.tier || '',
+        // TDD-B1: funding intent recorded so it cannot be replayed.
+        paymentIntentId: offerGate.pi.id,
       },
       shippingAddress: {
         fullName: req.user.name,

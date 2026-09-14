@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const request = require('supertest');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -177,7 +178,7 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: testListing._id, buyerCountry: 'US' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: testListing._id, buyerCountry: 'US' });
     expect(txnRes.status).toBe(201);
     const txn = txnRes.body;
     expect(txn.status).toBe('paid');
@@ -214,7 +215,7 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: testListing2._id, buyerCountry: 'US' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: testListing2._id, buyerCountry: 'US' });
     expect(txnRes.status).toBe(201);
     const txn = txnRes.body;
 
@@ -285,7 +286,7 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
     const txnRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: boostedListing._id, buyerCountry: 'US' });
+      .send({ paymentIntentId: authorizedPaymentIntent(), listingId: boostedListing._id, buyerCountry: 'US' });
     expect(txnRes.status).toBe(201);
     const txn = txnRes.body;
 

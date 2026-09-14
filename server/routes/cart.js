@@ -69,6 +69,11 @@ router.post('/items', auth, async (req, res) => {
       return res.status(404).json({ message: 'Listing not found' });
     }
 
+    // TDD-B2: cannot add your own listing to cart (parity with purchase gates).
+    if (listing.seller && listing.seller.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: 'Cannot add your own listing to cart' });
+    }
+
     // Check if item is available
     if (!listing.available || listing.sold) {
       return res.status(400).json({ message: 'Item is no longer available' });
@@ -159,6 +164,7 @@ router.post('/checkout', auth, async (req, res) => {
       });
     }
     const { findPaymentIntent } = require('../config/payments');
+    const { verifyIntentBinding } = require('../config/payments');
     let pi;
     try {
       pi = await findPaymentIntent(paymentIntentId);
@@ -172,6 +178,17 @@ router.post('/checkout', auth, async (req, res) => {
       });
     }
 
+    // TDD-B1: one authorization funds exactly ONE checkout. Without this the
+    // same intent id could be replayed against every cart for free.
+    const intentAlreadyUsed = await Transaction.findOne({
+      'paymentBreakdown.paymentIntentId': pi.id,
+    }).select('_id');
+    if (intentAlreadyUsed) {
+      return res.status(400).json({
+        message: 'This payment has already been used for another purchase.',
+      });
+    }
+
     const cart = await Cart.findOne({ user: req.user._id, status: 'active' })
       .populate('items.listing');
 
@@ -179,11 +196,37 @@ router.post('/checkout', auth, async (req, res) => {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
+    // ============================================================
+    // INTENT BINDING (TDD-B1): the intent must have been authorized for THIS
+    // buyer and THIS cart's items. create-intent stores buyerId + itemIds in
+    // the intent metadata, so an intent authorized for a $1 decoy item can
+    // never fulfil a cart full of other listings.
+    // ============================================================
+    const binding = verifyIntentBinding(pi, {
+      buyerId: req.user._id,
+      listingIds: cart.items.map((it) => it.listing?._id || it.listing),
+    });
+    if (!binding.ok) {
+      return res.status(400).json({ message: binding.reason });
+    }
+
     // Validate all items are still available
     for (const item of cart.items) {
       const listing = await Listing.findById(item.listing._id || item.listing);
       if (!listing || !listing.available || listing.sold) {
         return res.status(400).json({ message: `"${listing?.title || 'Item'}" is no longer available` });
+      }
+      // TDD-B2 (defense in depth): cart-add blocks self-listings, but a cart
+      // written before that guard — or seeded directly — must not be
+      // redeemable at checkout either, or the purchase gates are bypassable.
+      if (listing.seller && listing.seller.toString() === req.user._id.toString()) {
+        return res.status(400).json({ message: 'Cannot purchase your own listing' });
+      }
+      // TDD-B3: validate EVERY line quantity up-front so a multi-item cart
+      // never partially commits when one line is short on stock.
+      const qty = Math.max(1, Math.floor(item.quantity || 1));
+      if (listing.quantity < qty) {
+        return res.status(400).json({ message: `Only ${listing.quantity} left of "${listing.title}"` });
       }
     }
 
@@ -220,15 +263,26 @@ router.post('/checkout', auth, async (req, res) => {
 
     for (const item of cart.items) {
       const listing = await Listing.findById(item.listing._id || item.listing);
+      // TDD-B3: honor cart line quantity (validate stock, scale totals).
+      const qty = Math.max(1, Math.floor(item.quantity || 1));
+      if (listing.quantity < qty) {
+        return res.status(400).json({ message: `Only ${listing.quantity} left of "${listing.title}"` });
+      }
       const seller = await User.findById(listing.seller);
       const sellerCountry = seller?.country || listing.shipsFrom || 'US';
 
+      const combinedWeight = Math.round(((listing.weight || 0.5) * qty) * 1000) / 1000;
       const breakdown = calculatePaymentBreakdown(
         listing.price,
         sellerCountry,
         toCountry,
-        listing.weight || 0.5
+        combinedWeight
       );
+      const itemSubtotal = Math.round(listing.price * qty * 100) / 100;
+      const protectionTotal = Math.round(breakdown.buyer.buyerProtectionFee * qty * 100) / 100;
+      const lineTotal = Math.round((itemSubtotal + breakdown.buyer.shippingCost + protectionTotal) * 100) / 100;
+      const platformTotal = Math.round(breakdown.seller.platformFee * qty * 100) / 100;
+      const earningsTotal = Math.round(breakdown.seller.sellerEarnings * qty * 100) / 100;
 
       const sellerAddress = seller?.shippingAddress ? {
         street1: seller.shippingAddress.street1,
@@ -242,27 +296,30 @@ router.post('/checkout', auth, async (req, res) => {
       const label = generateLabel({
         shippingAddress: { fullName: shippingAddress?.fullName || buyer.name, ...shippingAddress },
         sellerAddress,
-        weight: listing.weight || 0.5,
+        weight: combinedWeight,
       }, carrierCode);
 
       const transaction = await Transaction.create({
         listing: listing._id,
         buyer: req.user._id,
         seller: listing.seller,
-        itemPrice: listing.price,
+        quantity: qty,
+        itemPrice: itemSubtotal,
         currency: listing.currency || 'USD',
         paymentBreakdown: {
-          subtotal: breakdown.buyer.itemPrice,
+          subtotal: itemSubtotal,
           shippingCost: breakdown.buyer.shippingCost,
-          buyerProtectionFee: breakdown.buyer.buyerProtectionFee,
+          buyerProtectionFee: protectionTotal,
           buyerProtectionPercent: breakdown.buyer.buyerProtectionPercent,
           tax: 0,
-          totalPaid: breakdown.buyer.totalPaid,
-          platformFee: breakdown.seller.platformFee,
+          totalPaid: lineTotal,
+          platformFee: platformTotal,
           platformFeePercent: breakdown.seller.platformFeePercent,
           shippingPayout: breakdown.seller.shippingPayout,
-          sellerEarnings: breakdown.seller.sellerEarnings,
-          paymentIntentId,
+          sellerEarnings: earningsTotal,
+          // TDD-B1: canonical provider id (never the raw client string) so one
+          // authorization can never fund a second purchase / confirm-batch replay.
+          paymentIntentId: pi.id,
         },
         shippingAddress: {
           fullName: shippingAddress?.fullName || buyer.name,
@@ -285,28 +342,37 @@ router.post('/checkout', auth, async (req, res) => {
           trackingHistory: label.statusHistory,
         },
         status: 'shipped',
-        payout: { status: 'pending', transactionId: paymentIntentId },
+        payout: { status: 'pending', transactionId: pi.id },
       });
 
       createdTransactions.push(transaction);
 
-      // Update listing inventory
-      const wasLastOne = listing.quantity === 1;
-      await Listing.findOneAndUpdate(
-        { _id: listing._id, quantity: { $gt: 0 } },
-        { $inc: { quantity: -1, quantitySold: 1 }, $set: wasLastOne ? { sold: true, available: false } : {} },
+      // Update listing inventory (TDD-B3: decrement by qty, sold when depleted).
+      // The conditional update is the stock authority: if it matches nothing
+      // another checkout won the last unit, so this purchase must be rolled
+      // back (no credit, no payout, no transaction) exactly like
+      // POST /api/transactions does.
+      const depleted = listing.quantity <= qty;
+      const inventoryUpdate = await Listing.findOneAndUpdate(
+        { _id: listing._id, quantity: { $gte: qty } },
+        { $inc: { quantity: -qty, quantitySold: qty }, $set: depleted ? { sold: true, available: false } : {} },
         { new: true }
       );
 
+      if (!inventoryUpdate) {
+        await Transaction.findByIdAndDelete(transaction._id);
+        return res.status(400).json({ message: `Sorry, "${listing.title}" just went out of stock` });
+      }
+
       // Update seller balance and send notification
       if (seller) {
-        seller.balance.pending = (seller.balance.pending || 0) + breakdown.seller.sellerEarnings;
+        seller.balance.pending = (seller.balance.pending || 0) + earningsTotal;
         seller.notifications.unshift({
           type: 'sale',
           from: req.user._id,
           listing: listing._id,
           transaction: transaction._id,
-          message: `Item sold from cart! You'll earn ${breakdown.seller.sellerEarnings} ${breakdown.sellerCurrency}. Shipping label ready.`,
+          message: `Item sold from cart! You'll earn ${earningsTotal} ${breakdown.sellerCurrency}. Shipping label ready.`,
         });
         await seller.save();
       }
@@ -316,10 +382,10 @@ router.post('/checkout', auth, async (req, res) => {
         seller: listing.seller,
         transaction: transaction._id,
         listing: listing._id,
-        salePrice: breakdown.buyer.itemPrice,
+        salePrice: itemSubtotal,
         commissionRate: breakdown.seller.platformFeePercent / 100,
-        commissionAmount: breakdown.seller.platformFee,
-        payoutAmount: breakdown.seller.sellerEarnings,
+        commissionAmount: platformTotal,
+        payoutAmount: earningsTotal,
         status: 'pending',
       });
     }

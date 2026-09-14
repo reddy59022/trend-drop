@@ -14,6 +14,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -276,6 +277,7 @@ describe('Revenue Split with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -315,6 +317,7 @@ describe('Revenue Split with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -349,6 +352,7 @@ describe('Revenue Split with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -382,6 +386,7 @@ describe('Revenue Split with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -623,6 +628,7 @@ describe('Seller Balance with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -687,6 +693,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing1Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -696,6 +703,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing2Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -705,6 +713,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing3Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -764,6 +773,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing1Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -773,6 +783,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing2Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -820,6 +831,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing1Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -829,6 +841,7 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing2Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -867,6 +880,7 @@ describe('Returns and Refunds with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -906,6 +920,7 @@ describe('Returns and Refunds with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -958,6 +973,7 @@ describe('Returns and Refunds with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing1Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -967,6 +983,7 @@ describe('Returns and Refunds with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing2Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -976,6 +993,7 @@ describe('Returns and Refunds with Boost', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listing3Res.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -1027,6 +1045,7 @@ describe('Platform Revenue Verification', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
+        paymentIntentId: authorizedPaymentIntent(),
         listingId: listingRes.body.listing._id,
         shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
         buyerCountry: 'US',
@@ -1071,6 +1090,7 @@ describe('Platform Revenue Verification', () => {
         .post('/api/transactions')
         .set('Authorization', `Bearer ${buyerToken}`)
         .send({
+          paymentIntentId: authorizedPaymentIntent(),
           listingId: listingRes.body.listing._id,
           shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' },
           buyerCountry: 'US',

@@ -10,6 +10,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../server');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -35,7 +36,7 @@ async function createListing(sellerId, overrides = {}) {
   return Listing.create({ seller: sellerId, title: 'Rev Test', description: 'Test', price: 100, category: 'Men', condition: 'New with tags', available: true, sold: false, quantity: 10, shipsFrom: 'US', weight: 1, ...overrides });
 }
 async function buy(buyerToken, listingId) {
-  const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${buyerToken}`).send({ listingId, shippingAddress: { fullName: 'B', street1: '456 St', city: 'City', state: 'NY', postalCode: '10001', country: 'US' }, buyerCountry: 'US' });
+  const r = await request(app).post('/api/transactions').set('Authorization', `Bearer ${buyerToken}`).send({ paymentIntentId: authorizedPaymentIntent(), listingId, shippingAddress: { fullName: 'B', street1: '456 St', city: 'City', state: 'NY', postalCode: '10001', country: 'US' }, buyerCountry: 'US' });
   return r.body;
 }
 
