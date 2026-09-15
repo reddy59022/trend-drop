@@ -899,6 +899,9 @@ router.post('/:id/comment', auth, async (req, res) => {
     if (!text) {
       return res.status(400).json({ message: 'Comment text is required' });
     }
+    if (typeof text !== 'string' || text.length > 1000) {
+      return res.status(400).json({ message: 'Comment text must be at most 1000 characters' });
+    }
 
     const listing = await Listing.findById(req.params.id);
     if (!listing) {
@@ -943,7 +946,8 @@ router.delete('/:id/comments/:commentId', auth, async (req, res) => {
       return res.status(404).json({ message: 'Comment not found' });
     }
 
-    if (comment.user.toString() !== req.user._id.toString()) {
+    if (comment.user.toString() !== req.user._id.toString()
+      && listing.seller.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 

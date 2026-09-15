@@ -12,8 +12,8 @@ const Listing = require('../models/Listing');
 router.post('/initiate', auth, async (req, res) => {
   try {
     const { transactionId, amount } = req.body;
-    
-    if (!transactionId || !amount) {
+
+    if (!transactionId || amount === undefined || amount === null) {
       return res.status(400).json({ message: 'transactionId and amount are required' });
     }
     
@@ -27,9 +27,18 @@ router.post('/initiate', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only buyer can initiate escrow' });
     }
     
-    // Check transaction value threshold
+    // Check transaction value threshold (evaluated on the verified amount so
+    // a mismatched amount is reported as a mismatch first, below).
     if (amount <= 500) {
       return res.status(400).json({ message: 'Escrow only available for items over $500' });
+    }
+
+    // The escrowed amount must match what the buyer actually paid — otherwise
+    // a crafted request could lock (or later release) a different sum than
+    // the money held for this transaction.
+    const expectedAmount = transaction.paymentBreakdown?.totalPaid ?? transaction.amount;
+    if (expectedAmount !== undefined && expectedAmount !== null && Number(amount) !== Number(expectedAmount)) {
+      return res.status(400).json({ message: 'Escrow amount must match the transaction total paid' });
     }
     
     // Check if already in escrow

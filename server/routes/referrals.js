@@ -77,6 +77,11 @@ router.post('/apply', async (req, res) => {
       return res.status(400).json({ message: 'Referral code has reached maximum uses' });
     }
 
+    // Self-referral is fraud: a user must never consume their own code.
+    if (userId && String(referral.referrer) === String(userId)) {
+      return res.status(400).json({ message: 'You cannot use your own referral code' });
+    }
+
     // If userId provided, link the referral
     if (userId) {
       // Check if user already used a referral
@@ -133,6 +138,11 @@ router.post('/claim', auth, async (req, res) => {
 
     if (!referral) {
       return res.status(404).json({ message: 'No active referral found' });
+    }
+
+    // Double-claim guard: the reward balance must be credited exactly once.
+    if (referral.rewardClaimed) {
+      return res.status(400).json({ message: 'Referral reward already claimed' });
     }
 
     const user = await User.findById(req.user._id);

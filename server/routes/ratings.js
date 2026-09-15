@@ -8,6 +8,10 @@ const { auth } = require('../middleware/auth');
 router.post('/', auth, async (req, res) => {
   try {
     const { listingId, rating, review } = req.body;
+    const numericRating = Number(rating);
+    if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
+      return res.status(400).json({ message: 'Rating must be a number between 1 and 5' });
+    }
     const txn = await Transaction.findOne({ listing: listingId, buyer: req.user._id, status: 'completed' });
     if (!txn) {
       return res.status(400).json({ message: 'You can only review items you have purchased' });
@@ -20,7 +24,7 @@ router.post('/', auth, async (req, res) => {
       listing: listingId,
       reviewer: req.user._id,
       seller: txn.seller,
-      rating: Number(rating),
+      rating: numericRating,
       review,
     });
     await newRating.populate(['reviewer', 'listing']);

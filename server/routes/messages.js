@@ -11,6 +11,9 @@ router.post('/', auth, async (req, res) => {
     const { listingId, sellerId, recipientId, text } = req.body;
     const targetUserId = sellerId || recipientId;
     if (!text) return res.status(400).json({ message: 'Message text is required' });
+    if (typeof text !== 'string' || text.length > 5000) {
+      return res.status(400).json({ message: 'Message text must be at most 5000 characters' });
+    }
     if (!targetUserId) return res.status(400).json({ message: 'Recipient is required' });
     if (req.user._id.toString() === targetUserId) {
       return res.status(400).json({ message: 'Cannot message yourself' });
@@ -271,6 +274,11 @@ router.put('/read/:conversationId', auth, async (req, res) => {
   try {
     const conversation = await Message.findById(req.params.conversationId);
     if (!conversation) return res.status(404).json({ message: 'Conversation not found' });
+    // Membership check: reading/marking another users' thread must not leak
+    // or mutate it — strangers get 404 (same as missing) to avoid ID probing.
+    if (!conversation.participants.some((p) => p.toString() === req.user._id.toString())) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
     conversation.messages.forEach(m => {
       if (m.sender.toString() !== req.user._id.toString()) m.read = true;
     });
@@ -283,12 +291,20 @@ router.put('/read/:conversationId', auth, async (req, res) => {
 });
 
 // POST /api/messages/:conversationId - Send reply
+const MAX_MESSAGE_LENGTH = 5000;
 router.post('/:conversationId', auth, async (req, res) => {
   try {
     const { text } = req.body;
     if (!text) return res.status(400).json({ message: 'Message text is required' });
+    if (typeof text !== 'string' || text.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({ message: `Message text must be at most ${MAX_MESSAGE_LENGTH} characters` });
+    }
     const conversation = await Message.findById(req.params.conversationId);
     if (!conversation) return res.status(404).json({ message: 'Conversation not found' });
+    // Membership check: only a participant may append to the thread.
+    if (!conversation.participants.some((p) => p.toString() === req.user._id.toString())) {
+      return res.status(403).json({ message: 'Not a participant in this conversation' });
+    }
     conversation.messages.push({ sender: req.user._id, text });
     await conversation.save();
     await conversation.populate('messages.sender', 'name avatar');

@@ -121,8 +121,11 @@ router.post('/:id/bids', auth, async (req, res) => {
   try {
     const { amount, currency } = req.body;
     const auctionId = req.params.id;
-    
-    if (!amount || amount <= 0) {
+
+    // Coerce + validate up front: a non-numeric payload must never reach the
+    // comparisons below (JS coercion would let '5' outbid 50, then persist NaN).
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       return res.status(400).json({ message: 'Valid bid amount is required' });
     }
     
@@ -148,12 +151,12 @@ router.post('/:id/bids', auth, async (req, res) => {
     
     // Check bid is higher than current bid
     const minBid = auction.currentBid + 1;
-    if (amount < minBid) {
+    if (numericAmount < minBid) {
       return res.status(400).json({ message: `Bid must be higher than current bid of ${auction.currentBid}` });
     }
-    
+
     // Check bid meets reserve price (if there's no current bid above reserve)
-    if (auction.currentBid <= auction.reservePrice && amount < auction.reservePrice) {
+    if (auction.currentBid <= auction.reservePrice && numericAmount < auction.reservePrice) {
       return res.status(400).json({ message: `Bid must meet reserve price of ${auction.reservePrice}` });
     }
     
@@ -166,11 +169,11 @@ router.post('/:id/bids', auth, async (req, res) => {
     // Add bid
     auction.bids.push({
       bidder: req.user._id,
-      amount,
+      amount: numericAmount,
       currency: bidCurrency,
       timestamp: new Date(),
     });
-    auction.currentBid = amount;
+    auction.currentBid = numericAmount;
     
     await auction.save();
     
@@ -182,7 +185,7 @@ router.post('/:id/bids', auth, async (req, res) => {
         seller.notifications.unshift({
           type: 'sale',
           listing: auction.listing,
-          message: `New bid of ${bidCurrency} ${amount} placed on your auction!`,
+          message: `New bid of ${bidCurrency} ${numericAmount} placed on your auction!`,
         });
         await seller.save();
       }
@@ -358,6 +361,15 @@ router.post('/:id/close', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (String(auction.seller._id) !== String(req.user._id) && user.role !== 'admin') {
       return res.status(403).json({ message: 'Only seller or admin can close auction' });
+    }
+
+    // Idempotency: an auction can only be closed once — a replay must never
+    // mint a second winner transaction for the same auction.
+    if (auction.status === 'closed') {
+      return res.status(400).json({ message: 'Auction already closed' });
+    }
+    if (auction.status === 'cancelled') {
+      return res.status(400).json({ message: 'Auction was cancelled and cannot be closed' });
     }
     
     // Check auction has ended

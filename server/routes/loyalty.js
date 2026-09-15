@@ -19,15 +19,44 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/loyalty/earn - Earn points
+// Server-authoritative: clients may only declare a whitelisted reason; the
+// point amount is derived server-side so balances can never be minted,
+// drained, or inflated by crafted requests.
+const EARN_RULES = {
+  purchase: { pointsPerDollar: 1, maxPerEvent: 10000 },
+  referral: { fixed: 100, maxPerEvent: 100 },
+  anniversary: { fixed: 500, maxPerEvent: 500 },
+  review: { fixed: 10, maxPerEvent: 10 },
+  signup: { fixed: 50, maxPerEvent: 50 },
+};
 router.post('/earn', auth, async (req, res) => {
   try {
-    const { amount, reason, listingId } = req.body;
-    
+    const { amount, reason, listingId, purchaseAmount } = req.body;
+
+    const rule = EARN_RULES[reason];
+    if (!rule) {
+      return res.status(400).json({ message: 'Invalid or missing earn reason' });
+    }
+
+    let points = 0;
+    if (rule.pointsPerDollar) {
+      const spend = Number(purchaseAmount ?? amount);
+      if (!Number.isFinite(spend) || spend <= 0 || spend > 1000000) {
+        return res.status(400).json({ message: 'Invalid purchase amount' });
+      }
+      points = Math.min(Math.floor(spend * rule.pointsPerDollar), rule.maxPerEvent);
+    } else {
+      points = rule.fixed;
+    }
+    if (!Number.isFinite(points) || points <= 0 || points > rule.maxPerEvent) {
+      return res.status(400).json({ message: 'Invalid points amount' });
+    }
+
     const loyalty = await LoyaltyProgram.findOneAndUpdate(
       { user: req.user._id },
       {
-        $inc: { points: amount },
-        $push: { pointsHistory: { amount, reason, listing: listingId } }
+        $inc: { points },
+        $push: { pointsHistory: { amount: points, reason, listing: listingId } }
       },
       { new: true, upsert: true }
     );
@@ -49,17 +78,26 @@ router.post('/earn', auth, async (req, res) => {
 router.post('/redeem', auth, async (req, res) => {
   try {
     const { amount } = req.body;
-    
-    const loyalty = await LoyaltyProgram.findOne({ user: req.user._id });
-    if (!loyalty || loyalty.points < amount) {
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || !Number.isInteger(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ message: 'Invalid redeem amount' });
+    }
+
+    // Atomic: decrement only when the balance covers it, so two concurrent
+    // redeems can never spend the same points twice.
+    const loyalty = await LoyaltyProgram.findOneAndUpdate(
+      { user: req.user._id, points: { $gte: numericAmount } },
+      {
+        $inc: { points: -numericAmount },
+        $push: { pointsHistory: { amount: -numericAmount, reason: 'redemption' } },
+      },
+      { new: true }
+    );
+    if (!loyalty) {
       return res.status(400).json({ message: 'Insufficient points' });
     }
 
-    loyalty.points -= amount;
-    loyalty.pointsHistory.push({ amount: -amount, reason: 'redemption' });
-    await loyalty.save();
-
-    res.json({ discount: amount * 0.01, points: loyalty.points });
+    res.json({ discount: numericAmount * 0.01, points: loyalty.points });
   } catch (error) {
     res.status(500).json({ message: 'Failed to redeem points' });
   }

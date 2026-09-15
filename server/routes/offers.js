@@ -323,6 +323,13 @@ router.post('/to-likers', auth, async (req, res) => {
     if (!['percentage', 'fixed'].includes(discountType)) {
       return res.status(400).json({ message: 'discountType must be "percentage" or "fixed"' });
     }
+    const numericDiscount = Number(discountValue);
+    if (!Number.isFinite(numericDiscount) || numericDiscount <= 0) {
+      return res.status(400).json({ message: 'discountValue must be a positive number' });
+    }
+    if (discountType === 'percentage' && numericDiscount > 90) {
+      return res.status(400).json({ message: 'Percentage discount cannot exceed 90%' });
+    }
 
     const Listing = require('../models/Listing');
     const listing = await Listing.findById(listingId);
@@ -335,9 +342,12 @@ router.post('/to-likers', auth, async (req, res) => {
 
     let discountedPrice;
     if (discountType === 'percentage') {
-      discountedPrice = listing.price - (listing.price * discountValue / 100);
+      discountedPrice = listing.price - (listing.price * numericDiscount / 100);
     } else {
-      discountedPrice = Math.max(1, listing.price - discountValue);
+      if (numericDiscount >= listing.price) {
+        return res.status(400).json({ message: 'Fixed discount must be less than the listing price' });
+      }
+      discountedPrice = Math.max(1, listing.price - numericDiscount);
     }
 
     const bulkOffer = await Offer.create({

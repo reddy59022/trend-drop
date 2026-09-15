@@ -64,6 +64,13 @@ router.post('/items', auth, async (req, res) => {
       return res.status(400).json({ message: 'listingId is required' });
     }
 
+    // Quantity must be a positive whole unit: zero/negative/fractional values
+    // would otherwise corrupt line totals and stock accounting downstream.
+    const numericQuantity = Number(quantity);
+    if (!Number.isInteger(numericQuantity) || numericQuantity <= 0) {
+      return res.status(400).json({ message: 'Quantity must be a positive integer' });
+    }
+
     const listing = await Listing.findById(listingId);
     if (!listing) {
       return res.status(404).json({ message: 'Listing not found' });
@@ -80,7 +87,7 @@ router.post('/items', auth, async (req, res) => {
     }
 
     // Check if quantity requested is available
-    if (listing.quantity < quantity) {
+    if (listing.quantity < numericQuantity) {
       return res.status(400).json({ message: `Only ${listing.quantity} available in stock` });
     }
 
@@ -101,11 +108,11 @@ router.post('/items', auth, async (req, res) => {
     );
 
     if (existingItemIndex >= 0) {
-      cart.items[existingItemIndex].quantity = quantity;
+      cart.items[existingItemIndex].quantity = numericQuantity;
     } else {
       cart.items.push({
         listing: listingId,
-        quantity,
+        quantity: numericQuantity,
         addedAt: new Date(),
       });
     }
