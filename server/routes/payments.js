@@ -228,13 +228,23 @@ router.post('/create-intent', auth, async (req, res) => {
         if (promo.usageLimit && promo.usageCount >= promo.usageLimit) {
           return res.status(400).json({ message: 'Promo code usage limit reached' });
         }
-        if (totalAmount < (promo.minPurchaseAmount || 0)) {
+        // Seller scoping (parity with /api/promos/validate): a seller's code
+        // only discounts THAT seller's items — never other sellers' lines in
+        // a multi-vendor cart. The discount base is the promo owner's
+        // items only.
+        const sellerSubtotal = itemData
+          .filter(d => String(d.listing.seller) === String(promo.seller))
+          .reduce((sum, d) => sum + d.salePrice * d.quantity, 0);
+        if (sellerSubtotal <= 0) {
+          return res.status(400).json({ message: 'This promo code does not apply to the items in your cart' });
+        }
+        if (sellerSubtotal < (promo.minPurchaseAmount || 0)) {
           return res.status(400).json({ message: `Minimum purchase amount $${promo.minPurchaseAmount} not met` });
         }
         if (promo.discountType === 'percentage') {
-          promoDiscount = Math.round(totalAmount * (promo.discountValue / 100) * 100) / 100;
+          promoDiscount = Math.round(sellerSubtotal * (promo.discountValue / 100) * 100) / 100;
         } else {
-          promoDiscount = Math.min(promo.discountValue, totalAmount);
+          promoDiscount = Math.min(promo.discountValue, sellerSubtotal);
         }
         promoDiscount = Math.round(promoDiscount * 100) / 100;
         appliedPromo = promo;

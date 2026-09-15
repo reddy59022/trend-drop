@@ -52,6 +52,41 @@ router.post('/', auth, (req, res, next) => {
     if (!isValidTransition(transaction.status, orderStates.RETURN_REQUESTED)) {
       return res.status(400).json({ message: 'Cannot request return from current order status' });
     }
+
+    // ============================================================
+    // BUSINESS RULES: "Return window: 3 days after delivery
+    // confirmation". /eligible and the batch endpoint already enforce
+    // this — the single-item POST must too, or buyers can return items
+    // delivered long after the window closed.
+    // ============================================================
+    const RETURN_WINDOW_DAYS = 3;
+    const deliveredAt = transaction.shipping?.actualDelivery
+      || transaction.buyerConfirmed?.confirmedAt
+      || null;
+    if (deliveredAt && new Date(new Date(deliveredAt).getTime() + RETURN_WINDOW_DAYS * 24 * 60 * 60 * 1000) < new Date()) {
+      return res.status(400).json({
+        message: `Return window closed (${RETURN_WINDOW_DAYS} days after delivery)`,
+      });
+    }
+
+    // ============================================================
+    // BUSINESS RULES: "Return shipping cost responsibility varies by
+    // reason (buyer/seller)".
+    //   seller → seller-fault reasons: the buyer is refunded the FULL
+    //            totalPaid (item + outbound shipping + protection).
+    //   buyer  → buyer-remorse reasons ("Changed mind"): the buyer is
+    //            refunded the item price ONLY; outbound shipping and
+    //            protection stay with the buyer, who also pays return
+    //            shipping. Unknown reasons default to 'seller' so we
+    //            never shortchange a buyer on an ambiguous claim.
+    // ============================================================
+    const BUYER_RESPONSIBILITY_REASONS = ['Changed mind'];
+    const returnShippingResponsibility = BUYER_RESPONSIBILITY_REASONS.includes(reason) ? 'buyer' : 'seller';
+    const totalPaid = transaction.paymentBreakdown?.totalPaid || 0;
+    const itemPrice = transaction.itemPrice || transaction.paymentBreakdown?.subtotal || 0;
+    const refundAmount = returnShippingResponsibility === 'buyer'
+      ? itemPrice
+      : (totalPaid || itemPrice);
     // ENTERPRISE STANDARD: buyer must attach 1-5 photos so support/seller can
     // review the item condition BEFORE approval. Fewer than 1 or more than 5
     // is rejected outright.
@@ -60,10 +95,10 @@ router.post('/', auth, (req, res, next) => {
       return res.status(400).json({ message: 'Please attach 1 to 5 photos of the item with your return request' });
     }
     const imgs = rawImgs.slice(0, 5);
-    const refundAmount = transaction.itemPrice || transaction.paymentBreakdown?.subtotal || 0;
     const returnRequest = await Return.create({
       transaction: transactionId, buyer: req.user._id, seller: transaction.seller,
       listing: transaction.listing, reason, description: description || '', refundAmount,
+      returnShippingResponsibility,
       images: imgs,
     });
     // Sync to Transaction lifecycle
@@ -347,16 +382,36 @@ router.put('/:id/receive', auth, async (req, res) => {
     await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
     await markPayoutRefunded(txn);
 
-    const refundAmount = txn.paymentBreakdown?.totalPaid || 0;
+    // ============================================================
+    // BUSINESS RULES: "Return shipping cost responsibility varies by
+    // reason (buyer/seller)" — honour the classification recorded at
+    // return creation:
+    //   seller-responsibility → full refund of totalPaid (unchanged legacy
+    //                           behaviour, Stripe amount omitted = full).
+    //   buyer-responsibility  → refund the item price ONLY. Outbound
+    //                           shipping + buyer protection stay with the
+    //                           buyer (they also pay return shipping), so
+    //                           the provider refund is PARTIAL.
+    // ============================================================
+    const responsibility = returnRequest.returnShippingResponsibility || 'seller';
+    const totalPaid = txn.paymentBreakdown?.totalPaid || 0;
+    const itemPrice = txn.itemPrice || txn.paymentBreakdown?.subtotal || 0;
+    const buyerRefund = Math.round((responsibility === 'buyer' ? itemPrice : (totalPaid || returnRequest.refundAmount)) * 100) / 100;
     const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
 
-    // Issue Stripe refund to original payment method
-    const paymentIntentId = txn.payout?.transactionId;
+    // Issue Stripe refund to original payment method.
+    // NOTE: single-item purchases (POST /api/transactions) record the funding
+    // intent in paymentBreakdown.paymentIntentId and leave payout.transactionId
+    // empty, while batch purchases set payout.transactionId. Resolve BOTH, or
+    // the provider refund is silently skipped for every single-item return.
+    const paymentIntentId = txn.payout?.transactionId || txn.paymentBreakdown?.paymentIntentId;
     if (paymentIntentId) {
       try {
         const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
         const pi = await retrievePaymentIntent(paymentIntentId);
-        if (pi.status === 'succeeded') { await issueRefund(paymentIntentId); }
+        if (pi.status === 'succeeded') {
+          await issueRefund(paymentIntentId, responsibility === 'buyer' ? buyerRefund : undefined);
+        }
         else if (pi.status === 'requires_capture') { await releaseAuthorization(paymentIntentId); }
       } catch (stripeErr) { console.error('Stripe refund on receive:', stripeErr.message); }
     }
@@ -372,13 +427,16 @@ router.put('/:id/receive', auth, async (req, res) => {
         else { seller.balance.available = 0; remaining = remaining - available; }
         if (remaining > 0) { seller.balance.pending = Math.max(0, pending - remaining); }
         seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - sellerEarnings);
-        seller.notifications.unshift({ type: 'sale', listing: txn.listing, transaction: txn._id, message: `Return received and confirmed. ${refundAmount} ${txn.currency || 'USD'} refunded to buyer.` });
+        seller.notifications.unshift({ type: 'sale', listing: txn.listing, transaction: txn._id, message: `Return received and confirmed. ${buyerRefund} ${txn.currency || 'USD'} refunded to buyer.` });
         await seller.save();
       }
     } catch (sellerErr) { console.error('Claw back seller earnings:', sellerErr.message); }
 
-    // Update Return model + sync Transaction to REFUNDED
+    // Update Return model + sync Transaction to REFUNDED.
+    // Reconcile refundAmount with what was actually refunded (per
+    // responsibility) so the document never contradicts the payout.
     returnRequest.status = 'refunded';
+    returnRequest.refundAmount = buyerRefund;
     await returnRequest.save();
     if (isValidTransition(txn.status, orderStates.REFUNDED)) {
       txn.status = orderStates.REFUNDED;
@@ -391,7 +449,7 @@ router.put('/:id/receive', auth, async (req, res) => {
     try {
       const buyer = await User.findById(returnRequest.buyer);
       if (buyer) {
-        buyer.notifications.push({ type: 'payout', from: req.user._id, listing: returnRequest.listing, message: `Your return has been processed. Refund of $${returnRequest.refundAmount.toFixed(2)} will be issued.`, read: false });
+        buyer.notifications.push({ type: 'payout', from: req.user._id, listing: returnRequest.listing, message: `Your return has been processed. Refund of $${buyerRefund.toFixed(2)} will be issued.`, read: false });
         await buyer.save();
       }
     } catch (e) { console.error('Notify buyer refund:', e.message); }

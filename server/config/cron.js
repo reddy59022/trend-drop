@@ -345,8 +345,11 @@ async function autoProcessReturns() {
         const refundAmount = txn.paymentBreakdown?.totalPaid || 0;
         const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
 
-        // Issue Stripe refund to original payment method
-        const paymentIntentId = txn.payout?.transactionId;
+        // Issue Stripe refund to original payment method.
+        // Single-item purchases record the funding intent in
+        // paymentBreakdown.paymentIntentId (payout.transactionId is only set
+        // by batch confirm) — resolve BOTH or the refund is silently skipped.
+        const paymentIntentId = txn.payout?.transactionId || txn.paymentBreakdown?.paymentIntentId;
         if (paymentIntentId) {
           try {
             const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');

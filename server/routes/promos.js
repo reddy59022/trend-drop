@@ -18,6 +18,15 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'discountType must be "percentage" or "fixed"' });
     }
 
+    // discountValue sanity: a negative/zero discount would INCREASE what the
+    // buyer pays, and a percentage above 100 would exceed the order total.
+    if (typeof discountValue !== 'number' || !Number.isFinite(discountValue) || discountValue <= 0) {
+      return res.status(400).json({ message: 'discountValue must be a positive number' });
+    }
+    if (discountType === 'percentage' && discountValue > 100) {
+      return res.status(400).json({ message: 'percentage discount cannot exceed 100' });
+    }
+
     // Check for duplicate code for this seller
     const existing = await Promo.findOne({ code: code.toUpperCase(), seller: req.user._id });
     if (existing) {
@@ -115,17 +124,31 @@ router.post('/validate', auth, async (req, res) => {
       return res.status(400).json({ message: 'Promo code usage limit reached' });
     }
 
-    // Calculate total
+    // Calculate total — restricted to items that belong to the promo's own
+    // seller. Promo documents are seller-scoped (creation enforces per-seller
+    // uniqueness), so honouring a code against ANOTHER seller's items (or
+    // counting their items toward minPurchase) is wrong. If none of the cart
+    // items belong to the promo's seller, the code does not apply.
     let total = 0;
+    let eligibleTotal = 0;
     if (items && Array.isArray(items)) {
       for (const item of items) {
-        // Check category restriction
-        if (promo.applicableCategories && promo.applicableCategories.length > 0) {
-          const listing = await Listing.findById(item.listingId);
-          if (listing && !promo.applicableCategories.includes(listing.category)) continue;
-        }
-        total += (item.price || 0) * (item.quantity || 1);
+        const listing = await Listing.findById(item.listingId);
+        // Seller scoping: only the promo owner's items are eligible.
+        if (listing && String(listing.seller) !== String(promo.seller)) continue;
+        // Category restriction (unchanged).
+        if (listing && promo.applicableCategories && promo.applicableCategories.length > 0
+            && !promo.applicableCategories.includes(listing.category)) continue;
+        const lineTotal = (item.price || 0) * (item.quantity || 1);
+        total += lineTotal;
+        eligibleTotal += lineTotal;
       }
+    }
+
+    if (items && Array.isArray(items) && items.length > 0 && eligibleTotal === 0) {
+      return res.status(400).json({
+        message: 'This promo code does not apply to the items in your cart',
+      });
     }
 
     // Check minimum purchase
@@ -146,6 +169,11 @@ router.post('/validate', auth, async (req, res) => {
       discountAmount = promo.discountValue;
     }
 
+    // CAP: a discount can never exceed what the buyer is paying, otherwise
+    // checkout totals go NEGATIVE (a $100-off code on a $40 cart must
+    // discount $40, not $100).
+    discountAmount = Math.max(0, Math.min(discountAmount, total));
+
     res.json({
       valid: true,
       promo: {
@@ -154,6 +182,7 @@ router.post('/validate', auth, async (req, res) => {
         discountType: promo.discountType,
         discountValue: promo.discountValue,
         discountAmount: Math.round(discountAmount * 100) / 100,
+        eligibleTotal: Math.round(eligibleTotal * 100) / 100,
         description: promo.description,
       },
     });
@@ -163,11 +192,24 @@ router.post('/validate', auth, async (req, res) => {
   }
 });
 
-// POST /api/promos/:id/use - Mark promo code as used
+// POST /api/promos/:id/use - Mark promo code as used.
+// GUARDS: a code that is inactive, expired, or past its usageLimit must not
+// consume another use — the client calls this at checkout, so without the
+// limit check a "limited" code kept working forever.
 router.post('/:id/use', auth, async (req, res) => {
   try {
     const promo = await Promo.findById(req.params.id);
     if (!promo) return res.status(404).json({ message: 'Promo code not found' });
+
+    if (!promo.isActive) {
+      return res.status(400).json({ message: 'Promo code is not active' });
+    }
+    if (promo.expiresAt && promo.expiresAt < new Date()) {
+      return res.status(400).json({ message: 'Promo code has expired' });
+    }
+    if (promo.usageLimit > 0 && promo.usageCount >= promo.usageLimit) {
+      return res.status(400).json({ message: 'Promo code usage limit reached' });
+    }
 
     promo.usageCount += 1;
     await promo.save();

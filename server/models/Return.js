@@ -48,6 +48,17 @@ const returnSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  // BUSINESS RULES: "Return shipping cost responsibility varies by reason
+  // (buyer/seller)". 'seller' = seller-fault reasons (defective / not as
+  // described / wrong item / damaged / late) → buyer is refunded the FULL
+  // totalPaid. 'buyer' = buyer-remorse reasons (changed mind) → buyer is
+  // refunded the item price only; outbound shipping + protection stay with
+  // the buyer, and the buyer pays return shipping.
+  returnShippingResponsibility: {
+    type: String,
+    enum: ['buyer', 'seller'],
+    default: 'seller',
+  },
   trackingNumber: {
     type: String,
     default: '',

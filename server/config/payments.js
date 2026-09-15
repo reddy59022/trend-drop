@@ -319,7 +319,12 @@ const verifyStripeWebhook = (payload, signature) => {
   return result.event;
 };
 
-// Issue a refund (for orders that were already captured)
+// Issue a refund (for orders that were already captured).
+// amount is OPTIONAL — omit it for a full refund. When provided (cents are
+// computed here), a PARTIAL refund is issued (e.g. buyer-remorse returns
+// refund only the item price; outbound shipping stays with the buyer).
+// In mock mode every refund is recorded in global.__mockRefunds keyed by
+// payment intent id so tests can assert the exact amount refunded.
 const issueRefund = async (paymentIntentId, amount) => {
   if (!stripe) {
     // E2E / test mode: record refund in mock store and return simulated result.
@@ -327,6 +332,13 @@ const issueRefund = async (paymentIntentId, amount) => {
     if (global.__mockPaymentIntents[paymentIntentId]) {
       global.__mockPaymentIntents[paymentIntentId].status = 'refunded';
     }
+    if (!global.__mockRefunds) global.__mockRefunds = {};
+    global.__mockRefunds[paymentIntentId] = {
+      id: 're_mock_' + Date.now(),
+      amount: amount !== undefined ? Math.round(amount * 100) : undefined,
+      status: 'succeeded',
+      refundedAt: new Date().toISOString(),
+    };
     return {
       id: 're_mock_' + Date.now(),
       payment_intent: paymentIntentId,
