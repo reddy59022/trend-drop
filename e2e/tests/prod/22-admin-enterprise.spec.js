@@ -66,10 +66,21 @@ test.describe('22 - Admin & Enterprise (production)', () => {
     expect(r.data.report).toBeTruthy();
   });
 
-  test('reports: list reports (public)', async () => {
-    var r = await api.req('get', '/api/reports');
-    expect(r.status).toBe(200);
-    expect(Array.isArray(r.data)).toBe(true);
+  test('reports: moderation queue is admin-only (no public PII leak)', async () => {
+    // Anonymous callers must not see the moderation queue (reporter PII).
+    var anon = await api.req('get', '/api/reports');
+    expect(anon.status).toBe(401);
+    // Non-admin users are forbidden too — seeded e2e accounts are role:user.
+    var nonAdmin = await api.req('get', '/api/reports', { token: jordanToken });
+    expect(nonAdmin.status).toBe(403);
+    // Moderation state cannot be mutated by a non-admin either.
+    var mutate = await api.req('patch', '/api/reports/000000000000000000000000/status', { token: jordanToken, body: { status: 'resolved' } });
+    expect([403, 404]).toContain(mutate.status);
+  });
+
+  test('trends: paid refresh requires auth', async () => {
+    var anon = await api.req('post', '/api/trends/refresh', { body: {} });
+    expect(anon.status).toBe(401);
   });
 
   test('vendors: list, create, invite, shared-inventory', async () => {
