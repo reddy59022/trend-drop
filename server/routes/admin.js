@@ -123,6 +123,13 @@ router.put('/users/:id/role', async (req, res) => {
       return res.status(400).json({ message: 'Invalid role' });
     }
 
+    // Self-demotion lockout guard: an admin must never be able to strip
+    // their own admin access (accidentally or via CSRF), which could leave
+    // the platform with zero administrators.
+    if (String(req.params.id) === String(req.user._id) && role !== 'admin') {
+      return res.status(400).json({ message: 'You cannot demote your own admin account' });
+    }
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { $set: { role } },

@@ -100,7 +100,9 @@ test.describe('07 · Reviews, badges, loyalty (production)', () => {
   test('loyalty points earn → history', async () => {
     const earn = await api.req('post', '/api/loyalty/earn', {
       token: jordanToken,
-      body: { amount: 10, reason: `PROD-E2E ${RUN_ID ?? 'run'} purchase` },
+      // /earn is server-authoritative: only canonical reasons (purchase,
+      // referral, review, ...) are accepted — free-text reasons are rejected.
+      body: { amount: 10, reason: 'purchase' },
     });
     expect(earn.status, JSON.stringify(earn.data)).toBe(200);
     expect(earn.data.points).toBeGreaterThanOrEqual(10);

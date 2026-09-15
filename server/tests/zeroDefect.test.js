@@ -6,8 +6,9 @@ const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Auction = require('../models/Auction');
 const jwt = require('jsonwebtoken');
+const { getJwtSecret } = require('../config/security');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
+const JWT_SECRET = getJwtSecret();
 const US = { fullName: 'T', street1: '1 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' };
 
 const makeUser = async (name, email) => {
@@ -192,8 +193,138 @@ describe('ZD5 — escrow amount must match the transaction value', () => {
     expect(r.status).toBe(200);
     expect(r.body.transaction.escrow.status).toBe('active');
   });
+});
 
-describe('ZD6 — no second spend of the same loyalty points (redeem validation)', () => {
+describe('ZD8 — offer counters must be positive (no zero/negative counters)', () => {
+  const makeOffer = async (buyerToken, listing, amount) => {
+    const r = await request(app).post('/api/offers')
+      .set('Authorization', 'Bearer ' + buyerToken)
+      .send({ listingId: listing._id.toString(), amount });
+    expect(r.status).toBe(201);
+    return r.body.offer || r.body;
+  };
+
+  test('seller counter of zero is rejected', async () => {
+    const seller = await makeUser('ZDOffer1', `zdoffer1_${Date.now()}@test.com`);
+    const buyer = await makeUser('ZDOffer2', `zdoffer2_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100);
+    const offer = await makeOffer(buyer.token, listing, 60);
+    const r = await request(app).patch(`/api/offers/${offer._id}/counter`)
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ counterAmount: 0 });
+    expect(r.status).toBe(400);
+  });
+
+  test('seller counter below buyer offer is rejected', async () => {
+    const seller = await makeUser('ZDOffer3', `zdoffer3_${Date.now()}@test.com`);
+    const buyer = await makeUser('ZDOffer4', `zdoffer4_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100);
+    const offer = await makeOffer(buyer.token, listing, 60);
+    const r = await request(app).patch(`/api/offers/${offer._id}/counter`)
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ counterAmount: 10 });
+    expect(r.status).toBe(400);
+  });
+});
+
+describe('ZD9 — loyalty redeem guards (no negative or over-balance redemption)', () => {
+  test('redeeming a negative amount is rejected', async () => {
+    const u = await makeUser('ZDRedeem1', `zdredeem1_${Date.now()}@test.com`);
+    await request(app).post('/api/loyalty/earn')
+      .set('Authorization', 'Bearer ' + u.token)
+      .send({ purchaseAmount: 200, reason: 'purchase' });
+    const r = await request(app).post('/api/loyalty/redeem')
+      .set('Authorization', 'Bearer ' + u.token)
+      .send({ amount: -500 });
+    expect(r.status).toBe(400);
+  });
+
+  test('redeeming more than the balance is rejected', async () => {
+    const u = await makeUser('ZDRedeem2', `zdredeem2_${Date.now()}@test.com`);
+    await request(app).post('/api/loyalty/earn')
+      .set('Authorization', 'Bearer ' + u.token)
+      .send({ purchaseAmount: 50, reason: 'purchase' });
+    const r = await request(app).post('/api/loyalty/redeem')
+      .set('Authorization', 'Bearer ' + u.token)
+      .send({ amount: 999999 });
+    expect(r.status).toBe(400);
+  });
+});
+
+
+describe('ZD10 — suspended users are locked out at the auth gate', () => {
+  test('suspended user token is rejected with 403', async () => {
+    const u = await makeUser('ZDSus1', `zdsus1_${Date.now()}@test.com`);
+    u.user.role = 'suspended';
+    await u.user.save();
+    const r = await request(app).get('/api/loyalty/')
+      .set('Authorization', 'Bearer ' + u.token);
+    expect(r.status).toBe(403);
+    expect(JSON.stringify(r.body)).toMatch(/suspend/i);
+  });
+
+  test('active user still passes the gate (regression guard)', async () => {
+    const u = await makeUser('ZDSus2', `zdsus2_${Date.now()}@test.com`);
+    const r = await request(app).get('/api/loyalty/')
+      .set('Authorization', 'Bearer ' + u.token);
+    expect(r.status).toBe(200);
+  });
+});
+
+describe('ZD11 — offer amounts cannot exceed the listing price by an absurd margin', () => {
+  test('offer of 100x listing price is rejected', async () => {
+    const seller = await makeUser('ZDOffer1', `zdoffer1_${Date.now()}@test.com`);
+    const buyer = await makeUser('ZDOffer2', `zdoffer2_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 50);
+    const r = await request(app).post('/api/offers')
+      .set('Authorization', 'Bearer ' + buyer.token)
+      .send({ listingId: listing._id.toString(), amount: 5000 });
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body)).toMatch(/exceed/i);
+  });
+
+  test('offer at listing price still succeeds (regression guard)', async () => {
+    const seller = await makeUser('ZDOffer3', `zdoffer3_${Date.now()}@test.com`);
+    const buyer = await makeUser('ZDOffer4', `zdoffer4_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 50);
+    const r = await request(app).post('/api/offers')
+      .set('Authorization', 'Bearer ' + buyer.token)
+      .send({ listingId: listing._id.toString(), amount: 45 });
+    expect(r.status).toBe(201);
+  });
+});
+
+describe('ZD12 — message text is bounded', () => {
+  test('10KB message body is rejected with 400 (not persisted)', async () => {
+    const a = await makeUser('ZDMsg1', `zdmsg1_${Date.now()}@test.com`);
+    const b = await makeUser('ZDMsg2', `zdmsg2_${Date.now()}@test.com`);
+    const listing = await makeListing(a.user, 50);
+    const r = await request(app).post('/api/messages')
+      .set('Authorization', 'Bearer ' + b.token)
+      .send({ listingId: listing._id.toString(), sellerId: a.user._id.toString(), text: 'x'.repeat(10240) });
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body)).toMatch(/long|length|characters/i);
+  });
+});
+
+describe('ZD13 — admin cannot demote themselves (lockout guard)', () => {
+  test('admin demoting their own account is rejected', async () => {
+    const admin = await makeUser('ZDAdm1', `zdadm1_${Date.now()}@test.com`);
+    admin.user.role = 'admin';
+    await admin.user.save();
+    const target = await makeUser('ZDAdm2', `zdadm2_${Date.now()}@test.com`);
+    void target;
+    const r = await request(app).put(`/api/admin/users/${admin.user._id}/role`)
+      .set('Authorization', 'Bearer ' + admin.token)
+      .send({ role: 'user' });
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body)).toMatch(/own|self|demote/i);
+    const fresh = await User.findById(admin.user._id);
+    expect(fresh.role).toBe('admin');
+  });
+});
+
+describe('ZD14 — no second spend of the same loyalty points (redeem validation)', () => {
   test('negative redeem mints points instead of spending them', async () => {
     const u = await makeUser('ZDLoyR1', `zdloyr1_${Date.now()}@test.com`);
     const earn = await request(app).post('/api/loyalty/earn')
@@ -224,7 +355,7 @@ describe('ZD6 — no second spend of the same loyalty points (redeem validation)
   });
 });
 
-describe('ZD7 — cart quantity must be a positive integer within stock', () => {
+describe('ZD15 — cart quantity must be a positive integer within stock', () => {
   test('zero, negative and fractional quantities are rejected', async () => {
     const seller = await makeUser('ZDCart1', `zdcart1_${Date.now()}@test.com`);
     const buyer = await makeUser('ZDCart2', `zdcart2_${Date.now()}@test.com`);
@@ -248,7 +379,7 @@ describe('ZD7 — cart quantity must be a positive integer within stock', () => 
   });
 });
 
-describe('ZD8 — bids must be finite numbers above current bid', () => {
+describe('ZD16 — bids must be finite numbers above current bid', () => {
   test('string bid that coerces below minimum must not be stored', async () => {
     const seller = await makeUser('ZDBid1', `zdbid1_${Date.now()}@test.com`);
     const bidder = await makeUser('ZDBid2', `zdbid2_${Date.now()}@test.com`);
@@ -270,7 +401,7 @@ describe('ZD8 — bids must be finite numbers above current bid', () => {
   });
 });
 
-describe('ZD9 — bulk/offer discounts can never drive a price below $1', () => {
+describe('ZD17 — bulk/offer discounts can never drive a price below $1', () => {
   test('percentage above 100 is rejected, not applied', async () => {
     const seller = await makeUser('ZDDisc1', `zddisc1_${Date.now()}@test.com`);
     const listing = await makeListing(seller.user, 50);
@@ -290,6 +421,4 @@ describe('ZD9 — bulk/offer discounts can never drive a price below $1', () => 
       .send({ listingId: listing._id.toString(), discountType: 'fixed', discountValue: 9999 });
     expect(r.status).toBe(400);
   });
-});
-
 });

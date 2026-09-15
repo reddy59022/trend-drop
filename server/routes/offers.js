@@ -76,6 +76,14 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Invalid offer amount' });
     }
 
+    // Anti-manipulation cap: an offer wildly above the asking price is never
+    // legitimate (fat-finger, currency confusion, or a setup for a later
+    // "price mismatch" dispute). Rejected, not silently stored.
+    const ceiling = Number(listing.price) * 10;
+    if (Number.isFinite(ceiling) && numericAmount > ceiling) {
+      return res.status(400).json({ message: 'Offer amount exceeds the listing price by too much' });
+    }
+
     const offer = await Offer.create({
       listing: listingId,
       buyer: req.user._id,

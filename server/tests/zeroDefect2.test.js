@@ -6,8 +6,9 @@ const Listing = require('../models/Listing');
 const Auction = require('../models/Auction');
 const Message = require('../models/Message');
 const jwt = require('jsonwebtoken');
+const { getJwtSecret } = require('../config/security');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
+const JWT_SECRET = getJwtSecret();
 const US = { fullName: 'T', street1: '1 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' };
 
 const makeUser = async (name, email) => {
@@ -122,6 +123,7 @@ describe('ZD8 — auction bids must be integers', () => {
       .send({ amount: 50.5 });
     expect(r.status).toBe(400);
   });
+});
 
 describe('ZD9 — loyalty earn is server-authoritative, redeem is validated', () => {
   test('earn ignores client-supplied amount: referral grants fixed 100 pts', async () => {
@@ -205,5 +207,4 @@ describe('ZD10 — auction creation is validated', () => {
       });
     expect(r.status).toBe(403);
   });
-});
 });

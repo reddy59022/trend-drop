@@ -16,6 +16,13 @@ const auth = async (req, res, next) => {
     }
 
     req.user = user;
+
+    // Suspended accounts are locked out immediately: a valid token must not
+    // grant any further API access once an admin suspends the account.
+    if (user.role === 'suspended') {
+      return res.status(403).json({ message: 'Account suspended. Contact support.' });
+    }
+
     next();
   } catch (error) {
     res.status(401).json({ message: 'Token is not valid' });
