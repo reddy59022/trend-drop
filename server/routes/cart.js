@@ -9,6 +9,7 @@ const Payout = require('../models/Payout');
 const { calculatePaymentBreakdown } = require('../config/payments');
 const { getPreferredCarrier, generateLabel } = require('../config/shipping');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
+const { saleNotification } = require('../utils/saleNotification');
 
 // ===================== ABANDONED CART RECOVERY =====================
 // Cart management with automatic expiration and email/SMS reminders
@@ -384,17 +385,27 @@ router.post('/checkout', auth, async (req, res) => {
       }
       rollback.track.addInventory(listing._id, qty);
 
-      // Update seller balance and send notification
+      // Update seller balance and send notification — ATOMICALLY ($inc +
+      // prepend), so concurrent checkouts touching the same seller never
+      // race on document versioning.
       if (seller) {
-        seller.balance.pending = (seller.balance.pending || 0) + earningsTotal;
-        seller.notifications.unshift({
-          type: 'sale',
-          from: req.user._id,
-          listing: listing._id,
-          transaction: transaction._id,
-          message: `Item sold from cart! You'll earn ${earningsTotal} ${breakdown.sellerCurrency}. Shipping label ready.`,
-        });
-        await seller.save();
+        await User.updateOne(
+          { _id: seller._id },
+          {
+            $inc: { 'balance.pending': earningsTotal },
+            $push: {
+              notifications: {
+                $each: [saleNotification({
+                  from: req.user._id,
+                  listing: listing._id,
+                  transaction: transaction._id,
+                  message: `Item sold from cart! You'll earn ${earningsTotal} ${breakdown.sellerCurrency}. Shipping label ready.`,
+                })],
+                $position: 0,
+              },
+            },
+          }
+        );
         // Only revertible once persisted — no phantom pending earnings.
         rollback.track.addSellerCredit(seller._id, earningsTotal);
       }

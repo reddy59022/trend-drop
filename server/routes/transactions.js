@@ -10,6 +10,7 @@ const { calculateShipping, getPreferredCarrier } = require('../config/shipping')
 const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding } = require('../config/payments');
 const { boostConfig } = require('../config/boost');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
+const { saleNotification } = require('../utils/saleNotification');
 
 // TDD-B1: legacy transaction endpoints must verify a real authorized payment
 // before creating any money state (parity with /api/cart/checkout gate).
@@ -473,15 +474,27 @@ router.post('/', auth, async (req, res) => {
     // Update seller's pending balance and notification
     const finalSellerEarnings = breakdown.seller.sellerEarnings - boostFee;
     if (seller) {
-      seller.balance.pending = (seller.balance.pending || 0) + finalSellerEarnings;
-      seller.notifications.unshift({
-        type: 'sale',
-        from: req.user._id,
-        listing: listing._id,
-        transaction: transaction._id,
-        message: `Your item "${listing.title}" has been purchased for $${finalPrice}! You'll earn $${finalSellerEarnings} after platform fees.`,
-      });
-      await seller.save();
+      // ATOMIC credit ($inc + prepend): concurrent purchases of the same
+      // seller's items used to race on document versioning here — the loser
+      // got a spurious 500 (VersionError) and its money had to be rolled
+      // back. Atomic updates make simultaneous checkouts safe.
+      await User.updateOne(
+        { _id: seller._id },
+        {
+          $inc: { 'balance.pending': finalSellerEarnings },
+          $push: {
+            notifications: {
+              $each: [saleNotification({
+                from: req.user._id,
+                listing: listing._id,
+                transaction: transaction._id,
+                message: `Your item "${listing.title}" has been purchased for $${finalPrice}! You'll earn $${finalSellerEarnings} after platform fees.`,
+              })],
+              $position: 0,
+            },
+          },
+        }
+      );
       // Only revertible once persisted — a rolled-back purchase leaves the
       // seller with no phantom pending earnings.
       rollback.track.addSellerCredit(seller._id, finalSellerEarnings);
@@ -598,7 +611,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
 
     // Compensating-transaction tracker: everything this purchase creates is
     // recorded so a failure at ANY later step can be undone completely.
-    rollback.track.setIntent(offerGate.pi.id).restoreOffer(offer._id, 'accepted');
+    rollback.track.setIntent(offerGate.pi.id);
 
     const seller = await User.findById(listing.seller);
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
@@ -645,7 +658,11 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       payout: { status: 'pending' },
       autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
     });
-    rollback.track.addTransaction(transaction._id, offerGate.pi.id);
+    rollback.track
+      .addTransaction(transaction._id, offerGate.pi.id)
+      // Offer restore is scoped to THIS transaction so a concurrent checkout
+      // of the same offer can never have its claim clobbered by our rollback.
+      .restoreOffer(offer._id, 'accepted', transaction._id);
 
     // BUG 2: Atomic inventory update with oversell protection
     const wasLastOne = listing.quantity === 1;
@@ -671,40 +688,65 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     await recordBoostFeeOwed(listing._id, boostFee, 1);
     rollback.track.addBoostFee(listing._id, boostFee);
 
-    // Update seller pending balance and notify in one save
+    // Update seller pending balance and notify — ATOMICALLY, so concurrent
+    // purchases of the same seller's items never race on document versioning.
     if (seller) {
-      seller.balance.pending = (seller.balance.pending || 0) + (breakdown.seller.sellerEarnings - boostFee);
-      seller.notifications.unshift({
-        type: 'sale',
-        from: req.user._id,
-        listing: listing._id,
-        transaction: transaction._id,
-        message: `"${listing.title}" sold via offer for $${finalPrice}! You'll earn $${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} after platform fees.`,
-      });
-      await seller.save();
+      await User.updateOne(
+        { _id: seller._id },
+        {
+          $inc: { 'balance.pending': breakdown.seller.sellerEarnings - boostFee },
+          $push: {
+            notifications: {
+              $each: [saleNotification({
+                from: req.user._id,
+                listing: listing._id,
+                transaction: transaction._id,
+                message: `"${listing.title}" sold via offer for $${finalPrice}! You'll earn $${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} after platform fees.`,
+              })],
+              $position: 0,
+            },
+          },
+        }
+      );
       // Only revertible once persisted — a rolled-back purchase leaves the
       // seller with no phantom pending earnings.
       rollback.track.addSellerCredit(seller._id, breakdown.seller.sellerEarnings - boostFee);
     }
 
-    // Notify buyer of purchase
-    const buyer = await User.findById(req.user._id);
-    if (buyer) {
-      buyer.notifications.unshift({
-        type: 'sale',
-        from: req.user._id,
-        listing: listing._id,
-        transaction: transaction._id,
-        message: `You purchased "${listing.title}" for $${finalPrice}`,
-      });
-      await buyer.save();
+    // Notify buyer of purchase (atomic prepend — the same buyer may have
+    // several purchases in flight at once)
+    await User.updateOne(
+      { _id: req.user._id },
+      {
+        $push: {
+          notifications: {
+            $each: [saleNotification({
+              from: req.user._id,
+              listing: listing._id,
+              transaction: transaction._id,
+              message: `You purchased "${listing.title}" for $${finalPrice}`,
+            })],
+            $position: 0,
+          },
+        },
+      }
+    );
+
+    // ATOMIC offer claim: only ONE purchase may consume an accepted offer.
+    // Two concurrent checkouts of the same offer both used to pass the
+    // earlier status check and double-sell the item. The conditional update
+    // claims the offer exactly once; the loser rolls back completely.
+    const claimedOffer = await Offer.findOneAndUpdate(
+      { _id: offer._id, status: 'accepted' },
+      { $set: { status: 'completed', transaction: transaction._id } },
+      { new: true }
+    );
+    if (!claimedOffer) {
+      await rollback.run();
+      return res.status(409).json({ message: 'This offer has already been used for another purchase' });
     }
 
-    // Mark offer as completed (transaction has been created)
-    offer.status = 'completed';
-    await offer.save();
-
-    res.status(201).json({ transaction, offer });
+    res.status(201).json({ transaction, offer: claimedOffer });
   } catch (error) {
     console.error(error);
     // Money-only-upon-success: a failed offer purchase must leave no

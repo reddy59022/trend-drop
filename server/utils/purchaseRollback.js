@@ -55,8 +55,8 @@ function createPurchaseRollback() {
     // An accepted offer that was consumed by a purchase must return to
     // 'accepted' on rollback, otherwise the buyer can no longer buy at the
     // price the seller already agreed to.
-    restoreOffer(offerId, previousStatus = 'accepted') {
-      if (offerId) state.offers.push({ offerId, previousStatus });
+    restoreOffer(offerId, previousStatus = 'accepted', transactionId = null) {
+      if (offerId) state.offers.push({ offerId, previousStatus, transactionId });
       return track;
     },
     // Call ONLY after the seller credit was persisted; before that there is
@@ -146,9 +146,21 @@ function createPurchaseRollback() {
 
     // 4b. Offers — hand an accepted offer back to the buyer, otherwise the
     //     agreed price is silently consumed by a purchase that never happened.
+    //     The restore is scoped to THIS purchase's transaction: a concurrent
+    //     checkout of the same offer may have legitimately claimed it in the
+    //     meantime, and a compensating action must never undo someone else's
+    //     committed state.
     for (const o of state.offers) {
       try {
-        await Offer.findByIdAndUpdate(o.offerId, {
+        const filter = { _id: o.offerId };
+        if (o.transactionId) {
+          filter.transaction = o.transactionId;
+        } else {
+          // No specific transaction known — only restore if the offer still
+          // points at one of the transactions rolled back in this run.
+          filter.transaction = { $in: [...state.transactionIds, null] };
+        }
+        await Offer.updateOne(filter, {
           $set: { status: o.previousStatus, transaction: null },
         });
       } catch (e) {

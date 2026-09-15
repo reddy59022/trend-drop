@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { saleNotification } = require('../utils/saleNotification');
 const { auth } = require('../middleware/auth');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
@@ -663,18 +664,31 @@ router.post('/confirm-batch', auth, async (req, res) => {
     for (const agg of sellerAgg.values()) {
       const { sellerDoc, earnings, items } = agg;
       if (!sellerDoc) continue;
-      const sellerCurrency = items[0]?.sellerCurrency || 'USD';
-      sellerDoc.balance.pending = Math.round(((sellerDoc.balance.pending || 0) + earnings) * 100) / 100;
-      for (const it of items) {
-        sellerDoc.notifications.unshift({
-          type: 'sale',
-          from: req.user._id,
-          listing: it.listingId,
-          transaction: it.transactionId,
-          message: `Item sold! You'll earn ${earnings} ${it.sellerCurrency}.`,
-        });
-      }
-      await sellerDoc.save();
+      // ATOMIC credit preserving the exact-cent math (the NEW pending sum is
+      // rounded to cents) and unshift order, safe under concurrent purchases
+      // of the same seller's items (no document-version races).
+      const newNotifications = items.map((it) => saleNotification({
+        from: req.user._id,
+        listing: it.listingId,
+        transaction: it.transactionId,
+        message: `Item sold! You'll earn ${earnings} ${it.sellerCurrency}.`,
+      }));
+      await User.updateOne(
+        { _id: sellerDoc._id },
+        [
+          {
+            $set: {
+              'balance.pending': {
+                $round: [
+                  { $add: [{ $ifNull: ['$balance.pending', 0] }, earnings] },
+                  2,
+                ],
+              },
+              notifications: { $concatArrays: [newNotifications, { $ifNull: ['$notifications', []] }] },
+            },
+          },
+        ]
+      );
     }
 
     // Populate all transactions
@@ -1028,15 +1042,25 @@ router.post('/confirm', auth, async (req, res) => {
     }
 
     if (seller) {
-      seller.balance.pending = (seller.balance.pending || 0) + (breakdown.seller.sellerEarnings - boostFee);
-      seller.notifications.unshift({
-        type: 'sale',
-        from: req.user._id,
-        listing: listing._id,
-        transaction: createdTransaction._id,
-        message: `Item sold! You'll earn ${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
-      });
-      await seller.save();
+      // ATOMIC credit — concurrent purchases of the same seller's items must
+      // never race on document versioning (spurious 500 + refund churn).
+      await User.updateOne(
+        { _id: seller._id },
+        {
+          $inc: { 'balance.pending': breakdown.seller.sellerEarnings - boostFee },
+          $push: {
+            notifications: {
+              $each: [saleNotification({
+                from: req.user._id,
+                listing: listing._id,
+                transaction: createdTransaction._id,
+                message: `Item sold! You'll earn ${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
+              })],
+              $position: 0,
+            },
+          },
+        }
+      );
     }
 
     try {

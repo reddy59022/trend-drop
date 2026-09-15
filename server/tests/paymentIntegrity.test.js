@@ -67,7 +67,7 @@ describe('ZD23 — confirm-batch rollback restores the FULL purchased quantity',
     const listing = await makeListing(seller.user, 100);
     const pi = mockIntent(buyer.user._id, [listing._id.toString()], 'requires_capture');
 
-    const saveSpy = jest.spyOn(User.prototype, 'save').mockRejectedValueOnce(new Error('VersionError simulation'));
+    const saveSpy = jest.spyOn(User, 'updateOne').mockRejectedValueOnce(new Error('VersionError simulation'));
     try {
       const r = await request(app).post('/api/payments/confirm-batch')
         .set('Authorization', 'Bearer ' + buyer.token)
@@ -101,7 +101,7 @@ describe('ZD24 — confirm-batch rollback reverts a completed offer to accepted'
     const offer = await acceptedOffer(buyer, seller, listing, 60);
     const pi = mockIntent(buyer.user._id, [listing._id.toString()], 'requires_capture');
 
-    const saveSpy = jest.spyOn(User.prototype, 'save').mockRejectedValueOnce(new Error('VersionError simulation'));
+    const saveSpy = jest.spyOn(User, 'updateOne').mockRejectedValueOnce(new Error('VersionError simulation'));
     try {
       const r = await request(app).post('/api/payments/confirm-batch')
         .set('Authorization', 'Bearer ' + buyer.token)
@@ -124,7 +124,7 @@ describe('ZD25 — legacy purchase rolls back transaction+inventory+hold on fail
     const listing = await makeListing(seller.user, 100, { boost: { active: true, tier: 'standard', feeLedger: { owed: 0 } } });
     const pi = mockIntent(buyer.user._id, [listing._id.toString()], 'succeeded');
 
-    const saveSpy = jest.spyOn(User.prototype, 'save').mockRejectedValueOnce(new Error('VersionError simulation'));
+    const saveSpy = jest.spyOn(User, 'updateOne').mockRejectedValueOnce(new Error('VersionError simulation'));
     try {
       const r = await request(app).post('/api/transactions')
         .set('Authorization', 'Bearer ' + buyer.token)
@@ -156,7 +156,7 @@ describe('ZD26 — offer-based purchase rolls back and keeps the offer accepted'
     const offer = await acceptedOffer(buyer, seller, listing, 60);
     const pi = mockIntent(buyer.user._id, [listing._id.toString()], 'succeeded');
 
-    const saveSpy = jest.spyOn(User.prototype, 'save').mockRejectedValueOnce(new Error('VersionError simulation'));
+    const saveSpy = jest.spyOn(User, 'updateOne').mockRejectedValueOnce(new Error('VersionError simulation'));
     try {
       const r = await request(app).post(`/api/transactions/offer/${offer._id}`)
         .set('Authorization', 'Bearer ' + buyer.token).send({ paymentIntentId: pi });
@@ -195,7 +195,7 @@ describe('ZD27 — cart checkout rolls back the ENTIRE multi-item cart on failur
       .send({ listingId: listingB._id.toString(), quantity: 1 });
     expect([200, 201]).toContain(addB.status);
 
-    const saveSpy = jest.spyOn(User.prototype, 'save').mockRejectedValueOnce(new Error('VersionError simulation'));
+    const saveSpy = jest.spyOn(User, 'updateOne').mockRejectedValueOnce(new Error('VersionError simulation'));
     try {
       const r = await request(app).post('/api/cart/checkout')
         .set('Authorization', 'Bearer ' + buyer.token)
@@ -224,3 +224,41 @@ describe('ZD27 — cart checkout rolls back the ENTIRE multi-item cart on failur
   });
 });
 
+
+describe('ZD28 — an accepted offer can only be consumed ONCE (concurrent double-checkout)', () => {
+  test('two concurrent offer purchases create exactly one transaction; the loser rolls back fully', async () => {
+    const seller = await makeUser('PI12', `pi12_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI13', `pi13_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100); // quantity 10
+    const offer = await acceptedOffer(buyer, seller, listing, 60);
+
+    const pi1 = mockIntent(buyer.user._id, [listing._id.toString()]);
+    const pi2 = mockIntent(buyer.user._id, [listing._id.toString()]);
+
+    const [r1, r2] = await Promise.all([
+      request(app).post(`/api/transactions/offer/${offer._id}`)
+        .set('Authorization', 'Bearer ' + buyer.token).send({ paymentIntentId: pi1 }),
+      request(app).post(`/api/transactions/offer/${offer._id}`)
+        .set('Authorization', 'Bearer ' + buyer.token).send({ paymentIntentId: pi2 }),
+    ]);
+
+    const ok = [r1, r2].filter((r) => r.status === 201);
+    expect(ok.length).toBe(1);
+
+    // exactly one transaction exists for this offer
+    expect(await Transaction.countDocuments({ offer: offer._id })).toBe(1);
+
+    // the offer was consumed exactly once
+    const after = await Offer.findById(offer._id);
+    expect(after.status).toBe('completed');
+
+    // inventory reflects exactly ONE sale
+    const l = await Listing.findById(listing._id);
+    expect(l.quantity).toBe(9);
+    expect(l.quantitySold).toBe(1);
+
+    // the losing intent must have had its payment hold released
+    const loserPi = r1.status === 201 ? pi2 : pi1;
+    expectNoLiveHold(loserPi);
+  });
+});

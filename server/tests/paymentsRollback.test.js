@@ -41,9 +41,10 @@ describe('Confirm-batch inventory rollback', () => {
     buyerToken = jwt.sign({ id: buyer._id }, JWT_SECRET, { expiresIn: '30d' });
   });
 test('Phase-4 seller save failure after inventory decrement fully restores listing', async () => {
-    // Seller created through the model (valid), then poison an enum field directly
-    // so sellerDoc.save() fails validation in Phase 4 (after the listing was
-    // already marked sold). Reproduces the live orphan bug.
+    // Seller created through the model (valid). The Phase-4 seller credit is
+    // an ATOMIC User.updateOne (concurrency-safe), so the failure is injected
+    // on that static — a real-world DB failure at that step (after the
+    // listing was already marked sold). Reproduces the live orphan bug class.
     const seller = await User.create({
       name: 'Rollback Seller', email: mkEmail('rb_seller'), password: 'password123',
       country: 'US', authProvider: 'email', emailVerified: true,
@@ -51,7 +52,6 @@ test('Phase-4 seller save failure after inventory decrement fully restores listi
       balance: { available: 0, pending: 0, currency: 'USD' },
       stats: { totalSales: 0, totalPurchases: 0, strikes: 0 },
     });
-    await User.collection.updateOne({ _id: seller._id }, { $set: { role: 'not_a_real_role' } });
 
     const listing = await Listing.create({
       seller: seller._id, title: 'Rollback Item', description: 'd', price: 50,
@@ -60,14 +60,21 @@ test('Phase-4 seller save failure after inventory decrement fully restores listi
     });
 
     const pi = mockPaymentIntent('succeeded');
-    const res = await request(app)
-      .post('/api/payments/confirm-batch')
-      .set('Authorization', `Bearer ${buyerToken}`)
-      .send({
-        paymentIntentId: pi.id,
-        items: [{ listingId: listing._id, quantity: 1 }],
-        shippingAddress: { fullName: 'Bob', street: '1', city: 'C', state: 'CA', postalCode: '1', country: 'US' },
-      });
+    const updateSpy = jest.spyOn(User, 'updateOne')
+      .mockRejectedValueOnce(new Error('Phase-4 seller credit failure (simulated)'));
+    let res;
+    try {
+      res = await request(app)
+        .post('/api/payments/confirm-batch')
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .send({
+          paymentIntentId: pi.id,
+          items: [{ listingId: listing._id, quantity: 1 }],
+          shippingAddress: { fullName: 'Bob', street: '1', city: 'C', state: 'CA', postalCode: '1', country: 'US' },
+        });
+    } finally {
+      updateSpy.mockRestore();
+    }
 
     expect([400, 500]).toContain(res.status);
 
