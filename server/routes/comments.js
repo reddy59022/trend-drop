@@ -82,9 +82,13 @@ router.post('/:listingId', auth, async (req, res) => {
   try {
     const { listingId } = req.params;
     const { text, parentId } = req.body;
-    
+
     if (!text || text.trim().length === 0) {
       return res.status(400).json({ message: 'Comment text is required' });
+    }
+
+    if (text.length > 500) {
+      return res.status(400).json({ message: 'Comment must be 500 characters or fewer' });
     }
     
     const listing = await Listing.findById(listingId);
@@ -173,35 +177,53 @@ router.put('/:id/like', auth, async (req, res) => {
   }
 });
 
-// DELETE /api/comments/:id - Delete a comment
+// DELETE /api/comments/:id - Delete a comment (author or listing seller).
+// Deleting a parent cascades to its full reply subtree so no orphaned
+// children with dangling parentId references remain.
 router.delete('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const comment = await Comment.findById(id);
     if (!comment) {
       return res.status(404).json({ message: 'Comment not found' });
     }
-    
-    if (comment.userId.toString() !== req.user._id.toString()) {
+
+    const listing = await Listing.findById(comment.listingId);
+    const isAuthor = comment.userId.toString() === req.user._id.toString();
+    const isSeller = listing && listing.seller.toString() === req.user._id.toString();
+    if (!isAuthor && !isSeller) {
       return res.status(403).json({ message: 'Not authorized to delete this comment' });
     }
-    
-    // If it's a reply, remove from parent's replies
+
+    // Collect the full reply subtree (children, grandchildren, ...) via BFS.
+    const toDelete = [comment._id];
+    const queue = [comment._id];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const children = await Comment.find({ parentId: current }).select('_id');
+      for (const child of children) {
+        toDelete.push(child._id);
+        queue.push(child._id);
+      }
+    }
+
+    // Detach the deleted threads from any surviving parent's replies array
+    // (only the top-level delete target can have a surviving parent).
     if (comment.parentId) {
       await Comment.findByIdAndUpdate(comment.parentId, {
-        $pull: { replies: comment._id },
+        $pull: { replies: { $in: toDelete } },
       });
     }
-    
-    await Comment.findByIdAndDelete(id);
-    
+
+    await Comment.deleteMany({ _id: { $in: toDelete } });
+
     // Realtime: remove the comment for everyone viewing this listing
     broadcastToListing(comment.listingId, 'comment:deleted', {
       listingId: comment.listingId.toString(),
       commentId: id,
     });
-    
+
     res.json({ message: 'Comment deleted' });
   } catch (error) {
     res.status(500).json({ message: 'Failed to delete comment' });

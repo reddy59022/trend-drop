@@ -77,7 +77,33 @@ router.put('/:id', auth, async (req, res) => {
     if (image !== undefined) collection.image = image;
     if (isActive !== undefined) collection.isActive = isActive;
     if (sortOrder !== undefined) collection.sortOrder = sortOrder;
-    if (listings !== undefined) collection.listings = listings;
+    if (listings !== undefined) {
+      if (!Array.isArray(listings)) {
+        return res.status(400).json({ message: 'Listings must be an array of listing ids' });
+      }
+      const mongoose = require('mongoose');
+      const ids = [];
+      for (const raw of listings) {
+        const id = String(raw);
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+          return res.status(400).json({ message: 'Invalid listing id in listings array' });
+        }
+        ids.push(id);
+      }
+      if (ids.length > 0) {
+        const found = await Listing.find({ _id: { $in: ids } }).select('_id seller');
+        if (found.length !== ids.length) {
+          return res.status(404).json({ message: 'One or more listings not found' });
+        }
+        const foreign = found.find((l) => l.seller.toString() !== req.user._id.toString());
+        if (foreign) {
+          return res.status(400).json({ message: 'Only your own listings can be added to a collection' });
+        }
+        collection.listings = ids;
+      } else {
+        collection.listings = [];
+      }
+    }
 
     await collection.save();
     res.json(collection);
