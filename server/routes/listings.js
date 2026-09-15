@@ -339,8 +339,40 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
 
     const imageUrls = await uploadListingImages(req.files);
 
-    if (Number(price) < 5) {
+    // Catalog integrity guards (TDD gap audit GA-1): the min-price guard alone
+    // let garbage through — NaN < 5 is false, fractional/negative quantities
+    // corrupted inventory math, non-ISO currency codes broke the
+    // multi-currency contract, and originalPrice below price produced
+    // negative discount math in the UI.
+    const numericPrice = Number(price);
+    if (!Number.isFinite(numericPrice)) {
+      return res.status(400).json({ message: 'Price must be a valid number' });
+    }
+    if (numericPrice < 5) {
       return res.status(400).json({ message: 'Minimum listing price is $5.00' });
+    }
+
+    if (quantity !== undefined && quantity !== '') {
+      const numericQuantity = Number(quantity);
+      if (!Number.isInteger(numericQuantity) || numericQuantity <= 0) {
+        return res.status(400).json({ message: 'Quantity must be a positive whole number' });
+      }
+    }
+
+    let normalizedCurrency = 'USD';
+    if (currency) {
+      const { getAllCurrencyCodes } = require('../config/currencies');
+      normalizedCurrency = String(currency).toUpperCase();
+      if (!getAllCurrencyCodes().includes(normalizedCurrency)) {
+        return res.status(400).json({ message: 'Unsupported currency code' });
+      }
+    }
+
+    if (originalPrice !== undefined && originalPrice !== null && originalPrice !== '') {
+      const numericOriginal = Number(originalPrice);
+      if (!Number.isFinite(numericOriginal) || numericOriginal < numericPrice) {
+        return res.status(400).json({ message: 'Original price must be greater than or equal to the listing price' });
+      }
     }
 
     // Feature 2 — international shipping flag: when disabled, listings may
@@ -382,9 +414,9 @@ router.post('/', auth, upload.array('images', 10), async (req, res) => {
       seller: req.user._id,
       title,
       description,
-      price: Number(price),
+      price: numericPrice,
       originalPrice: originalPrice ? Number(originalPrice) : undefined,
-      currency: currency || 'USD',
+      currency: normalizedCurrency,
       images: imageUrls,
       videoUrl: videoUrl || '',
       category,
@@ -498,7 +530,15 @@ router.put('/:id', auth, (req, res, next) => {
     if (condition) updateData.condition = condition;
     if (color !== undefined) updateData.color = color;
     if (videoUrl !== undefined) updateData.videoUrl = videoUrl;
-    if (quantity !== undefined && quantity !== '') updateData.quantity = Number(quantity);
+    if (quantity !== undefined && quantity !== '') {
+      // GA-1h: fractional/negative quantities corrupt inventory math
+      // ($inc quantity: -qty with qty=1.5 leaves half-units in stock).
+      const numericQuantity = Number(quantity);
+      if (!Number.isInteger(numericQuantity) || numericQuantity <= 0) {
+        return res.status(400).json({ message: 'Quantity must be a positive whole number' });
+      }
+      updateData.quantity = numericQuantity;
+    }
     if (status) {
       updateData.status = status;
       if (status === 'active') updateData.available = true;
@@ -509,13 +549,31 @@ router.put('/:id', auth, (req, res, next) => {
       if (b !== undefined) updateData.available = b;
     }
 
-    if (price) {
-      updateData.price = Number(price);
-      if (updateData.price < 5) {
+    if (price !== undefined && price !== null && price !== '') {
+      // GA-1g: a non-numeric price must be a 400 client error, not a 500
+      // CastError from $set (the old `NaN < 5` check never fired).
+      const numericPrice = Number(price);
+      if (!Number.isFinite(numericPrice)) {
+        return res.status(400).json({ message: 'Price must be a valid number' });
+      }
+      if (numericPrice < 5) {
         return res.status(400).json({ message: 'Minimum listing price is $5.00' });
       }
+      updateData.price = numericPrice;
     }
-    if (originalPrice) updateData.originalPrice = Number(originalPrice);
+    if (originalPrice !== undefined && originalPrice !== null && originalPrice !== '') {
+      // GA-1f: originalPrice below price produces negative discount math in
+      // the client (1 - price / originalPrice < 0).
+      const numericOriginal = Number(originalPrice);
+      if (!Number.isFinite(numericOriginal)) {
+        return res.status(400).json({ message: 'Original price must be a valid number' });
+      }
+      const effectivePrice = updateData.price !== undefined ? updateData.price : listing.price;
+      if (numericOriginal < effectivePrice) {
+        return res.status(400).json({ message: 'Original price must be greater than or equal to the listing price' });
+      }
+      updateData.originalPrice = numericOriginal;
+    }
 
     if (weight) updateData.weight = Number(weight);
     if (weightUnit) updateData.weightUnit = weightUnit;

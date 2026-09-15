@@ -7,6 +7,19 @@ const Transaction = require('../models/Transaction');
 const { auth } = require('../middleware/auth');
 const pushService = require('../services/pushService');
 
+// GA-3b: an offer can only be accepted while the listing is actually
+// purchasable. Accepting on a sold/unavailable listing told the buyer to
+// "proceed to purchase" on an item that can never be bought (the purchase
+// gate then fails with a confusing error). Returns false when it responded.
+async function assertListingPurchasable(offer, res) {
+  const listing = await Listing.findById(offer.listing).select('_id available sold');
+  if (!listing || !listing.available || listing.sold) {
+    res.status(400).json({ message: 'Listing is no longer available' });
+    return false;
+  }
+  return true;
+}
+
 // ============================================================
 // OFFER STATE MACHINE (v14.0 - Full Counter-Offer Chain Support)
 // ============================================================
@@ -502,6 +515,9 @@ router.patch('/:id/accept', auth, async (req, res) => {
       return res.status(400).json({ message: 'Only pending offers can be accepted' });
     }
 
+    // GA-3b: no accepting offers on items that can no longer be purchased.
+    if (!(await assertListingPurchasable(offer, res))) return;
+
     // CRITICAL: Set the accepted price explicitly
     offer.status = 'accepted';
     offer.acceptedPrice = offer.amount; // The buyer's original offer amount
@@ -577,6 +593,15 @@ router.patch('/:id/counter', auth, async (req, res) => {
       if (numericCounter <= buyerCounter) {
         return res.status(400).json({
           message: `Your counter must be higher than the buyer's counter of ${offer.currency || 'USD'} ${buyerCounter}`,
+        });
+      }
+      // GA-3a: the listing-price cap applies here too — the pending branch
+      // enforced it but this branch let a seller counter 50x the asking price,
+      // creating nonsense negotiation states.
+      const listing = await Listing.findById(offer.listing);
+      if (listing && numericCounter > listing.price) {
+        return res.status(400).json({
+          message: `Counter cannot exceed the listing price of ${offer.currency || 'USD'} ${listing.price}`,
         });
       }
     } else {
@@ -735,6 +760,9 @@ router.patch('/:id/accept-counter', auth, async (req, res) => {
       return res.status(400).json({ message: 'The seller has not made a counter to accept. Current status: ' + offer.status });
     }
 
+    // GA-3b: no accepting counters on items that can no longer be purchased.
+    if (!(await assertListingPurchasable(offer, res))) return;
+
     // CRITICAL: Set the accepted price explicitly
     offer.status = 'accepted';
     offer.acceptedPrice = offer.counterAmount; // The seller's counter amount
@@ -783,6 +811,9 @@ router.patch('/:id/seller-accept-buyer-counter', auth, async (req, res) => {
       return res.status(400).json({ message: 'Offer is not in buyer_countered state. Current status: ' + offer.status });
     }
 
+    // GA-3b: no accepting counters on items that can no longer be purchased.
+    if (!(await assertListingPurchasable(offer, res))) return;
+
     // CRITICAL: Set the accepted price explicitly
     offer.status = 'accepted';
     offer.acceptedPrice = offer.counterAmount; // The buyer's counter amount
@@ -830,6 +861,9 @@ router.patch('/:id/seller-accept', auth, async (req, res) => {
     if (offer.status !== 'pending') {
       return res.status(400).json({ message: 'Only pending offers can be accepted' });
     }
+
+    // GA-3b: no accepting offers on items that can no longer be purchased.
+    if (!(await assertListingPurchasable(offer, res))) return;
 
     // CRITICAL: Set the accepted price explicitly
     offer.status = 'accepted';
