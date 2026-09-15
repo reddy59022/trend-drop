@@ -44,9 +44,21 @@ router.post('/', auth, async (req, res) => {
       // Drop legacy poisoned entries so the duplicate check cannot crash.
       wishlist.items = wishlist.items.filter((i) => i.listing);
       const exists = wishlist.items.find(i => i.listing.toString() === listingId);
-      if (!exists) wishlist.items.push({ listing: listingId });
+      if (!exists) {
+        // GA-8: the check-then-push raced under concurrent adds (both
+        // requests saw "not present" and pushed twice). The $ne filter makes
+        // the append atomic in the DB — only the first concurrent add wins.
+        // Do NOT save() the stale in-memory doc afterwards: it would write
+        // the pre-push items back and revert the atomic append.
+        await Wishlist.updateOne(
+          { user: req.user._id, 'items.listing': { $ne: listingId } },
+          { $push: { items: { listing: listingId } } }
+        );
+      } else {
+        // Only the legacy-entry cleanup needs persisting here.
+        await wishlist.save();
+      }
     }
-    await wishlist.save();
     res.json({ message: 'Added to wishlist' });
   } catch (error) {
     console.error(error);

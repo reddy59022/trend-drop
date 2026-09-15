@@ -429,6 +429,21 @@ router.post('/to-likers/:offerId/claim', auth, async (req, res) => {
     if (!offer.bulkOffer || !offer.bulkOffer.isBulk) return res.status(400).json({ message: 'Not a bulk offer' });
     if (offer.expiresAt && offer.expiresAt < new Date()) return res.status(400).json({ message: 'Offer has expired' });
 
+    // R2: a claim creates an ACCEPTED offer with a 24h purchase window —
+    // it must never do so on a sold/unavailable listing (parity with all
+    // other accept paths).
+    // R3: the offer is exclusive to people who liked the listing (the
+    // share notification only goes to likers), so a claim by anyone else
+    // would be a discount leak.
+    const claimListing = await Listing.findById(offer.listing).select('_id available sold likes');
+    if (!claimListing || !claimListing.available || claimListing.sold) {
+      return res.status(400).json({ message: 'Listing is no longer available' });
+    }
+    const isLiker = (claimListing.likes || []).some((l) => l.toString() === req.user._id.toString());
+    if (!isLiker) {
+      return res.status(403).json({ message: 'Only likers can claim this exclusive offer' });
+    }
+
     // Atomic single-claim per buyer: append ONLY if not already present.
     // Check-then-push raced (two concurrent claims both 201, duplicate
     // accepted offers); the $ne filter serializes in the DB so one wins.

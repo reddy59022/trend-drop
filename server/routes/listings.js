@@ -1078,6 +1078,7 @@ router.patch('/:id/sold', auth, async (req, res) => {
 });
 
 // POST /api/listings/:id/relist - Seller relists a previously sold item (Poshmark "Reposh" style)
+// POST /api/listings/:id/relist - Seller relists a previously sold item (Poshmark "Reposh" style)
 router.post('/:id/relist', auth, async (req, res) => {
   try {
     const source = await Listing.findById(req.params.id);
@@ -1099,7 +1100,50 @@ router.post('/:id/relist', auth, async (req, res) => {
       return res.status(400).json({ message: 'Only sold items can be relisted' });
     }
 
-    const { price, description, title, brand, size, condition, category, images, originalPrice } = req.body;
+    const { price, description, title, brand, size, condition, category, images, originalPrice, currency, quantity } = req.body;
+
+    // GA-4: a relist creates a NEW live listing, so it must honor the same
+    // catalog integrity rules as create/edit (min price, finite number,
+    // originalPrice >= price). The old route passed raw body values straight
+    // into Listing.create — price:'abc' 500'd, price:2 slipped under the
+    // $5 platform minimum, originalPrice below price broke discount math.
+    if (price !== undefined && price !== null && price !== '') {
+      const numericPrice = Number(price);
+      if (!Number.isFinite(numericPrice)) {
+        return res.status(400).json({ message: 'Price must be a valid number' });
+      }
+      if (numericPrice < 5) {
+        return res.status(400).json({ message: 'Minimum listing price is $5.00' });
+      }
+    }
+    if (originalPrice !== undefined && originalPrice !== null && originalPrice !== '') {
+      const numericOriginal = Number(originalPrice);
+      if (!Number.isFinite(numericOriginal)) {
+        return res.status(400).json({ message: 'Original price must be a valid number' });
+      }
+      const effectivePrice = (price !== undefined && price !== null && price !== '') ? Number(price) : source.price;
+      if (numericOriginal < effectivePrice) {
+        return res.status(400).json({ message: 'originalPrice must be greater than or equal to price' });
+      }
+    }
+
+    // R1: relist must also honor currency + quantity integrity (mirrors the
+    // create/edit validators). Missing currency lets an unsupported ISO code
+    // pass; a fractional/negative quantity corrupts inventory math.
+    if (currency !== undefined && currency !== null && currency !== '') {
+      const { getAllCurrencyCodes } = require('../config/currencies');
+      const normCurrency = String(currency).toUpperCase();
+      if (!getAllCurrencyCodes().includes(normCurrency)) {
+        return res.status(400).json({ message: 'Unsupported currency code' });
+      }
+    }
+
+    if (quantity !== undefined && quantity !== null && quantity !== '') {
+      const numericQuantity = Number(quantity);
+      if (!Number.isInteger(numericQuantity) || numericQuantity <= 0) {
+        return res.status(400).json({ message: 'Quantity must be a positive integer' });
+      }
+    }
 
     const relisted = await Listing.create({
       seller: source.seller,
@@ -1107,7 +1151,7 @@ router.post('/:id/relist', auth, async (req, res) => {
       description: description || source.description,
       price: price !== undefined ? price : source.price,
       originalPrice: originalPrice !== undefined ? originalPrice : source.originalPrice,
-      currency: source.currency,
+      currency: currency || source.currency,
       images: images && images.length ? images : source.images,
       videoUrl: source.videoUrl,
       category: category || source.category,
@@ -1123,7 +1167,7 @@ router.post('/:id/relist', auth, async (req, res) => {
       available: true,
       sold: false,
       status: 'active',
-      quantity: source.quantity > 0 ? source.quantity : 1,
+      quantity: quantity !== undefined && quantity !== null && quantity !== '' ? Number(quantity) : (source.quantity > 0 ? source.quantity : 1),
       quantitySold: 0,
       reserved: 0,
     });

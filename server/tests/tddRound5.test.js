@@ -44,6 +44,7 @@ afterAll(async () => {
 describe('R5.1 bulk-offer claims must carry the 24h window and be single-claim atomic', () => {
   test('claimed offer stamps acceptedUntil ~24h out', async () => {
     const l = await mkListing(seller._id, 100, 5);
+    await Listing.findByIdAndUpdate(l._id, { $addToSet: { likes: buyer._id } });
     const bulk = await Offer.create({ listing: l._id, buyer: seller._id, seller: seller._id, amount: 70, currency: 'USD', status: 'pending', expiresAt: new Date(Date.now() + 48 * 3600 * 1000), bulkOffer: { isBulk: true, discountType: 'percentage', discountValue: 30, claimedBy: [] } });
     const res = await request(app).post(`/api/offers/to-likers/${bulk._id}/claim`).set('Authorization', `Bearer ${buyerToken}`);
     expect(res.status).toBe(201);
@@ -51,6 +52,7 @@ describe('R5.1 bulk-offer claims must carry the 24h window and be single-claim a
   });
   test('two concurrent claims by same buyer -> one 201, second 400, one accepted offer', async () => {
     const l = await mkListing(seller._id, 100, 5);
+    await Listing.findByIdAndUpdate(l._id, { $addToSet: { likes: buyer2._id } });
     const bulk = await Offer.create({ listing: l._id, buyer: seller._id, seller: seller._id, amount: 70, currency: 'USD', status: 'pending', expiresAt: new Date(Date.now() + 48 * 3600 * 1000), bulkOffer: { isBulk: true, discountType: 'percentage', discountValue: 30, claimedBy: [] } });
     const [r1, r2] = await Promise.all([
       request(app).post(`/api/offers/to-likers/${bulk._id}/claim`).set('Authorization', `Bearer ${buyer2Token}`),
