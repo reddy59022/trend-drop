@@ -132,8 +132,8 @@ export const checkInWishlist = (listingId) => api.get(`/wishlist/check/${listing
 
 // Reports
 export const reportListing = (data) => api.post('/reports', data);
-export const getReports = () => api.get('/reports');
-export const resolveReport = (id, status) => api.patch(`/reports/${id}/status`, { status });
+export const getReports = () => api.get('/admin/reports');
+export const resolveReport = (id, status) => api.put(`/admin/reports/${id}/status`, { status });
 
 // Price History
 export const trackPrice = (data) => api.post('/pricehistory', data);

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Trend = require('../models/Trend');
+const { auth } = require('../middleware/auth');
 const { fetchTrends } = require('../services/xService');
 
 // Fetch trends (real-time or historical)
@@ -46,8 +47,9 @@ router.get('/viral', async (req, res) => {
   }
 });
 
-// Refresh trends (manual trigger)
-router.post('/refresh', async (req, res) => {
+// Refresh trends (manual trigger) — authenticated only: triggers a paid
+// third-party X API call, so anonymous callers must not be able to burn quota.
+router.post('/refresh', auth, async (req, res) => {
   try {
     const trends = await fetchTrends();
     res.json(trends);

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Report = require('../models/Report');
 const { auth } = require('../middleware/auth');
+const { adminAuth } = require('../middleware/admin');
 
 // POST /api/reports - Report a listing
 router.post('/', auth, async (req, res) => {
@@ -20,8 +21,8 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// GET /api/reports - Get reports (accessible by anyone for simplicity)
-router.get('/', async (req, res) => {
+// GET /api/reports - Moderation queue (admin only: contains reporter PII)
+router.get('/', auth, adminAuth, async (req, res) => {
   try {
     const reports = await Report.find()
       .populate('reporter', 'name email')
@@ -34,8 +35,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// PATCH /api/reports/:id/status - Update report status
-router.patch('/:id/status', auth, async (req, res) => {
+// PATCH /api/reports/:id/status - Update report status (admin only)
+router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   try {
     const { status } = req.body;
     const report = await Report.findByIdAndUpdate(req.params.id, { status }, { new: true });
