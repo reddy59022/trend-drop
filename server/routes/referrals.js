@@ -191,6 +191,12 @@ router.get('/:code', async (req, res) => {
       return res.status(400).json({ valid: false, message: 'Referral code not active' });
     }
 
+    // Expiry must be honored here too (parity with POST /apply): without
+    // this an expired code still validated as usable.
+    if (referral.expiresAt && referral.expiresAt < new Date()) {
+      return res.status(400).json({ valid: false, message: 'Referral code has expired' });
+    }
+
     res.json({
       valid: true,
       rewardAmount: referral.rewardAmount,

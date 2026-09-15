@@ -27,6 +27,15 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'percentage discount cannot exceed 100' });
     }
 
+    // Money/limit fields must be non-negative: negative minPurchase makes
+    // every cart eligible, negative maxDiscount corrupts caps, negative
+    // usageLimit breaks limit math (0 = unlimited is the only sentinel).
+    for (const [field, value] of [['minPurchaseAmount', minPurchaseAmount], ['maxDiscountAmount', maxDiscountAmount], ['usageLimit', usageLimit]]) {
+      if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
+        return res.status(400).json({ message: `${field} must be a non-negative number` });
+      }
+    }
+
     // Check for duplicate code for this seller
     const existing = await Promo.findOne({ code: code.toUpperCase(), seller: req.user._id });
     if (existing) {
@@ -89,10 +98,25 @@ router.put('/:id', auth, async (req, res) => {
     }
     if (discountType) promo.discountType = discountType;
     if (discountValue !== undefined) promo.discountValue = discountValue;
-    if (minPurchaseAmount !== undefined) promo.minPurchaseAmount = minPurchaseAmount;
-    if (maxDiscountAmount !== undefined) promo.maxDiscountAmount = maxDiscountAmount;
+    if (minPurchaseAmount !== undefined) {
+      if (typeof minPurchaseAmount !== 'number' || !Number.isFinite(minPurchaseAmount) || minPurchaseAmount < 0) {
+        return res.status(400).json({ message: 'minPurchaseAmount must be a non-negative number' });
+      }
+      promo.minPurchaseAmount = minPurchaseAmount;
+    }
+    if (maxDiscountAmount !== undefined) {
+      if (typeof maxDiscountAmount !== 'number' || !Number.isFinite(maxDiscountAmount) || maxDiscountAmount < 0) {
+        return res.status(400).json({ message: 'maxDiscountAmount must be a non-negative number' });
+      }
+      promo.maxDiscountAmount = maxDiscountAmount;
+    }
     if (expiresAt !== undefined) promo.expiresAt = expiresAt;
-    if (usageLimit !== undefined) promo.usageLimit = usageLimit;
+    if (usageLimit !== undefined) {
+      if (typeof usageLimit !== 'number' || !Number.isFinite(usageLimit) || usageLimit < 0) {
+        return res.status(400).json({ message: 'usageLimit must be a non-negative number' });
+      }
+      promo.usageLimit = usageLimit;
+    }
     if (isActive !== undefined) promo.isActive = isActive;
     if (applicableCategories) promo.applicableCategories = applicableCategories;
     if (description !== undefined) promo.description = description;

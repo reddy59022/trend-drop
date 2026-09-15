@@ -625,6 +625,12 @@ router.post('/confirm-received', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
+    // Idempotency: confirming twice must not notify twice or risk a second
+    // payout. The first confirm already moved the txn to buyer_confirmed.
+    if (transaction.status === 'buyer_confirmed' || transaction.buyerConfirmed?.received) {
+      return res.status(400).json({ message: 'Receipt already confirmed for this transaction' });
+    }
+
     // NOTE: Use order lifecycle endpoint (/api/orders/:id/confirm-received) instead.
     // This endpoint is kept for backward compatibility but delegates properly.
     transaction.buyerConfirmed.received = true;

@@ -415,16 +415,25 @@ router.post('/to-likers/:offerId/claim', auth, async (req, res) => {
     if (!offer) return res.status(404).json({ message: 'Offer not found' });
     if (!offer.bulkOffer || !offer.bulkOffer.isBulk) return res.status(400).json({ message: 'Not a bulk offer' });
     if (offer.expiresAt && offer.expiresAt < new Date()) return res.status(400).json({ message: 'Offer has expired' });
-    if (offer.bulkOffer.claimedBy.includes(req.user._id)) return res.status(400).json({ message: 'You have already claimed this offer' });
+
+    // Atomic single-claim per buyer: append ONLY if not already present.
+    // Check-then-push raced (two concurrent claims both 201, duplicate
+    // accepted offers); the $ne filter serializes in the DB so one wins.
+    const claimed = await Offer.findOneAndUpdate(
+      { _id: offer._id, 'bulkOffer.claimedBy': { $ne: req.user._id } },
+      { $push: { 'bulkOffer.claimedBy': req.user._id } },
+      { new: true }
+    );
+    if (!claimed) return res.status(400).json({ message: 'You have already claimed this offer' });
 
     const claimedOffer = await Offer.create({
       listing: offer.listing, buyer: req.user._id, seller: offer.seller, amount: offer.amount,
       status: 'accepted', acceptedPrice: offer.amount, acceptedAt: new Date(), acceptedBy: 'seller',
+      // 24h purchase window (parity with all other accept paths): without
+      // this the claimed offer NEVER expires (B4 invariant).
+      acceptedUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
       currency: offer.currency, expiresAt: offer.expiresAt,
     });
-
-    offer.bulkOffer.claimedBy.push(req.user._id);
-    await offer.save();
 
     res.status(201).json({ message: 'Offer claimed! You can now purchase at the discounted price.', offer: claimedOffer });
   } catch (error) {
