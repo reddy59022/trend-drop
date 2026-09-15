@@ -72,8 +72,23 @@ router.put('/:id', auth, async (req, res) => {
     if (promo.seller.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Not authorized' });
 
     const { discountType, discountValue, minPurchaseAmount, maxDiscountAmount, expiresAt, usageLimit, isActive, applicableCategories, description } = req.body;
+    // Validate discount fields up-front (same rules as creation): without
+    // this, invalid values fell through to save() -> ValidationError -> 500
+    // (or worse, silently persisted). Must be 400, never 500.
+    if (discountType !== undefined && !['percentage', 'fixed'].includes(discountType)) {
+      return res.status(400).json({ message: 'discountType must be "percentage" or "fixed"' });
+    }
+    if (discountValue !== undefined) {
+      if (typeof discountValue !== 'number' || !Number.isFinite(discountValue) || discountValue <= 0) {
+        return res.status(400).json({ message: 'discountValue must be a positive number' });
+      }
+      const effectiveType = discountType || promo.discountType;
+      if (effectiveType === 'percentage' && discountValue > 100) {
+        return res.status(400).json({ message: 'percentage discount cannot exceed 100' });
+      }
+    }
     if (discountType) promo.discountType = discountType;
-    if (discountValue) promo.discountValue = discountValue;
+    if (discountValue !== undefined) promo.discountValue = discountValue;
     if (minPurchaseAmount !== undefined) promo.minPurchaseAmount = minPurchaseAmount;
     if (maxDiscountAmount !== undefined) promo.maxDiscountAmount = maxDiscountAmount;
     if (expiresAt !== undefined) promo.expiresAt = expiresAt;

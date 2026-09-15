@@ -190,6 +190,20 @@ router.post('/bundle', auth, async (req, res) => {
       return res.status(400).json({ message: 'Name and discount percent are required' });
     }
 
+    // Validate bounds up-front (same as BundleRule schema min/max): without
+    // this, out-of-range values fell through to create() -> ValidationError
+    // -> 500. Must be 400, never 500.
+    const numericDiscount = Number(discountPercent);
+    if (!Number.isFinite(numericDiscount) || numericDiscount < 1 || numericDiscount > 100) {
+      return res.status(400).json({ message: 'discountPercent must be a number between 1 and 100' });
+    }
+    if (minQuantity !== undefined) {
+      const numericMin = Number(minQuantity);
+      if (!Number.isInteger(numericMin) || numericMin < 2) {
+        return res.status(400).json({ message: 'minQuantity must be an integer of at least 2' });
+      }
+    }
+
     const rule = await BundleRule.create({
       seller: req.user._id,
       name,
@@ -813,6 +827,10 @@ router.patch('/:id/seller-accept', auth, async (req, res) => {
     offer.acceptedPrice = offer.amount; // The buyer's original offer amount
     offer.acceptedAt = new Date();
     offer.acceptedBy = 'seller';
+    // 24-hour window for accepted offers to purchase (parity with /accept).
+    // Without this the offer NEVER expires: cron expireOffers() and the
+    // purchase gates key off acceptedUntil (B4 invariant).
+    offer.acceptedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await offer.save();
 
     // Notify buyer

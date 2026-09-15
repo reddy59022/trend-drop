@@ -134,34 +134,39 @@ router.get('/my', auth, async (req, res) => {
 // POST /api/referrals/claim - Claim referral reward
 router.post('/claim', auth, async (req, res) => {
   try {
-    const referral = await Referral.findOne({ referrer: req.user._id, status: 'active' });
+    // Atomic single-claim: flip rewardClaimed false->true ONLY if still
+    // false. Check-then-save raced under concurrency (both 200, double
+    // credit); this serializes claims in the DB so exactly one wins.
+    const referral = await Referral.findOneAndUpdate(
+      { referrer: req.user._id, status: 'active', rewardClaimed: { $ne: true } },
+      { $set: { rewardClaimed: true } },
+      { new: true }
+    );
 
     if (!referral) {
+      const existing = await Referral.findOne({ referrer: req.user._id, status: 'active' });
+      if (existing && existing.rewardClaimed) {
+        return res.status(400).json({ message: 'Referral reward already claimed' });
+      }
       return res.status(404).json({ message: 'No active referral found' });
     }
 
-    // Double-claim guard: the reward balance must be credited exactly once.
-    if (referral.rewardClaimed) {
-      return res.status(400).json({ message: 'Referral reward already claimed' });
-    }
-
-    const user = await User.findById(req.user._id);
-
-    // Add reward to user's balance
-    user.balance.available = (user.balance.available || 0) + referral.rewardAmount;
-    user.balance.totalEarned = (user.balance.totalEarned || 0) + referral.rewardAmount;
-    referral.rewardClaimed = true;
-
-    await user.save();
-    await referral.save();
+    // Atomic balance credit (no lost-update under concurrency).
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $inc: { 'balance.available': referral.rewardAmount, 'balance.totalEarned': referral.rewardAmount } },
+      { new: true }
+    );
 
     // Mark all referred users as having received reward
-    for (const referredUser of referral.referredUsers) {
-      if (!referredUser.rewardGiven) {
-        referredUser.rewardGiven = true;
+    if (referral.referredUsers && referral.referredUsers.length > 0) {
+      for (const referredUser of referral.referredUsers) {
+        if (!referredUser.rewardGiven) {
+          referredUser.rewardGiven = true;
+        }
       }
+      await referral.save();
     }
-    await referral.save();
 
     res.json({
       message: `Reward of ${referral.rewardAmount} ${referral.currency} claimed successfully`,

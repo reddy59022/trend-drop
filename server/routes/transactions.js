@@ -181,7 +181,12 @@ router.post('/guest', async (req, res) => {
       return res.status(404).json({ message: 'Listing not found' });
     }
 
-    if (listing.seller.toString() === buyerEmail) {
+    // Self-dealing guard (parity with authenticated purchase gates): the
+    // seller must not buy their own listing. Compare by EMAIL (guest has no
+    // user id yet) — the old code compared ObjectId to an email string,
+    // which is always false, so the check never fired.
+    const sellerDoc = await User.findById(listing.seller).select('email');
+    if (sellerDoc && sellerDoc.email && sellerDoc.email.toLowerCase() === String(buyerEmail).toLowerCase()) {
       return res.status(400).json({ message: 'Cannot purchase your own listing' });
     }
 
