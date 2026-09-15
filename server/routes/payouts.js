@@ -264,6 +264,16 @@ router.post('/process/:transactionId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Transaction must be completed before processing payout' });
     }
 
+    // Authorization: only the seller who earned the money (or an admin) may
+    // trigger payout processing. seller is populated, so compare against the
+    // document id when present. Any authenticated user must not be able to
+    // create payout records for arbitrary transactions.
+    const sellerId = transaction.seller?._id || transaction.seller;
+    const isAdmin = req.user.role === 'admin';
+    if (String(sellerId) !== String(req.user._id) && !isAdmin) {
+      return res.status(403).json({ message: 'Only the seller or an admin can process this payout' });
+    }
+
     // Check if payout already exists for this transaction
     const existingPayout = await Payout.findOne({ transaction: transaction._id });
     if (existingPayout) {

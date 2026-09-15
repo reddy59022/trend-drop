@@ -208,3 +208,193 @@ describe('ZD10 — auction creation is validated', () => {
     expect(r.status).toBe(403);
   });
 });
+
+describe('ZD18 — sold or auctioned listings cannot be hard-deleted by the seller', () => {
+  test('deleting a sold listing is rejected', async () => {
+    const seller = await makeUser('ZDDel1', `zddel1_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 60);
+    await Listing.findByIdAndUpdate(listing._id, { sold: true, available: false, quantitySold: 2 });
+    const r = await request(app).delete(`/api/listings/${listing._id}`)
+      .set('Authorization', 'Bearer ' + seller.token);
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body)).toMatch(/sold|orders|auction/i);
+    const stillThere = await Listing.findById(listing._id);
+    expect(stillThere).not.toBeNull();
+  });
+
+  test('deleting a listing with an active auction is rejected', async () => {
+    const seller = await makeUser('ZDDel2', `zddel2_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 60);
+    const now = Date.now();
+    await Auction.create({
+      listing: listing._id, seller: seller.user._id,
+      startTime: new Date(now - 3600 * 1000), endTime: new Date(now + 3600 * 1000),
+      reservePrice: 10, currency: 'USD', currentBid: 0, status: 'active', bids: [],
+    });
+    const r = await request(app).delete(`/api/listings/${listing._id}`)
+      .set('Authorization', 'Bearer ' + seller.token);
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body)).toMatch(/auction/i);
+    const stillThere = await Listing.findById(listing._id);
+    expect(stillThere).not.toBeNull();
+  });
+
+  test('deleting an unsold, un-auctioned listing still works (regression guard)', async () => {
+    const seller = await makeUser('ZDDel3', `zddel3_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 60);
+    const r = await request(app).delete(`/api/listings/${listing._id}`)
+      .set('Authorization', 'Bearer ' + seller.token);
+    expect(r.status).toBe(200);
+    const gone = await Listing.findById(listing._id);
+    expect(gone).toBeNull();
+  });
+});
+
+describe('ZD19 — inventory sync validates input and listing ownership', () => {
+  test('missing items array is rejected with 400 (not a 500 crash)', async () => {
+    const seller = await makeUser('ZDInv1', `zdinv1_${Date.now()}@test.com`);
+    const r = await request(app).post('/api/inventory/sync')
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ warehouse: 'WH1' });
+    expect(r.status).toBe(400);
+  });
+
+  test('invalid listing id is rejected with 400', async () => {
+    const seller = await makeUser('ZDInv2', `zdinv2_${Date.now()}@test.com`);
+    const r = await request(app).post('/api/inventory/sync')
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ warehouse: 'WH1', items: [{ listingId: 'not-an-objectid', quantity: 3 }] });
+    expect(r.status).toBe(400);
+  });
+
+  test('syncing inventory for a listing you do not own is rejected', async () => {
+    const owner = await makeUser('ZDInv3', `zdinv3_${Date.now()}@test.com`);
+    const stranger = await makeUser('ZDInv4', `zdinv4_${Date.now()}@test.com`);
+    const listing = await makeListing(owner.user, 60);
+    const r = await request(app).post('/api/inventory/sync')
+      .set('Authorization', 'Bearer ' + stranger.token)
+      .send({ warehouse: 'WH1', items: [{ listingId: listing._id.toString(), quantity: 3 }] });
+    expect([400, 403]).toContain(r.status);
+    const Inventory = require('../models/Inventory');
+    const row = await Inventory.findOne({ seller: stranger.user._id, listing: listing._id });
+    expect(row).toBeNull();
+  });
+
+  test('negative quantity is rejected', async () => {
+    const seller = await makeUser('ZDInv5', `zdinv5_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 60);
+    const r = await request(app).post('/api/inventory/sync')
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ warehouse: 'WH1', items: [{ listingId: listing._id.toString(), quantity: -5 }] });
+    expect(r.status).toBe(400);
+  });
+
+  test('valid sync for own listing still works (regression guard)', async () => {
+    const seller = await makeUser('ZDInv6', `zdinv6_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 60);
+    const r = await request(app).post('/api/inventory/sync')
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ warehouse: 'WH1', items: [{ listingId: listing._id.toString(), quantity: 4, sku: 'SKU1', location: 'A1' }] });
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body)).toBe(true);
+  });
+});
+
+
+describe('ZD20 — boost duration is enforced within configured bounds', () => {
+  test('negative duration is rejected', async () => {
+    const seller = await makeUser('ZDBoost1', `zdboost1_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 60);
+    const r = await request(app).post(`/api/listings/${listing._id}/boost`)
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ tier: 'standard', durationDays: -5 });
+    expect(r.status).toBe(400);
+  });
+
+  test('duration beyond the 30-day maximum is rejected', async () => {
+    const seller = await makeUser('ZDBoost2', `zdboost2_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 60);
+    const r = await request(app).post(`/api/listings/${listing._id}/boost`)
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ tier: 'standard', durationDays: 100000 });
+    expect(r.status).toBe(400);
+  });
+
+  test('non-numeric duration is rejected', async () => {
+    const seller = await makeUser('ZDBoost3', `zdboost3_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 60);
+    const r = await request(app).post(`/api/listings/${listing._id}/boost`)
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ tier: 'standard', durationDays: 'fortnight' });
+    expect(r.status).toBe(400);
+  });
+
+  test('in-range duration still boosts (regression guard)', async () => {
+    const seller = await makeUser('ZDBoost4', `zdboost4_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 60);
+    const r = await request(app).post(`/api/listings/${listing._id}/boost`)
+      .set('Authorization', 'Bearer ' + seller.token)
+      .send({ tier: 'standard', durationDays: 14 });
+    expect(r.status).toBe(200);
+    expect(r.body.boost.active).toBe(true);
+  });
+});
+
+
+describe('ZD21 — only the seller (or admin) can process a payout', () => {
+  const completeTxn = async (seller, buyer, listing) => {
+    const Transaction = require('../models/Transaction');
+    return Transaction.create({
+      listing: listing._id, buyer: buyer.user._id, seller: seller.user._id,
+      itemPrice: 100, currency: 'USD',
+      paymentBreakdown: { subtotal: 100, shippingCost: 0, buyerProtectionFee: 0, tax: 0, totalPaid: 100, platformFee: 8, platformFeePercent: 8, shippingPayout: 0, sellerEarnings: 92 },
+      status: 'completed',
+    });
+  };
+
+  test('a random authenticated user cannot process someone else\'s payout', async () => {
+    const seller = await makeUser('ZDPay1', `zdpay1_${Date.now()}@test.com`);
+    const buyer = await makeUser('ZDPay2', `zdpay2_${Date.now()}@test.com`);
+    const attacker = await makeUser('ZDPay3', `zdpay3_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100);
+    const txn = await completeTxn(seller, buyer, listing);
+    const r = await request(app).post(`/api/payouts/process/${txn._id}`)
+      .set('Authorization', 'Bearer ' + attacker.token);
+    expect([403, 401]).toContain(r.status);
+    const Payout = require('../models/Payout');
+    const payout = await Payout.findOne({ transaction: txn._id });
+    expect(payout).toBeNull();
+  });
+
+  test('the seller can still process their own payout (regression guard)', async () => {
+    const seller = await makeUser('ZDPay4', `zdpay4_${Date.now()}@test.com`);
+    const buyer = await makeUser('ZDPay5', `zdpay5_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100);
+    const txn = await completeTxn(seller, buyer, listing);
+    const r = await request(app).post(`/api/payouts/process/${txn._id}`)
+      .set('Authorization', 'Bearer ' + seller.token);
+    expect(r.status).toBe(201);
+    expect(r.body.payout.payoutAmount).toBeGreaterThan(0);
+  });
+});
+
+describe('ZD22 — closet pagination is clamped (no 500s / unbounded dumps)', () => {
+  test('page=0 does not crash', async () => {
+    const seller = await makeUser('ZDPage1', `zdpage1_${Date.now()}@test.com`);
+    await makeListing(seller.user, 30);
+    const r = await request(app).get(`/api/users/${seller.user._id}/closet?page=0&limit=5`);
+    expect(r.status).toBe(200);
+  });
+
+  test('limit=1000000 is clamped, not honored', async () => {
+    const seller = await makeUser('ZDPage2', `zdpage2_${Date.now()}@test.com`);
+    for (let i = 0; i < 55; i++) {
+      await makeListing(seller.user, 30 + i);
+    }
+    const r = await request(app).get(`/api/users/${seller.user._id}/closet?page=1&limit=1000000`);
+    expect(r.status).toBe(200);
+    expect(r.body.listings.length).toBeLessThanOrEqual(50);
+  });
+});
+
+

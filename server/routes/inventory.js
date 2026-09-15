@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const { auth } = require('../middleware/auth');
 const Inventory = require('../models/Inventory');
 const Listing = require('../models/Listing');
@@ -36,7 +37,34 @@ router.get('/:id', auth, async (req, res) => {
 router.post('/sync', auth, async (req, res) => {
   try {
     const { warehouse, items } = req.body;
-    
+
+    // Input validation: reject malformed sync payloads with 400 instead of
+    // crashing with 500. items must be a non-empty array of well-formed rows.
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'items must be a non-empty array' });
+    }
+    for (const item of items) {
+      if (!item || !item.listingId || !mongoose.Types.ObjectId.isValid(item.listingId)) {
+        return res.status(400).json({ message: 'Each item needs a valid listingId' });
+      }
+      const qty = item.quantity === undefined || item.quantity === null ? 0 : Number(item.quantity);
+      if (!Number.isFinite(qty) || qty < 0 || qty > 1000000) {
+        return res.status(400).json({ message: 'quantity must be a number between 0 and 1000000' });
+      }
+    }
+
+    // Ownership check: a seller may only sync inventory for their own
+    // listings — otherwise inventory rows could reference other sellers'
+    // listings and corrupt stock data across the marketplace.
+    const listingIds = [...new Set(items.map((it) => it.listingId))];
+    const ownListings = await Listing.find({ _id: { $in: listingIds }, seller: req.user._id }).select('_id');
+    const ownIdSet = new Set(ownListings.map((l) => l._id.toString()));
+    for (const id of listingIds) {
+      if (!ownIdSet.has(id.toString())) {
+        return res.status(403).json({ message: 'You can only sync inventory for your own listings' });
+      }
+    }
+
     // Simulate inventory sync
     const syncedItems = [];
     for (const item of items) {
@@ -46,7 +74,7 @@ router.post('/sync', auth, async (req, res) => {
           seller: req.user._id,
           listing: item.listingId,
           warehouse,
-          quantity: item.quantity || 0,
+          quantity: item.quantity === undefined || item.quantity === null ? 0 : Number(item.quantity),
           location: item.location,
           sku: item.sku,
           lastSync: new Date()

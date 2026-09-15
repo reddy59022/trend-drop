@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Listing = require('../models/Listing');
 const User = require('../models/User');
+const Auction = require('../models/Auction');
 const { auth, optionalAuth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { paginate } = require('../utils/pagination');
@@ -667,6 +668,25 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
+    // Data-integrity guard: a listing that has been sold (fully or partially)
+    // is referenced by transactions, returns and payouts. Hard-deleting it
+    // would corrupt order history, break refund/return flows and leave
+    // auction winners holding a phantom win. Sellers should relist instead.
+    if (listing.sold || (listing.quantitySold || 0) > 0) {
+      return res.status(400).json({
+        message: 'This listing has been sold and cannot be deleted — it is part of order history. Relist it instead.',
+      });
+    }
+
+    // An active auction must be cancelled before its listing can be removed,
+    // otherwise auction settlement crashes and paid winners lose their item.
+    const activeAuction = await Auction.findOne({ listing: listing._id, status: 'active' });
+    if (activeAuction) {
+      return res.status(400).json({
+        message: 'This listing has an active auction and cannot be deleted. Cancel the auction first.',
+      });
+    }
+
     if (listing.images && listing.images.length > 0) {
       try {
         const { cloudinary } = require('../config/cloudinary');
@@ -694,6 +714,21 @@ router.delete('/:id', auth, async (req, res) => {
 router.post('/:id/boost', auth, async (req, res) => {
   try {
     const { tier, durationDays } = req.body;
+
+    // Enforce the documented boost window (config: min 7 / max 30 days).
+    // Without this, sellers could self-boost for years, use negative
+    // durations (instantly expired but marked active) or corrupt the
+    // record with non-numeric values.
+    const { boostConfig } = require('../config/boost');
+    const duration = durationDays === undefined || durationDays === null
+      ? boostConfig.defaultDurationDays
+      : Number(durationDays);
+    if (!Number.isFinite(duration) || duration < boostConfig.minDurationDays || duration > boostConfig.maxDurationDays) {
+      return res.status(400).json({
+        message: `Boost duration must be between ${boostConfig.minDurationDays} and ${boostConfig.maxDurationDays} days`,
+      });
+    }
+
     const listing = await Listing.findById(req.params.id);
     if (!listing) {
       return res.status(404).json({ message: 'Listing not found' });
@@ -708,14 +743,14 @@ router.post('/:id/boost', auth, async (req, res) => {
     }
 
     const { calculateBoostFee } = require('../config/boost');
-    const boostInfo = calculateBoostFee(listing.price, tier || 'standard', durationDays || 14);
+    const boostInfo = calculateBoostFee(listing.price, tier || 'standard', duration);
 
     listing.boost = {
       active: true,
       tier: tier || 'standard',
       startDate: new Date(),
-      endDate: new Date(Date.now() + (durationDays || 14) * 24 * 60 * 60 * 1000),
-      durationDays: durationDays || 14,
+      endDate: new Date(Date.now() + duration * 24 * 60 * 60 * 1000),
+      durationDays: duration,
       fee: boostInfo.fee,
       priorityScore: boostInfo.priorityScore,
       source: listing.boost?.source || 'listing',

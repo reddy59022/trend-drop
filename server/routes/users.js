@@ -206,6 +206,11 @@ router.get('/:id/closet', async (req, res) => {
     else if (sort === 'popular') sortOption = { likesCount: -1 };
     else if (sort === 'newest') sortOption = { createdAt: -1 };
 
+    // Clamp pagination like the marketplace feed: page >= 1 (no negative
+    // skip → no 500s) and limit bounded (no unbounded collection dumps).
+    const pageNum = Math.max(1, Math.min(Number(page) || 1, 100));
+    const limitNum = Math.max(1, Math.min(Number(limit) || 20, 50));
+
     const listings = await Listing.find({
       seller: req.params.id,
       sold: false,
@@ -213,8 +218,8 @@ router.get('/:id/closet', async (req, res) => {
     })
       .populate('seller', 'name avatar')
       .sort(sortOption)
-      .limit(Number(limit))
-      .skip((Number(page) - 1) * Number(limit));
+      .limit(limitNum)
+      .skip((pageNum - 1) * limitNum);
 
     const total = await Listing.countDocuments({
       seller: req.params.id,
@@ -224,8 +229,8 @@ router.get('/:id/closet', async (req, res) => {
 
     res.json({
       listings,
-      totalPages: Math.ceil(total / Number(limit)),
-      currentPage: Number(page),
+      totalPages: Math.ceil(total / limitNum),
+      currentPage: pageNum,
       total,
     });
   } catch (error) {
