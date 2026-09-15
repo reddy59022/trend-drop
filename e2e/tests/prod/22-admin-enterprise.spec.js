@@ -97,11 +97,36 @@ test.describe('22 - Admin & Enterprise (production)', () => {
   test('offer-sharing: stats, share-to-likers, bundle, share-to-friends', async () => {
     var stats = await api.req('get', '/api/offer-sharing/stats', { token: alexToken });
     expect(stats.status).toBe(200);
+    // NOTE: state.listings.A/B are purchased (sold) by spec 04, and POST
+    // /api/offer-sharing/bundle now correctly 400s on sold/unavailable items
+    // — so this test creates its own fresh listings instead of reusing A/B.
+    var mkListing = async (suffix) => {
+      var lr = await api.req('post', '/api/listings', {
+        token: alexToken,
+        body: {
+          title: `PROD-E2E ${RUN_ID} bundle-${suffix}`,
+          description: `Bundle test listing ${RUN_ID}`,
+          price: 60, originalPrice: 100, category: 'Clothing', brand: 'E2EBrand',
+          size: 'M', condition: 'New with tags', color: 'Green', quantity: 1,
+          domesticShipping: 'flat', shippingCost: 7.24, shipsFrom: 'US',
+        },
+      });
+      expect(lr.status, JSON.stringify(lr.data)).toBe(201);
+      return lr.data.listing?._id || lr.data._id;
+    };
+    var bundleId1 = await mkListing('one');
+    var bundleId2 = await mkListing('two');
+    var meJordan = await api.me('jordan');
+    var buyerId = (state.users.jordan && state.users.jordan.id)
+      || meJordan._id || (meJordan.user && meJordan.user._id);
     var bundle = await api.req('post', '/api/offer-sharing/bundle', {
       token: alexToken,
-      body: { listingIds: [state.listings.A.id, state.listings.B.id], buyerId: state.users.jordan.id },
+      body: { listingIds: [bundleId1, bundleId2], buyerId },
     });
-    expect(bundle.status).toBe(200);
+    expect(bundle.status, JSON.stringify(bundle.data)).toBe(200);
+    // Best-effort cleanup so later specs' search/count assertions are unaffected.
+    await api.req('delete', `/api/listings/${bundleId1}`, { token: alexToken });
+    await api.req('delete', `/api/listings/${bundleId2}`, { token: alexToken });
   });
 
   test('onboarding: status, complete-step, checklist, tips', async () => {
