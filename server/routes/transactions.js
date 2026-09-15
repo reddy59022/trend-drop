@@ -9,6 +9,7 @@ const { auth } = require('../middleware/auth');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
 const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding } = require('../config/payments');
 const { boostConfig } = require('../config/boost');
+const { createPurchaseRollback } = require('../utils/purchaseRollback');
 
 // TDD-B1: legacy transaction endpoints must verify a real authorized payment
 // before creating any money state (parity with /api/cart/checkout gate).
@@ -327,6 +328,9 @@ router.post('/guest', async (req, res) => {
 });
 
 router.post('/', auth, async (req, res) => {
+    // Declared outside try so the catch can compensate a partially-built
+    // purchase (the tracker is populated once the payment gate passes).
+    const rollback = createPurchaseRollback();
     try {
       const { listingId, shippingAddress, buyerCountry } = req.body;
 
@@ -358,6 +362,10 @@ router.post('/', auth, async (req, res) => {
       // TDD-B1: verify authorized payment BEFORE any money/inventory state.
       const gate = await gateLegacyPayment(req, res, { listingIds: [listingId] });
       if (!gate.ok) return;
+
+      // Compensating-transaction tracker: everything this purchase creates is
+      // recorded so a failure at ANY later step can be undone completely.
+      rollback.track.setIntent(gate.pi.id);
 
       // Get seller info for country
       const seller = await User.findById(listing.seller);
@@ -434,6 +442,7 @@ router.post('/', auth, async (req, res) => {
       },
       status: 'paid',
     });
+    rollback.track.addTransaction(transaction._id, gate.pi.id);
 
     // BUG 2: Atomic inventory update with oversell protection
     // Check if this will be the last item to mark sold
@@ -452,12 +461,14 @@ router.post('/', auth, async (req, res) => {
 
     // If null, someone else bought the last one concurrently
     if (!inventoryUpdate) {
-      await Transaction.findByIdAndDelete(transaction._id);
+      await rollback.run();
       return res.status(400).json({ message: 'Sorry, this item just went out of stock' });
     }
+    rollback.track.addInventory(listingId, 1);
 
     // Item-level boost fee ledger (this listing only)
     await recordBoostFeeOwed(listing._id, boostFee, 1);
+    rollback.track.addBoostFee(listing._id, boostFee);
 
     // Update seller's pending balance and notification
     const finalSellerEarnings = breakdown.seller.sellerEarnings - boostFee;
@@ -471,6 +482,9 @@ router.post('/', auth, async (req, res) => {
         message: `Your item "${listing.title}" has been purchased for $${finalPrice}! You'll earn $${finalSellerEarnings} after platform fees.`,
       });
       await seller.save();
+      // Only revertible once persisted — a rolled-back purchase leaves the
+      // seller with no phantom pending earnings.
+      rollback.track.addSellerCredit(seller._id, finalSellerEarnings);
     }
 
     // CRITICAL FIX: Every purchase MUST create a consolidated Enterprise Order
@@ -535,12 +549,19 @@ router.post('/', auth, async (req, res) => {
     res.status(201).json(transaction);
   } catch (error) {
     console.error(error);
+    // Money-only-upon-success: a purchase that failed part-way through must
+    // leave no transaction, no depleted inventory, no seller credit and no
+    // live payment hold behind.
+    await rollback.run();
     res.status(500).json({ message: 'Server error' });
   }
 });
 
 // POST /api/transactions/offer/:offerId - Create a transaction based on an accepted offer (buyer has accepted seller's counter)
 router.post('/offer/:offerId', auth, async (req, res) => {
+  // Declared outside try so the catch can compensate a partially-built
+  // purchase (the tracker is populated once the payment gate passes).
+  const rollback = createPurchaseRollback();
   try {
     const { offerId } = req.params;
     const offer = await Offer.findById(offerId);
@@ -574,6 +595,10 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     // TDD-B1: verify authorized payment BEFORE any money/inventory state.
     const offerGate = await gateLegacyPayment(req, res, { listingIds: [offer.listing] });
     if (!offerGate.ok) return;
+
+    // Compensating-transaction tracker: everything this purchase creates is
+    // recorded so a failure at ANY later step can be undone completely.
+    rollback.track.setIntent(offerGate.pi.id).restoreOffer(offer._id, 'accepted');
 
     const seller = await User.findById(listing.seller);
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
@@ -620,6 +645,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       payout: { status: 'pending' },
       autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
     });
+    rollback.track.addTransaction(transaction._id, offerGate.pi.id);
 
     // BUG 2: Atomic inventory update with oversell protection
     const wasLastOne = listing.quantity === 1;
@@ -636,12 +662,14 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     );
 
     if (!inventoryUpdate) {
-      await Transaction.findByIdAndDelete(transaction._id);
+      await rollback.run();
       return res.status(400).json({ message: 'Sorry, this item just went out of stock' });
     }
+    rollback.track.addInventory(listing._id, 1);
 
     // Item-level boost fee ledger (this listing only)
     await recordBoostFeeOwed(listing._id, boostFee, 1);
+    rollback.track.addBoostFee(listing._id, boostFee);
 
     // Update seller pending balance and notify in one save
     if (seller) {
@@ -654,6 +682,9 @@ router.post('/offer/:offerId', auth, async (req, res) => {
         message: `"${listing.title}" sold via offer for $${finalPrice}! You'll earn $${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} after platform fees.`,
       });
       await seller.save();
+      // Only revertible once persisted — a rolled-back purchase leaves the
+      // seller with no phantom pending earnings.
+      rollback.track.addSellerCredit(seller._id, breakdown.seller.sellerEarnings - boostFee);
     }
 
     // Notify buyer of purchase
@@ -676,6 +707,10 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     res.status(201).json({ transaction, offer });
   } catch (error) {
     console.error(error);
+    // Money-only-upon-success: a failed offer purchase must leave no
+    // transaction, no depleted inventory, no seller credit, no live payment
+    // hold — and the accepted offer must remain usable.
+    await rollback.run();
     res.status(500).json({ message: 'Server error' });
   }
 });

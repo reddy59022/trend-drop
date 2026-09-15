@@ -341,6 +341,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
   const createdPayouts = [];
   const inventoryChanges = [];
   const sellerBalanceUpdates = [];
+  const revertedOffers = [];
   let captured = false;
 
   try {
@@ -577,9 +578,20 @@ router.post('/confirm-batch', auth, async (req, res) => {
       createdTransactions.push(txn);
       
       if (offer) {
+        // Capture the pre-purchase state BEFORE mutating, so a rollback
+        // restores exactly what was there rather than assuming defaults.
+        const priorOfferStatus = offer.status;
+        const priorOfferTransaction = offer.transaction ?? null;
         offer.status = 'completed';
         offer.transaction = txn._id;
         await offer.save();
+        // Track for rollback: a failed checkout must hand the offer back to
+        // the buyer as 'accepted', not leave it stranded at 'completed'.
+        revertedOffers.push({
+          offer,
+          previousStatus: priorOfferStatus,
+          previousTransaction: priorOfferTransaction,
+        });
       }
 
       // ANY successful purchase transitions the listing to SOLD
@@ -596,7 +608,9 @@ router.post('/confirm-batch', auth, async (req, res) => {
         },
         { new: true }
       );
-      inventoryChanges.push({ listingId: listing._id, updated });
+      // Rollback metadata: restore the EXACT quantity taken and revert any
+      // boost-fee ledger entry written for this item.
+      inventoryChanges.push({ listingId: listing._id, updated, qty: plan.qty, boostFee });
 
       const payout = await Payout.create({
         seller: listing.seller,
@@ -840,20 +854,32 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // orphan (listing 6aa2e37ba1eba57f3c376226) removed manually.
       if (change.updated) {
         try {
-          // Full inventory rollback: restore the quantity AND clear the
-          // sold/available flags (TrendDrop is single-item — any sale marks the
-          // listing sold, so a rolled-back purchase must be buyable again,
-          // otherwise we leave an orphaned sold listing like the live 500 did).
+          // Full inventory rollback: restore the EXACT quantity taken (qty,
+          // not a hardcoded 1 — a qty=3 line must put all 3 units back) AND
+          // clear the sold/available flags AND revert the boost-fee ledger
+          // entry recorded for this item, so a rolled-back purchase is
+          // buyable again and the seller owes no boost fee for it.
+          const inc = { quantity: change.qty || 1, quantitySold: -(change.qty || 1) };
+          if (change.boostFee && change.boostFee > 0) {
+            inc['boost.feeLedger.owed'] = -change.boostFee;
+          }
           await Listing.findOneAndUpdate(
             { _id: change.listingId },
             {
-              $inc: { quantity: 1, quantitySold: -1 },
+              $inc: inc,
               $set: { sold: false, available: true },
             },
             { new: true }
           );
         } catch (e) {}
       }
+    }
+    for (const r of revertedOffers) {
+      try {
+        r.offer.status = r.previousStatus || 'accepted';
+        r.offer.transaction = r.previousTransaction ?? null;
+        await r.offer.save();
+      } catch (e) {}
     }
 
     res.status(500).json({ message: error.message || 'Error confirming batch payment' });

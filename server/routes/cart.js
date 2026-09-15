@@ -8,6 +8,7 @@ const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
 const { calculatePaymentBreakdown } = require('../config/payments');
 const { getPreferredCarrier, generateLabel } = require('../config/shipping');
+const { createPurchaseRollback } = require('../utils/purchaseRollback');
 
 // ===================== ABANDONED CART RECOVERY =====================
 // Cart management with automatic expiration and email/SMS reminders
@@ -154,6 +155,9 @@ router.delete('/items/:id', auth, async (req, res) => {
 
 // POST /api/cart/checkout - Convert cart to order (creates transaction)
 router.post('/checkout', auth, async (req, res) => {
+  // Declared outside try so the catch can compensate a partially-committed
+  // multi-item cart (the tracker is populated after the payment gate passes).
+  const rollback = createPurchaseRollback();
   try {
     const { shippingAddress, paymentIntentId } = req.body;
 
@@ -203,6 +207,9 @@ router.post('/checkout', auth, async (req, res) => {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
+    // A failed checkout must leave the cart usable ('active'), never stuck.
+    rollback.track.addCart(cart._id);
+
     // ============================================================
     // INTENT BINDING (TDD-B1): the intent must have been authorized for THIS
     // buyer and THIS cart's items. create-intent stores buyerId + itemIds in
@@ -216,6 +223,10 @@ router.post('/checkout', auth, async (req, res) => {
     if (!binding.ok) {
       return res.status(400).json({ message: binding.reason });
     }
+
+    // Compensating-transaction tracker: one bad line must not leave the rest
+    // of the cart committed (money held, items sold, cart stuck purchased).
+    rollback.track.setIntent(pi.id);
 
     // Validate all items are still available
     for (const item of cart.items) {
@@ -353,6 +364,7 @@ router.post('/checkout', auth, async (req, res) => {
       });
 
       createdTransactions.push(transaction);
+      rollback.track.addTransaction(transaction._id, pi.id);
 
       // Update listing inventory (TDD-B3: decrement by qty, sold when depleted).
       // The conditional update is the stock authority: if it matches nothing
@@ -367,9 +379,10 @@ router.post('/checkout', auth, async (req, res) => {
       );
 
       if (!inventoryUpdate) {
-        await Transaction.findByIdAndDelete(transaction._id);
+        await rollback.run();
         return res.status(400).json({ message: `Sorry, "${listing.title}" just went out of stock` });
       }
+      rollback.track.addInventory(listing._id, qty);
 
       // Update seller balance and send notification
       if (seller) {
@@ -382,10 +395,12 @@ router.post('/checkout', auth, async (req, res) => {
           message: `Item sold from cart! You'll earn ${earningsTotal} ${breakdown.sellerCurrency}. Shipping label ready.`,
         });
         await seller.save();
+        // Only revertible once persisted — no phantom pending earnings.
+        rollback.track.addSellerCredit(seller._id, earningsTotal);
       }
 
       // Create payout record
-      await Payout.create({
+      const payout = await Payout.create({
         seller: listing.seller,
         transaction: transaction._id,
         listing: listing._id,
@@ -395,6 +410,7 @@ router.post('/checkout', auth, async (req, res) => {
         payoutAmount: earningsTotal,
         status: 'pending',
       });
+      rollback.track.addPayout(payout._id);
     }
 
     // Mark cart as purchased
@@ -408,6 +424,10 @@ router.post('/checkout', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Cart checkout error:', error);
+    // Money-only-upon-success: a partially-committed multi-item checkout must
+    // be undone entirely — no transactions, no depleted inventory, no phantom
+    // seller earnings/payouts, no live payment hold, and the cart stays usable.
+    await rollback.run();
     res.status(500).json({ message: 'Failed to checkout cart' });
   }
 });
