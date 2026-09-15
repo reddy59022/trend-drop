@@ -175,6 +175,12 @@ jobs:
       - name: Verify Android SDK availability
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+          for d in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" /usr/lib/android-sdk; do
+            if [ -n "$d" ] && [ -d "$d" ]; then
+              export PATH="$d/cmdline-tools/latest/bin:$d/platform-tools:$d/tools/bin:$PATH"
+            fi
+          done
           if ! command -v sdkmanager >/dev/null 2>&1; then
             echo "::error::No usable Android SDK: setup-android failed and no preinstalled sdkmanager found"
             exit 1
