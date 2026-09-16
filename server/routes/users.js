@@ -7,13 +7,15 @@ const { auth, optionalAuth } = require('../middleware/auth');
 // GET /api/users/search - Search users
 router.get('/search', async (req, res) => {
   try {
-    const { asText } = require('../utils/validators');
+    const { asText, escapeRegex } = require('../utils/validators');
+    // sanitizeQuery collapses hostile shapes (?q[$gt]=, ?q[]=x) to scalars,
+    // but belt-and-braces: a $regex fed a non-string still CastErrors -> 500,
+    // and raw metacharacters like '*' throw inside $regex -> 500.
     const q = asText(req.query.q);
     if (!q || q.length < 1) return res.json([]);
     // Performance: lean() + limit + projection
-    // Escape regex metacharacters: a hostile q like '*' makes $regex throw -> 500.
     const users = await User.find({
-      name: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+      name: { $regex: escapeRegex(q), $options: 'i' },
     })
       .select('name avatar bio')
       .lean()

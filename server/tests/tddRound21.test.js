@@ -11,8 +11,9 @@
  * well-formed input. 400/401/403/404/409/422/429 are correct rejections; a 500
  * is an unhandled crash.
  *
- *   R21.1 every mounted route, hostile bodies -> no 5xx
- *   R21.2 every mounted route, unauthenticated -> no 5xx
+ *   R21.2 authed + hostile bodies -> no 5xx anywhere
+ *   R21.3 authed GET + hostile query strings -> no 5xx anywhere
+ *   R21.4 unauthenticated -> no 5xx anywhere
  *
  * Requests run as an ADMIN (so admin-only routes are reached rather than
  * short-circuited with 403) and the suite is hermetic: jest.setup.js already
@@ -123,6 +124,34 @@ const NULLISH = {
   shippingPartners: null, status: null, category: null, address: null,
   token: null, password: null, rating: null,
 };
+
+// ---------------------------------------------------------------------------
+// Hostile payloads: they simulate a client that ignores (or attacks) the API
+// contract — wrong types, null-prototype objects, giant strings, NoSQL
+// operator keys — without being malformed HTTP (every entry JSON-encodes and
+// stays well under the body-size limit).
+// ---------------------------------------------------------------------------
+const HOSTILE_QUERY_STRINGS = [
+  '',                                        // bare path
+  '?q[$gt]=',                                // NoSQL operator injection
+  '?q[$ne]=x',
+  '?q[0]=x',                                 // array-shaped value
+  '?q[]=x',
+  '?q=',                                     // empty string
+  '?q=' + '*'.repeat(50),                    // hostile regex metacharacters
+  '?limit[$gt]=1',
+  '?limit[]=20',
+  '?page[$gt]=1',
+  '?sort[$gt]=1',
+  '?minPrice[$gt]=1&maxPrice[$lt]=999999',
+  '?category[$gt]=x',
+  '?search[$gt]=x',
+  '?__proto__[polluted]=1',                  // prototype pollution attempt
+];
+
+// Appends a hostile query string to a concrete URL. `%3A`-style encoded path
+// params are left untouched; only the query string is varied.
+const withQuery = (url, qs) => (qs ? url + (url.includes('?') ? '&' + qs.slice(1) : qs) : url);
 
 const HOSTILE_BODIES = [
   {},                          // every field missing
@@ -265,7 +294,39 @@ describe('R21 runtime router-stack sweep', () => {
     expect(canary.status).toBe(200);
   });
 
-  it('R21.3 unauthenticated -> no 5xx anywhere', async () => {
+  it('R21.3 authed GET + hostile query strings -> no 5xx anywhere', async () => {
+    // Express' extended query parser turns ?q[$gt]= / ?q[]=x into objects and
+    // arrays on req.query; routes that forward those into Mongoose ($regex,
+    // numeric filters, skip/limit) CastError -> 500. Every GET route gets each
+    // hostile query string appended to its concrete URL.
+    const gets = routes.filter((r) => r.method === 'GET');
+    expect(gets.length).toBeGreaterThan(100);
+    const out = [];
+    for (const route of gets) {
+      const base = urlFor(route.path);
+      for (const qs of HOSTILE_QUERY_STRINGS) {
+        const url = withQuery(base, qs);
+        let res;
+        try {
+          res = await call(route.method, url);
+        } catch (err) {
+          out.push({ method: route.method, url, body: undefined, status: 'THREW', msg: err.message });
+          continue;
+        }
+        out.push({
+          method: route.method,
+          url,
+          body: undefined,
+          status: res.status,
+          msg: (res.body && res.body.message) || '',
+        });
+      }
+    }
+    all.push(...out);
+    expect(crashes(out)).toEqual([]);
+  });
+
+  it('R21.4 unauthenticated -> no 5xx anywhere', async () => {
     const probes = await sweep(routes, {
       auth: false,
       bodiesFor: (r) => (['GET', 'HEAD', 'DELETE'].includes(r.method) ? [undefined] : [{}]),
