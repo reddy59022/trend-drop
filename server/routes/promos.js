@@ -4,6 +4,7 @@ const Promo = require('../models/Promo');
 const Listing = require('../models/Listing');
 const { auth } = require('../middleware/auth');
 const adminAuth = require('../middleware/admin');
+const { isValidObjectId } = require('../utils/validators');
 
 // POST /api/promos - Create promo code
 router.post('/', auth, async (req, res) => {
@@ -148,9 +149,13 @@ router.delete('/:id', auth, async (req, res) => {
 router.post('/validate', auth, async (req, res) => {
   try {
     const { code, items } = req.body; // items: array of { listingId, price, quantity, category }
-    if (!code) return res.status(400).json({ message: 'Promo code is required' });
+    // `code` must be a string: a number/object would reach `.toUpperCase()`
+    // and throw a TypeError -> 500. Reject non-strings outright.
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return res.status(400).json({ message: 'Promo code is required' });
+    }
 
-    const promo = await Promo.findOne({ code: code.toUpperCase(), isActive: true });
+    const promo = await Promo.findOne({ code: code.trim().toUpperCase(), isActive: true });
     if (!promo) return res.status(400).json({ message: 'Invalid promo code' });
 
     // Check expiration
@@ -172,6 +177,11 @@ router.post('/validate', auth, async (req, res) => {
     let eligibleTotal = 0;
     if (items && Array.isArray(items)) {
       for (const item of items) {
+        // Hostile-input guards: a non-object entry (e.g. `[null]`) would throw
+        // on property access, and a malformed listingId would CastError inside
+        // findById. Skip such lines instead of crashing.
+        if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+        if (!isValidObjectId(item.listingId)) continue;
         const listing = await Listing.findById(item.listingId);
         // Seller scoping: only the promo owner's items are eligible.
         if (listing && String(listing.seller) !== String(promo.seller)) continue;

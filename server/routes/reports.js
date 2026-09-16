@@ -53,7 +53,18 @@ router.get('/', auth, adminAuth, async (req, res) => {
 router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   try {
     const { status } = req.body;
-    const report = await Report.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    // `findByIdAndUpdate` does NOT run schema validators, so an arbitrary
+    // status used to be persisted silently. Validate against the model enum
+    // explicitly (and only then ask Mongoose to run validators too).
+    const VALID_STATUSES = ['pending', 'resolved', 'dismissed'];
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({ message: 'Invalid report status' });
+    }
+    const report = await Report.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true, runValidators: true }
+    );
     if (!report) return res.status(404).json({ message: 'Report not found' });
     res.json(report);
   } catch (error) {

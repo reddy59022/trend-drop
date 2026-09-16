@@ -4,6 +4,7 @@ const { auth } = require('../middleware/auth');
 const VirtualTryOn = require('../models/VirtualTryOn');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
+const { isValidObjectId } = require('../utils/validators');
 
 // GET /api/virtual-try-on - Get user's try-on history
 router.get('/', auth, async (req, res) => {
@@ -46,6 +47,29 @@ router.post('/session', auth, async (req, res) => {
       return res.status(400).json({ message: 'Listing ID is required' });
     }
     
+    // Hostile-input guards. A malformed listingId would CastError inside
+    // findById, a non-object `measurements` would CastError on create, and an
+    // unknown sessionType would fail the model enum — all three used to 500.
+    if (!isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Invalid listing ID' });
+    }
+    const SESSION_TYPES = ['camera', 'upload', 'ar'];
+    if (sessionType !== undefined && !SESSION_TYPES.includes(sessionType)) {
+      return res.status(400).json({ message: 'sessionType must be one of: camera, upload, ar' });
+    }
+    if (measurements !== undefined && measurements !== null) {
+      if (typeof measurements !== 'object' || Array.isArray(measurements)) {
+        return res.status(400).json({ message: 'measurements must be an object' });
+      }
+      for (const field of ['bust', 'waist', 'hip', 'inseam', 'height']) {
+        const value = measurements[field];
+        if (value !== undefined && value !== null
+            && (typeof value !== 'number' || !Number.isFinite(value))) {
+          return res.status(400).json({ message: `measurements.${field} must be a number` });
+        }
+      }
+    }
+
     const listing = await Listing.findById(listingId);
     if (!listing) {
       return res.status(404).json({ message: 'Listing not found' });

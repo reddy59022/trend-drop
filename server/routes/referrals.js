@@ -54,11 +54,13 @@ router.post('/apply', async (req, res) => {
   try {
     const { code, userId } = req.body;
 
-    if (!code) {
+    // `code` must be a string: a number/object would reach `.toUpperCase()`
+    // and throw a TypeError -> 500. Reject non-strings outright.
+    if (!code || typeof code !== 'string' || !code.trim()) {
       return res.status(400).json({ message: 'Referral code is required' });
     }
 
-    const referral = await Referral.findOne({ code: code.toUpperCase() });
+    const referral = await Referral.findOne({ code: code.trim().toUpperCase() });
 
     if (!referral) {
       return res.status(404).json({ message: 'Invalid referral code' });
