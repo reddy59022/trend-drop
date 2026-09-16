@@ -291,3 +291,21 @@ All 50+ API routes now have E2E test coverage. The full marketplace lifecycle is
 ### Validation
 - Targeted: shipping/loyalty/advancedShipping suites green (4 suites / 40 tests).
 - Full regression (server jest / client jest / in-memory playwright) per task completion criteria; results in the commit report.
+
+### Validation
+- Targeted: shipping/loyalty/advancedShipping suites green (4 suites / 40 tests).
+- Full regression (server jest / client jest / in-memory playwright) per task completion criteria; results in the commit report.
+
+---
+
+## TDD round 31 — recently-viewed recency refresh + review-time delivery gate
+
+### Scope (gaps found by cross-checking e2e + client + server suites against the business contract)
+1. **R31-1 Recently-Viewed recency was dead (v38.0).** POST /api/recently-viewed/:id answered 200 "Already viewed" WITHOUT refreshing the stored viewedAt, while GET /api/recently-viewed sorts by viewedAt desc — re-visiting an item never moved it back to the front (first-view order forever). No suite could catch it: v38.2 pins the 200 response, v38.10 only checks the first element is populated, the client suite mocks the API, and no e2e spec exercises the feature. Fix: the existing-record path now bumps viewedAt atomically (findOneAndUpdate); API contract unchanged (200, no duplicate row, unique-index race backstop intact).
+2. **R31-2 Review-time gate.** POST /api/ratings required transaction status EXACTLY 'completed', locking buyers out of reviewing the normal case (courier-delivered but never explicitly confirmed). The guard now accepts post-delivery statuses delivered/buyer_confirmed/completed and still blocks paid/shipped/in-transit/returned orders, with distinct messages for "never purchased" vs "not delivered yet". TDD note: the RED hypothesis "shipped items were reviewable" was refuted by the RED run (already blocked) — the shipped/in-transit rejection tests were kept as regression guards pinning that invariant. E2E spec 07 pinned the old rejection message for in-transit orders; the 400-blocked invariant is unchanged and the message regex was generalized to /only review items/i.
+
+### Validation
+- RED first: server/tests/tddRound31.test.js — 3 failed (2× recency staleness, 1× delivered-review lock-out), 3 passed (sanity + in-transit rejections), exactly as designed.
+- GREEN after fix: tddRound31 6/6; recentlyViewed suite 10/10 (backward compatibility).
+- Full regression: server jest **136 suites / 1829 tests green**; client jest **84 suites / 412 tests green**; in-memory Playwright E2E **33 specs / 284 tests green** (after the spec-07 message generalization).
+- Deploy verification: production behavior probe (login → view A → view B → re-view A → history order [A, B], contract 200) reported OLD_CODE_STILL_DEPLOYED pre-deploy and NEW_CODE_LIVE post-deploy, twice, then cleaned up its own view history.
