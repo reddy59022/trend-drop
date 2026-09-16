@@ -115,11 +115,18 @@ const countryCurrencyMap = {
   UZ: 'UZS', AZ: 'AZN', KG: 'KGS', TJ: 'TJS', MN: 'MNT', AF: 'AFN',
 };
 
-// Convert price from USD to target currency
+// Convert price from USD to target currency.
+// TDD R26: rounded onto the TARGET currency's own decimal grid. Zero-decimal
+// currencies (JPY, KRW, IDR, HUF, ...) must never yield fractional units
+// (1.29 USD used to become 192.86 "yen"), and 3-decimal currencies (KWD,
+// BHD, ...) keep their fraction digits — parity with the client engine
+// (client/src/utils/helpers.js convertAmount).
 const convertPrice = (usdAmount, targetCurrency) => {
   const curr = currencies[targetCurrency];
   if (!curr) return usdAmount;
-  return Math.round(usdAmount * curr.rate * 100) / 100;
+  const decimals = curr.decimals != null ? curr.decimals : 2;
+  const factor = Math.pow(10, decimals);
+  return Math.round(usdAmount * curr.rate * factor) / factor;
 };
 
 // Format price with currency symbol using Intl.NumberFormat

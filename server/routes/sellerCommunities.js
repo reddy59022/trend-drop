@@ -94,10 +94,38 @@ router.post('/:id/join', auth, async (req, res) => {
 });
 
 // POST /api/seller-communities/:id/challenges - Create challenge
+// TDD R26: input contract. The schema stores `rewards` as a String, but the
+// real client (e2e spec 17, SellerCommunities page) posts `rewards: []` —
+// an array pushed into a String path CastErrors on save and surfaced as a
+// 500 (previously "tolerated" by the E2E suite). Normalize incoming rewards
+// to the schema shape, and reject missing/blank titles and malformed dates
+// as 4xx client errors instead of letting Mongoose turn them into 500s.
 router.post('/:id/challenges', auth, async (req, res) => {
   try {
     const { title, description, endDate, rewards } = req.body;
-    
+
+    if (title === undefined || title === null || typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ message: 'Challenge title is required' });
+    }
+
+    let normalizedEndDate = endDate;
+    if (endDate !== undefined && endDate !== null) {
+      const parsed = new Date(endDate);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ message: 'endDate must be a valid date' });
+      }
+      normalizedEndDate = parsed;
+    }
+
+    // rewards: accept array (joined), string (as-is), any scalar (String()),
+    // and nullish ('') — never a shape the String schema cannot store.
+    let normalizedRewards = '';
+    if (Array.isArray(rewards)) {
+      normalizedRewards = rewards.filter((r) => r !== undefined && r !== null).map((r) => String(r)).join(', ');
+    } else if (rewards !== undefined && rewards !== null) {
+      normalizedRewards = typeof rewards === 'string' ? rewards : String(rewards);
+    }
+
     const community = await SellerCommunity.findById(req.params.id);
     if (!community) {
       return res.status(404).json({ message: 'Community not found' });
@@ -107,11 +135,17 @@ router.post('/:id/challenges', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only moderators can create challenges' });
     }
 
-    community.challenges.push({ title, description, endDate, rewards });
+    community.challenges.push({
+      title: title.trim(),
+      description,
+      endDate: normalizedEndDate,
+      rewards: normalizedRewards,
+    });
     await community.save();
 
     res.json(community);
   } catch (error) {
+    console.error('Create challenge error:', error);
     res.status(500).json({ message: 'Failed to create challenge' });
   }
 });

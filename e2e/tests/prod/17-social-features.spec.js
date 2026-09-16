@@ -327,7 +327,8 @@ test.describe('17 - Social features (production)', () => {
       token: alexToken,
       body: { title: 'E2E Challenge', description: 'test', endDate: end.toISOString(), rewards: [] },
     });
-    // Challenges endpoint may 500 if schema doesn't match exactly
-    expect([200, 500]).toContain(ch.status);
+    // Fixed in TDD round 26: array-shaped rewards used to CastError -> 500
+    // (the old tolerance `expect([200, 500]).toContain(ch.status)` is gone).
+    expect(ch.status, JSON.stringify(ch.data)).toBe(200);
   });
 });

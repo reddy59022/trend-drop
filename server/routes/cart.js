@@ -3,6 +3,7 @@ const router = express.Router();
 const { auth } = require('../middleware/auth');
 const Cart = require('../models/Cart');
 const Listing = require('../models/Listing');
+const Offer = require('../models/Offer');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
@@ -11,6 +12,47 @@ const { getPreferredCarrier, generateLabel } = require('../config/shipping');
 const { isValidObjectId } = require('../utils/validators');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
+
+// Shared per-line pricing for cart checkout (TDD R26). The amount-parity
+// gate and the commit loop MUST use identical math, so it lives in ONE
+// function. Mirrors create-intent's authorization math (routes/payments.js):
+// item subtotal and buyer protection scale linearly with qty; shipping is
+// charged per label on the COMBINED weight. `price` is the resolved price
+// basis (list price, or the accepted-offer price the buyer actually paid for)
+// — see the PRICE BASIS section in POST /checkout.
+const computeCartLineFinancials = (listing, seller, sellerCountry, toCountry, qty, price) => {
+  const salePrice = price != null ? price : listing.price;
+  const combinedWeight = Math.round(((listing.weight || 0.5) * qty) * 1000) / 1000;
+  const breakdown = calculatePaymentBreakdown(
+    salePrice,
+    sellerCountry,
+    toCountry,
+    combinedWeight
+  );
+  const itemSubtotal = Math.round(salePrice * qty * 100) / 100;
+  const protectionTotal = Math.round(breakdown.buyer.buyerProtectionFee * qty * 100) / 100;
+  const lineTotal = Math.round((itemSubtotal + breakdown.buyer.shippingCost + protectionTotal) * 100) / 100;
+  const platformTotal = Math.round(breakdown.seller.platformFee * qty * 100) / 100;
+  const earningsTotal = Math.round(breakdown.seller.sellerEarnings * qty * 100) / 100;
+  return { combinedWeight, breakdown, itemSubtotal, protectionTotal, lineTotal, platformTotal, earningsTotal };
+};
+
+// The only thing that may legitimately lower a cart line's charge is an
+// ACCEPTED offer, and it is always resolved SERVER-SIDE for THIS buyer (never
+// from client-supplied price data). Mirrors create-intent / confirm-batch.
+const resolveAcceptedOfferPrice = async (listing, buyerId) => {
+  const offer = await Offer.findOne({
+    listing: listing._id,
+    buyer: buyerId,
+    status: 'accepted',
+  }).select('acceptedPrice counterAmount amount');
+  if (!offer) return null;
+  const raw = offer.acceptedPrice != null
+    ? offer.acceptedPrice
+    : (offer.counterAmount != null ? offer.counterAmount : offer.amount);
+  const price = Number(raw);
+  return Number.isFinite(price) && price > 0 ? price : null;
+};
 
 // ===================== ABANDONED CART RECOVERY =====================
 // Cart management with automatic expiration and email/SMS reminders
@@ -178,6 +220,7 @@ router.post('/checkout', auth, async (req, res) => {
     }
     const { findPaymentIntent } = require('../config/payments');
     const { verifyIntentBinding } = require('../config/payments');
+    const { verifyIntentAmount } = require('../config/payments');
     let pi;
     try {
       pi = await findPaymentIntent(paymentIntentId);
@@ -278,6 +321,94 @@ router.post('/checkout', auth, async (req, res) => {
       }
     }
 
+    // ============================================================
+    // REVENUE INTEGRITY (TDD R26): AMOUNT PARITY + PRICE BASIS.
+    //
+    // AMOUNT PARITY: the binding gate above proves the intent was authorized
+    // by THIS buyer for THESE items, but binding metadata carries only
+    // itemIds — NOT quantities. Without an amount check, a buyer can authorize
+    // ONE unit, inflate the cart line to N units, and checkout: the seller
+    // would be credited N× earnings (plus N-unit shipping/protection) that
+    // were never authorized, and the platform funds the gap. Buy-now
+    // (routes/transactions.js), offers and confirm-batch (routes/payments.js)
+    // already enforce this via verifyIntentAmount — the cart was the only
+    // money path missing it. Planned totals use the SAME math as the commit
+    // loop below (shared computeCartLineFinancials) and mirror create-intent's
+    // authorization (its line totals minus the promo/bundle discounts it
+    // already subtracted from the authorized amount).
+    //
+    // PRICE BASIS: an accepted offer is the only thing that may legitimately
+    // lower a line's charge. The client's Cart page sends `negotiatedPrice` to
+    // create-intent, which resolves the accepted offer SERVER-SIDE and
+    // authorizes the OFFER total; but this endpoint priced every line at
+    // listing.price and ignored offers entirely — so an offer-priced
+    // authorization was billed/credited at list price (the platform funds the
+    // gap), and with an amount gate it would dead-end forever. The basis is
+    // resolved here, server-side, from the AUTHORIZATION: use the list basis
+    // when it is covered, else the offer basis. Nothing client-supplied is
+    // trusted, and whatever the buyer paid for is what gets recorded.
+    // Authoritative-only semantics live inside verifyIntentAmount: intents
+    // without a real amount + binding metadata (legacy test mocks) pass and
+    // keep the list-price behaviour.
+    // ============================================================
+    const plannedLines = [];
+    const plannedPriceByListing = new Map();
+    let listTotal = 0;
+    let offerTotal = 0;
+    let hasOfferBasis = false;
+    for (const item of cart.items) {
+      const plannedListing = await Listing.findById(item.listing?._id || item.listing);
+      if (!plannedListing) continue; // availability was already rejected above
+      const plannedQty = Math.max(1, Math.floor(item.quantity || 1));
+      const plannedSeller = await User.findById(plannedListing.seller);
+      const plannedSellerCountry = plannedSeller?.country || plannedListing.shipsFrom || 'US';
+      const offerPrice = await resolveAcceptedOfferPrice(plannedListing, req.user._id);
+
+      const listLine = computeCartLineFinancials(
+        plannedListing, plannedSeller, plannedSellerCountry, toCountry, plannedQty, plannedListing.price
+      );
+      listTotal += listLine.lineTotal;
+
+      if (offerPrice != null) {
+        hasOfferBasis = true;
+        const offerLine = computeCartLineFinancials(
+          plannedListing, plannedSeller, plannedSellerCountry, toCountry, plannedQty, offerPrice
+        );
+        offerTotal += offerLine.lineTotal;
+        plannedLines.push({ listing: plannedListing, offerPrice });
+      } else {
+        offerTotal += listLine.lineTotal;
+        plannedLines.push({ listing: plannedListing, offerPrice: null });
+      }
+    }
+
+    const round2 = (n) => Math.round(n * 100) / 100;
+    const metaDiscount = (Number(pi.metadata?.promoDiscount) || 0) + (Number(pi.metadata?.bundleDiscount) || 0);
+    const expectedListCents = Math.round((round2(listTotal) - metaDiscount) * 100);
+    const expectedOfferCents = Math.round((round2(offerTotal) - metaDiscount) * 100);
+
+    const authorizedCents = Number(pi.amount);
+    const authorizedIsReal = Number.isFinite(authorizedCents) && authorizedCents > 0
+      && (pi.metadata?.buyerId || pi.metadata?.itemIds);
+    let priceBasis = 'list';
+    if (authorizedIsReal && hasOfferBasis
+      && authorizedCents < expectedListCents && authorizedCents >= expectedOfferCents) {
+      priceBasis = 'offer';
+    }
+
+    const expectedCents = priceBasis === 'offer' ? expectedOfferCents : expectedListCents;
+    for (const planned of plannedLines) {
+      plannedPriceByListing.set(
+        String(planned.listing._id),
+        priceBasis === 'offer' && planned.offerPrice != null ? planned.offerPrice : planned.listing.price
+      );
+    }
+
+    const amountCheck = verifyIntentAmount(pi, expectedCents);
+    if (!amountCheck.ok) {
+      return res.status(400).json({ message: amountCheck.reason });
+    }
+
     // Process each item in cart
     const createdTransactions = [];
 
@@ -291,18 +422,14 @@ router.post('/checkout', auth, async (req, res) => {
       const seller = await User.findById(listing.seller);
       const sellerCountry = seller?.country || listing.shipsFrom || 'US';
 
-      const combinedWeight = Math.round(((listing.weight || 0.5) * qty) * 1000) / 1000;
-      const breakdown = calculatePaymentBreakdown(
-        listing.price,
-        sellerCountry,
-        toCountry,
-        combinedWeight
-      );
-      const itemSubtotal = Math.round(listing.price * qty * 100) / 100;
-      const protectionTotal = Math.round(breakdown.buyer.buyerProtectionFee * qty * 100) / 100;
-      const lineTotal = Math.round((itemSubtotal + breakdown.buyer.shippingCost + protectionTotal) * 100) / 100;
-      const platformTotal = Math.round(breakdown.seller.platformFee * qty * 100) / 100;
-      const earningsTotal = Math.round(breakdown.seller.sellerEarnings * qty * 100) / 100;
+      // Same price basis the amount gate just validated (never re-derived, so
+      // authorization and recorded money can never drift apart).
+      const salePrice = plannedPriceByListing.has(String(listing._id))
+        ? plannedPriceByListing.get(String(listing._id))
+        : listing.price;
+
+      const { combinedWeight, breakdown, itemSubtotal, protectionTotal, lineTotal, platformTotal, earningsTotal } =
+        computeCartLineFinancials(listing, seller, sellerCountry, toCountry, qty, salePrice);
 
       const sellerAddress = seller?.shippingAddress ? {
         street1: seller.shippingAddress.street1,

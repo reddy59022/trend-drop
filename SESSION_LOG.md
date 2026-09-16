@@ -261,7 +261,7 @@ once generated from the route list._
 
 ### D. Remaining production quirks (tolerated in tests, not bugs)
 - `POST /api/shipping/calculate-breakdown` returns 500 on prod (likely missing config deps in test env)
-- `POST /api/seller-communities/:id/challenges` returns 500 (schema mismatch on `rewards` field)
+- ~~`POST /api/seller-communities/:id/challenges` returns 500 (schema mismatch on `rewards` field)~~ → **FIXED (TDD round 26)**: the endpoint now normalizes array/string/scalar `rewards` onto the schema's String shape and answers 400 (not 500) for a missing title or a malformed `endDate`. E2E spec 17 now asserts HTTP 200 strictly (the old `expect([200, 500])` tolerance is deleted).
 - `POST /api/advanced-shipping` returns 500 (model not fully configured in test env)
 - These are infrastructure/configuration issues, not code bugs
 
