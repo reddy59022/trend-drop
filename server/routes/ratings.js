@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Rating = require('../models/Rating');
 const Transaction = require('../models/Transaction');
 const { auth } = require('../middleware/auth');
@@ -8,6 +9,15 @@ const { auth } = require('../middleware/auth');
 router.post('/', auth, async (req, res) => {
   try {
     const { listingId, rating, review } = req.body;
+    // Validate body ids/values BEFORE querying: a malformed listingId would
+    // otherwise throw a CastError that this local catch turns into a 500
+    // (bypassing the global CastError->400 error mapping).
+    if (!listingId || !mongoose.Types.ObjectId.isValid(String(listingId))) {
+      return res.status(400).json({ message: 'Invalid listingId' });
+    }
+    if (review !== undefined && review !== null && (typeof review !== 'string' || review.length > 1000)) {
+      return res.status(400).json({ message: 'Review must be a string of 1000 characters or fewer' });
+    }
     const numericRating = Number(rating);
     if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
       return res.status(400).json({ message: 'Rating must be a number between 1 and 5' });
@@ -25,11 +35,14 @@ router.post('/', auth, async (req, res) => {
       reviewer: req.user._id,
       seller: txn.seller,
       rating: numericRating,
-      review,
+      review: review || '',
     });
     await newRating.populate(['reviewer', 'listing']);
     res.status(201).json(newRating);
   } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -67,6 +80,11 @@ router.get('/seller/:sellerId', async (req, res) => {
 // GET /api/ratings/listing/:listingId
 router.get('/listing/:listingId', async (req, res) => {
   try {
+    // A malformed id throws a CastError that the local catch would turn into
+    // a 500 — answer 400 before touching the DB.
+    if (!mongoose.Types.ObjectId.isValid(req.params.listingId)) {
+      return res.status(400).json({ message: 'Invalid listingId' });
+    }
     const ratings = await Rating.find({ listing: req.params.listingId })
       .populate('reviewer', 'name avatar')
       .sort({ createdAt: -1 });

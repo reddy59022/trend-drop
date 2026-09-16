@@ -8,6 +8,14 @@ router.post('/:listingId', auth, async (req, res) => {
   try {
     const { listingId } = req.params;
 
+    // The listing must exist: a valid-but-nonexistent id would otherwise
+    // persist an orphan view row whose populated listing resolves to null.
+    const Listing = require('../models/Listing');
+    const listing = await Listing.findById(listingId);
+    if (!listing) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+
     // Check-then-create: return 200 "Already viewed" when a record exists.
     // (The unique index below is a backstop for races — two concurrent
     // creates can still race past the check, in which case the loser's
