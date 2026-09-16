@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
+const { isValidObjectId } = require('../utils/validators');
 const Video = require('../models/Video');
 const Listing = require('../models/Listing');
 
@@ -34,6 +35,12 @@ router.get('/public', auth, async (req, res) => {
 router.post('/upload', auth, async (req, res) => {
   try {
     const { listingId, videoUrl, thumbnailUrl, duration, title, description, effects, tags } = req.body;
+
+    // Hostile-input guard: an uncastable listingId (123, {}, "abc") used to
+    // reach findById() and throw a CastError -> 500.
+    if (!isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Invalid listingId' });
+    }
 
     const listing = await Listing.findById(listingId);
     if (!listing) {
@@ -83,9 +90,48 @@ router.get('/:id', auth, async (req, res) => {
 // PUT /api/video-shopping/:id - Update video
 router.put('/:id', auth, async (req, res) => {
   try {
+    // Hostile-input guard. The raw body was previously passed straight into
+    // findOneAndUpdate(), which (a) allowed a client to overwrite ANY field
+    // (seller, status, analytics), and (b) crashed: `title: {}` fails casting,
+    // and an ARRAY body is interpreted by Mongoose as an aggregation pipeline
+    // and rejected by the server ("Each element of the 'pipeline' array must be
+    // an object"). Only owner-editable fields are accepted, each type-checked.
+    if (Array.isArray(req.body) || req.body === null || typeof req.body !== 'object') {
+      return res.status(400).json({ message: 'Invalid request body' });
+    }
+    const update = {};
+    for (const field of ['title', 'description', 'thumbnailUrl']) {
+      const value = req.body[field];
+      if (value === undefined) continue;
+      if (typeof value !== 'string') {
+        return res.status(400).json({ message: `${field} must be a string` });
+      }
+      update[field] = value;
+    }
+    for (const field of ['effects', 'tags']) {
+      const value = req.body[field];
+      if (value === undefined) continue;
+      if (!Array.isArray(value)) {
+        return res.status(400).json({ message: `${field} must be an array` });
+      }
+      update[field] = value;
+    }
+    if (req.body.isPublic !== undefined) {
+      if (typeof req.body.isPublic !== 'boolean') {
+        return res.status(400).json({ message: 'isPublic must be a boolean' });
+      }
+      update.isPublic = req.body.isPublic;
+    }
+    if (req.body.duration !== undefined) {
+      if (typeof req.body.duration !== 'number' || !Number.isFinite(req.body.duration)) {
+        return res.status(400).json({ message: 'duration must be a number' });
+      }
+      update.duration = req.body.duration;
+    }
+
     const video = await Video.findOneAndUpdate(
       { _id: req.params.id, seller: req.user._id },
-      req.body,
+      update,
       { new: true }
     );
 

@@ -67,13 +67,40 @@ router.get('/sizes', async (req, res) => {
 router.post('/save', auth, async (req, res) => {
   try {
     const { query, filters, name } = req.body;
-    
+
+    // Hostile-input guard. This handler dereferenced `filters.category` while
+    // building the default name, so a missing non-object `filters` threw a
+    // TypeError, and `query` is a REQUIRED String path (absent/wrong-typed query
+    // was a ValidationError). Both surfaced as 500s.
+    if (typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ message: 'query is required' });
+    }
+    if (filters !== undefined && filters !== null && (typeof filters !== 'object' || Array.isArray(filters))) {
+      return res.status(400).json({ message: 'filters must be an object' });
+    }
+    if (name !== undefined && name !== null && typeof name !== 'string') {
+      return res.status(400).json({ message: 'name must be a string' });
+    }
+    const safeFilters = filters || {};
+    for (const field of ['category', 'brand', 'size', 'condition', 'color', 'location']) {
+      const value = safeFilters[field];
+      if (value !== undefined && value !== null && typeof value !== 'string') {
+        return res.status(400).json({ message: `filters.${field} must be a string` });
+      }
+    }
+    for (const field of ['minPrice', 'maxPrice']) {
+      const value = safeFilters[field];
+      if (value !== undefined && value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
+        return res.status(400).json({ message: `filters.${field} must be a number` });
+      }
+    }
+
     const AdvancedSearch = require('../models/AdvancedSearch');
     const search = await AdvancedSearch.create({
       userId: req.user._id,
       query,
-      filters,
-      name: name || `${filters.category || 'All'} search`,
+      filters: safeFilters,
+      name: name || `${safeFilters.category || 'All'} search`,
       saved: true,
     });
     

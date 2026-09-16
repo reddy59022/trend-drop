@@ -57,6 +57,13 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email, and password are required' });
     }
+    // Hostile-input guard: all three are consumed as strings below
+    // (email.toLowerCase(), password.length, bcrypt hashing). A non-string
+    // either throws a TypeError or silently skips the length check — both
+    // surfaced as a 500.
+    if (typeof name !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ message: 'Name, email, and password must be strings' });
+    }
     if (password.length < 8) {
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
     }
@@ -187,6 +194,13 @@ router.get('/verify-email', async (req, res) => {
 
 // Shared verification logic used by both POST and GET routes
 async function handleVerification(token, res) {
+  // Hostile-input guard: `token` is matched against a String path, so a
+  // non-string (a JSON object in the body, or ?token[]=1 on the GET route)
+  // makes Mongoose throw a CastError -> 500. One guard here covers both the
+  // POST and GET routes.
+  if (typeof token !== 'string' || !token.trim()) {
+    return res.status(400).json({ message: 'A valid verification token is required' });
+  }
   // Try pending user first
   const pending = await PendingUser.findOne({
     verificationToken: token,
@@ -238,6 +252,11 @@ router.post('/resend-verification', async (req, res) => {
     if (!email) {
       return res.status(400).json({ message: 'Email is required' });
     }
+    // Hostile-input guard: `.toLowerCase()` on a non-string throws a TypeError
+    // -> 500.
+    if (typeof email !== 'string') {
+      return res.status(400).json({ message: 'A valid email address is required' });
+    }
 
     const normalizedEmail = email.toLowerCase();
 
@@ -288,6 +307,12 @@ router.post('/login', async (req, res) => {
 
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required' });
+    }
+    // Hostile-input guard: `.toLowerCase()` on a non-string throws a TypeError
+    // -> 500. A wrong-typed credential is simply an invalid credential, so it
+    // gets the same message as a bad email/password (nothing extra leaked).
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ message: 'Invalid email or password' });
     }
 
     const user = await User.findOne({ email: email.toLowerCase() }).populate('followers', 'name avatar').populate('following', 'name avatar');
@@ -623,6 +648,11 @@ router.post('/forgot-password', async (req, res) => {
     if (!email) {
       return res.status(400).json({ message: 'Email is required' });
     }
+    // Hostile-input guard: `.toLowerCase()` on a non-string throws a TypeError
+    // -> 500.
+    if (typeof email !== 'string') {
+      return res.status(400).json({ message: 'A valid email address is required' });
+    }
 
     const user = await User.findOne({ email: email.toLowerCase() });
 
@@ -655,6 +685,14 @@ router.post('/reset-password', async (req, res) => {
 
     if (!token || !password) {
       return res.status(400).json({ message: 'Token and new password are required' });
+    }
+    // Hostile-input guard: `token` is matched against a String path (a
+    // non-string makes Mongoose throw a CastError -> 500) and `password` is
+    // hashed by the User pre-save hook (bcrypt throws on a non-string, and
+    // `password.length` on a number is undefined so the length check below
+    // would silently pass).
+    if (typeof token !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ message: 'Token and new password must be strings' });
     }
     if (password.length < 8) {
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
@@ -735,6 +773,44 @@ router.put('/profile', auth, async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const allowed = ['name', 'bio', 'country', 'currency', 'language', 'phone', 'phoneCode', 'closetName', 'location', 'shippingAddress', 'isVerified'];
+
+    // Hostile-input guard. These values are written straight into the schema by
+    // the loop below, so a wrong-typed value either throws a CastError ("Cast
+    // to string failed for value ...") or stringifies into something the schema
+    // then rejects on maxlength (country is max 2 chars) — both used to surface
+    // as a 500. Lengths mirror models/User.js exactly.
+    const STRING_FIELDS = ['name', 'bio', 'country', 'currency', 'language', 'phone', 'phoneCode', 'closetName', 'location'];
+    const MAX_LENGTH = { name: 50, bio: 500, country: 2 };
+    for (const field of STRING_FIELDS) {
+      const value = req.body[field];
+      if (value === undefined) continue;
+      if (typeof value !== 'string') {
+        return res.status(400).json({ message: `${field} must be a string` });
+      }
+      const max = MAX_LENGTH[field];
+      if (max !== undefined && value.trim().length > max) {
+        return res.status(400).json({ message: `${field} must be at most ${max} characters` });
+      }
+    }
+    if (req.body.isVerified !== undefined && typeof req.body.isVerified !== 'boolean') {
+      return res.status(400).json({ message: 'isVerified must be a boolean' });
+    }
+    if (req.body.shippingAddress !== undefined
+      && (req.body.shippingAddress === null
+        || typeof req.body.shippingAddress !== 'object'
+        || Array.isArray(req.body.shippingAddress))) {
+      return res.status(400).json({ message: 'shippingAddress must be an object' });
+    }
+    // Nested objects are merged (not replaced) below, so they must be plain
+    // objects: spreading an array/string would write numeric keys into a typed
+    // subdocument and fail casting on save.
+    for (const field of ['socialLinks', 'store', 'payoutMethod']) {
+      const value = req.body[field];
+      if (value === undefined || value === null) continue;
+      if (typeof value !== 'object' || Array.isArray(value)) {
+        return res.status(400).json({ message: `${field} must be an object` });
+      }
+    }
 
     allowed.forEach(field => {
       if (req.body[field] !== undefined) {

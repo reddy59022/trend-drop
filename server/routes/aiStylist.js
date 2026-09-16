@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
+const { isValidObjectId } = require('../utils/validators');
 const AIStylist = require('../models/AIStylist');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -130,6 +131,24 @@ router.post('/generate', auth, async (req, res) => {
 router.post('/outfits', auth, async (req, res) => {
   try {
     const { name, items } = req.body;
+
+    // Hostile-input guard: `items` is an array of listing refs (a non-array such
+    // as the string "nope" threw "Cast to embedded failed" -> 500) and each
+    // entry must be a real ObjectId (a number passed the old truthiness checks
+    // and failed on cast). `name` goes to a String path.
+    if (name !== undefined && name !== null && typeof name !== 'string') {
+      return res.status(400).json({ message: 'name must be a string' });
+    }
+    if (items !== undefined && items !== null && !Array.isArray(items)) {
+      return res.status(400).json({ message: 'items must be an array' });
+    }
+    const outfitItems = Array.isArray(items) ? items : [];
+    for (const item of outfitItems) {
+      if (!isValidObjectId(item)) {
+        return res.status(400).json({ message: 'items must contain valid listing ids' });
+      }
+    }
+
     const stylist = await AIStylist.findOne({ user: req.user._id });
     if (!stylist) {
       const stylistNew = await AIStylist.create({ user: req.user._id });
@@ -137,7 +156,7 @@ router.post('/outfits', auth, async (req, res) => {
 
     const outfit = {
       name: name || 'My Outfit',
-      items: items || [],
+      items: outfitItems,
       createdAt: new Date(),
     };
 

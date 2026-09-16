@@ -10,6 +10,24 @@ router.post('/', auth, async (req, res) => {
     const { name, description, image } = req.body;
     if (!name) return res.status(400).json({ message: 'Collection name is required' });
 
+    // Hostile-input guard: name/description are String paths with schema
+    // maxlengths (100 / 500), so an over-long value was a ValidationError -> 500.
+    if (typeof name !== 'string') {
+      return res.status(400).json({ message: 'Collection name must be a string' });
+    }
+    if (name.trim().length > 100) {
+      return res.status(400).json({ message: 'Collection name must be at most 100 characters' });
+    }
+    if (description !== undefined && description !== null && typeof description !== 'string') {
+      return res.status(400).json({ message: 'description must be a string' });
+    }
+    if (typeof description === 'string' && description.length > 500) {
+      return res.status(400).json({ message: 'description must be at most 500 characters' });
+    }
+    if (image !== undefined && image !== null && typeof image !== 'string') {
+      return res.status(400).json({ message: 'image must be a string' });
+    }
+
     const count = await Collection.countDocuments({ seller: req.user._id });
     if (count >= 20) {
       return res.status(400).json({ message: 'Maximum of 20 collections allowed' });

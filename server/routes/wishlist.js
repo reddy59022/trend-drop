@@ -3,6 +3,7 @@ const router = express.Router();
 const Wishlist = require('../models/Wishlist');
 const Listing = require('../models/Listing');
 const { auth } = require('../middleware/auth');
+const { isValidObjectId } = require('../utils/validators');
 
 // GET /api/wishlist - Get user's wishlist
 router.get('/', auth, async (req, res) => {
@@ -30,6 +31,11 @@ router.post('/', auth, async (req, res) => {
     // the wishlist became permanently unusable.
     if (!listingId) {
       return res.status(400).json({ message: 'listingId is required' });
+    }
+    // Hostile-input guard: `123` (or "abc", {}, []) passes the truthiness check
+    // above but cannot be cast, so findById() threw a CastError -> 500.
+    if (!isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Invalid listingId' });
     }
 
     const listing = await Listing.findById(listingId).select('_id');

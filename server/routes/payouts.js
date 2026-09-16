@@ -5,6 +5,7 @@ const Transaction = require('../models/Transaction');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const { auth } = require('../middleware/auth');
+const { isValidObjectId } = require('../utils/validators');
 const { currencies } = require('../config/currencies');
 
 // Platform commission is 8% of item price (matching payments.js countryCommissions)
@@ -337,6 +338,11 @@ router.post('/process/:transactionId', auth, async (req, res) => {
 router.post('/auto-create', auth, async (req, res) => {
   try {
     const { transactionId } = req.body;
+    // Hostile-input guard: an uncastable transactionId (123, {}, "abc") used to
+    // reach findById() and throw a CastError -> 500.
+    if (!isValidObjectId(transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
+    }
     const transaction = await Transaction.findById(transactionId)
       .populate('listing')
       .populate('seller');

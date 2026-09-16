@@ -69,6 +69,11 @@ router.post('/push-token', auth, async (req, res) => {
     if (!token) {
       return res.status(400).json({ message: 'Push token is required' });
     }
+    // Hostile-input guard: the token is stored on a String path, so a non-string
+    // (e.g. {}) threw "Cast to string failed for value ..." -> 500.
+    if (typeof token !== 'string') {
+      return res.status(400).json({ message: 'Push token must be a string' });
+    }
 
     // Store the device token in the push registry (clean, multi-device).
     // MobilePreferences.deviceInfo is also kept in sync for backward

@@ -9,6 +9,45 @@ router.post('/', auth, async (req, res) => {
   try {
     const { name, query, filters, notifyFrequency, emailNotify, pushNotify } = req.body;
 
+    // Hostile-input guard. Every value below is written straight into the
+    // schema, so a wrong-typed value either throws "Cast to string failed" or
+    // trips a schema maxlength/enum — both surfaced as a 500.
+    if (name !== undefined && name !== null && typeof name !== 'string') {
+      return res.status(400).json({ message: 'name must be a string' });
+    }
+    if (name && name.length > 100) {
+      return res.status(400).json({ message: 'name must be at most 100 characters' });
+    }
+    if (query !== undefined && query !== null && typeof query !== 'string') {
+      return res.status(400).json({ message: 'query must be a string' });
+    }
+    if (filters !== undefined && filters !== null && (typeof filters !== 'object' || Array.isArray(filters))) {
+      return res.status(400).json({ message: 'filters must be an object' });
+    }
+    if (filters) {
+      for (const field of ['category', 'brand', 'size', 'condition', 'sort']) {
+        const value = filters[field];
+        if (value !== undefined && value !== null && typeof value !== 'string') {
+          return res.status(400).json({ message: `filters.${field} must be a string` });
+        }
+      }
+      for (const field of ['minPrice', 'maxPrice']) {
+        const value = filters[field];
+        if (value !== undefined && value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
+          return res.status(400).json({ message: `filters.${field} must be a number` });
+        }
+      }
+    }
+    if (notifyFrequency !== undefined && !['instant', 'daily', 'weekly', 'never'].includes(notifyFrequency)) {
+      return res.status(400).json({ message: 'notifyFrequency must be one of instant, daily, weekly, never' });
+    }
+    if (emailNotify !== undefined && typeof emailNotify !== 'boolean') {
+      return res.status(400).json({ message: 'emailNotify must be a boolean' });
+    }
+    if (pushNotify !== undefined && typeof pushNotify !== 'boolean') {
+      return res.status(400).json({ message: 'pushNotify must be a boolean' });
+    }
+
     // Limit saved searches per user
     const count = await SavedSearch.countDocuments({ user: req.user._id });
     if (count >= 50) {

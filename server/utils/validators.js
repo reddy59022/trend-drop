@@ -13,6 +13,20 @@ const MAGIC_PARAM_VALUES = new Set([
 ]);
 
 /**
+ * Strict ObjectId check for values that arrive in a request (body or params).
+ *
+ * `mongoose.Types.ObjectId.isValid()` is NOT a safe gate for user input: it
+ * returns true for any number (e.g. 123) and for ANY 12-character string, yet
+ * Mongoose cannot cast a number into an ObjectId. Routes that guarded with it
+ * therefore still reached `findById(123)` and threw a CastError -> 500.
+ * Only the canonical 24-char hex form (what Mongoose produces and what clients
+ * send back) and real ObjectId instances are accepted — both always cast.
+ */
+const isValidObjectId = (value) =>
+  value instanceof mongoose.Types.ObjectId
+  || (typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value));
+
+/**
  * Express middleware that validates every ObjectId-style route param
  * (:id, :userId, :listingId, :orderId, :offerId, :conversationId,
  * :transactionId, :commentId, :sellerId, :categoryId, etc.) found on
@@ -27,17 +41,11 @@ const assertObjectId = (req, res, next) => {
     if (!/Id$|^id$/i.test(key)) continue;
     // Magic strings (e.g. 'me') are legitimate non-ObjectId values.
     if (MAGIC_PARAM_VALUES.has(String(value).toLowerCase())) continue;
-    if (!mongoose.Types.ObjectId.isValid(value)) {
+    if (!isValidObjectId(value)) {
       return res.status(400).json({ message: 'Invalid ID', param: key });
     }
   }
   next();
 };
-
-/**
- * Same as assertObjectId but for a single named param (for inline use
- * in routes where a full middleware isn't convenient).
- */
-const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 
 module.exports = { assertObjectId, isValidObjectId };

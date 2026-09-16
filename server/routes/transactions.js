@@ -6,6 +6,7 @@ const User = require('../models/User');
 const Offer = require('../models/Offer');
 const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
+const { isValidObjectId } = require('../utils/validators');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
 const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding } = require('../config/payments');
 const { boostConfig } = require('../config/boost');
@@ -339,6 +340,12 @@ router.post('/', auth, async (req, res) => {
     const rollback = createPurchaseRollback();
     try {
       const { listingId, shippingAddress, buyerCountry } = req.body;
+
+      // Hostile-input guard: a truthy-but-uncastable id (123, {}, "abc") used to
+      // reach findById() and throw a CastError -> 500.
+      if (!isValidObjectId(listingId)) {
+        return res.status(400).json({ message: 'Invalid listingId' });
+      }
 
       const listing = await Listing.findById(listingId);
       if (!listing) {

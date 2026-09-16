@@ -21,7 +21,19 @@ router.get('/', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { name, description, isPrivate } = req.body;
-    
+
+    // Hostile-input guard: `name` is a required String path, so a missing or
+    // wrong-typed name was a ValidationError -> 500.
+    if (typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ message: 'Community name is required' });
+    }
+    if (description !== undefined && description !== null && typeof description !== 'string') {
+      return res.status(400).json({ message: 'description must be a string' });
+    }
+    if (isPrivate !== undefined && typeof isPrivate !== 'boolean') {
+      return res.status(400).json({ message: 'isPrivate must be a boolean' });
+    }
+
     const inviteCode = crypto.randomBytes(6).toString('hex').toUpperCase();
     
     const community = await SellerCommunity.create({

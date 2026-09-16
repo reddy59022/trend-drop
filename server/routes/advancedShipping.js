@@ -17,7 +17,20 @@ router.get('/', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { carrier, apiKey, accountNumber } = req.body;
-    
+
+    // Hostile-input guard: carrier (required + enum) and apiKey (required) are
+    // String paths — a missing or wrong-typed value was a ValidationError -> 500.
+    const CARRIERS = ['UPS', 'FedEx', 'DHL', 'USPS'];
+    if (!CARRIERS.includes(carrier)) {
+      return res.status(400).json({ message: `carrier must be one of ${CARRIERS.join(', ')}` });
+    }
+    if (typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ message: 'apiKey is required' });
+    }
+    if (accountNumber !== undefined && accountNumber !== null && typeof accountNumber !== 'string') {
+      return res.status(400).json({ message: 'accountNumber must be a string' });
+    }
+
     const integration = await ShippingIntegration.create({
       user: req.user._id,
       carrier,

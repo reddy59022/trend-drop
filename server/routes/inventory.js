@@ -115,7 +115,19 @@ router.post('/alerts', auth, async (req, res) => {
 router.put('/:id/auto-reorder', auth, async (req, res) => {
   try {
     const { enabled, quantity, supplier } = req.body;
-    
+
+    // Hostile-input guard: quantity is a Number path ("five" threw "Cast to
+    // Number failed" -> 500), enabled a Boolean path, supplier a String path.
+    if (enabled !== undefined && typeof enabled !== 'boolean') {
+      return res.status(400).json({ message: 'enabled must be a boolean' });
+    }
+    if (quantity !== undefined && (typeof quantity !== 'number' || !Number.isFinite(quantity))) {
+      return res.status(400).json({ message: 'quantity must be a number' });
+    }
+    if (supplier !== undefined && supplier !== null && typeof supplier !== 'string') {
+      return res.status(400).json({ message: 'supplier must be a string' });
+    }
+
     const item = await Inventory.findOneAndUpdate(
       { _id: req.params.id, seller: req.user._id },
       { autoReorder: { enabled, quantity, supplier } },
