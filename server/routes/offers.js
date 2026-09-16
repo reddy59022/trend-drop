@@ -6,6 +6,7 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const { auth } = require('../middleware/auth');
 const pushService = require('../services/pushService');
+const { isValidObjectId } = require('../utils/validators');
 
 // GA-3b: an offer can only be accepted while the listing is actually
 // purchasable. Accepting on a sold/unavailable listing told the buyer to
@@ -50,6 +51,10 @@ router.post('/', auth, async (req, res) => {
   try {
     const { listingId, amount, message } = req.body;
     const { currency } = req.body;
+
+    if (!listingId || !isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Invalid listingId' });
+    }
 
     const listing = await Listing.findById(listingId);
     if (!listing) {

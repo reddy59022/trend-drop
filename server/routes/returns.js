@@ -7,6 +7,7 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const { orderStates, isValidTransition } = require('../config/orderLifecycle');
+const { isValidObjectId } = require('../utils/validators');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
 
 // Reuse the listing image pipeline (Cloudinary in prod, deterministic mock in test).
@@ -38,6 +39,9 @@ router.post('/', auth, (req, res, next) => {
       images = uploadedUrls;
     } else if (typeof images === 'string' && images.trim().startsWith('[')) {
       try { images = JSON.parse(images); } catch { images = []; }
+    }
+    if (!transactionId || !isValidObjectId(transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
     }
     const transaction = await Transaction.findById(transactionId);
     if (!transaction) return res.status(404).json({ message: 'Transaction not found' });

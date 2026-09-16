@@ -8,6 +8,7 @@ const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
 const { calculatePaymentBreakdown } = require('../config/payments');
 const { getPreferredCarrier, generateLabel } = require('../config/shipping');
+const { isValidObjectId } = require('../utils/validators');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
 
@@ -62,7 +63,7 @@ router.post('/items', auth, async (req, res) => {
   try {
     const { listingId, quantity = 1 } = req.body;
 
-    if (!listingId) {
+    if (!listingId || !isValidObjectId(listingId)) {
       return res.status(400).json({ message: 'listingId is required' });
     }
 

@@ -3,6 +3,7 @@ const router = express.Router();
 const { auth, optionalAuth } = require('../middleware/auth');
 const Auction = require('../models/Auction');
 const Listing = require('../models/Listing');
+const { isValidObjectId } = require('../utils/validators');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 
@@ -27,6 +28,9 @@ router.post('/', auth, async (req, res) => {
     
     if (!listingId || !startTime || !endTime) {
       return res.status(400).json({ message: 'listingId, startTime, and endTime are required' });
+    }
+    if (!isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Invalid listingId' });
     }
     
     const listing = await Listing.findById(listingId);

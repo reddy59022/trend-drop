@@ -4,6 +4,7 @@ const { auth } = require('../middleware/auth');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
+const { isValidObjectId } = require('../utils/validators');
 
 // In-memory store for velocity tracking (in production, use Redis)
 const velocityTracker = new Map();
@@ -16,6 +17,9 @@ router.post('/check', auth, async (req, res) => {
     
     if (!listingId || !amount) {
       return res.status(400).json({ message: 'listingId and amount are required' });
+    }
+    if (!isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Invalid listingId' });
     }
     
     const risks = [];
@@ -112,7 +116,7 @@ router.post('/flag', auth, async (req, res) => {
   try {
     const { transactionId, reason, notes } = req.body;
     
-    if (!transactionId) {
+    if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'transactionId is required' });
     }
     

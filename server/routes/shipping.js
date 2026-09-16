@@ -8,6 +8,7 @@ const { countries, getCountry } = require('../config/countries');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
+const { isValidObjectId } = require('../utils/validators');
 const { generateLabelBuffer } = require('../config/labelGenerator');
 
 // GET /api/shipping/carriers - Get all carriers
@@ -407,6 +408,9 @@ router.get('/label/:transactionId', auth, async (req, res) => {
 router.post('/generate-label', auth, async (req, res) => {
   try {
     const { transactionId, carrier } = req.body;
+    if (!transactionId || !isValidObjectId(transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
+    }
 
     const transaction = await Transaction.findById(transactionId);
     if (!transaction) {
@@ -566,7 +570,7 @@ router.post('/tracking-event', async (req, res) => {
       return res.status(403).json({ message: 'Invalid tracking webhook secret' });
     }
     const { transactionId, status, trackingNumber, timestamp, location, description } = req.body;
-    if (!transactionId || !status) {
+    if (!transactionId || !status || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'transactionId and status are required' });
     }
     const txn = await Transaction.findById(transactionId);
@@ -616,6 +620,9 @@ router.post('/tracking-event', async (req, res) => {
 router.post('/confirm-received', auth, async (req, res) => {
   try {
     const { transactionId } = req.body;
+    if (!transactionId || !isValidObjectId(transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
+    }
 
     const transaction = await Transaction.findById(transactionId);
     if (!transaction) {

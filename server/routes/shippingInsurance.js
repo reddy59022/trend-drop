@@ -4,6 +4,7 @@ const { auth } = require('../middleware/auth');
 const ShippingInsurance = require('../models/ShippingInsurance');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
+const { isValidObjectId } = require('../utils/validators');
 
 // ===================== SELLER SHIPPING INSURANCE =====================
 // Optional insurance for sellers to protect against shipping loss/damage
@@ -52,7 +53,7 @@ router.post('/purchase', auth, async (req, res) => {
   try {
     const { transactionId, coverageType = 'standard' } = req.body;
 
-    if (!transactionId) {
+    if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'Transaction ID is required' });
     }
 

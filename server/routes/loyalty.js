@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const LoyaltyProgram = require('../models/LoyaltyProgram');
+const Listing = require('../models/Listing');
+const { isValidObjectId } = require('../utils/validators');
 
 // GET /api/loyalty - Get user loyalty status
 router.get('/', auth, async (req, res) => {
@@ -36,6 +38,18 @@ router.post('/earn', auth, async (req, res) => {
     const rule = EARN_RULES[reason];
     if (!rule) {
       return res.status(400).json({ message: 'Invalid or missing earn reason' });
+    }
+
+    // Optional listing reference must be a real listing — a garbage id would
+    // CastError the $push (500) and a ghost id would leave an orphan entry.
+    if (listingId !== undefined && listingId !== null && listingId !== '') {
+      if (!isValidObjectId(listingId)) {
+        return res.status(400).json({ message: 'Invalid listingId' });
+      }
+      const listingExists = await Listing.findById(listingId);
+      if (!listingExists) {
+        return res.status(404).json({ message: 'Listing not found' });
+      }
     }
 
     let points = 0;

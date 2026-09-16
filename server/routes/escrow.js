@@ -4,6 +4,7 @@ const { auth } = require('../middleware/auth');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
+const { isValidObjectId } = require('../utils/validators');
 
 // ===================== ESCROW SERVICE =====================
 // For high-value items (>$500), hold funds in escrow until both parties confirm satisfaction
@@ -15,6 +16,9 @@ router.post('/initiate', auth, async (req, res) => {
 
     if (!transactionId || amount === undefined || amount === null) {
       return res.status(400).json({ message: 'transactionId and amount are required' });
+    }
+    if (!isValidObjectId(transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
     }
     
     const transaction = await Transaction.findById(transactionId);
@@ -88,7 +92,7 @@ router.post('/confirm-buyer', auth, async (req, res) => {
   try {
     const { transactionId } = req.body;
     
-    if (!transactionId) {
+    if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'transactionId is required' });
     }
     
@@ -163,7 +167,7 @@ router.post('/confirm-seller', auth, async (req, res) => {
   try {
     const { transactionId } = req.body;
     
-    if (!transactionId) {
+    if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'transactionId is required' });
     }
     
@@ -238,7 +242,7 @@ router.post('/dispute', auth, async (req, res) => {
   try {
     const { transactionId, reason, evidence } = req.body;
     
-    if (!transactionId) {
+    if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'transactionId is required' });
     }
     
@@ -298,7 +302,7 @@ router.post('/resolve-dispute', auth, async (req, res) => {
   try {
     const { transactionId, resolution, releaseTo } = req.body;
     
-    if (!transactionId) {
+    if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'transactionId is required' });
     }
     

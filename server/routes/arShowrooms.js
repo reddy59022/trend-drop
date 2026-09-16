@@ -85,6 +85,9 @@ router.post('/', auth, async (req, res) => {
     
     res.status(201).json(showroom);
   } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Failed to create showroom' });
   }
 });

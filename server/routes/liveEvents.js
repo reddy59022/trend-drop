@@ -89,11 +89,19 @@ router.get('/:id', async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, listingIds, startTime, endTime, discount, maxViewers, thumbnail } = req.body;
-    
+
+    // listingIds must be valid ObjectIds — garbage strings would CastError the
+    // $in lookup (500), and ghost ids would leave the event pointing at void.
+    if (!Array.isArray(listingIds) || listingIds.length === 0 ||
+        !listingIds.every((id) => require('mongoose').Types.ObjectId.isValid(String(id)))) {
+      return res.status(400).json({ message: 'listingIds must be an array of valid listing ids' });
+    }
+
     // Verify all listings belong to user
     const listings = await Listing.find({ _id: { $in: listingIds } });
-    const allBelong = listings.every(l => l.seller.toString() === req.user._id.toString());
-    
+    const allBelong = listings.length === listingIds.length &&
+      listings.every(l => l.seller.toString() === req.user._id.toString());
+
     if (!allBelong) {
       return res.status(403).json({ message: 'All listings must be yours to host' });
     }

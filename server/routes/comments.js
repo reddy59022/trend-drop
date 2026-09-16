@@ -5,6 +5,7 @@ const Comment = require('../models/Comment');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const { broadcastToListing, sendNotificationToUser } = require('../websocket');
+const { isValidObjectId } = require('../utils/validators');
 
 // GET /api/comments/trending - Get trending hashtags (must be before /:listingId)
 router.get('/trending', async (req, res) => {
@@ -98,6 +99,9 @@ router.post('/:listingId', auth, async (req, res) => {
     
     // If it's a reply, validate parentId
     if (parentId) {
+      if (!isValidObjectId(parentId)) {
+        return res.status(400).json({ message: 'Invalid parentId' });
+      }
       const parent = await Comment.findById(parentId);
       if (!parent) {
         return res.status(404).json({ message: 'Parent comment not found' });

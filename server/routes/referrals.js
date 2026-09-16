@@ -3,6 +3,7 @@ const router = express.Router();
 const { auth } = require('../middleware/auth');
 const Referral = require('../models/Referral');
 const User = require('../models/User');
+const { isValidObjectId } = require('../utils/validators');
 
 // ===================== REFERRAL PROGRAM =====================
 // Track referrals with unique codes and reward both parties
@@ -84,6 +85,16 @@ router.post('/apply', async (req, res) => {
 
     // If userId provided, link the referral
     if (userId) {
+      // A garbage id would CastError the push (500) and a ghost id would
+      // inflate `uses` with a referral row pointing at no real user.
+      if (!isValidObjectId(userId)) {
+        return res.status(400).json({ message: 'Invalid userId' });
+      }
+      const linkedUser = await User.findById(userId);
+      if (!linkedUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
       // Check if user already used a referral
       const alreadyUsed = await Referral.findOne({ referred: userId });
       if (alreadyUsed) {

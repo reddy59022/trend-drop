@@ -4,6 +4,7 @@ const Message = require('../models/Message');
 const Offer = require('../models/Offer');
 const { auth } = require('../middleware/auth');
 const pushService = require('../services/pushService');
+const { isValidObjectId } = require('../utils/validators');
 
 // POST /api/messages - Start a conversation about a listing
 router.post('/', auth, async (req, res) => {
@@ -17,6 +18,12 @@ router.post('/', auth, async (req, res) => {
     if (!targetUserId) return res.status(400).json({ message: 'Recipient is required' });
     if (req.user._id.toString() === targetUserId) {
       return res.status(400).json({ message: 'Cannot message yourself' });
+    }
+    if (!isValidObjectId(targetUserId)) {
+      return res.status(400).json({ message: 'Invalid recipient' });
+    }
+    if (listingId && !isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Invalid listingId' });
     }
     let conversation = await Message.findOne({
       participants: { $all: [req.user._id, targetUserId] },
