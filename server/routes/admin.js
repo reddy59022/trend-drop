@@ -67,10 +67,18 @@ router.get('/dashboard', async (req, res) => {
 // GET /api/admin/users - List all users with filters
 router.get('/users', async (req, res) => {
   try {
-    const { role, search, page = 1, limit = 20 } = req.query;
+    const { asText, asNumber } = require('../utils/validators');
+    // Coerce hostile query shapes (?search[$gt]=, ?role[]=x) to scalars:
+    // an object reaching $regex throws CastError -> 500, and an object in
+    // query.role is a NoSQL operator injection.
+    const role = asText(req.query.role);
+    const rawSearch = asText(req.query.search);
+    const page = Math.max(1, Math.min(asNumber(req.query.page, 1) || 1, 100));
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
     const query = {};
     if (role) query.role = role;
-    if (search) {
+    if (rawSearch) {
+      const search = rawSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } },
@@ -80,15 +88,15 @@ router.get('/users', async (req, res) => {
     const users = await User.find(query)
       .select('-password')
       .sort({ createdAt: -1 })
-      .limit(Number(limit))
-      .skip((Number(page) - 1) * Number(limit));
+      .limit(limit)
+      .skip((page - 1) * limit);
 
     const total = await User.countDocuments(query);
 
     res.json({
       users,
-      totalPages: Math.ceil(total / Number(limit)),
-      currentPage: Number(page),
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
       total,
     });
   } catch (error) {

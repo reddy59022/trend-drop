@@ -55,9 +55,22 @@ const uploadListingImages = async (files) => {
 
 router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { category, brand, size, condition, minPrice, maxPrice, search, sort, page = 1, limit = 20 } = req.query;
-    const pageNum = Math.max(1, Math.min(Number(page) || 1, 100));
-    const limitNum = Math.max(1, Math.min(Number(limit) || 20, 50));
+    const { asText, asNumber } = require('../utils/validators');
+    // Query values arrive as objects/arrays for hostile inputs like
+    // ?minPrice[$gt]=1 or ?brand[]=x; coerce to scalars so Mongoose never
+    // sees an object where it casts (CastError -> 500).
+    const category = asText(req.query.category);
+    const brand = asText(req.query.brand);
+    const size = asText(req.query.size);
+    const condition = asText(req.query.condition);
+    const search = asText(req.query.search);
+    const sort = asText(req.query.sort);
+    const minPrice = asNumber(req.query.minPrice, undefined);
+    const maxPrice = asNumber(req.query.maxPrice, undefined);
+    const page = asNumber(req.query.page, 1);
+    const limit = asNumber(req.query.limit, 20);
+    const pageNum = Math.max(1, Math.min(page || 1, 100));
+    const limitNum = Math.max(1, Math.min(limit || 20, 50));
 
     let query = { available: true, sold: false, quantity: { $gt: 0 }, status: 'active' };
 
@@ -109,17 +122,18 @@ router.get('/', optionalAuth, async (req, res) => {
 
 router.get('/search', optionalAuth, async (req, res) => {
   try {
-    const { q, limit = 20, page = 1 } = req.query;
-    const search = q;
-    const pageNum = Math.max(1, Math.min(Number(page) || 1, 100));
-    const limitNum = Math.max(1, Math.min(Number(limit) || 20, 50));
+    const { asText, asNumber, escapeRegex } = require('../utils/validators');
+    const search = asText(req.query.q);
+    const pageNum = Math.max(1, Math.min(asNumber(req.query.page, 1) || 1, 100));
+    const limitNum = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
 
     let query = { available: true, sold: false, quantity: { $gt: 0 }, status: 'active' };
     if (search) {
+      const safe = escapeRegex(search);
       query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { brand: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
+        { title: { $regex: safe, $options: 'i' } },
+        { brand: { $regex: safe, $options: 'i' } },
+        { description: { $regex: safe, $options: 'i' } },
       ];
     }
 

@@ -3,11 +3,15 @@ const router = express.Router();
 const Trend = require('../models/Trend');
 const { auth } = require('../middleware/auth');
 const { fetchTrends } = require('../services/xService');
+const { asText, asNumber } = require('../utils/validators');
 
 // Fetch trends (real-time or historical)
 router.get('/', async (req, res) => {
   try {
-    const { timeframe = 'week', limit = 20 } = req.query;
+    // Coerce hostile query shapes (?limit[$gt]=1, ?limit[]=x) to scalars so
+    // Number({}) -> NaN never reaches .limit() (NaN limit throws -> 500).
+    const timeframe = asText(req.query.timeframe) || 'week';
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
     let startDate;
 
     switch (timeframe) {
@@ -26,7 +30,7 @@ router.get('/', async (req, res) => {
 
     const trends = await Trend.find({ timestamp: { $gte: startDate } })
       .sort({ timestamp: -1 })
-      .limit(Number(limit));
+      .limit(limit);
 
     res.json(trends);
   } catch (error) {

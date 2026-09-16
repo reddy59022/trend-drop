@@ -7,11 +7,13 @@ const { auth, optionalAuth } = require('../middleware/auth');
 // GET /api/users/search - Search users
 router.get('/search', async (req, res) => {
   try {
-    const { q } = req.query;
+    const { asText } = require('../utils/validators');
+    const q = asText(req.query.q);
     if (!q || q.length < 1) return res.json([]);
     // Performance: lean() + limit + projection
+    // Escape regex metacharacters: a hostile q like '*' makes $regex throw -> 500.
     const users = await User.find({
-      name: { $regex: q, $options: 'i' },
+      name: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
     })
       .select('name avatar bio')
       .lean()
@@ -53,7 +55,12 @@ router.get('/me/listings', auth, async (req, res) => {
 // GET /api/users/feed - Get feed from followed users
 router.get('/feed', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 20, sort } = req.query;
+    const { asText, asNumber } = require('../utils/validators');
+    // Coerce hostile query shapes (?page[$gt]=1, ?sort[]=x) to scalars so
+    // Number({}) -> NaN never reaches .skip() (NaN skip throws -> 500).
+    const page = Math.max(1, Math.min(asNumber(req.query.page, 1) || 1, 100));
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
+    const sort = asText(req.query.sort);
     const user = await User.findById(req.user._id);
 
     // Determine sort option based on user selection
@@ -70,8 +77,8 @@ router.get('/feed', auth, async (req, res) => {
     })
       .populate('seller', 'name avatar')
       .sort(sortOption)
-      .limit(Number(limit))
-      .skip((Number(page) - 1) * Number(limit));
+      .limit(limit)
+      .skip((page - 1) * limit);
 
     const total = await Listing.countDocuments({
       seller: { $in: user.following },
@@ -85,8 +92,8 @@ router.get('/feed', auth, async (req, res) => {
         doc.boosted = doc.boost && doc.boost.active === true;
         return doc;
       }),
-      totalPages: Math.ceil(total / Number(limit)),
-      currentPage: Number(page),
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
       total,
     });
   } catch (error) {

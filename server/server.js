@@ -165,7 +165,8 @@ app.use('/api', (req, res, next) => {
 // instead of 500 CastErrors, across every route. Mounted before all
 // routers so no route can be reached with a malformed :id-style param
 // (see utils/validators.js).
-const { assertObjectId } = require('./utils/validators');
+const { assertObjectId, sanitizeQuery } = require('./utils/validators');
+app.use('/api', sanitizeQuery);
 app.use('/api', assertObjectId);
 
 // ===========================================================================
