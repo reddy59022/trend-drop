@@ -22,9 +22,29 @@ router.post('/', auth, async (req, res) => {
     if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
       return res.status(400).json({ message: 'Rating must be a number between 1 and 5' });
     }
-    const txn = await Transaction.findOne({ listing: listingId, buyer: req.user._id, status: 'completed' });
+    // TDD R31-2: reviews are a POST-DELIVERY signal. Resolve the buyer's
+    // transaction for this listing, then gate on the lifecycle statuses that
+    // prove the item actually arrived ('delivered', 'buyer_confirmed',
+    // 'completed'). Previously ONLY 'completed' qualified, which locked the
+    // overwhelming majority of buyers (who never explicitly confirm receipt)
+    // out of reviewing entirely. The other side of the invariant is equally
+    // important and is pinned by tddRound31: items that are merely paid/
+    // shipped/in transit — or returned/refunded — must stay un-reviewable.
+    const REVIEWABLE_STATUSES = ['delivered', 'completed', 'buyer_confirmed'];
+    let txn = await Transaction.findOne({
+      listing: listingId,
+      buyer: req.user._id,
+      status: { $in: REVIEWABLE_STATUSES },
+    });
     if (!txn) {
-      return res.status(400).json({ message: 'You can only review items you have purchased' });
+      // Distinguish "never purchased" from "purchased but not delivered yet"
+      // so each case gets an accurate message (and repurchases after a
+      // refunded order still find their reviewable transaction).
+      const anyPurchase = await Transaction.findOne({ listing: listingId, buyer: req.user._id }).select('status');
+      if (!anyPurchase) {
+        return res.status(400).json({ message: 'You can only review items you have purchased' });
+      }
+      return res.status(400).json({ message: 'You can only review items after they have been delivered' });
     }
     const existing = await Rating.findOne({ reviewer: req.user._id, listing: listingId });
     if (existing) {

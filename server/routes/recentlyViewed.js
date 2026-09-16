@@ -20,11 +20,18 @@ router.post('/:listingId', auth, async (req, res) => {
     // (The unique index below is a backstop for races — two concurrent
     // creates can still race past the check, in which case the loser's
     // duplicate-key error maps to the same 200 response.)
-    const existing = await RecentlyViewed.findOne({
-      userId: req.user._id,
-      listingId,
-    });
-    if (existing) {
+    //
+    // TDD R31-1: a re-view must REFRESH viewedAt. The history endpoint sorts
+    // by viewedAt descending, so without this the "Recently Viewed" page
+    // showed first-view order forever — re-visiting an item never surfaced
+    // it again at the top. The API contract is unchanged: a re-view stays a
+    // 200 "Already viewed" acknowledgement and never creates a second record.
+    const refreshed = await RecentlyViewed.findOneAndUpdate(
+      { userId: req.user._id, listingId },
+      { $set: { viewedAt: new Date() } },
+      { new: true }
+    );
+    if (refreshed) {
       return res.status(200).json({ success: true, message: 'Already viewed' });
     }
 

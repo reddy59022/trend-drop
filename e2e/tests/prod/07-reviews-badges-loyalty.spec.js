@@ -25,7 +25,10 @@ test.describe('07 · Reviews, badges, loyalty (production)', () => {
       body: { listingId: state.listings.A.id, rating: 5, review: 'E2E should be rejected' },
     });
     expect(r.status).toBe(400);
-    expect(r.data.message).toMatch(/only review items you have purchased/i);
+    // TDD R31-2: the guard distinguishes "never purchased" from "purchased
+    // but not delivered yet". An in-transit order is blocked with the
+    // delivered-message variant; the invariant (400) is what matters here.
+    expect(r.data.message).toMatch(/only review items/i);
   });
 
   test('review requires authentication', async () => {
