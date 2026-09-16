@@ -3,6 +3,19 @@ const router = express.Router();
 const { auth } = require('../middleware/auth');
 const ShippingIntegration = require('../models/ShippingIntegration');
 
+// Canonical carrier set — mirrors the ShippingIntegration model enum.
+const CARRIERS = ['UPS', 'FedEx', 'DHL', 'USPS'];
+/**
+ * Accept case-insensitive carrier names ('fedex', 'usps', 'dhl') and map them
+ * to the canonical enum value stored in the model and used by /rates lookups.
+ * Returns undefined for unknown/non-string values so callers can 400.
+ */
+const normalizeCarrier = (value) => {
+  if (typeof value !== 'string') return undefined;
+  const needle = value.trim().toLowerCase();
+  return CARRIERS.find((c) => c.toLowerCase() === needle);
+};
+
 // GET /api/advanced-shipping - Get shipping integrations
 router.get('/', auth, async (req, res) => {
   try {
@@ -16,12 +29,14 @@ router.get('/', auth, async (req, res) => {
 // POST /api/advanced-shipping - Add carrier integration
 router.post('/', auth, async (req, res) => {
   try {
-    const { carrier, apiKey, accountNumber } = req.body;
+    const { apiKey, accountNumber } = req.body;
 
     // Hostile-input guard: carrier (required + enum) and apiKey (required) are
     // String paths — a missing or wrong-typed value was a ValidationError -> 500.
-    const CARRIERS = ['UPS', 'FedEx', 'DHL', 'USPS'];
-    if (!CARRIERS.includes(carrier)) {
+    // Carrier names are normalized case-insensitively ('fedex' -> 'FedEx') so
+    // clients that don't match the canonical casing still work.
+    const carrier = normalizeCarrier(req.body.carrier);
+    if (!carrier) {
       return res.status(400).json({ message: `carrier must be one of ${CARRIERS.join(', ')}` });
     }
     if (typeof apiKey !== 'string' || !apiKey.trim()) {
@@ -47,8 +62,21 @@ router.post('/', auth, async (req, res) => {
 // POST /api/advanced-shipping/rates - Calculate real-time shipping rate
 router.post('/rates', auth, async (req, res) => {
   try {
-    const { carrier, weight, dimensions, fromZip, toZip } = req.body;
-    
+    // Normalize the carrier the same way POST / does, so an integration saved
+    // as 'FedEx' is found when the client asks for 'fedex'.
+    const carrier = normalizeCarrier(req.body.carrier);
+    const { dimensions, fromZip, toZip } = req.body;
+    // Numeric-safe weight: a hostile value ('abc', {}, arrays) must not turn
+    // the simulated cost into NaN.
+    const weight = Number(req.body.weight);
+    const safeWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
+
+    // An unknown carrier must not fall through to findOne({ carrier: undefined }),
+    // which would match ANY of the user's integrations.
+    if (!carrier) {
+      return res.status(400).json({ message: `carrier must be one of ${CARRIERS.join(', ')}` });
+    }
+
     const integration = await ShippingIntegration.findOne({ user: req.user._id, carrier });
     if (!integration) {
       return res.status(404).json({ message: 'Carrier integration not found' });
@@ -57,7 +85,7 @@ router.post('/rates', auth, async (req, res) => {
     // Simulated rate calculation
     const rate = {
       carrier,
-      estimatedCost: 5 + (weight * 0.5),
+      estimatedCost: 5 + (safeWeight * 0.5),
       estimatedDays: 3,
       service: 'Ground'
     };

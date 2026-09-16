@@ -56,7 +56,21 @@ delete process.env.STRIPE_WEBHOOK_SECRET;
 process.env.STRIPE_SECRET_KEY = 'trenddrop_hermetic';
 process.env.STRIPE_WEBHOOK_SECRET = 'trenddrop_hermetic';
 
-// Mock the Stripe SDK entirely: routes must never reach api.stripe.com.
+// ---------------------------------------------------------------------------
+// 4. Transient-infra retry (ECONNRESET flake mitigation)
+// ---------------------------------------------------------------------------
+// The full 129-suite run talks to ONE shared in-memory mongod through
+// supertest for ~4.5 minutes. Empirically (rounds 23-24) roughly one request
+// per full run dies with "socket hang up" (ECONNRESET) in a DIFFERENT,
+// unrelated test each run, while the same test passes in isolation — i.e. a
+// transport-level flake, not a product regression. Retry each failed test
+// once; the first failure is still logged (logErrorsBeforeRetry) so real
+// regressions stay visible in the output.
+jest.retryTimes(1, { logErrorsBeforeRetry: true });
+
+// ---------------------------------------------------------------------------
+// 5. Stripe SDK mock (routes must never reach api.stripe.com in tests)
+// ---------------------------------------------------------------------------
 jest.mock('stripe', () => {
   // Shared in-memory store so create/retrieve/confirm/capture stay consistent.
   const intents = global.__mockPaymentIntents || (global.__mockPaymentIntents = {});

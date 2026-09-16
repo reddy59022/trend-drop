@@ -41,12 +41,8 @@ test.describe('19 - Shipping & logistics (production)', () => {
     var r = await api.req('post', '/api/shipping/calculate-breakdown', {
       body: { itemPrice: 50, fromCountry: 'US', toCountry: 'US', weightKg: 1 },
     });
-    // Endpoint may return 200 with data or 500 if config deps missing
-    expect([200, 500]).toContain(r.status);
-    if (r.status === 200) {
-      // Response structure varies; just assert it returns something
-      expect(r.data).toBeTruthy();
-    }
+    expect(r.status).toBe(200);
+    expect(r.data).toBeTruthy();
   });
 
   test('advanced-shipping: add carrier integration + rate + label + tracking', async () => {
@@ -54,8 +50,10 @@ test.describe('19 - Shipping & logistics (production)', () => {
       token: alexToken,
       body: { carrier: 'fedex', apiKey: 'e2e-key', accountNumber: 'e2e-account' },
     });
-    // Accept 201 (success) or 500 (model not fully configured in test env)
-    expect([201, 500]).toContain(add.status);
+    // Carrier names are normalized case-insensitively server-side
+    // ('fedex' -> 'FedEx'), so a valid integration always lands as 201;
+    // the historical 500 tolerance is gone since TDD round 23.
+    expect(add.status).toBe(201);
     if (add.status !== 201) return;
     var rate = await api.req('post', '/api/advanced-shipping/rates', {
       token: alexToken,
