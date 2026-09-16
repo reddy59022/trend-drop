@@ -402,7 +402,20 @@ router.post('/confirm-batch', auth, async (req, res) => {
       });
     }
 
-    // Verify payment status from Stripe
+    // Verify payment status from Stripe.
+    // R34 GUARD: retrievePaymentIntent's mock mode FABRICATES a
+    // status:'succeeded', amount:0 intent for UNKNOWN ids, which would let
+    // the flow walk straight into capture + commit with no real authorization
+    // behind it. Money state may only ever be produced by an intent that
+    // actually exists (mock registry or Stripe). Use the strict lookup: an
+    // unknown id is a terminal 400 — deterministic client recovery, never a
+    // fabricated order, never a 500.
+    const knownIntent = await findPaymentIntent(paymentIntentId);
+    if (!knownIntent) {
+      return res.status(400).json({
+        message: 'Payment not authorized. Payment intent not found — create a new payment.',
+      });
+    }
     const paymentIntent = await retrievePaymentIntent(paymentIntentId);
     const VALID_STATUSES = ['succeeded', 'requires_capture'];
     if (!VALID_STATUSES.includes(paymentIntent.status)) {
@@ -1009,6 +1022,15 @@ router.post('/confirm', auth, async (req, res) => {
 
     if (!paymentIntentId) return res.status(400).json({ message: 'Missing paymentIntentId' });
 
+    // R34 GUARD (parity with confirm-batch): an unknown intent id must be a
+    // terminal 400 — retrievePaymentIntent's mock-mode fabrication
+    // (status:'succeeded', amount:0) must never reach capture/commit.
+    const knownIntent = await findPaymentIntent(paymentIntentId);
+    if (!knownIntent) {
+      return res.status(400).json({
+        message: 'Payment not authorized. Payment intent not found — create a new payment.',
+      });
+    }
     const paymentIntent = await retrievePaymentIntent(paymentIntentId);
     const VALID_STATUSES = ['succeeded', 'requires_capture'];
     if (!VALID_STATUSES.includes(paymentIntent.status)) {
