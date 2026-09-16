@@ -260,10 +260,10 @@ once generated from the route list._
 6. **Cross-spec state dependency** — Several specs relied on `state.users.jordan.id` being set correctly. Made specs self-sufficient with direct login.
 
 ### D. Remaining production quirks (tolerated in tests, not bugs)
-- `POST /api/shipping/calculate-breakdown` returns 500 on prod (likely missing config deps in test env)
+- ~~`POST /api/shipping/calculate-breakdown` returns 500 on prod~~ → **RESOLVED (TDD R27)**. Measured directly against production: well-formed payloads return **200** (never 500) and advanced-shipping returns **201**, so the §D claim was stale. The real defect was hostile input: `{"itemPrice":"abc"}` returned **200** with `"itemPrice":"abc"`, `"buyerProtectionFee":null`, `"taxableAmount":"abc3.99"` — NaN serialised by JSON as `null`, i.e. a blank price the client renders as if it were fine. Both shipping routes now fail closed with **400** for any wrong-typed/degenerate numeric field (verified live on prod pre-fix, and locally post-fix; see `server/tests/tddShippingHostility.test.js`).
+- ~~`POST /api/advanced-shipping` returns 500 (model not fully configured)~~ → **RESOLVED (TDD R27)**. Verified live on prod: adding a carrier returns 201 with the created integration. The handler did, however, ignore its entire payload and always answer 200 with a tracking number — a missing `service`, an object where an address belongs and a 1e9 kg parcel all "succeeded". Every field needed to describe a parcel is now validated (400 otherwise).
 - ~~`POST /api/seller-communities/:id/challenges` returns 500 (schema mismatch on `rewards` field)~~ → **FIXED (TDD round 26)**: the endpoint now normalizes array/string/scalar `rewards` onto the schema's String shape and answers 400 (not 500) for a missing title or a malformed `endDate`. E2E spec 17 now asserts HTTP 200 strictly (the old `expect([200, 500])` tolerance is deleted).
-- `POST /api/advanced-shipping` returns 500 (model not fully configured in test env)
-- These are infrastructure/configuration issues, not code bugs
+- No 500-on-valid-input quirks remain in this list; every entry above was a hostile-input or stale-report issue, not missing infrastructure.
 
 ### E. Coverage achieved
 All 50+ API routes now have E2E test coverage. The full marketplace lifecycle is tested:
@@ -278,3 +278,16 @@ All 50+ API routes now have E2E test coverage. The full marketplace lifecycle is
 ---
 
 ## Test Accounts (production DB)
+
+---
+
+## TDD round 28 — money-path audit: shipping hostile-input hardening + loyalty mint cap
+
+### Scope
+1. Closed the remaining §D item for real: hostile input to both shipping routes now fails closed with 400 (see `server/tests/tddShippingHostility.test.js`).
+2. Audited every route that consumes a client-supplied payment intent; added a self-maintaining structural guard (`server/tests/moneyPathAudit.test.js`, part 1) so any FUTURE money path that resolves an intent without proving its amount fails the suite instead of shipping. One pre-existing allowed shape is review-logged in-file: `transactions.js` resolves the intent for status display only; the binding gate fails closed (400) when it does not match, before any money moves.
+3. The audit's behavioural finding: POST /api/loyalty/earn was a value printer — client-declared `purchaseAmount` (capped 10,000/event) or fixed reasons (`referral` 100, `anniversary` 500, `review` 10, `signup` 50), repeatable without limit, redeemable at $0.01/point ($1,000 of discount per 10 purchase calls, plus tier inflation to Gold/Platinum). Now bounded by a rolling ceiling derived from the persisted `pointsHistory` ledger itself: **MAX 10,000 granted points per user per rolling 24h** (429 beyond it; ordinary activity ~= 160 points is unaffected).
+
+### Validation
+- Targeted: shipping/loyalty/advancedShipping suites green (4 suites / 40 tests).
+- Full regression (server jest / client jest / in-memory playwright) per task completion criteria; results in the commit report.

@@ -27,9 +27,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (user) await User.findByIdAndDelete(user._id);
+  // Like all modern suites: do NOT disconnect — jest.setup.js's
+  // per-file afterAll already wipes the DB; closing the shared connection
+  // here intermittently breaks the next file's auth lookups in full runs.
   await LoyaltyProgram.deleteMany({});
-  await mongoose.connection.close();
 });
 
 describe('v57.0 Customer Loyalty Program', () => {

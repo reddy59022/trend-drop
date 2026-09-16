@@ -99,13 +99,53 @@ router.post('/rates', auth, async (req, res) => {
 // POST /api/advanced-shipping/label - Generate shipping label
 router.post('/label', auth, async (req, res) => {
   try {
-    const { carrier, service, toAddress, weight } = req.body;
+    // Hostile-input contract (TDD R27): this handler used to ignore every
+    // field and always answer 200 with a tracking number — so a missing
+    // service, an object where an address belongs, or a 1,000,000,000 kg
+    // parcel all produced a "successful" label. That is worse than a 500 for
+    // the caller: nothing tells them the shipment was never described. Every
+    // field needed to describe a parcel is now validated, and only then does
+    // the label get issued.
+    const carrier = normalizeCarrier(req.body.carrier);
+    if (!carrier) {
+      return res.status(400).json({ message: `carrier must be one of ${CARRIERS.join(', ')}` });
+    }
+
+    const { service, toAddress } = req.body;
+    if (typeof service !== 'string' || !service.trim()) {
+      return res.status(400).json({ message: 'service is required' });
+    }
+
+    // The E2E flow sends a one-line address string, so both shapes are valid;
+    // an empty string/object/array is not an address.
+    const addressOk = (typeof toAddress === 'string' && toAddress.trim())
+      || (toAddress !== null && typeof toAddress === 'object' && !Array.isArray(toAddress)
+        && ['street1', 'street', 'address', 'city', 'postalCode']
+          .some((k) => typeof toAddress[k] === 'string' && toAddress[k].trim()));
+    if (!addressOk) {
+      return res.status(400).json({ message: 'toAddress is required' });
+    }
+
+    const MAX_LABEL_WEIGHT_KG = 500;
+    const weight = typeof req.body.weight === 'number'
+      ? req.body.weight
+      : (typeof req.body.weight === 'string' && req.body.weight.trim() !== ''
+        ? Number(req.body.weight)
+        : NaN);
+    if (!Number.isFinite(weight) || weight <= 0 || weight > MAX_LABEL_WEIGHT_KG) {
+      return res.status(400).json({ message: `weight must be a number greater than 0 and at most ${MAX_LABEL_WEIGHT_KG}` });
+    }
 
     // Simulated label generation
     const label = {
       trackingNumber: '1Z' + Math.random().toString(36).substr(2, 16).toUpperCase(),
       labelUrl: 'https://example.com/label.pdf',
-      cost: 8.50
+      cost: 8.50,
+      // Echo the validated parcel description so the caller can confirm what
+      // was actually labelled.
+      carrier,
+      service: service.trim(),
+      weight,
     };
 
     res.json(label);

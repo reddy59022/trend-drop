@@ -67,11 +67,23 @@ describe('v59.0 Advanced Shipping Options', () => {
   });
 
   test('v59.5 - Should generate shipping label', async () => {
+    // TDD R27: the label endpoint now validates the parcel description it
+    // claims to label (this payload used to omit toAddress/weight and still
+    // get a 200 + tracking number, i.e. a label for an undescribed shipment).
+    const res = await request(app)
+      .post('/api/advanced-shipping/label')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ carrier: 'UPS', service: 'Ground', toAddress: '123 Main St', weight: 1 });
+    expect(res.status).toBe(200);
+    expect(res.body.trackingNumber).toBeDefined();
+  });
+
+  test('v59.5b - Should reject a label request that does not describe a parcel', async () => {
     const res = await request(app)
       .post('/api/advanced-shipping/label')
       .set('Authorization', `Bearer ${userToken}`)
       .send({ carrier: 'UPS', service: 'Ground' });
-    expect(res.status).toBe(200);
-    expect(res.body.trackingNumber).toBeDefined();
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBeTruthy();
   });
 });

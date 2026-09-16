@@ -22,8 +22,10 @@ router.get('/', auth, async (req, res) => {
 
 // POST /api/loyalty/earn - Earn points
 // Server-authoritative: clients may only declare a whitelisted reason; the
-// point amount is derived server-side so balances can never be minted,
-// drained, or inflated by crafted requests.
+// point amount is derived server-side so a crafted request cannot pick its own
+// number. `purchase` still scales with a client-DECLARED spend, though, so the
+// derivation alone does not bound a répétition: the rolling ceiling below is
+// what makes the balance un-mintable (see MAX_POINTS_PER_DAY).
 const EARN_RULES = {
   purchase: { pointsPerDollar: 1, maxPerEvent: 10000 },
   referral: { fixed: 100, maxPerEvent: 100 },
@@ -31,6 +33,18 @@ const EARN_RULES = {
   review: { fixed: 10, maxPerEvent: 10 },
   signup: { fixed: 50, maxPerEvent: 50 },
 };
+
+// Every earn reason is UNBACKED: `purchase` trusts a client-declared amount and
+// the fixed reasons can simply be called again. Per-event caps therefore left
+// the balance mintable forever — 10 calls x the 10,000-point purchase event =
+// 100,000 points = $1,000 of discount at POST /redeem's $0.01/point. Cap the
+// total granted per user over a rolling 24h window, measured from the persisted
+// pointsHistory itself (entries already carry createdAt).
+// NOTE: this is a rate limit, not a ledger invariant — concurrent bursts can
+// overshoot slightly. The spend side stays exact: /redeem only debits a balance
+// that is covered, atomically.
+const MAX_POINTS_PER_DAY = 10000;
+const POINTS_WINDOW_MS = 24 * 60 * 60 * 1000;
 router.post('/earn', auth, async (req, res) => {
   try {
     const { amount, reason, listingId, purchaseAmount } = req.body;
@@ -64,6 +78,32 @@ router.post('/earn', auth, async (req, res) => {
     }
     if (!Number.isFinite(points) || points <= 0 || points > rule.maxPerEvent) {
       return res.status(400).json({ message: 'Invalid points amount' });
+    }
+
+    // ============================================================
+    // ROLLING CEILING (TDD R28). The per-event cap above only bounds ONE call;
+    // nothing stopped the same call being repeated. `purchase` trusts a
+    // client-declared spend, and the fixed reasons can simply be replayed, so
+    // the balance was mintable without limit (10 x the 10,000-point event =
+    // 100,000 points = $1,000 at /redeem's $0.01/point) — and the tier system
+    // with it. Sum what was actually GRANTED (positive ledger entries) over the
+    // last 24h and refuse anything that would cross the ceiling, before any
+    // write. Redemptions (negative entries) never count toward it.
+    // ============================================================
+    const existing = await LoyaltyProgram.findOne({ user: req.user._id })
+      .select('pointsHistory');
+    if (existing) {
+      const windowStart = Date.now() - POINTS_WINDOW_MS;
+      const grantedRecently = (existing.pointsHistory || []).reduce((sum, entry) => {
+        if (!entry || !(entry.amount > 0)) return sum;
+        const at = entry.createdAt ? new Date(entry.createdAt).getTime() : 0;
+        return at >= windowStart ? sum + entry.amount : sum;
+      }, 0);
+      if (grantedRecently + points > MAX_POINTS_PER_DAY) {
+        return res.status(429).json({
+          message: `Daily points limit reached (max ${MAX_POINTS_PER_DAY} points per 24 hours)`,
+        });
+      }
     }
 
     const loyalty = await LoyaltyProgram.findOneAndUpdate(

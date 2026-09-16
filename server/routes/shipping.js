@@ -89,25 +89,58 @@ router.post('/calculate-breakdown', (req, res) => {
   try {
     const { itemPrice, fromCountry, toCountry, toState, weightKg, currency, platformFeePercent, buyerProtectionPercent } = req.body;
 
-    const sellerCountry = fromCountry || 'US';
-    const buyerCountry = toCountry || 'US';
-    const price = itemPrice || 0;
+    // Hostile-input contract (TDD R27): every numeric field below feeds money
+    // math and is echoed straight back to the client, so a wrong-typed value
+    // used to produce NaN — and JSON.stringify serialises NaN as `null`, i.e.
+    // a blank price the client renders as if it were fine. A degenerate
+    // percent (negative, or 10000%) silently invented a total. Fail closed
+    // with 400 rather than answer 200 with unpriceable numbers.
+    const numericFields = [
+      ['itemPrice', itemPrice, 0, 1e7],
+      ['weightKg', weightKg, 0.5, 500],
+      ['platformFeePercent', platformFeePercent, 10, 100],
+      ['buyerProtectionPercent', buyerProtectionPercent, 5, 100],
+    ];
+    const parsedNumbers = {};
+    for (const [field, raw, fallback, max] of numericFields) {
+      if (raw === undefined || raw === null) {
+        parsedNumbers[field] = fallback;
+        continue;
+      }
+      const asNumber = typeof raw === 'number'
+        ? raw
+        : (typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN);
+      if (!Number.isFinite(asNumber) || asNumber < 0 || asNumber > max) {
+        return res.status(400).json({ message: `${field} must be a number between 0 and ${max}` });
+      }
+      parsedNumbers[field] = asNumber;
+    }
+
+    // Non-string geography/currency values are dropped so downstream config
+    // lookups use their documented defaults instead of object keys.
+    const asCountry = (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
+    const sellerCountry = asCountry(fromCountry) || 'US';
+    const buyerCountry = asCountry(toCountry) || 'US';
+    const state = asCountry(toState);
+    const convertTo = typeof currency === 'string' && currency.trim() ? currency.trim() : null;
+    const price = parsedNumbers.itemPrice;
+    const weightKgSafe = parsedNumbers.weightKg;
 
     // Calculate shipping
-    const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKg || 0.5, price);
+    const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKgSafe, price);
     const shippingCost = shippingResult.cost;
 
     // Platform fee (paid by seller)
-    const feePercent = platformFeePercent || 10;
+    const feePercent = parsedNumbers.platformFeePercent;
     const platformFee = Math.round(price * (feePercent / 100) * 100) / 100;
 
     // Buyer protection fee (paid by buyer)
-    const bpPercent = buyerProtectionPercent || 5;
+    const bpPercent = parsedNumbers.buyerProtectionPercent;
     const buyerProtectionFee = Math.round(price * (bpPercent / 100) * 100) / 100;
 
     // Calculate tax (VAT/GST/Sales Tax) based on buyer location
     const { calculateTax } = require('../config/tax');
-    const taxResult = calculateTax(buyerCountry, toState, price, shippingCost);
+    const taxResult = calculateTax(buyerCountry, state, price, shippingCost);
     const taxAmount = taxResult.taxAmount;
 
     // Buyer total (includes tax)
@@ -118,11 +151,11 @@ router.post('/calculate-breakdown', (req, res) => {
 
     // Convert to local currency if needed
     let localBreakdown = null;
-    if (currency && currency !== 'USD') {
-      const curr = currencies[currency];
+    if (convertTo && convertTo !== 'USD') {
+      const curr = currencies[convertTo];
       if (curr) {
         localBreakdown = {
-          currency,
+          currency: convertTo,
           symbol: curr.symbol,
           itemPrice: Math.round(price * curr.rate * 100) / 100,
           shippingCost: Math.round(shippingCost * curr.rate * 100) / 100,
