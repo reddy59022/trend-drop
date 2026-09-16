@@ -30,6 +30,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (user) await User.findByIdAndDelete(user._id);
   await Vendor.deleteMany({});
+  await Listing.deleteMany({ seller: user?._id });
   await mongoose.connection.close();
 });
 
@@ -48,24 +49,54 @@ describe('v58.0 Multi-Vendor Marketplace', () => {
   });
 
   test('v58.3 - Should create vendor listing', async () => {
+    const listing = await Listing.create({
+      seller: user._id,
+      title: 'Vendor Seed Listing',
+      description: 'vendor e2e seed',
+      price: 60,
+      category: 'Men',
+      condition: 'New with tags',
+      quantity: 5,
+      available: true,
+      sold: false,
+      status: 'active',
+      shipsFrom: 'US',
+      currency: 'USD',
+      weight: 0.5,
+    });
     const res = await request(app)
       .post('/api/vendors')
       .set('Authorization', `Bearer ${userToken}`)
-      .send({ listingId: 'test-listing', commission: 10 });
+      .send({ listingId: listing._id.toString(), commission: 10 });
     expect(res.status).toBe(201);
     expect(res.body.sellers).toBeDefined();
   });
 
   test('v58.4 - Should update shared inventory', async () => {
+    const invListing = await Listing.create({
+      seller: user._id,
+      title: 'Vendor Inventory Listing',
+      description: 'vendor inventory seed',
+      price: 40,
+      category: 'Men',
+      condition: 'New with tags',
+      quantity: 5,
+      available: true,
+      sold: false,
+      status: 'active',
+      shipsFrom: 'US',
+      currency: 'USD',
+      weight: 0.5,
+    });
     const vendor = await Vendor.create({
-      listing: 'test-listing',
+      listing: invListing._id,
       sellers: [{ seller: user._id, commission: 10, isPrimary: true }]
     });
-    
+
     const res = await request(app)
       .put('/api/vendors/shared-inventory')
       .set('Authorization', `Bearer ${userToken}`)
-      .send({ listingId: 'test-listing', quantity: 20 });
+      .send({ listingId: invListing._id.toString(), quantity: 20 });
     expect(res.status).toBe(200);
   });
 });
