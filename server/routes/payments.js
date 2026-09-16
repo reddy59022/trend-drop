@@ -18,6 +18,7 @@ const {
   capturePaymentIntent,
   retrievePaymentIntent,
   releaseAuthorization,
+  findPaymentIntent,
   verifyStripeWebhook,
   verifyIntentBinding,
   verifyIntentAmount,
@@ -410,6 +411,21 @@ router.post('/confirm-batch', auth, async (req, res) => {
       });
     }
 
+    // Helper: release the buyer's authorization when order placement fails
+    // AFTER the intent has been validated. This prevents stranded holds
+    // (R32.2/R32.3): when confirm-batch rejects the order, the buyer's funds
+    // must be released back rather than left reserved on their card.
+    const releaseAuthOnFailure = async (res, statusCode, body) => {
+      try {
+        if (paymentIntentId && paymentIntent.status === 'requires_capture') {
+          await releaseAuthorization(paymentIntentId);
+        }
+      } catch (e) {
+        console.error('Release auth on failure error:', e.message);
+      }
+      return res.status(statusCode).json(body);
+    };
+
     // ========== PHASE 1: Validate + Build (NO DB WRITES) ==========
     const { generateLabel, getPreferredCarrier } = require('../config/shipping');
     const orderPlans = [];
@@ -417,7 +433,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
     for (const item of items) {
       const listing = await Listing.findById(item.listingId);
       if (!listing || !listing.available || listing.sold || listing.quantity <= 0) {
-        return res.status(400).json({
+        return releaseAuthOnFailure(res, 400, {
           message: `Item ${item.listingId} is no longer available`,
           failedItem: item.listingId,
         });
@@ -426,7 +442,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // ZERO-LEAKAGE QUANTITY FIX: validate requested qty against stock
       const qty = Math.max(1, Math.floor(item.quantity || 1));
       if (listing.quantity < qty) {
-        return res.status(400).json({
+        return releaseAuthOnFailure(res, 400, {
           message: `Only ${listing.quantity} left of "${listing.title}"`,
           failedItem: item.listingId,
         });
@@ -440,7 +456,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // create-intent): re-validate cross-border shipping BEFORE any DB writes,
       // so a batch can never partially commit a cross-border item.
       if (!isInternationalAllowed(sellerCountry, toCountry)) {
-        return res.status(400).json({
+        return releaseAuthOnFailure(res, 400, {
           supported: false,
           message: "International shipping is currently disabled. Items can only be shipped within the seller's country.",
           failedItem: item.listingId,
@@ -455,21 +471,21 @@ router.post('/confirm-batch', auth, async (req, res) => {
       if (item.offerId) {
         offer = await Offer.findById(item.offerId);
         if (!offer) {
-          return res.status(400).json({ message: `Offer ${item.offerId} not found`, failedItem: item.listingId });
+          return releaseAuthOnFailure(res, 400, { message: `Offer ${item.offerId} not found`, failedItem: item.listingId });
         }
         if (offer.listing.toString() !== listing._id.toString()) {
-          return res.status(400).json({ message: 'Offer does not belong to this listing', failedItem: item.listingId });
+          return releaseAuthOnFailure(res, 400, { message: 'Offer does not belong to this listing', failedItem: item.listingId });
         }
         if (offer.buyer.toString() !== req.user._id.toString()) {
-          return res.status(400).json({ message: 'Offer does not belong to this buyer', failedItem: item.listingId });
+          return releaseAuthOnFailure(res, 400, { message: 'Offer does not belong to this buyer', failedItem: item.listingId });
         }
         if (offer.status !== 'accepted') {
-          return res.status(400).json({ message: `Offer is not accepted. Status: ${offer.status}`, failedItem: item.listingId });
+          return releaseAuthOnFailure(res, 400, { message: `Offer is not accepted. Status: ${offer.status}`, failedItem: item.listingId });
         }
         salePrice = offer.acceptedPrice || offer.counterAmount || offer.amount;
         isNegotiated = true;
         if (item.negotiatedPrice && Math.abs(item.negotiatedPrice - salePrice) > 0.01) {
-          return res.status(400).json({ message: `Price mismatch. Expected ${salePrice}`, failedItem: item.listingId });
+          return releaseAuthOnFailure(res, 400, { message: `Price mismatch. Expected ${salePrice}`, failedItem: item.listingId });
         }
       } else if (item.negotiatedPrice) {
         // SECURITY: mirror create-intent — negotiatedPrice must match an
@@ -480,11 +496,11 @@ router.post('/confirm-batch', auth, async (req, res) => {
           status: 'accepted',
         });
         if (!acceptedOffer) {
-          return res.status(400).json({ message: 'Negotiated price requires an accepted offer', failedItem: item.listingId });
+          return releaseAuthOnFailure(res, 400, { message: 'Negotiated price requires an accepted offer', failedItem: item.listingId });
         }
         const offerPrice = acceptedOffer.acceptedPrice || acceptedOffer.counterAmount || acceptedOffer.amount;
         if (Math.abs(item.negotiatedPrice - offerPrice) > 0.01) {
-          return res.status(400).json({ message: 'Price mismatch with accepted offer', failedItem: item.listingId });
+          return releaseAuthOnFailure(res, 400, { message: 'Price mismatch with accepted offer', failedItem: item.listingId });
         }
         salePrice = offerPrice;
       }
@@ -539,7 +555,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       listingIds: orderPlans.map((p) => String(p.listing._id)),
     });
     if (!intentBinding.ok) {
-      return res.status(403).json({ message: intentBinding.reason });
+      return releaseAuthOnFailure(res, 403, { message: intentBinding.reason });
     }
 
     const batchMetaDiscount = (Number(paymentIntent.metadata?.promoDiscount) || 0)
@@ -559,16 +575,22 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // One-sided: an authorization BELOW the order total can never be
       // captured for the full amount (the platform would fund the gap).
       if (authorizedCents < expectedCaptureCents) {
-        return res.status(400).json({
+        return releaseAuthOnFailure(res, 400, {
           message: 'Authorized amount does not match the order total. Create a new payment intent.',
         });
       }
     }
 
     // ========== PHASE 2: Capture Payment ==========
+    // Partial capture (R32.9/R32.10): when the buyer trimmed their cart between
+    // authorization and fulfilment, the intent was authorized for MORE than the
+    // order total. Capture ONLY the order total so the buyer is not over-charged.
+    // Stripe's capture_method:'manual' intents hold the full authorized amount by
+    // default — we must explicitly pass amount_to_capture.
     let captureResult = null;
     if (paymentIntent.status === 'requires_capture') {
-      captureResult = await capturePaymentIntent(paymentIntentId);
+      const orderTotalCents = Math.round(plannedTotal * 100);
+      captureResult = await capturePaymentIntent(paymentIntentId, orderTotalCents);
     } else {
       captureResult = { id: paymentIntentId, status: 'succeeded' };
     }
@@ -585,6 +607,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // Item-level boost fee ledger (this listing only)
       await recordBoostFeeOwed(listing._id, getBoostFee(listing, plan.salePrice), plan.qty);
 
+      const appliedPromoId = paymentIntent.metadata?.appliedPromoId
+        ? paymentIntent.metadata.appliedPromoId
+        : null;
+
       const txn = await Transaction.create({
         listing: listing._id,
         buyer: req.user._id,
@@ -592,6 +618,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
         quantity: plan.qty,
         itemPrice: plan.itemSubtotal,
         currency: listing.currency || 'USD',
+        promoId: appliedPromoId,
         paymentBreakdown: {
           subtotal: plan.itemSubtotal,
           shippingCost: plan.shippingCostTotal,
@@ -881,6 +908,16 @@ router.post('/confirm-batch', auth, async (req, res) => {
     }
 
     // ===== Apply promo code usage if present =====
+    // Single-use rule (R32.6): one order consumes EXACTLY one promo use.
+    // create-intent already records the promo on the intent metadata AND the
+    // deployed clients also call POST /promos/:id/use after checkout. Both
+    // paths must result in exactly ONE increment per order — never two.
+    //
+    // confirm-batch is the authoritative increment path: it always increments
+    // usageCount when an order is placed with a promo. The /promos/:id/use
+    // endpoint (routes/promos.js) is the defensive no-op path: it checks
+    // whether an order already exists for this buyer+promo and skips
+    // incrementing if so, preventing double-counting from legacy clients.
     if (paymentIntent.metadata?.appliedPromoId) {
       try {
         const promo = await Promo.findById(paymentIntent.metadata.appliedPromoId);
@@ -1303,11 +1340,50 @@ router.post('/test-confirm', auth, async (req, res) => {
 });
 
 // POST /api/payments/cancel-payment - Release authorization if order not completed
+// SECURITY: only the intent OWNER (the buyer who authorized it) may release it.
+// Sellers can read payment.paymentIntentId off the Order document, so an ownership
+// gate prevents a malicious seller from killing a rival buyer's sale.
 router.post('/cancel-payment', auth, async (req, res) => {
   try {
     const { paymentIntentId } = req.body;
+    if (!paymentIntentId || typeof paymentIntentId !== 'string' || !paymentIntentId.trim()) {
+      return res.status(400).json({ message: 'paymentIntentId is required' });
+    }
+
+    const user = req.user;
+    const userId = user?._id ? user._id.toString() : (user && user.id ? user.id.toString() : null);
+    if (!userId) {
+      return res.status(401).json({ message: 'Authenticated user identity required' });
+    }
+
+    // Look up the intent to verify ownership.
+    // Use findPaymentIntent (strict — returns null for unknown ids) rather than
+    // retrievePaymentIntent (which fabricates 'succeeded' for unknown ids in mock
+    // mode and would let an attacker probe arbitrary intent ids).
+    const intent = await findPaymentIntent(paymentIntentId);
+    if (!intent) {
+      // Unknown intent: idempotent — return released:false, never 500.
+      return res.json({
+        message: 'Authorization released. No charge was made.',
+        result: { id: paymentIntentId, status: 'canceled', released: false },
+        released: false,
+      });
+    }
+
+    // Ownership gate: the authenticated user must be the buyer who authorized it.
+    const intentBuyerId = intent.metadata?.buyerId;
+    if (intentBuyerId && intentBuyerId !== userId) {
+      return res.status(403).json({
+        message: 'You are not authorized to cancel this payment',
+      });
+    }
+
     const result = await releaseAuthorization(paymentIntentId);
-    res.json({ message: 'Authorization released. No charge was made.', result });
+    res.json({
+      message: 'Authorization released. No charge was made.',
+      result,
+      released: result.released !== false,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: error.message || 'Error cancelling payment' });

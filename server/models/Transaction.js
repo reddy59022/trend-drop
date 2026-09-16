@@ -38,6 +38,14 @@ const transactionSchema = new mongoose.Schema({
     type: String,
     default: 'USD',
   },
+  // Promo code that priced this order (audit + single-use enforcement).
+  // Without it the platform could not tell whether a promo had already been
+  // consumed by an order, which is what let one checkout burn two uses.
+  promoId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Promo',
+    default: null,
+  },
   // Full payment breakdown - transparent for both buyer and seller
   paymentBreakdown: {
     // What the buyer pays

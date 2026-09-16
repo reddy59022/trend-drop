@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Promo = require('../models/Promo');
 const Listing = require('../models/Listing');
+const Transaction = require('../models/Transaction');
 const { auth } = require('../middleware/auth');
 const adminAuth = require('../middleware/admin');
 const { isValidObjectId } = require('../utils/validators');
@@ -245,6 +246,14 @@ router.post('/validate', auth, async (req, res) => {
 // GUARDS: a code that is inactive, expired, or past its usageLimit must not
 // consume another use — the client calls this at checkout, so without the
 // limit check a "limited" code kept working forever.
+//
+// SINGLE-USE-PER-ORDER (round 32): confirm-batch already consumes one use
+// server-side when an order is placed with this promo. Legacy/other clients
+// ALSO call this endpoint right after the order is created, which burned a
+// SECOND use per order — a usageLimit:10 campaign died after 5 orders (sellers
+// lost campaign reach, buyers lost the discount). When an order already
+// recorded this promo for this buyer, this endpoint is a no-op that reports
+// the current count instead of charging the budget again.
 router.post('/:id/use', auth, async (req, res) => {
   try {
     const promo = await Promo.findById(req.params.id);
@@ -256,6 +265,20 @@ router.post('/:id/use', auth, async (req, res) => {
     if (promo.expiresAt && promo.expiresAt < new Date()) {
       return res.status(400).json({ message: 'Promo code has expired' });
     }
+
+    // Already consumed by a placed order? Nothing to count.
+    const alreadyCounted = await Transaction.exists({
+      buyer: req.user._id,
+      promoId: promo._id,
+    });
+    if (alreadyCounted) {
+      return res.json({
+        message: 'Promo code already counted for this order',
+        usageCount: promo.usageCount || 0,
+        alreadyCounted: true,
+      });
+    }
+
     if (promo.usageLimit > 0 && promo.usageCount >= promo.usageLimit) {
       return res.status(400).json({ message: 'Promo code usage limit reached' });
     }

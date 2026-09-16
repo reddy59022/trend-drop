@@ -153,13 +153,38 @@ const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
 
 // STEP 2: Capture the authorized payment (only after fulfillment)
 // This moves the money from authorization to captured
-const capturePaymentIntent = async (paymentIntentId) => {
+//
+// @param {string} paymentIntentId - The payment intent to capture
+// @param {number|null} amountToCapture - Optional amount in cents to capture.
+//   When null/undefined, captures the FULL authorized amount (Stripe default).
+//   When provided, captures ONLY that amount (partial capture for cart trimming,
+//   R32.9/R32.10). Must be <= the authorized amount.
+const capturePaymentIntent = async (paymentIntentId, amountToCapture = null) => {
   if (!stripe) {
     // Test/dev mode: return mock capture result
+    if (amountToCapture !== null && amountToCapture !== undefined && amountToCapture > 0) {
+      // Partial capture: return only the requested amount.
+      // If the intent exists in the mock store, the captured amount is capped
+      // at the authorized amount; otherwise use the requested amount directly
+      // (test helper path — the caller knows what they authorized).
+      const stored = global.__mockPaymentIntents?.[paymentIntentId];
+      const capturedAmount = stored
+        ? Math.min(amountToCapture, stored.amount || 0)
+        : Math.round(amountToCapture);
+      return {
+        id: paymentIntentId,
+        status: 'succeeded',
+        amount: capturedAmount,
+      };
+    }
     return { id: paymentIntentId, status: 'succeeded' };
   }
-  const idempotencyKey = generateIdempotencyKey({ paymentIntentId, action: 'capture' });
-  return stripe.paymentIntents.capture(paymentIntentId, {}, { idempotencyKey });
+  const captureParams = {};
+  if (amountToCapture !== null && amountToCapture !== undefined && amountToCapture > 0) {
+    captureParams.amount_to_capture = Math.round(amountToCapture);
+  }
+  const idempotencyKey = generateIdempotencyKey({ paymentIntentId, action: 'capture', amountToCapture });
+  return stripe.paymentIntents.capture(paymentIntentId, captureParams, { idempotencyKey });
 };
 
 // Retrieve a PaymentIntent
@@ -276,14 +301,33 @@ const verifyIntentAmount = (intent, expectedCents) => {
 // Cancel/Release an authorization (if fulfillment fails)
 const releaseAuthorization = async (paymentIntentId) => {
   try {
-    if (!stripe) return { id: paymentIntentId, status: 'cancelled' };
+    if (!stripe) {
+      // E2E / hermetic mode: reflect the release in the mock store (parity with
+      // issueRefund) so a released authorization can never be replayed into an
+      // order and the stranded-hold behaviour is observable in tests.
+      if (!global.__mockPaymentIntents) global.__mockPaymentIntents = {};
+      const stored = global.__mockPaymentIntents[paymentIntentId];
+      if (stored) {
+        if (stored.status === 'canceled') {
+          // Already released — idempotent, no-op
+          return { id: paymentIntentId, status: 'canceled', amount: stored.amount, released: false };
+        }
+        stored.status = 'canceled';
+        return { id: paymentIntentId, status: 'canceled', amount: stored.amount, released: true };
+      }
+      // Unknown intent — return idempotent "not found" shape (never throw).
+      // The cancel-payment route uses `released` to signal whether a real
+      // release happened, so callers can distinguish "released" from "n/a".
+      return { id: paymentIntentId, status: 'canceled', released: false };
+    }
     const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
     if (pi.status === 'requires_capture') {
       // Auth exists but not captured - cancel it to release the hold
-      return stripe.paymentIntents.cancel(paymentIntentId);
+      const canceled = await stripe.paymentIntents.cancel(paymentIntentId);
+      return { ...canceled, released: true };
     }
     // Already succeeded, canceled, or in another state - nothing to release
-    return pi;
+    return { ...pi, released: false };
   } catch (e) {
     console.error('Release auth error:', e.message);
     throw e;

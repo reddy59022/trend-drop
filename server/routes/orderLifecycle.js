@@ -476,7 +476,7 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
           // Payment captured — issue a FULL refund.
           stripeRefundResult = await issueRefund(paymentIntentId, refundAmount);
         }
-        if (stripeRefundResult && stripeRefundResult.status && !['succeeded', 'pending', 'cancelled'].includes(stripeRefundResult.status)) {
+        if (stripeRefundResult && stripeRefundResult.status && !['succeeded', 'pending', 'cancelled', 'canceled'].includes(stripeRefundResult.status)) {
           throw new Error(`Stripe refund not accepted (status: ${stripeRefundResult.status})`);
         }
       } else {
