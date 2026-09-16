@@ -168,10 +168,30 @@ router.post('/create-intent', auth, async (req, res) => {
       let salePrice = listing.price;
       let isNegotiated = false;
       if (item.offerId) {
+        // TDD R30: mirror confirm-batch's offer validation EXACTLY (it runs
+        // after authorization and 400s on every one of these). Previously only
+        // status+buyer were checked here — an accepted offer for listing A
+        // could price listing B, authorizing ~$10 against a $100 item; the
+        // consumer then rejected the pairing and left an uncapturable hold.
+        // Rejecting BEFORE authorization keeps intent creation aligned with
+        // the endpoint that records the money.
         const offer = await Offer.findById(item.offerId);
-        if (offer && offer.status === 'accepted' && offer.buyer.toString() === req.user._id.toString()) {
-          salePrice = offer.acceptedPrice || offer.counterAmount || offer.amount;
-          isNegotiated = true;
+        if (!offer) {
+          return res.status(400).json({ message: `Offer ${item.offerId} not found`, failedItem: item.listingId });
+        }
+        if (offer.listing.toString() !== listing._id.toString()) {
+          return res.status(400).json({ message: 'Offer does not belong to this listing', failedItem: item.listingId });
+        }
+        if (offer.buyer.toString() !== req.user._id.toString()) {
+          return res.status(400).json({ message: 'Offer does not belong to this buyer', failedItem: item.listingId });
+        }
+        if (offer.status !== 'accepted') {
+          return res.status(400).json({ message: `Offer is not accepted. Status: ${offer.status}`, failedItem: item.listingId });
+        }
+        salePrice = offer.acceptedPrice || offer.counterAmount || offer.amount;
+        isNegotiated = true;
+        if (item.negotiatedPrice && Math.abs(item.negotiatedPrice - salePrice) > 0.01) {
+          return res.status(400).json({ message: `Price mismatch. Expected ${salePrice}`, failedItem: item.listingId });
         }
       } else if (item.negotiatedPrice) {
         // SECURITY: never trust a client-supplied price. Cart items carry
