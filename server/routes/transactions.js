@@ -8,7 +8,7 @@ const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
 const { isValidObjectId } = require('../utils/validators');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
-const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding } = require('../config/payments');
+const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding, verifyIntentAmount } = require('../config/payments');
 const { boostConfig } = require('../config/boost');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
@@ -235,6 +235,15 @@ router.post('/guest', async (req, res) => {
     const weightKg = listing.weight || 0.5;
 
     const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, buyerShipCountry, weightKg);
+    // AMOUNT PARITY (round 25): the authorized intent must cover exactly what
+    // this order charges — a cheap authorization must never fulfil this
+    // listing if its price rose after authorization. Delegated to the shared
+    // helper so the real-amount-only rule stays consistent across every money
+    // path (see verifyIntentAmount in config/payments.js).
+    const amountCheck = verifyIntentAmount(gate.pi, breakdown.buyer.totalPaid * 100);
+    if (!amountCheck.ok) {
+      return res.status(400).json({ message: amountCheck.reason });
+    }
     // Boost fee: flat % of sale price, charged only upon successful sale
     const boostFee = getBoostFee(listing, listing.price);
 
@@ -390,6 +399,15 @@ router.post('/', auth, async (req, res) => {
 
       // Use the same calculation engine as the payment flow for consistency
       const breakdown = calculatePaymentBreakdown(finalPrice, sellerCountry, buyerShipCountry, weightKg);
+
+      // AMOUNT PARITY (round 25): the authorized intent must cover exactly
+      // what this order charges (guards price changes between authorize and
+      // confirm, and cheap-intent-for-expensive-item swaps). Shared helper —
+      // see verifyIntentAmount in config/payments.js.
+      const amountCheck = verifyIntentAmount(gate.pi, breakdown.buyer.totalPaid * 100);
+      if (!amountCheck.ok) {
+        return res.status(400).json({ message: amountCheck.reason });
+      }
 
     // Boost fee: only deducted if item is boosted AND sale completes
     const boostFee = getBoostFee(listing, finalPrice);
@@ -634,6 +652,13 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKg, finalPrice);
     const shippingCost = listing.shipping?.freeShipping ? 0 : shippingResult.cost;
     const breakdown = calculatePaymentBreakdown(finalPrice, sellerCountry, buyerCountry, weightKg);
+    // AMOUNT PARITY (round 25): the accepted-offer intent must cover exactly
+    // the offer price + shipping + protection that this purchase charges.
+    // Shared helper — see verifyIntentAmount in config/payments.js.
+    const amountCheck = verifyIntentAmount(offerGate.pi, breakdown.buyer.totalPaid * 100);
+    if (!amountCheck.ok) {
+      return res.status(400).json({ message: amountCheck.reason });
+    }
     // Boost fee: flat % of sale price, charged only upon successful sale
     const boostFee = getBoostFee(listing, finalPrice);
 

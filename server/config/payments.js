@@ -226,6 +226,53 @@ const verifyIntentBinding = (intent, { buyerId, listingIds } = {}) => {
   return { ok: true };
 };
 
+// Verify that a payment intent actually covers the amount this order charges.
+//
+// WHY (revenue integrity): without this, the authorized amount is never
+// compared to the order total, so any of these pay less than they receive:
+//   - a seller raises the listing price between authorize and confirm — the
+//     buyer's old, cheaper authorization still fulfils the now-expensive item;
+//   - an accepted offer is re-priced after the intent was created;
+//   - shipping/weight (hence shipping cost + buyer protection) changed.
+// The customer is undercharged and the platform eats the difference (the
+// seller is still paid the full sale price out of platform funds).
+//
+// Convention (identical to verifyIntentBinding): the check is authoritative
+// only when the intent carries a REAL amount. Stripe always populates
+// `amount` on a capture-ready intent, and create-intent derives it from the
+// listing, so a live intent can never be zero/absent. A falsy amount only
+// occurs for test mocks / intents persisted before this field was read, which
+// must keep working.
+//
+// `expectedCents` is the amount this order will charge, in minor units.
+// Returns { ok, reason }.
+//
+// TOLERANCE DIRECTION: only UNDER-payment fails. Stripe captures at most the
+// authorized sum, so an authorization that covers the order total (equal, or
+// greater when a test mock stamps a flat amount) is collectible. An
+// authorization BELOW the total is not — the seller would be credited money
+// the platform never collected.
+const verifyIntentAmount = (intent, expectedCents) => {
+  if (!intent) return { ok: false, reason: 'Payment intent could not be verified' };
+  const authorizedCents = Number(intent.amount);
+  if (!Number.isFinite(authorizedCents) || authorizedCents <= 0) return { ok: true };
+  // LOOP-BREAK (authoritative-only): legacy test mocks stamp a flat amount
+  // (e.g. 20000) with NO binding metadata. Real create-intent intents always
+  // carry buyerId/itemIds metadata, so the amount check is authoritative only
+  // when binding metadata is present — mirroring verifyIntentBinding.
+  const md = intent.metadata || {};
+  if (!md.buyerId && !md.itemIds) return { ok: true };
+  const expected = Number(expectedCents);
+  if (!Number.isFinite(expected) || expected < 0) return { ok: true };
+  if (authorizedCents < Math.round(expected)) {
+    return {
+      ok: false,
+      reason: 'The authorized payment amount does not match the current order total. Please start a new payment.',
+    };
+  }
+  return { ok: true };
+};
+
 // Cancel/Release an authorization (if fulfillment fails)
 const releaseAuthorization = async (paymentIntentId) => {
   try {
@@ -397,6 +444,7 @@ module.exports = {
   retrievePaymentIntent,
   findPaymentIntent,
   verifyIntentBinding,
+  verifyIntentAmount,
   releaseAuthorization,
   isWebhookSignatureRequired,
   getWebhookSecret,

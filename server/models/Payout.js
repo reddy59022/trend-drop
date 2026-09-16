@@ -82,5 +82,11 @@ const payoutSchema = new mongoose.Schema({
 
 payoutSchema.index({ seller: 1, status: 1 });
 payoutSchema.index({ seller: 1, createdAt: -1 });
+// REVENUE INVARIANT (round 25): one transaction can produce EXACTLY ONE payout
+// record. The find-then-create in /process and /auto-create races under
+// concurrent retries (double-click, mobile flaky network) and could mint two
+// 'completed' payouts for one sale — double cash-out money. The unique index
+// makes the database the referee; callers treat E11000 as "already paid".
+payoutSchema.index({ transaction: 1 }, { unique: true, name: 'uniq_payout_per_transaction' });
 
 module.exports = mongoose.model('Payout', payoutSchema);

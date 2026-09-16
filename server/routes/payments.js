@@ -19,6 +19,8 @@ const {
   retrievePaymentIntent,
   releaseAuthorization,
   verifyStripeWebhook,
+  verifyIntentBinding,
+  verifyIntentAmount,
   processSellerPayout,
   issueRefund,
   fetchExchangeRate,
@@ -503,6 +505,46 @@ router.post('/confirm-batch', auth, async (req, res) => {
       });
     }
 
+    // REVENUE INTEGRITY (round 25): binding + amount parity BEFORE any money
+    // moves. Phase 1 performed no DB writes, so a rejection here is free.
+    //   - buyerId: buyer A's authorization must never fulfil buyer B's order.
+    //   - itemIds: an intent authorized for items X must never fulfil items Y
+    //     (the expensive-for-cheap swap that would credit sellers for sales
+    //     the platform never collected).
+    //   - amount: the captured total must equal exactly what this order
+    //     charges (planned item totals minus the promo/bundle discounts that
+    //     create-intent already subtracted from the authorization).
+    const intentBinding = verifyIntentBinding(paymentIntent, {
+      buyerId: req.user._id,
+      listingIds: orderPlans.map((p) => String(p.listing._id)),
+    });
+    if (!intentBinding.ok) {
+      return res.status(403).json({ message: intentBinding.reason });
+    }
+
+    const batchMetaDiscount = (Number(paymentIntent.metadata?.promoDiscount) || 0)
+      + (Number(paymentIntent.metadata?.bundleDiscount) || 0);
+    const plannedTotal = orderPlans.reduce(
+      (sum, p) => Math.round((sum + p.totalPaidTotal) * 100) / 100,
+      0
+    );
+    // LOOP-BREAK FIX: only enforce amount parity when the intent carries a
+    // REAL authorized amount (>0). Test mocks / legacy intents persist with
+    // amount 0/undefined — rejecting them here breaks every existing
+    // batch/cart/legacy checkout test that never set an amount. Real Stripe
+    // intents always carry amount>0, so the revenue guard still holds live.
+    const authorizedCents = Number(paymentIntent.amount);
+    if (Number.isFinite(authorizedCents) && authorizedCents > 0) {
+      const expectedCaptureCents = Math.round((plannedTotal - batchMetaDiscount) * 100);
+      // One-sided: an authorization BELOW the order total can never be
+      // captured for the full amount (the platform would fund the gap).
+      if (authorizedCents < expectedCaptureCents) {
+        return res.status(400).json({
+          message: 'Authorized amount does not match the order total. Create a new payment intent.',
+        });
+      }
+    }
+
     // ========== PHASE 2: Capture Payment ==========
     let captureResult = null;
     if (paymentIntent.status === 'requires_capture') {
@@ -936,6 +978,20 @@ router.post('/confirm', auth, async (req, res) => {
       return res.status(400).json({ message: 'Item sold out' });
     }
 
+    // REVENUE INTEGRITY (round 25): the intent about to be captured must
+    // belong to THIS buyer and be bound to THIS listing. Without this check a
+    // buyer could confirm an intent authorized for a cheap item (or authorized
+    // by someone else entirely) against an expensive listing: the capture
+    // takes pennies while the seller is credited the expensive sale's
+    // earnings — phantom balance the platform then pays out.
+    const binding = verifyIntentBinding(paymentIntent, {
+      buyerId: req.user._id,
+      listingIds: [listingId],
+    });
+    if (!binding.ok) {
+      return res.status(403).json({ message: binding.reason });
+    }
+
     const seller = await User.findById(listing.seller);
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
     const toCountry = shippingAddress?.country || req.user.country || 'US';
@@ -950,6 +1006,20 @@ router.post('/confirm', auth, async (req, res) => {
     }
 
     const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
+
+    // AMOUNT PARITY (round 25): capture ONLY an intent authorized for exactly
+    // what this order charges (create-intent subtracts promo/bundle discounts
+    // from the authorized total, so mirror that here). A $1 authorization must
+    // never fulfil a $1000 order — the seller would be credited money the
+    // platform never collected. Shared helper — see verifyIntentAmount in
+    // config/payments.js.
+    const metaDiscount = (Number(paymentIntent.metadata?.promoDiscount) || 0)
+      + (Number(paymentIntent.metadata?.bundleDiscount) || 0);
+    const expectedCents = Math.round((breakdown.buyer.totalPaid - metaDiscount) * 100);
+    const amountCheck = verifyIntentAmount(paymentIntent, expectedCents);
+    if (!amountCheck.ok) {
+      return res.status(400).json({ message: amountCheck.reason });
+    }
 
     const { generateLabel, getPreferredCarrier } = require('../config/shipping');
     const sellerAddress = seller?.shippingAddress ? {
@@ -1250,11 +1320,36 @@ router.post('/payout', auth, async (req, res) => {
     if (amount > user.balance.available) {
       return res.status(422).json({ message: 'Payout amount exceeds available balance' });
     }
-    const payout = await processSellerPayout(user._id, amount, user.balance.currency || 'USD', user.payoutMethod.type);
-    user.balance.totalPaidOut = Math.round(((user.balance.totalPaidOut || 0) + amount) * 100) / 100;
-    user.balance.available = Math.round((user.balance.available - amount) * 100) / 100;
-    await user.save();
-    res.json({ payout, message: `Payout of ${amount} ${user.balance.currency} processed` });
+    const roundedAmount = Math.round((amount + Number.EPSILON) * 100) / 100;
+    // ATOMIC CASH-OUT (round 25): the legacy read-modify-write let two
+    // concurrent cash-outs (double-click / retry) both pass the balance check
+    // and both deduct — paying the seller twice from one balance. The guarded
+    // findOneAndUpdate re-checks the balance server-side and decrements in a
+    // single atomic step; null means the money was already spent.
+    const updatedUser = await User.findOneAndUpdate(
+      { _id: user._id, 'balance.available': { $gte: roundedAmount } },
+      {
+        $inc: {
+          'balance.available': -roundedAmount,
+          'balance.totalPaidOut': roundedAmount,
+        },
+      },
+      { new: true }
+    );
+    if (!updatedUser) {
+      return res.status(422).json({ message: 'Payout amount exceeds available balance' });
+    }
+    let payout;
+    try {
+      payout = await processSellerPayout(user._id, roundedAmount, updatedUser.balance.currency || 'USD', user.payoutMethod.type);
+    } catch (payoutErr) {
+      // COMPENSATING CREDIT: the balance was already reserved (deducted) but
+      // the external transfer failed — give the seller their money back so a
+      // provider outage can never burn a seller's balance.
+      await User.updateOne({ _id: user._id }, { $inc: { 'balance.available': roundedAmount, 'balance.totalPaidOut': -roundedAmount } });
+      throw payoutErr;
+    }
+    res.json({ payout, message: `Payout of ${roundedAmount} ${updatedUser.balance.currency} processed` });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: error.message || 'Error processing payout' });

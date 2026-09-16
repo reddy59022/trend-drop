@@ -9,6 +9,8 @@ const Payout = require('../models/Payout');
 const Order = require('../models/Order');
 const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundRules, returnEligibility, evidenceRequirements, disputeProcess, isValidTransition, getAllowedActions } = require('../config/orderLifecycle');
 const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
+const { releaseSellerEarnings, clawbackSellerEarnings } = require('../utils/balances');
+const { isValidObjectId } = require('../utils/validators');
 
 // ============================================================
 // ITEM-LEVEL BOOST FEE LEDGER (reversal/collection)
@@ -169,6 +171,12 @@ router.get('/', auth, async (req, res) => {
 // GET /api/orders/:id - single consolidated order (buyer or participating seller)
 router.get('/:id', auth, async (req, res) => {
   try {
+    // Hostile-input guard: a truthy-but-uncastable id ("undefined", "123", {})
+    // used to reach findById() and throw a CastError -> 500. Round 22/23
+    // convention: validate BEFORE querying and answer 404.
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
     const order = await Order.findById(req.params.id)
       .populate('items.listing', 'title images price currency brand condition size')
       .populate('items.transaction')
@@ -502,9 +510,14 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
 
     // 3a. Seller: claw back the EXACT amount credited at checkout (already
     //     net of any boost fee — parity with payments.js). Never negative.
+    //     ATOMIC (round 25): pending is decremented in one $inc-style pipeline
+    //     update with a server-side floor, so a concurrent completion/refund
+    //     can't lose the clawback.
     const seller = await User.findById(claimed.seller);
     if (seller) {
-      seller.balance.pending = Math.max(0, Math.round(((seller.balance.pending || 0) - clawback) * 100) / 100);
+      await User.updateOne({ _id: seller._id }, [
+        { $set: { 'balance.pending': { $max: [0, { $subtract: [{ $ifNull: ['$balance.pending', 0] }, clawback] }] } } },
+      ]);
       if (role === 'seller') {
         seller.stats.strikes = (seller.stats.strikes || 0) + 1;
         seller.notifications.unshift({
@@ -693,28 +706,33 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
       const availableAmount = sellerEarnings - reserveAmount;
       
       // Move money from pending → available (minus reserve)
-      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-      seller.balance.available = (seller.balance.available || 0) + availableAmount;
-      seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
-      
-      // Track reserve separately
-      if (!seller.balance.reserve) seller.balance.reserve = 0;
-      if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
-      seller.balance.reserve += reserveAmount;
-      seller.balance.reserveReleaseDate.push({
-        amount: reserveAmount,
-        releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
-        transactionId: txn._id,
+      // ATOMIC (round 25): one server-side pipeline update — concurrent
+      // releases can no longer lose updates or double-apply money.
+      await releaseSellerEarnings(seller._id, {
+        earnings: sellerEarnings,
+        availableAmount,
+        reserveAmount,
+        reserveRelease: {
+          amount: reserveAmount,
+          releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+          transactionId: txn._id,
+        },
       });
-      
-      seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
-      seller.notifications.unshift({
-        type: 'sale',
-        listing: txn.listing,
-        transaction: txn._id,
-        message: `Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
+
+      await User.updateOne({ _id: seller._id }, {
+        $inc: { 'stats.totalSales': 1 },
+        $push: {
+          notifications: {
+            $each: [{
+              type: 'sale',
+              listing: txn.listing,
+              transaction: txn._id,
+              message: `Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
+            }],
+            $position: 0,
+          },
+        },
       });
-      await seller.save();
     }
 
     // Update buyer stats
@@ -989,25 +1007,31 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
       if (seller) {
         const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
         const availableAmount = sellerEarnings - reserveAmount;
-        seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-        seller.balance.available = (seller.balance.available || 0) + availableAmount;
-        seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
-        if (!seller.balance.reserve) seller.balance.reserve = 0;
-        if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
-        seller.balance.reserve += reserveAmount;
-        seller.balance.reserveReleaseDate.push({
-          amount: reserveAmount,
-          releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
-          transactionId: txn._id,
+        // ATOMIC (round 25): same release math as auto-complete, one update.
+        await releaseSellerEarnings(seller._id, {
+          earnings: sellerEarnings,
+          availableAmount,
+          reserveAmount,
+          reserveRelease: {
+            amount: reserveAmount,
+            releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+            transactionId: txn._id,
+          },
         });
-        seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
-        seller.notifications.unshift({
-          type: 'sale',
-          listing: txn.listing,
-          transaction: txn._id,
-          message: `Return rejected. Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
+        await User.updateOne({ _id: seller._id }, {
+          $inc: { 'stats.totalSales': 1 },
+          $push: {
+            notifications: {
+              $each: [{
+                type: 'sale',
+                listing: txn.listing,
+                transaction: txn._id,
+                message: `Return rejected. Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
+              }],
+              $position: 0,
+            },
+          },
         });
-        await seller.save();
       }
 
       const buyer = await User.findById(txn.buyer);
@@ -1132,20 +1156,9 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
     // ROBUST: Claw back from available or pending balance
     const seller = await User.findById(txn.seller);
     if (seller) {
-      const available = seller.balance.available || 0;
-      const pending = seller.balance.pending || 0;
-      let remaining = sellerEarnings;
-      if (available >= remaining) {
-        seller.balance.available = available - remaining;
-        remaining = 0;
-      } else {
-        seller.balance.available = 0;
-        remaining = remaining - available;
-      }
-      if (remaining > 0) {
-        seller.balance.pending = Math.max(0, pending - remaining);
-      }
-      seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - sellerEarnings);
+      // ATOMIC (round 25): the available→pending split is computed server-side
+      // inside one update, so concurrent refunds can never over-refund.
+      await clawbackSellerEarnings(seller._id, sellerEarnings);
       seller.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
@@ -1246,20 +1259,8 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
     // ROBUST: Claw back from available or pending balance (same as confirm-return-received)
     const seller = await User.findById(txn.seller);
     if (seller) {
-      const available = seller.balance.available || 0;
-      const pending = seller.balance.pending || 0;
-      let remaining = sellerEarnings;
-      if (available >= remaining) {
-        seller.balance.available = available - remaining;
-        remaining = 0;
-      } else {
-        seller.balance.available = 0;
-        remaining = remaining - available;
-      }
-      if (remaining > 0) {
-        seller.balance.pending = Math.max(0, pending - remaining);
-      }
-      seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - sellerEarnings);
+      // ATOMIC (round 25): server-side split, no lost updates.
+      await clawbackSellerEarnings(seller._id, sellerEarnings);
       seller.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
@@ -1414,20 +1415,8 @@ router.post('/:transactionId/resolve-dispute', auth, validateOrderAccess, async 
 
       const seller = await User.findById(txn.seller);
       if (seller) {
-        const available = seller.balance.available || 0;
-        const pending = seller.balance.pending || 0;
-        let remaining = sellerEarnings;
-        if (available >= remaining) {
-          seller.balance.available = available - remaining;
-          remaining = 0;
-        } else {
-          seller.balance.available = 0;
-          remaining = remaining - available;
-        }
-        if (remaining > 0) {
-          seller.balance.pending = Math.max(0, pending - remaining);
-        }
-        seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - sellerEarnings);
+        // ATOMIC (round 25): server-side split, no lost updates.
+        await clawbackSellerEarnings(seller._id, sellerEarnings);
         seller.notifications.unshift({
           type: 'sale',
           listing: txn.listing,
@@ -1557,19 +1546,19 @@ router.post('/auto-process', async (req, res) => {
           if (canRelease) {
             const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
             const availableAmount = sellerEarnings - reserveAmount;
-            
-            seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-            seller.balance.available = (seller.balance.available || 0) + availableAmount;
-            seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
-            
-            // Track reserve
-            if (!seller.balance.reserve) seller.balance.reserve = 0;
-            if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
-            seller.balance.reserve += reserveAmount;
-            seller.balance.reserveReleaseDate.push({
-              amount: reserveAmount,
-              releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
-              transactionId: txn._id,
+
+            // ATOMIC (round 25): one server-side pipeline update for the
+            // balance + reserve; the cron and a concurrent manual
+            // auto-complete can never both apply the release.
+            await releaseSellerEarnings(seller._id, {
+              earnings: sellerEarnings,
+              availableAmount,
+              reserveAmount,
+              reserveRelease: {
+                amount: reserveAmount,
+                releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+                transactionId: txn._id,
+              },
             });
           } else {
             // New seller hold - funds stay in pending
@@ -1580,8 +1569,11 @@ router.post('/auto-process', async (req, res) => {
               message: `Payment held: New seller hold active until account is 14 days old.`,
             });
           }
-          
-          seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
+
+          await User.updateOne(
+            { _id: seller._id },
+            { $inc: { 'stats.totalSales': 1 } }
+          );
           await seller.save();
         }
 

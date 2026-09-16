@@ -304,17 +304,32 @@ router.post('/process/:transactionId', auth, async (req, res) => {
     const commissionAmount = transaction.paymentBreakdown?.platformFee || Math.round(salePrice * COMMISSION_RATE * 100) / 100;
     const payoutAmount = transaction.paymentBreakdown?.sellerEarnings || Math.round((salePrice - commissionAmount) * 100) / 100;
 
-    const payout = await Payout.create({
-      seller: transaction.seller,
-      transaction: transaction._id,
-      listing: transaction.listing._id,
-      salePrice,
-      commissionRate: COMMISSION_RATE,
-      commissionAmount,
-      payoutAmount,
-      status: 'completed',
-      paidAt: new Date(),
-    });
+    let payout;
+    try {
+      payout = await Payout.create({
+        seller: transaction.seller,
+        transaction: transaction._id,
+        listing: transaction.listing._id,
+        salePrice,
+        commissionRate: COMMISSION_RATE,
+        commissionAmount,
+        payoutAmount,
+        status: 'completed',
+        paidAt: new Date(),
+      });
+    } catch (payoutErr) {
+      // REVENUE INVARIANT (round 25): a concurrent request won the unique
+      // index race — the money was already credited. Answer idempotently with
+      // the existing payout instead of double-crediting or erroring.
+      if (payoutErr && payoutErr.code === 11000) {
+        const winner = await Payout.findOne({ transaction: transaction._id });
+        if (winner) {
+          await winner.populate(['listing', 'transaction']).catch(() => {});
+          return res.json({ message: 'Payout already processed', payout: winner });
+        }
+      }
+      throw payoutErr;
+    }
 
     await payout.populate(['listing', 'transaction']);
 
@@ -366,16 +381,29 @@ router.post('/auto-create', auth, async (req, res) => {
     const commissionAmount = transaction.paymentBreakdown?.platformFee || Math.round(salePrice * COMMISSION_RATE * 100) / 100;
     const payoutAmount = transaction.paymentBreakdown?.sellerEarnings || Math.round((salePrice - commissionAmount) * 100) / 100;
 
-    const payout = await Payout.create({
-      seller: transaction.seller,
-      transaction: transaction._id,
-      listing: transaction.listing._id,
-      salePrice,
-      commissionRate: COMMISSION_RATE,
-      commissionAmount,
-      payoutAmount,
-      status: 'pending',
-    });
+    let payout;
+    try {
+      payout = await Payout.create({
+        seller: transaction.seller,
+        transaction: transaction._id,
+        listing: transaction.listing._id,
+        salePrice,
+        commissionRate: COMMISSION_RATE,
+        commissionAmount,
+        payoutAmount,
+        status: 'pending',
+      });
+    } catch (payoutErr) {
+      // Unique-index race (round 25): the pending payout already exists.
+      if (payoutErr && payoutErr.code === 11000) {
+        const winner = await Payout.findOne({ transaction: transaction._id });
+        if (winner) {
+          await winner.populate(['listing', 'transaction']).catch(() => {});
+          return res.json({ message: 'Payout already exists', payout: winner });
+        }
+      }
+      throw payoutErr;
+    }
 
     await payout.populate(['listing', 'transaction']);
     res.status(201).json({ message: 'Payout record created', payout });

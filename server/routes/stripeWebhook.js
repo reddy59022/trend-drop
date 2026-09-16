@@ -9,6 +9,7 @@ const {
   isWebhookSignatureRequired,
   getWebhookSecret,
 } = require('../config/payments');
+const { clawbackSellerEarnings, debitPendingAllowNegative } = require('../utils/balances');
 
 // Stripe webhook endpoint - handles chargeback events
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -136,10 +137,12 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
               if (transaction.paymentBreakdown?.sellerEarnings) {
                 const seller = await User.findById(transaction.seller);
                 if (seller) {
-                  const amount = transaction.paymentBreakdown.sellerEarnings;
-                  const currentPending = seller.balance.pending || 0;
-                  // Negative balance - seller owes platform
-                  seller.balance.pending = Math.round((currentPending - amount) * 100) / 100;
+                  // ATOMIC (round 25): a lost dispute intentionally allows the
+                  // pending balance to go negative (seller owes the platform).
+                  await debitPendingAllowNegative(
+                    seller._id,
+                    transaction.paymentBreakdown.sellerEarnings
+                  );
                   seller.notifications.unshift({
                     type: 'dispute',
                     from: transaction.buyer,
@@ -196,11 +199,46 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
       case 'charge.refunded': {
         const charge = event.data.object;
         const transaction = await Transaction.findOne({
-          'stripePaymentIntentId': charge.payment_intent
+          'stripePaymentIntentId': charge.payment_intent,
         });
-        if (transaction) {
+        if (transaction && transaction.status !== 'refunded') {
+          // REVENUE INTEGRITY (round 25): a refund issued outside the platform
+          // (Stripe dashboard, manual support action) previously only flipped
+          // the status — the seller kept their earnings, the listing stayed
+          // sold, and the platform ate the full refund. Apply the same
+          // accounting the internal refund paths do, idempotently (the status
+          // gate above makes replays a no-op).
           transaction.status = 'refunded';
+          if (transaction.payout) transaction.payout.status = 'refunded';
+          if (!transaction.cancellation) {
+            transaction.cancellation = {
+              cancelledBy: 'system',
+              reason: 'Charge refunded at payment provider',
+              cancelledAt: new Date(),
+              refundAmount: transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0,
+            };
+          }
           await transaction.save();
+
+          const sellerEarnings = transaction.paymentBreakdown?.sellerEarnings || 0;
+          if (sellerEarnings > 0) {
+            await clawbackSellerEarnings(transaction.seller, sellerEarnings);
+          }
+          await Listing.findByIdAndUpdate(transaction.listing, {
+            $inc: { quantity: 1, quantitySold: -1 },
+            $set: { sold: false, available: true },
+          }).catch((e) => console.error('charge.refunded inventory restore:', e.message));
+
+          const seller = await User.findById(transaction.seller).catch(() => null);
+          if (seller) {
+            seller.notifications.unshift({
+              type: 'dispute',
+              listing: transaction.listing,
+              transaction: transaction._id,
+              message: 'The payment for one of your sales was refunded by the payment provider. The sale has been reversed.',
+            });
+            await seller.save();
+          }
         }
         break;
       }
