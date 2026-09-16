@@ -4,10 +4,21 @@ const Report = require('../models/Report');
 const { auth } = require('../middleware/auth');
 const { adminAuth } = require('../middleware/admin');
 
-// POST /api/reports - Report a listing
+// POST /api/reports - Report a listing (validated: the listing must exist and
+// the reason must be one of the moderation categories, so no orphan reports
+// and no 500s from enum validation).
 router.post('/', auth, async (req, res) => {
   try {
     const { listingId, reason, description } = req.body;
+    const VALID_REASONS = ['Inappropriate', 'Counterfeit', 'Spam', 'Wrong category', 'Other'];
+    if (!VALID_REASONS.includes(reason)) {
+      return res.status(400).json({ message: 'Invalid report reason' });
+    }
+    const Listing = require('../models/Listing');
+    const listing = await Listing.findById(listingId);
+    if (!listing) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
     const report = await Report.create({
       reporter: req.user._id,
       listing: listingId,
@@ -16,6 +27,9 @@ router.post('/', auth, async (req, res) => {
     });
     res.status(201).json({ message: 'Report submitted', report });
   } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
