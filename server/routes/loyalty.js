@@ -45,6 +45,12 @@ const EARN_RULES = {
 // that is covered, atomically.
 const MAX_POINTS_PER_DAY = 10000;
 const POINTS_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const tierForPoints = (points) => {
+  if (points >= 10000) return 'Platinum';
+  if (points >= 5000) return 'Gold';
+  return 'Silver';
+};
 router.post('/earn', auth, async (req, res) => {
   try {
     const { amount, reason, listingId, purchaseAmount } = req.body;
@@ -109,11 +115,17 @@ router.post('/earn', auth, async (req, res) => {
     // The read-only ceiling check above is useful for a fast rejection, but it
     // is not sufficient under concurrent requests. Ensure a document exists,
     // then enforce the same rolling ceiling in the atomic update predicate.
-    await LoyaltyProgram.findOneAndUpdate(
-      { user: req.user._id },
-      { $setOnInsert: { user: req.user._id, points: 0, tier: 'Silver' } },
-      { new: true, upsert: true }
-    );
+    try {
+      await LoyaltyProgram.findOneAndUpdate(
+        { user: req.user._id },
+        { $setOnInsert: { user: req.user._id, points: 0, tier: 'Silver' } },
+        { new: true, upsert: true }
+      );
+    } catch (initializationError) {
+      // Another request may have won the unique-user upsert. Continue against
+      // that ledger rather than creating a second document or minting points.
+      if (initializationError?.code !== 11000) throw initializationError;
+    }
     const atomicWindowStart = new Date(Date.now() - POINTS_WINDOW_MS);
     const grantedInWindow = {
       $sum: {
@@ -155,9 +167,7 @@ router.post('/earn', auth, async (req, res) => {
     }
 
     // Update tier based on points
-    if (loyalty.points >= 10000) loyalty.tier = 'Platinum';
-    else if (loyalty.points >= 5000) loyalty.tier = 'Gold';
-    else loyalty.tier = 'Silver';
+    loyalty.tier = tierForPoints(loyalty.points);
     
     await loyalty.save();
 
@@ -190,7 +200,12 @@ router.post('/redeem', auth, async (req, res) => {
       return res.status(400).json({ message: 'Insufficient points' });
     }
 
-    res.json({ discount: numericAmount * 0.01, points: loyalty.points });
+    // Redemptions can move a member below a tier threshold; persist and return
+    // the recalculated tier so the client never displays stale entitlements.
+    loyalty.tier = tierForPoints(loyalty.points);
+    await loyalty.save();
+
+    res.json({ discount: numericAmount * 0.01, points: loyalty.points, tier: loyalty.tier });
   } catch (error) {
     res.status(500).json({ message: 'Failed to redeem points' });
   }

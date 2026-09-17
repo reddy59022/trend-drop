@@ -44,6 +44,21 @@ describe('Referrals page', () => {
     await waitFor(() => expect(document.querySelector('h1') || screen.queryByText(/loading/i) || screen.queryByText(/error/i) || document.body).toBeTruthy());
   });
 
+  test('shows the aggregate reward for all successful referrals', async () => {
+    api.get
+      .mockResolvedValueOnce({ data: { stats: {
+        code: 'FRIENDS1', uses: 2, referredUsers: 2, rewardClaimed: false,
+        rewardAmount: 10, status: 'active',
+      } } })
+      .mockResolvedValueOnce({ data: { enabled: true, rewardAmount: 10, currency: 'USD' } });
+
+    renderPage(<Referrals />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Claim \$20\.00/)).toBeInTheDocument();
+    });
+  });
+
   test('survives API failure without crashing', async () => {
     Object.keys(api).filter(k => k.startsWith('get')).forEach(k => api[k].mockRejectedValue(new Error('boom')));
     api.get.mockRejectedValue(new Error('boom'));

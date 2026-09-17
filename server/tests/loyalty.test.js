@@ -64,8 +64,23 @@ describe('v57.0 Customer Loyalty Program', () => {
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  test('v57.5 - concurrent earns cannot exceed the daily points ceiling', async () => {
+  test('v57.5 - redeeming below a tier threshold recalculates the tier', async () => {
     await LoyaltyProgram.deleteOne({ user: user._id });
+    await LoyaltyProgram.create({ user: user._id, points: 5000, tier: 'Gold', pointsHistory: [] });
+    const res = await request(app)
+      .post('/api/loyalty/redeem')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ amount: 1 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.points).toBe(4999);
+    expect(res.body.tier).toBe('Silver');
+    const loyalty = await LoyaltyProgram.findOne({ user: user._id });
+    expect(loyalty.tier).toBe('Silver');
+  });
+
+  test('v57.6 - concurrent earns cannot exceed the daily points ceiling', async () => {
+    await LoyaltyProgram.deleteMany({ user: user._id });
     const responses = await Promise.all(
       Array.from({ length: 2 }, () => request(app)
         .post('/api/loyalty/earn')

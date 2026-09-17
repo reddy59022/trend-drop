@@ -97,19 +97,37 @@ router.post('/apply', async (req, res) => {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Check if user already used a referral
-      const alreadyUsed = await Referral.findOne({ referred: userId });
-      if (alreadyUsed) {
-        return res.status(400).json({ message: 'User already used a referral code' });
+      // Atomically reserve this referral for the user. The old read/check/save
+      // sequence allowed two concurrent registration requests to both succeed,
+      // increment uses twice, and append duplicate referred-user entries.
+      const usageFilter = {
+        _id: referral._id,
+        status: 'active',
+        'referredUsers.user': { $ne: userId },
+      };
+      if (referral.expiresAt) usageFilter.expiresAt = { $gt: new Date() };
+      if (referral.maxUses !== null && referral.maxUses !== undefined) {
+        usageFilter.uses = { $lt: referral.maxUses };
       }
 
-      referral.referredUsers.push({
-        user: userId,
-        createdAt: new Date(),
-        rewardGiven: false,
-      });
-      referral.uses += 1;
-      await referral.save();
+      const appliedReferral = await Referral.findOneAndUpdate(
+        usageFilter,
+        {
+          $set: { referred: userId },
+          $inc: { uses: 1 },
+          $push: {
+            referredUsers: {
+              user: userId,
+              createdAt: new Date(),
+              rewardGiven: false,
+            },
+          },
+        },
+        { new: true }
+      );
+      if (!appliedReferral) {
+        return res.status(400).json({ message: 'User already used a referral code' });
+      }
     }
 
     res.json({
@@ -164,10 +182,16 @@ router.post('/claim', auth, async (req, res) => {
       return res.status(404).json({ message: 'No active referral found' });
     }
 
-    // Atomic balance credit (no lost-update under concurrency).
+    // Credit once for every referred user. The UI and referral policy expose
+    // rewardAmount per successful referral, so paying only one amount would
+    // silently shortchange referrers with multiple conversions.
+    // Preserve the legacy single-referral claim behavior for records created
+    // before referredUsers was populated; new multi-use records pay per user.
+    const referralCount = referral.referredUsers?.length || 1;
+    const rewardTotal = referral.rewardAmount * referralCount;
     const user = await User.findByIdAndUpdate(
       req.user._id,
-      { $inc: { 'balance.available': referral.rewardAmount, 'balance.totalEarned': referral.rewardAmount } },
+      { $inc: { 'balance.available': rewardTotal, 'balance.totalEarned': rewardTotal } },
       { new: true }
     );
 
@@ -182,7 +206,7 @@ router.post('/claim', auth, async (req, res) => {
     }
 
     res.json({
-      message: `Reward of ${referral.rewardAmount} ${referral.currency} claimed successfully`,
+      message: `Reward of ${rewardTotal} ${referral.currency} claimed successfully`,
       newBalance: user.balance.available,
     });
   } catch (error) {

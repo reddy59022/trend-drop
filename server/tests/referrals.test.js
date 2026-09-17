@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 let userToken;
 let userId;
 let referrerId;
+let secondUserId;
 
 async function createUser(email, name = 'TestUser') {
   const dummyId = new mongoose.Types.ObjectId();
@@ -34,6 +35,7 @@ describe('Referral Program', () => {
     
     const user = await createUser(`user_${Date.now()}@example.com`, 'User');
     userId = user._id;
+    secondUserId = null;
     
     const secret = process.env.JWT_SECRET || 'fallback_secret_change_me';
     userToken = jwt.sign({ id: userId }, secret, { expiresIn: '1h' });
@@ -42,7 +44,7 @@ describe('Referral Program', () => {
 
   afterEach(async () => {
     await Referral.deleteMany({ referrer: { $in: [userId, referrerId] } });
-    await User.deleteMany({ _id: { $in: [userId, referrerId] } });
+    await User.deleteMany({ _id: { $in: [userId, referrerId, secondUserId].filter(Boolean) } });
   });
 
   describe('GET /api/referrals/settings', () => {
@@ -99,7 +101,26 @@ describe('Referral Program', () => {
       expect(res.body.valid).toBe(true);
     });
 
-    it('REF.5 should reject invalid referral code', async () => {
+    it('REF.5 should atomically accept a referred user only once', async () => {
+      const genRes = await request(app)
+        .post('/api/referrals/generate')
+        .set('Authorization', `Bearer ${referrerToken}`);
+      const code = genRes.body.referral.code;
+
+      const responses = await Promise.all([
+        request(app).post('/api/referrals/apply').send({ code, userId }),
+        request(app).post('/api/referrals/apply').send({ code, userId }),
+      ]);
+
+      expect(responses.filter((res) => res.statusCode === 200)).toHaveLength(1);
+      expect(responses.filter((res) => res.statusCode === 400)).toHaveLength(1);
+      const referral = await Referral.findOne({ code });
+      expect(referral.uses).toBe(1);
+      expect(referral.referred).toEqual(userId);
+      expect(referral.referredUsers).toHaveLength(1);
+    });
+
+    it('REF.6 should reject invalid referral code', async () => {
       const res = await request(app)
         .post('/api/referrals/apply')
         .send({ code: 'INVALIDCODE' });
@@ -109,7 +130,7 @@ describe('Referral Program', () => {
   });
 
   describe('GET /api/referrals/my', () => {
-    it('REF.6 should return user referral stats', async () => {
+    it('REF.7 should return user referral stats', async () => {
       const res = await request(app)
         .get('/api/referrals/my')
         .set('Authorization', `Bearer ${userToken}`);
@@ -120,23 +141,29 @@ describe('Referral Program', () => {
   });
 
   describe('POST /api/referrals/claim', () => {
-    it('REF.7 should claim referral reward', async () => {
-      // Generate code and apply it
-      await request(app)
+    it('REF.8 should claim the reward for every referred user exactly once', async () => {
+      const genRes = await request(app)
         .post('/api/referrals/generate')
         .set('Authorization', `Bearer ${referrerToken}`);
+      const code = genRes.body.referral.code;
+      const secondUser = await createUser(`second_${Date.now()}@example.com`, 'Second User');
+      secondUserId = secondUser._id;
 
+      await request(app).post('/api/referrals/apply').send({ code, userId });
+      await request(app).post('/api/referrals/apply').send({ code, userId: secondUserId });
+
+      const before = await User.findById(referrerId);
       const res = await request(app)
         .post('/api/referrals/claim')
         .set('Authorization', `Bearer ${referrerToken}`);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.newBalance).toBeDefined();
+      expect(res.body.newBalance).toBe((before.balance?.available || 0) + 20);
     });
   });
 
   describe('GET /api/referrals/:code', () => {
-    it('REF.8 should validate referral code', async () => {
+    it('REF.9 should validate referral code', async () => {
       // Generate a code first
       const genRes = await request(app)
         .post('/api/referrals/generate')

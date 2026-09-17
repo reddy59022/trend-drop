@@ -44,6 +44,21 @@ describe('LoyaltyProgram page', () => {
     await waitFor(() => expect(document.querySelector('h1') || screen.queryByText(/loading/i) || screen.queryByText(/error/i) || document.body).toBeTruthy());
   });
 
+  test('renders the server-authoritative tier and points returned after redemption', async () => {
+    api.get.mockResolvedValue({ data: {
+      points: 4999,
+      tier: 'Silver',
+      pointsHistory: [{ amount: -1, reason: 'redemption', createdAt: '2026-09-17T00:00:00.000Z' }],
+    } });
+
+    renderPage(<LoyaltyProgram />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Silver Member')).toBeInTheDocument();
+      expect(screen.getByText('4999 Points Available')).toBeInTheDocument();
+    });
+  });
+
   test('survives API failure without crashing', async () => {
     Object.keys(api).filter(k => k.startsWith('get')).forEach(k => api[k].mockRejectedValue(new Error('boom')));
     api.get.mockRejectedValue(new Error('boom'));
