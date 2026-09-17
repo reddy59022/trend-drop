@@ -35,7 +35,10 @@ const EnterpriseApi = () => {
   const handleExport = async (type) => {
     try {
       const res = await api.post('/enterprise/export', { type });
-      toast.success(`Export started: ${res.data.downloadUrl}`);
+      const recordCount = Number(res?.data?.recordCount);
+      toast.success(Number.isFinite(recordCount)
+        ? `Export ready: ${recordCount} records`
+        : 'Export ready');
     } catch (error) {
       console.error('Error exporting:', error);
     }
@@ -45,7 +48,7 @@ const EnterpriseApi = () => {
     try {
       const res = await api.post('/enterprise/webhook', {
         url: 'https://your-app.com/webhook',
-        events: ['order.created', 'order.shipped']
+        events: ['order.created', 'order.updated']
       });
       toast.success('Webhook registered!');
     } catch (error) {
