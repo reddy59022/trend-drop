@@ -52,4 +52,15 @@ describe('FraudProtection page', () => {
     await waitFor(() => expect(document.body).not.toBeEmptyDOMElement());
   });
 
+  test('rejects a non-positive amount before sending a fraud request', async () => {
+    stubAll();
+    renderPage(<FraudProtection />);
+    await waitFor(() => expect(screen.getByText('Transaction Risk Check')).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText('Listing ID'), { target: { value: '507f1f77bcf86cd799439011' } });
+    fireEvent.change(screen.getByPlaceholderText('Amount ($)'), { target: { value: '-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Run Risk Check' }));
+    expect(await screen.findByText('Amount must be greater than zero')).toBeInTheDocument();
+    expect(api.checkFraud).not.toHaveBeenCalled();
+  });
+
 });

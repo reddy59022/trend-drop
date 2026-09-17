@@ -15,11 +15,15 @@ router.post('/check', auth, async (req, res) => {
   try {
     const { listingId, amount, ipAddress, userAgent } = req.body;
     
-    if (!listingId || !amount) {
+    if (!listingId || amount === undefined || amount === null || amount === '') {
       return res.status(400).json({ message: 'listingId and amount are required' });
     }
     if (!isValidObjectId(listingId)) {
       return res.status(400).json({ message: 'Invalid listingId' });
+    }
+    const numericAmount = typeof amount === 'number' ? amount : NaN;
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ message: 'Amount must be greater than zero' });
     }
     
     const risks = [];
@@ -49,8 +53,8 @@ router.post('/check', auth, async (req, res) => {
     // In production, query database for other users with same IP
     
     // Check 3: Suspicious amount patterns
-    if (amount > 500) {
-      risks.push({ type: 'high_value', severity: 'low', amount });
+    if (numericAmount > 500) {
+      risks.push({ type: 'high_value', severity: 'low', amount: numericAmount });
       riskScore += 15;
     }
     
@@ -58,7 +62,7 @@ router.post('/check', auth, async (req, res) => {
     const accountAge = Date.now() - new Date(user.createdAt).getTime();
     const accountAgeDays = Math.floor(accountAge / (1000 * 60 * 60 * 24));
     
-    if (accountAgeDays < 7 && amount > 100) {
+    if (accountAgeDays < 7 && numericAmount > 100) {
       risks.push({ type: 'new_account_high_value', severity: 'medium', days: accountAgeDays });
       riskScore += 25;
     }

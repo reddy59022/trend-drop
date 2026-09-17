@@ -91,6 +91,19 @@ describe('Seller Shipping Insurance', () => {
 
       expect(res.statusCode).toBe(400);
     });
+
+    it('INS.3a rejects non-finite values and unsupported coverage types', async () => {
+      for (const body of [
+        { itemValue: 'not-a-number' },
+        { itemValue: { $gt: 0 } },
+        { itemValue: 100, coverageType: 'ultra' },
+      ]) {
+        const res = await request(app)
+          .post('/api/shipping-insurance/calculate')
+          .send(body);
+        expect(res.statusCode).toBe(400);
+      }
+    });
   });
 
   describe('POST /api/shipping-insurance/purchase', () => {
@@ -125,6 +138,44 @@ describe('Seller Shipping Insurance', () => {
         .send({ transactionId: new mongoose.Types.ObjectId() });
 
       expect(res.statusCode).toBe(404);
+    });
+
+    it('INS.6a persists the selected coverage limit', async () => {
+      const res = await request(app)
+        .post('/api/shipping-insurance/purchase')
+        .set('Authorization', `Bearer ${sellerToken}`)
+        .send({ transactionId, coverageType: 'basic' });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.body.insurance.coverageLimit).toBe(100);
+    });
+  });
+
+  describe('POST /api/shipping-insurance/:id/refund', () => {
+    it('INS.6b cannot pay the same approved claim twice', async () => {
+      const insurance = await ShippingInsurance.create({
+        transaction: transactionId,
+        seller: sellerId,
+        itemValue: 100,
+        premium: 2,
+        coverageType: 'standard',
+        status: 'claimed',
+        refunded: false,
+        claim: { status: 'approved', payoutAmount: 100 },
+      });
+      const before = (await User.findById(sellerId)).balance.available || 0;
+
+      const first = await request(app)
+        .post(`/api/shipping-insurance/${insurance._id}/refund`)
+        .set('Authorization', `Bearer ${sellerToken}`);
+      const second = await request(app)
+        .post(`/api/shipping-insurance/${insurance._id}/refund`)
+        .set('Authorization', `Bearer ${sellerToken}`);
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(400);
+      const seller = await User.findById(sellerId);
+      expect(seller.balance.available).toBe(before + 100);
     });
   });
 

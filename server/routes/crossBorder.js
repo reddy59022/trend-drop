@@ -71,10 +71,11 @@ router.put('/', auth, async (req, res) => {
         shippingPartners,
       });
     } else {
-      if (country) settings.country = country;
-      if (currency) settings.currency = currency;
-      if (taxId) settings.taxId = taxId;
-      if (shippingPartners) settings.shippingPartners = shippingPartners;
+      if (country !== undefined) settings.country = country;
+      if (currency !== undefined) settings.currency = currency;
+      // Empty taxId is an intentional clear operation, not an omitted field.
+      if (taxId !== undefined) settings.taxId = taxId || '';
+      if (shippingPartners !== undefined) settings.shippingPartners = shippingPartners;
       await settings.save();
     }
     

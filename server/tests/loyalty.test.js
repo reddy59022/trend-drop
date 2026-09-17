@@ -63,4 +63,19 @@ describe('v57.0 Customer Loyalty Program', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
+
+  test('v57.5 - concurrent earns cannot exceed the daily points ceiling', async () => {
+    await LoyaltyProgram.deleteOne({ user: user._id });
+    const responses = await Promise.all(
+      Array.from({ length: 2 }, () => request(app)
+        .post('/api/loyalty/earn')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ purchaseAmount: 10000, reason: 'purchase' }))
+    );
+
+    expect(responses.filter((res) => res.status === 200)).toHaveLength(1);
+    expect(responses.filter((res) => res.status === 429)).toHaveLength(1);
+    const loyalty = await LoyaltyProgram.findOne({ user: user._id });
+    expect(loyalty.points).toBeLessThanOrEqual(10000);
+  });
 });

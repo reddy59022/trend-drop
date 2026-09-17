@@ -106,14 +106,53 @@ router.post('/earn', auth, async (req, res) => {
       }
     }
 
-    const loyalty = await LoyaltyProgram.findOneAndUpdate(
+    // The read-only ceiling check above is useful for a fast rejection, but it
+    // is not sufficient under concurrent requests. Ensure a document exists,
+    // then enforce the same rolling ceiling in the atomic update predicate.
+    await LoyaltyProgram.findOneAndUpdate(
       { user: req.user._id },
-      {
-        $inc: { points },
-        $push: { pointsHistory: { amount: points, reason, listing: listingId } }
-      },
+      { $setOnInsert: { user: req.user._id, points: 0, tier: 'Silver' } },
       { new: true, upsert: true }
     );
+    const atomicWindowStart = new Date(Date.now() - POINTS_WINDOW_MS);
+    const grantedInWindow = {
+      $sum: {
+        $map: {
+          input: {
+            $filter: {
+              input: { $ifNull: ['$pointsHistory', []] },
+              as: 'entry',
+              cond: {
+                $and: [
+                  { $gt: ['$$entry.amount', 0] },
+                  { $gte: ['$$entry.createdAt', atomicWindowStart] },
+                ],
+              },
+            },
+          },
+          as: 'entry',
+          in: '$$entry.amount',
+        },
+      },
+    };
+    const loyalty = await LoyaltyProgram.findOneAndUpdate(
+      {
+        user: req.user._id,
+        $expr: {
+          $lte: [{ $add: [grantedInWindow, points] }, MAX_POINTS_PER_DAY],
+        },
+      },
+      {
+        $inc: { points },
+        $push: { pointsHistory: { amount: points, reason, listing: listingId } },
+      },
+      { new: true }
+    );
+    if (!loyalty) {
+      return res.status(429).json({
+        message: `Daily points limit reached (max ${MAX_POINTS_PER_DAY} points per 24 hours)`,
+      });
+    }
 
     // Update tier based on points
     if (loyalty.points >= 10000) loyalty.tier = 'Platinum';

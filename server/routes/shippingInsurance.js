@@ -27,16 +27,21 @@ router.get('/settings', (req, res) => {
 router.post('/calculate', async (req, res) => {
   try {
     const { itemValue, coverageType = 'standard' } = req.body;
+    const validCoverageTypes = ['basic', 'standard', 'premium'];
+    const numericItemValue = typeof itemValue === 'number' ? itemValue : NaN;
 
-    if (!itemValue || itemValue <= 0) {
+    if (!Number.isFinite(numericItemValue) || numericItemValue <= 0) {
       return res.status(400).json({ message: 'Valid item value is required' });
     }
+    if (!validCoverageTypes.includes(coverageType)) {
+      return res.status(400).json({ message: 'Unsupported coverage type' });
+    }
 
-    const premium = ShippingInsurance.calculatePremium(itemValue, coverageType);
+    const premium = ShippingInsurance.calculatePremium(numericItemValue, coverageType);
     const limit = ShippingInsurance.getCoverageLimit(coverageType);
 
     res.json({
-      itemValue,
+      itemValue: numericItemValue,
       coverageType,
       premium,
       limit,
@@ -52,6 +57,7 @@ router.post('/calculate', async (req, res) => {
 router.post('/purchase', auth, async (req, res) => {
   try {
     const { transactionId, coverageType = 'standard' } = req.body;
+    const validCoverageTypes = ['basic', 'standard', 'premium'];
 
     if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'Transaction ID is required' });
@@ -60,6 +66,9 @@ router.post('/purchase', auth, async (req, res) => {
     const transaction = await Transaction.findById(transactionId);
     if (!transaction) {
       return res.status(404).json({ message: 'Transaction not found' });
+    }
+    if (!validCoverageTypes.includes(coverageType)) {
+      return res.status(400).json({ message: 'Unsupported coverage type' });
     }
 
     // Only seller can purchase insurance
@@ -84,6 +93,7 @@ router.post('/purchase', auth, async (req, res) => {
       premium,
       currency: transaction.currency || 'USD',
       coverageType,
+      coverageLimit: limit,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
     });
 
@@ -182,6 +192,9 @@ router.post('/:id/refund', auth, async (req, res) => {
     }
 
     // Check insurance is active and shipping lost
+    if (insurance.refunded || insurance.claim?.paidAt) {
+      return res.status(400).json({ message: 'Insurance refund already processed' });
+    }
     if (insurance.status !== 'claimed' || insurance.claim?.status !== 'approved') {
       return res.status(400).json({ message: 'Insurance claim not approved for refund' });
     }

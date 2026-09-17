@@ -62,7 +62,7 @@ const mockStripe = (status) => {
 };
 
 /** Wire the checkout happy path up to (but not including) order placement. */
-const prepareCheckout = ({ failOrder = false } = {}) => {
+const prepareCheckout = ({ failOrder = false, breakdown = BREAKDOWN } = {}) => {
   api.get.mockImplementation((url) => {
     if (url === '/payments/publishable-key') {
       return Promise.resolve({ data: { publishableKey: 'pk_test_r32', configured: true } });
@@ -79,10 +79,10 @@ const prepareCheckout = ({ failOrder = false } = {}) => {
   api.post.mockImplementation((url) => {
     if (url === '/payments/create-intent') {
       return Promise.resolve({
-        data: { clientSecret: 'cs_test_1', paymentIntentId: 'pi_live_1', amount: 56.5, breakdowns: [BREAKDOWN] },
+        data: { clientSecret: 'cs_test_1', paymentIntentId: 'pi_live_1', amount: breakdown.buyer.totalPaid, breakdowns: [breakdown] },
       });
     }
-    if (url === '/payments/breakdown') return Promise.resolve({ data: BREAKDOWN });
+    if (url === '/payments/breakdown') return Promise.resolve({ data: breakdown });
     if (url === '/payments/confirm-batch') {
       return failOrder
         ? Promise.reject({ response: { status: 400, data: { message: 'Item is no longer available' } } })
@@ -166,6 +166,16 @@ describe('Cart checkout — payment confirmation status (R32)', () => {
         })],
       }));
     });
+  });
+
+  test('renders a zero server breakdown instead of falling back to the item price', async () => {
+    prepareCheckout({ breakdown: { ...BREAKDOWN, buyer: { ...BREAKDOWN.buyer, totalPaid: 0 } } });
+    const pay = await renderCheckout();
+
+    // A zero total is valid (for example, a fully discounted/free-shipping
+    // item). Using `serverTotal || item.price` displayed the list price again.
+    expect(screen.getAllByText('$0.00').length).toBeGreaterThanOrEqual(2);
+    expect(pay).toBeInTheDocument();
   });
 
   test('normalizes tampered cart quantities before sending payment requests', async () => {

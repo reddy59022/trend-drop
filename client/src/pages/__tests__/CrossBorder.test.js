@@ -51,4 +51,20 @@ describe('CrossBorder page', () => {
     await waitFor(() => expect(document.body).not.toBeEmptyDOMElement());
   });
 
+  test('sends an empty tax ID when the seller clears it', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/cross-border') return Promise.resolve({ data: { country: 'US', currency: 'USD', taxId: 'TAX123', shippingPartners: [] } });
+      if (url === '/cross-border/countries') return Promise.resolve({ data: [{ code: 'US', name: 'United States' }] });
+      return Promise.resolve({ data: {} });
+    });
+    api.put.mockResolvedValue({ data: { taxId: '' } });
+    renderPage(<CrossBorder />);
+
+    const taxInput = await screen.findByPlaceholderText('Tax identification number');
+    fireEvent.change(taxInput, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Settings/i }));
+
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/cross-border', expect.objectContaining({ taxId: '' })));
+  });
+
 });

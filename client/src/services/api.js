@@ -274,9 +274,12 @@ export const resolveEscrowDispute = (data) => api.post('/escrow/resolve-dispute'
 export const getEscrowSettings = () => api.get('/escrow/settings');
 
 // ====== Shipping Insurance (v31.0) ======
+export const getShippingInsuranceSettings = () => api.get('/shipping-insurance/settings');
+export const calculateShippingInsurance = (data) => api.post('/shipping-insurance/calculate', data);
 export const purchaseShippingInsurance = (data) => api.post('/shipping-insurance/purchase', data);
 export const getMyInsurancePolicies = () => api.get('/shipping-insurance/my');
 export const fileInsuranceClaim = (policyId, data) => api.post(`/shipping-insurance/${policyId}/claim`, data);
+export const refundShippingInsurance = (policyId) => api.post(`/shipping-insurance/${policyId}/refund`);
 
 // ====== Cart (v29.0) ======
 export const getCart = () => api.get('/cart');
@@ -305,6 +308,12 @@ export const getPriceSuggestionSettings = () => api.get('/price-suggestions/sett
 export const getPriceSuggestion = (data) => api.post('/price-suggestions/suggest', data);
 export const getSimilarSold = (data) => api.post('/price-suggestions/similar', data);
 export const getPriceTrends = (category) => api.get(`/price-suggestions/trends?category=${category || ''}`);
+
+// ====== Loyalty Program ======
+export const getLoyaltyStatus = () => api.get('/loyalty');
+export const earnLoyaltyPoints = (data) => api.post('/loyalty/earn', data);
+export const redeemLoyaltyPoints = (amount) => api.post('/loyalty/redeem', { amount });
+export const getLoyaltyHistory = () => api.get('/loyalty/history');
 
 // ====== Seller Badges / Verification (v39.0) ======
 export const getMySellerBadge = () => api.get('/seller-badges/me');

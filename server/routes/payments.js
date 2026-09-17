@@ -101,11 +101,24 @@ router.get('/platform-fee', (req, res) => {
 router.post('/breakdown', (req, res) => {
   try {
     const { itemPrice, fromCountry, toCountry, weightKg } = req.body;
-    const breakdown = calculatePaymentBreakdown(itemPrice || 0, fromCountry || 'US', toCountry || 'US', weightKg || 0.5);
+    const parseMoneyInput = (field, value, fallback, max) => {
+      if (value === undefined || value === null) return fallback;
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > max) {
+        const error = new Error(`${field} must be a finite number between 0 and ${max}`);
+        error.statusCode = 400;
+        throw error;
+      }
+      return value;
+    };
+    const price = parseMoneyInput('itemPrice', itemPrice, 0, 1e7);
+    const weight = parseMoneyInput('weightKg', weightKg, 0.5, 500);
+    const sellerCountry = typeof fromCountry === 'string' && fromCountry.trim() ? fromCountry.trim() : 'US';
+    const buyerCountry = typeof toCountry === 'string' && toCountry.trim() ? toCountry.trim() : 'US';
+    const breakdown = calculatePaymentBreakdown(price, sellerCountry, buyerCountry, weight);
     res.json(breakdown);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Error calculating breakdown' });
+    res.status(error.statusCode || 500).json({ message: error.message || 'Error calculating breakdown' });
   }
 });
 

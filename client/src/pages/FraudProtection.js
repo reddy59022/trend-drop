@@ -38,13 +38,18 @@ const FraudProtection = () => {
       setError('Listing ID and amount are required');
       return;
     }
+    const amount = Number(form.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Amount must be greater than zero');
+      return;
+    }
     setChecking(true);
     setError('');
     setResult(null);
     try {
       const res = await checkFraud({
         listingId: form.listingId,
-        amount: parseFloat(form.amount),
+        amount,
         userAgent: navigator.userAgent,
       });
       setResult(res.data);

@@ -543,7 +543,7 @@ const Cart = () => {
                     return (
                       <div key={item.listingId} className="flex-between" style={{ fontSize: 13, padding: '2px 0' }}>
                         <span style={{ color: 'var(--td-text-secondary)' }}>{item.title} × {item.quantity}</span>
-                        <span style={{ fontWeight: 600 }}>{formatPrice(bd?.buyer?.totalPaid || item.price, item.currency || 'USD')}</span>
+                        <span style={{ fontWeight: 600 }}>{formatPrice(bd?.buyer?.totalPaid ?? item.price, item.currency || 'USD')}</span>
                       </div>
                     );
                   })}

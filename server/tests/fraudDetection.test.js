@@ -98,6 +98,17 @@ describe('Fraud Detection', () => {
       expect(res.body.message).toContain('required');
     });
 
+    it('FRAUD.3a should reject non-finite or non-positive amounts', async () => {
+      const listingId = new mongoose.Types.ObjectId();
+      for (const amount of ['lots', { $gt: 0 }, -1, 0]) {
+        const res = await request(app)
+          .post('/api/fraud/check')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ listingId, amount });
+        expect(res.statusCode).toBe(400);
+      }
+    });
+
     it('FRAUD.4 should flag invalid listing', async () => {
       const fakeId = new mongoose.Types.ObjectId();
       const res = await request(app)

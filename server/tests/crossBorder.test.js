@@ -55,6 +55,16 @@ describe('v52.0 Cross-Border Marketplace', () => {
     expect(res.body.currency).toBe('CAD');
   });
 
+  test('v52.3a - Should allow a seller to clear an existing tax ID', async () => {
+    const res = await request(app)
+      .put('/api/cross-border')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ taxId: '' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.taxId).toBe('');
+  });
+
   test('v52.4 - Should list supported countries', async () => {
     const res = await request(app).get('/api/cross-border/countries');
     expect(res.status).toBe(200);

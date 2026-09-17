@@ -60,6 +60,27 @@ beforeAll(async () => {
   }
 });
 
+describe('TDD R36 — payment breakdown rejects non-finite money inputs', () => {
+  test.each([
+    { itemPrice: 'free', fromCountry: 'US', toCountry: 'US', weightKg: 1 },
+    { itemPrice: 50, fromCountry: 'US', toCountry: 'US', weightKg: 'heavy' },
+    { itemPrice: { $gt: 1 }, fromCountry: 'US', toCountry: 'US', weightKg: 1 },
+    { itemPrice: -5, fromCountry: 'US', toCountry: 'US', weightKg: 1 },
+  ])('rejects malformed payment breakdown input %j with 400', async (body) => {
+    const res = await request(app).post('/api/payments/breakdown').send(body);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/number|price|weight/i);
+  });
+
+  test('valid zero-priced breakdown remains a finite response', async () => {
+    const res = await request(app).post('/api/payments/breakdown').send({
+      itemPrice: 0, fromCountry: 'US', toCountry: 'US', weightKg: 0.5,
+    });
+    expect(res.status).toBe(200);
+    expect(Number.isFinite(res.body.buyer.totalPaid)).toBe(true);
+  });
+});
+
 describe('TDD R35 — payment quantity input is finite and integral', () => {
   test('create-intent rejects a malformed quantity instead of authorizing a null/NaN total', async () => {
     const seller = await makeUser('PI quantity seller', `pi_qty_seller_${Date.now()}@test.com`);
