@@ -329,7 +329,7 @@ const SellerDashboard = () => {
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontWeight: 700, color: 'var(--td-success)', fontSize: 16 }}>+{formatPrice(p.payoutAmount, p.currency || currency)}</div>
-                    <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>{p.paidAt ? new Date(p.paidAt).toLocaleDateString() : ''}</div>
+                    <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>{(p.paidAt || p.createdAt) ? new Date(p.paidAt || p.createdAt).toLocaleDateString('en-US', { timeZone: 'UTC' }) : ''}</div>
                   </div>
                 </div>
               ))

@@ -7,6 +7,7 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Payout = require('../models/Payout');
 const Order = require('../models/Order');
+const { carriers, normalizeCarrier } = require('../config/shipping');
 const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundRules, returnEligibility, evidenceRequirements, disputeProcess, isValidTransition, getAllowedActions } = require('../config/orderLifecycle');
 const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
 const { releaseSellerEarnings, clawbackSellerEarnings } = require('../utils/balances');
@@ -217,6 +218,14 @@ router.post('/:id/ship', auth, async (req, res) => {
       return res.status(400).json({ message: 'shipmentIndex is required' });
     }
     
+    if (trackingNumber !== undefined && (typeof trackingNumber !== 'string' || trackingNumber.trim().length < 3 || trackingNumber.length > 64)) {
+      return res.status(400).json({ message: 'trackingNumber must be a string between 3 and 64 characters' });
+    }
+    const requestedCarrier = carrier === undefined ? undefined : normalizeCarrier(carrier);
+    if (carrier !== undefined && !requestedCarrier) {
+      return res.status(400).json({ message: 'Unsupported carrier' });
+    }
+
     // Validate orderId
     if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ message: 'Invalid order ID' });
@@ -244,7 +253,7 @@ router.post('/:id/ship', auth, async (req, res) => {
 
     shipment.status = 'shipped';
     if (trackingNumber) shipment.trackingNumber = trackingNumber;
-    if (carrier) shipment.carrier = carrier;
+    if (requestedCarrier) shipment.carrier = requestedCarrier;
     shipment.shippedAt = new Date();
     await order.save();
 
@@ -260,7 +269,7 @@ router.post('/:id/ship', auth, async (req, res) => {
           $set: {
             status: 'shipped',
             'shipping.trackingNumber': trackingNumber || '',
-            'shipping.carrier': carrier || '',
+            'shipping.carrier': requestedCarrier || '',
           },
         }
       );

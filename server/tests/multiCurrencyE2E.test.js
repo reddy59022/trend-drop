@@ -284,7 +284,7 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/GBP/EUR) + 1 order + 5 shipmen
       const r = await request(app)
         .post(`/api/orders/${orderId}/ship`)
         .set('Authorization', `Bearer ${s.token}`)
-        .send({ shipmentIndex: i, trackingNumber: `${s.country}TRK`, carrier: 'Carrier' });
+        .send({ shipmentIndex: i, trackingNumber: `${s.country}TRK`, carrier: 'USPS' });
       expect(r.status).toBe(200);
     }
     const final = await Order.findById(orderId);

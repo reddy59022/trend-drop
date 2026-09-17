@@ -95,6 +95,11 @@ const transactionSchema = new mongoose.Schema({
     actualDelivery: { type: Date },
     weight: { type: Number, default: 0.5 },
     service: { type: String, default: '' },
+    // Label lifecycle is separate from order lifecycle. A mock/real label can
+    // be voided without cancelling the sale or restoring inventory.
+    voided: { type: Boolean, default: false },
+    voidedAt: { type: Date },
+    voidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     // Full tracking history
     trackingHistory: [{
       status: String,

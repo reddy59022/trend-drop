@@ -289,13 +289,31 @@ const getPreferredCarrier = (countryCode, isDomestic = true) => {
 
   const mapping = countryCarriers[countryCode];
   if (!mapping) return 'DHL';
-  return isDomestic ? mapping.domestic : mapping.international;
+  // Cross-border labels use a carrier with a global handoff and customs
+  // support. Destination-country domestic postal services (Royal Mail,
+  // Canada Post, etc.) are not valid origins for an international shipment.
+  // DHL is the platform-standard international carrier; domestic shipments
+  // retain the destination country's postal/private carrier.
+  return isDomestic ? mapping.domestic : 'DHL';
+};
+
+// Normalize carrier identifiers at the API boundary. Public clients commonly
+// send lowercase slugs ("usps", "fedex") while the configuration uses
+// canonical keys. Never silently fall back for an unknown carrier.
+const normalizeCarrier = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const input = value.trim().toLowerCase();
+  const match = Object.keys(carriers).find((key) => (
+    key.toLowerCase() === input || carriers[key].name.toLowerCase() === input
+  ));
+  return match || null;
 };
 
 // Generate shipping label data
 const generateLabel = (order, carrierCode) => {
-  const carrier = carriers[carrierCode] || carriers.DHL;
-  const trackingPrefix = carrierCode.substring(0, 2).toUpperCase();
+  const canonicalCarrierCode = normalizeCarrier(carrierCode) || 'DHL';
+  const carrier = carriers[canonicalCarrierCode];
+  const trackingPrefix = canonicalCarrierCode.substring(0, 2).toUpperCase();
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 8).toUpperCase();
   const trackingNumber = `${trackingPrefix}${timestamp}${random}`;
@@ -303,7 +321,7 @@ const generateLabel = (order, carrierCode) => {
   return {
     trackingNumber,
     carrier: carrier.name,
-    carrierCode,
+    carrierCode: canonicalCarrierCode,
     service: carrier.services[0],
     trackingUrl: `${carrier.trackingUrl}${trackingNumber}`,
     labelUrl: null,
@@ -376,6 +394,7 @@ module.exports = {
   surcharges,
   calculateShipping,
   getPreferredCarrier,
+  normalizeCarrier,
   generateLabel,
   trackingStatuses,
   simulateTrackingUpdate,

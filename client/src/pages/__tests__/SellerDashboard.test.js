@@ -202,6 +202,15 @@ test('shows Total Sales, Your Earnings and Pending Payout without exposing Commi
     expect(screen.queryByText('$25.00')).not.toBeInTheDocument();
   });
 
+  test('seller dashboard shows a reliable payout date when paidAt is absent', async () => {
+    getPayoutDashboard.mockResolvedValue({
+      data: { ...dash(), payoutHistory: [{ listing: { title: 'Pending Sale' }, salePrice: 40, commissionAmount: 4, payoutAmount: 36, currency: 'USD', createdAt: '2026-09-17T00:00:00.000Z' }] },
+    });
+    renderPage(<SellerDashboard />);
+    expect(await screen.findByText('Pending Sale')).toBeInTheDocument();
+    expect(screen.getByText('9/17/2026')).toBeInTheDocument();
+  });
+
   test('seller-visible numbers partition exactly (earnings + pending = payouts; gross = cut + payouts)', async () => {
     // Mirrors the server DA.0 regression shape: completed 150 + pending 4295.60.
     getPayoutDashboard.mockResolvedValue({

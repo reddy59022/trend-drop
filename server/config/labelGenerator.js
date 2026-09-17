@@ -13,9 +13,9 @@ const generateUSPSTracking = (existingTracking) => {
 };
 
 // Generate QR code for tracking
-const generateQR = async (trackingNumber) => {
+const generateQR = async (trackingNumber, trackingUrl) => {
   try {
-    const url = `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
+    const url = trackingUrl || `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
     return await QRCode.toDataURL(url, {
       width: 180, margin: 0, color: { dark: '#000', light: '#fff' }, errorCorrectionLevel: 'M',
     });
@@ -68,17 +68,23 @@ const generateShippingLabel = async (order) => {
     toAddress = {},
     weight = 0.5,
     service = '',
+    trackingUrl = '',
   } = order;
 
   const finalTracking = generateUSPSTracking(trackingNumber);
-  const qrDataUrl = await generateQR(finalTracking);
+  const qrDataUrl = await generateQR(finalTracking, trackingUrl);
 
   // 4x6 inch label at 72 DPI = 288x432. We use slightly larger for readability
   const doc = new PDFDocument({
-    size: [612, 408],
+    // Standard 4 × 6 inch thermal-label page (landscape, 72 DPI).
+    size: [432, 288],
     margins: { top: 15, bottom: 15, left: 20, right: 20 },
     info: { Title: `Label ${finalTracking}`, Author: 'TrendDrop' },
   });
+  // The layout below is authored on a 612 × 408 design grid. Scale it into
+  // the actual 4 × 6 page so every address, barcode, and footer stays inside
+  // the printable area on thermal printers.
+  doc.scale(432 / 612, 432 / 612);
 
   // ===== HEADER: Carrier + Tracking =====
   doc.fontSize(10).font('Helvetica-Bold').fillColor('#000000')

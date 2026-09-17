@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const Payout = require('../models/Payout');
-const { carriers, calculateShipping, generateLabel, trackingStatuses, simulateTrackingUpdate, getPreferredCarrier } = require('../config/shipping');
+const { carriers, calculateShipping, generateLabel, trackingStatuses, simulateTrackingUpdate, getPreferredCarrier, normalizeCarrier } = require('../config/shipping');
 const { currencies, convertPrice, formatPrice } = require('../config/currencies');
 const { countries, getCountry } = require('../config/countries');
 const Transaction = require('../models/Transaction');
@@ -207,6 +207,10 @@ router.post('/calculate-breakdown', (req, res) => {
 // POST /api/shipping/label/:transactionId - Create/generate shipping label for transaction
 router.post('/label/:transactionId', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
+    }
+
     const transaction = await Transaction.findById(req.params.transactionId)
       .populate('buyer', 'name email shippingAddress')
       .populate('seller', 'name email shippingAddress')
@@ -227,7 +231,7 @@ router.post('/label/:transactionId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Label already generated for this transaction' });
     }
 
-    const sellerCountry = transaction.shippingAddress?.country || 'US';
+    const sellerCountry = transaction.sellerAddress?.country || transaction.seller?.shippingAddress?.country || 'US';
     const toCountry = transaction.shippingAddress?.country || 'US';
     const carrierCode = getPreferredCarrier(toCountry, sellerCountry === toCountry);
     const label = generateLabel({
@@ -242,7 +246,9 @@ router.post('/label/:transactionId', auth, async (req, res) => {
       labelCreated: true,
       labelCreatedDate: new Date(),
     };
-    transaction.status = 'shipped';
+    // Creating/printing a label is not proof that the carrier accepted the
+    // parcel. Keep the paid state until the seller dispatches it through the
+    // order lifecycle or a trusted tracking event.
     await transaction.save();
 
     const transactionId = req.params.transactionId;
@@ -261,6 +267,9 @@ router.post('/label/:transactionId', auth, async (req, res) => {
 // POST /api/shipping/void/:transactionId - Void shipping label and refund
 router.post('/void/:transactionId', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
+    }
     const transaction = await Transaction.findById(req.params.transactionId)
       .populate('seller', 'name balance');
 
@@ -286,12 +295,21 @@ router.post('/void/:transactionId', auth, async (req, res) => {
       return res.status(400).json({ message: 'No label to void' });
     }
 
-    // Calculate shipping refund
-    const shippingCost = transaction.paymentBreakdown?.shippingCost || transaction.shipping?.cost || 0;
-    const refundAmount = shippingCost;
+    // A mock label has no carrier charge and therefore must not be treated as
+    // a sale cancellation or a buyer shipping refund. In particular, the
+    // transaction's shippingCost is the buyer's checkout charge, not proof
+    // that postage was purchased. Real carrier adapters will replace this
+    // branch once credentials are configured and will record a provider
+    // refund idempotency key before refunding money.
+    if (transaction.shipping.voided) {
+      return res.json({
+        voided: true,
+        refunded: false,
+        refundAmount: 0,
+        message: 'Label was already voided; no financial changes were made.',
+      });
+    }
 
-    // Update transaction
-    transaction.status = 'cancelled';
     transaction.shipping = {
       ...transaction.shipping,
       voided: true,
@@ -300,41 +318,11 @@ router.post('/void/:transactionId', auth, async (req, res) => {
     };
     await transaction.save();
 
-    // Restore inventory
-    await Listing.findByIdAndUpdate(transaction.listing, {
-      $inc: { quantity: 1, quantitySold: -1 },
-      $set: { available: true, sold: false },
-    });
-
-    // Refund shipping cost to buyer (in production, process via payment provider)
-    // For now, record the refund
-    if (refundAmount > 0) {
-      const seller = typeof transaction.seller === 'object' ? transaction.seller : await User.findById(transaction.seller);
-      if (seller && seller.balance) {
-        seller.balance.pending = (seller.balance.pending || 0) - (transaction.paymentBreakdown?.sellerEarnings || 0);
-        seller.balance.totalPaidOut = (seller.balance.totalPaidOut || 0) + refundAmount;
-        await seller.save();
-      }
-    }
-
-    // Create refund record
-    const Payout = require('../models/Payout');
-    await Payout.create({
-      seller: transaction.seller,
-      transaction: transaction._id,
-      listing: transaction.listing,
-      salePrice: refundAmount,
-      commissionRate: 0,
-      commissionAmount: 0,
-      payoutAmount: -refundAmount,
-      status: 'refunded',
-      type: 'label_void_refund',
-    });
-
     res.json({
-      refunded: true,
-      refundAmount,
-      message: 'Label voided successfully. Shipping cost refunded.',
+      voided: true,
+      refunded: false,
+      refundAmount: 0,
+      message: 'Mock label voided. No carrier postage charge was incurred.',
     });
   } catch (error) {
     console.error('Label void error:', error);
@@ -345,6 +333,10 @@ router.post('/void/:transactionId', auth, async (req, res) => {
 // GET /api/shipping/label/:transactionId - Download shipping label as PDF
 router.get('/label/:transactionId', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
+    }
+
     const transaction = await Transaction.findById(req.params.transactionId)
       .populate('buyer', 'name email shippingAddress')
       .populate('seller', 'name email shippingAddress')
@@ -362,10 +354,14 @@ router.get('/label/:transactionId', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only the seller can download shipping labels' });
     }
 
+    if (transaction.shipping?.voided) {
+      return res.status(410).json({ message: 'Shipping label has been voided; generate a new label before downloading.' });
+    }
+
     // If no real label data, generate it
     if (!transaction.shipping?.trackingNumber) {
       const { getPreferredCarrier: gpc } = require('../config/shipping');
-      const sellerCountry = transaction.shippingAddress?.country || 'US';
+      const sellerCountry = transaction.sellerAddress?.country || transaction.seller?.shippingAddress?.country || 'US';
       const toCountry = transaction.shippingAddress?.country || 'US';
       const carrierCode = gpc(toCountry, sellerCountry === toCountry);
       const label = require('../config/shipping').generateLabel({
@@ -444,6 +440,10 @@ router.post('/generate-label', auth, async (req, res) => {
     if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'Invalid transactionId' });
     }
+    const requestedCarrier = carrier === undefined ? undefined : normalizeCarrier(carrier);
+    if (carrier !== undefined && !requestedCarrier) {
+      return res.status(400).json({ message: 'Unsupported carrier' });
+    }
 
     const transaction = await Transaction.findById(transactionId);
     if (!transaction) {
@@ -456,10 +456,20 @@ router.post('/generate-label', auth, async (req, res) => {
     return res.status(403).json({ message: 'Only the seller can generate shipping labels' });
   }
 
-    const carrierCode = carrier || getPreferredCarrier(
-      transaction.shippingAddress?.country || 'US',
-      true
-    );
+    const sellerCountry = transaction.sellerAddress?.country || 'US';
+    const buyerCountry = transaction.shippingAddress?.country || 'US';
+    const carrierCode = requestedCarrier || getPreferredCarrier(buyerCountry, sellerCountry === buyerCountry);
+
+    if (transaction.shipping?.trackingNumber) {
+      return res.json({
+        trackingNumber: transaction.shipping.trackingNumber,
+        carrier: transaction.shipping.carrier,
+        trackingUrl: transaction.shipping.trackingUrl,
+        service: transaction.shipping.service,
+        labelPdfUrl: `${req.protocol}://${req.get('host')}/api/shipping/label/${transactionId}`,
+        message: 'Shipping label already generated',
+      });
+    }
 
     const label = generateLabel({
       shippingAddress: transaction.shippingAddress,
@@ -479,7 +489,8 @@ router.post('/generate-label', auth, async (req, res) => {
       service: label.service,
       trackingHistory: label.statusHistory,
     };
-    transaction.status = 'shipped';
+    // Label creation is not dispatch confirmation. Keep the transaction paid
+    // until the seller ships it or a trusted carrier event advances it.
     await transaction.save();
 
     // Generate label URL for response
@@ -506,6 +517,9 @@ router.get('/track/:transactionId', auth, async (req, res, next) => {
 // GET /api/shipping/tracking/:transactionId - Get tracking info
 router.get('/tracking/:transactionId', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
+    }
     const transaction = await Transaction.findById(req.params.transactionId)
       .populate('buyer', 'name avatar')
       .populate('seller', 'name avatar')
