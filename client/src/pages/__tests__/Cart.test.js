@@ -57,7 +57,10 @@ describe('Cart page', () => {
     fe.change(input, { target: { value: 'SAVE10' } });
     const apply = screen.getByRole('button', { name: /apply/i });
     fe.click(apply);
-    await waitFor(() => expect(api.validatePromo).toHaveBeenCalled());
+    await waitFor(() => expect(api.validatePromo).toHaveBeenCalledWith({
+      code: 'SAVE10',
+      items: [{ listingId: 'listing123', quantity: 1 }],
+    }));
   });
 
   test('updates the displayed total when a promo is applied', async () => {

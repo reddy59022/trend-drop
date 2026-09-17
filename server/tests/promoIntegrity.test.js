@@ -138,6 +138,22 @@ describe('PI — validate caps and seller scoping', () => {
     expect(mixed.body.promo.eligibleTotal).toBe(100);
   });
 
+  test('PI.6 validation uses the listing price, not a client-supplied price', async () => {
+    const listing = await makeListing(sellerA, 40);
+    await createPromo({ code: 'PI6AUTHORITATIVE', discountType: 'percentage', discountValue: 50 });
+
+    const response = await request(app).post('/api/promos/validate')
+      .set('Authorization', 'Bearer ' + buyerToken)
+      .send({
+        code: 'PI6AUTHORITATIVE',
+        items: [{ listingId: listing._id, price: 1000, quantity: 1 }],
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.promo.eligibleTotal).toBe(40);
+    expect(response.body.promo.discountAmount).toBe(20);
+  });
+
   test('PI.5 invalid discount values are rejected at creation', async () => {
     const neg = await createPromo({ code: 'PI5NEG', discountType: 'fixed', discountValue: -5 });
     expect(neg.status).toBe(400);

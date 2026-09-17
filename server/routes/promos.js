@@ -184,12 +184,17 @@ router.post('/validate', auth, async (req, res) => {
         if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
         if (!isValidObjectId(item.listingId)) continue;
         const listing = await Listing.findById(item.listingId);
+        // Never trust client-supplied price or allow missing listings to count
+        // toward a discount. Promo validation is a pricing decision and must
+        // use the current server-side listing price.
+        if (!listing) continue;
         // Seller scoping: only the promo owner's items are eligible.
-        if (listing && String(listing.seller) !== String(promo.seller)) continue;
+        if (String(listing.seller) !== String(promo.seller)) continue;
         // Category restriction (unchanged).
-        if (listing && promo.applicableCategories && promo.applicableCategories.length > 0
+        if (promo.applicableCategories && promo.applicableCategories.length > 0
             && !promo.applicableCategories.includes(listing.category)) continue;
-        const lineTotal = (item.price || 0) * (item.quantity || 1);
+        const quantity = Number.isInteger(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+        const lineTotal = listing.price * quantity;
         total += lineTotal;
         eligibleTotal += lineTotal;
       }

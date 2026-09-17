@@ -101,8 +101,9 @@ test.describe('12 · Promo codes & bundle discounts (production)', () => {
     expect(r.data.message).toMatch(/invalid promo/i);
   });
 
-  test('validate rejects promo below minimum purchase', async () => {
-    // Use a very low-priced item that doesn't meet the $20 minimum
+  test('validate ignores a client price below the minimum and uses listing price', async () => {
+    // The listing is above the $20 minimum. A client cannot lower its price
+    // in the request to bypass the authoritative minimum-purchase check.
     const r = await api.req('post', '/api/promos/validate', {
       token: jordanToken,
       body: {
@@ -110,8 +111,8 @@ test.describe('12 · Promo codes & bundle discounts (production)', () => {
         items: [{ listingId: state.listings.A.id, price: 5, quantity: 1 }],
       },
     });
-    expect(r.status).toBe(400);
-    expect(r.data.message).toMatch(/minimum purchase/i);
+    expect(r.status, JSON.stringify(r.data)).toBe(200);
+    expect(r.data.promo.eligibleTotal).toBe(state.listings.A.price);
   });
 
   test('seller can list their promo codes', async () => {

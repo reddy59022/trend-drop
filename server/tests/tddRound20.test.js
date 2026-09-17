@@ -410,8 +410,9 @@ describe('R20.3 hostile bodies -> 400 (regression guards)', () => {
       },
     });
     expect(res.status).toBe(200);
-    // Only the real, seller-owned line counts — junk lines are skipped, not crashed on.
-    expect(res.body.promo.eligibleTotal).toBe(40);
+    // Only the real, seller-owned line counts, using the authoritative listing
+    // price rather than the client-supplied 40.
+    expect(res.body.promo.eligibleTotal).toBe(50);
   });
 
   test('R20.3c referrals/apply non-string code -> 400 (was 500: toUpperCase)', async () => {

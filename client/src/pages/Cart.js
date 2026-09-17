@@ -408,7 +408,7 @@ const Cart = () => {
                         try {
                           const res = await validatePromo({
                             code: promoCode,
-                            items: cart.map(i => ({ listingId: i.listingId, price: i.price, quantity: i.quantity }))
+                            items: cart.map(i => ({ listingId: i.listingId, quantity: i.quantity }))
                           });
                           if (res.data.valid) {
                             setAppliedPromo(res.data.promo);
