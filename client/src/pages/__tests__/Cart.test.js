@@ -59,4 +59,20 @@ describe('Cart page', () => {
     fe.click(apply);
     await waitFor(() => expect(api.validatePromo).toHaveBeenCalled());
   });
+
+  test('updates the displayed total when a promo is applied', async () => {
+    setCartStore({ cart: [{ listingId: 'listing123', title: 'Jacket', price: 50, currency: 'USD', quantity: 1, thumbnail: '', available: 5, sellerId: 'seller1' }] });
+    api.get.mockResolvedValue({ data: {} });
+    api.post.mockResolvedValue({ data: {
+      buyer: { itemPrice: 50, shippingCost: 4, buyerProtectionFee: 2.5, totalPaid: 56.5 },
+    } });
+    api.validatePromo.mockResolvedValue({ data: { valid: true, promo: { code: 'SAVE10', discountAmount: 5 } } });
+    renderPage(<Cart />);
+
+    await waitFor(() => expect(screen.getByText('$56.50')).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText('Promo code'), { target: { value: 'SAVE10' } });
+    fireEvent.click(screen.getByRole('button', { name: /apply/i }));
+
+    await waitFor(() => expect(screen.getByText('$51.50')).toBeInTheDocument());
+  });
 });
