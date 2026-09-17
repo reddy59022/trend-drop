@@ -44,10 +44,10 @@ router.put('/verify', auth, async (req, res) => {
       badge = new SellerBadge({ userId: req.user._id });
     }
     
-    badge.isVerified = true;
-    badge.verifiedAt = new Date();
-    badge.benefits.reducedFees = true;
-    badge.benefits.prioritySupport = true;
+    // A seller may request verification, but cannot self-approve it or grant
+    // themselves reduced fees/priority benefits. Admin review must set the
+    // authoritative verification fields separately.
+    badge.verificationRequested = true;
     
     await badge.save();
     
@@ -67,12 +67,21 @@ router.put('/update-stats', auth, async (req, res) => {
     }
     
     const { salesCount, avgRating, responseRate, returnRate } = req.body;
-    
-    badge.salesCount = salesCount || badge.salesCount;
-    badge.avgRating = avgRating || badge.avgRating;
-    badge.responseRate = responseRate || badge.responseRate;
-    badge.returnRate = returnRate || badge.returnRate;
-    
+    const providedStats = { salesCount, avgRating, responseRate, returnRate };
+    const validators = {
+      salesCount: (value) => Number.isInteger(value) && value >= 0,
+      avgRating: (value) => Number.isFinite(value) && value >= 0 && value <= 5,
+      responseRate: (value) => Number.isFinite(value) && value >= 0 && value <= 1,
+      returnRate: (value) => Number.isFinite(value) && value >= 0 && value <= 1,
+    };
+
+    for (const [field, value] of Object.entries(providedStats)) {
+      if (value !== undefined && (!validators[field](value) || typeof value !== 'number')) {
+        return res.status(400).json({ message: `${field} must be a valid normalized number` });
+      }
+      if (value !== undefined) badge[field] = value;
+    }
+
     // Calculate tier
     const tiers = SellerBadge.TIERS;
     if (badge.avgRating >= 4.8 && badge.salesCount >= 200 && badge.returnRate <= 0.02) {

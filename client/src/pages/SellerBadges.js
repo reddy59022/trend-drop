@@ -98,6 +98,11 @@ const SellerBadges = () => {
             ✓ Verified Seller {badge.verifiedAt ? `since ${new Date(badge.verifiedAt).toLocaleDateString()}` : ''}
           </div>
         )}
+        {!badge?.isVerified && badge?.verificationRequested && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(234,179,8,0.1)', color: 'var(--td-warning)', borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 600, marginTop: 8 }}>
+            Verification pending review
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12, marginTop: 20 }}>
           <div className="stat-box" style={{ padding: 12, borderRadius: 12, background: 'var(--td-bg-secondary)' }}>
@@ -131,7 +136,7 @@ const SellerBadges = () => {
           </span>
         </div>
 
-        {!badge?.isVerified && (
+        {!badge?.isVerified && !badge?.verificationRequested && (
           <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={handleVerify} disabled={verifying}>
             {verifying ? 'Requesting...' : 'Request Verification'}
           </button>

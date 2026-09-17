@@ -100,22 +100,24 @@ test.describe('15 · Seller tiers & verification (production)', () => {
     expect(r.data.badge.tier).toBe('bronze');
   });
 
-  test('seller verification can be requested', async () => {
+  test('seller verification can be requested without self-approving', async () => {
     const r = await api.req('put', '/api/seller-badges/verify', {
       token: alexToken,
       body: {},
     });
     expect(r.status, JSON.stringify(r.data)).toBe(200);
-    expect(r.data.badge.isVerified).toBe(true);
-    expect(r.data.badge.verifiedAt).toBeTruthy();
-    expect(r.data.badge.benefits.reducedFees).toBe(true);
-    expect(r.data.badge.benefits.prioritySupport).toBe(true);
+    expect(r.data.badge.isVerified).toBe(false);
+    expect(r.data.badge.verificationRequested).toBe(true);
+    expect(r.data.badge.verifiedAt).toBeFalsy();
+    expect(r.data.badge.benefits.reducedFees).toBe(false);
+    expect(r.data.badge.benefits.prioritySupport).toBe(false);
   });
 
-  test('verified status is reflected in public badge', async () => {
+  test('pending verification status is reflected in public badge', async () => {
     const r = await api.req('get', `/api/seller-badges/${state.users.alex.id}`);
     expect(r.status).toBe(200);
-    expect(r.data.badge.isVerified).toBe(true);
+    expect(r.data.badge.isVerified).toBe(false);
+    expect(r.data.badge.verificationRequested).toBe(true);
   });
 
   test('badge stats reflect actual sales data', async () => {

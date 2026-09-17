@@ -45,6 +45,33 @@ describe('SellerBadges page', () => {
     await waitFor(() => expect(document.querySelector('h1') || screen.queryByText(/loading/i) || screen.queryByText(/error/i) || document.body).toBeTruthy());
   });
 
+  test('shows pending verification instead of claiming an unapproved verification', async () => {
+    getMySellerBadge.mockResolvedValue({ data: { badge: {
+      tier: 'bronze', isVerified: false, verificationRequested: true,
+      salesCount: 0, avgRating: 0, responseRate: 0, returnRate: 0,
+      benefits: { reducedFees: false, prioritySupport: false, featuredListings: false },
+    } } });
+
+    renderPage(<SellerBadges />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Verification pending/i)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Request Verification/i })).not.toBeInTheDocument();
+    });
+  });
+
+  test('renders normalized response rate as a percentage', async () => {
+    getMySellerBadge.mockResolvedValue({ data: { badge: {
+      tier: 'silver', isVerified: false, verificationRequested: false,
+      salesCount: 10, avgRating: 4.5, responseRate: 0.95, returnRate: 0.02,
+      benefits: { reducedFees: false, prioritySupport: false, featuredListings: false },
+    } } });
+
+    renderPage(<SellerBadges />);
+
+    await waitFor(() => expect(screen.getByText('95%')).toBeInTheDocument());
+  });
+
   test('survives API failure without crashing', async () => {
     Object.keys(api).filter(k => k.startsWith('get')).forEach(k => api[k].mockRejectedValue(new Error('boom')));
     api.get.mockRejectedValue(new Error('boom'));

@@ -32,6 +32,10 @@ const SellerBadgeSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  verificationRequested: {
+    type: Boolean,
+    default: false,
+  },
   verifiedAt: Date,
   benefits: {
     reducedFees: { type: Boolean, default: false },
