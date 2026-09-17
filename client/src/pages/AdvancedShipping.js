@@ -100,8 +100,14 @@ const AdvancedShipping = () => {
         <div className="glass-card" style={{ padding: 20, marginBottom: 24 }}>
           <h3>Rate Estimate</h3>
           <p>Carrier: {rate.carrier}</p>
-          <p>Estimated Cost: {formatPrice(rate.estimatedCost, 'USD')}</p>
-          <p>Estimated Days: {rate.estimatedDays}</p>
+          {rate.trackingNumber && <p>Tracking Number: {rate.trackingNumber}</p>}
+          {(rate.cost !== undefined || rate.estimatedCost !== undefined) && (
+            <p>Estimated Cost: {formatPrice(rate.cost ?? rate.estimatedCost, 'USD')}</p>
+          )}
+          {rate.estimatedDays !== undefined && <p>Estimated Days: {rate.estimatedDays}</p>}
+          {rate.mock && rate.postagePurchased === false && (
+            <p role="status">Mock label — postage not purchased</p>
+          )}
           {rate.labelUrl && (
             <a href={rate.labelUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
               Download Label

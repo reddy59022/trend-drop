@@ -76,6 +76,10 @@ describe('v59.0 Advanced Shipping Options', () => {
       .send({ carrier: 'UPS', service: 'Ground', toAddress: '123 Main St', weight: 1 });
     expect(res.status).toBe(200);
     expect(res.body.trackingNumber).toBeDefined();
+    // Mock mode must be explicit so the seller UI never represents a local
+    // test label as purchased carrier postage.
+    expect(res.body.mock).toBe(true);
+    expect(res.body.postagePurchased).toBe(false);
   });
 
   test('v59.5b - Should reject a label request that does not describe a parcel', async () => {

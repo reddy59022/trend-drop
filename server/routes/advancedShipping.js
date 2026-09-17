@@ -142,10 +142,13 @@ router.post('/label', auth, async (req, res) => {
       labelUrl: 'https://example.com/label.pdf',
       cost: 8.50,
       // Echo the validated parcel description so the caller can confirm what
-      // was actually labelled.
+      // was actually labelled. Explicit mock metadata prevents clients from
+      // presenting this local fallback as purchased carrier postage.
       carrier,
       service: service.trim(),
       weight,
+      mock: true,
+      postagePurchased: false,
     };
 
     res.json(label);

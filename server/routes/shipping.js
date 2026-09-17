@@ -49,7 +49,53 @@ router.post('/calculate', (req, res) => {
       return res.status(400).json({ message: 'fromCountry and toCountry are required' });
     }
 
-    const result = calculateShipping(fromCountry, toCountry, weightKg || 0.5, itemPrice || 0, options || {});
+    // Hostile-input contract (TDD R33): same rule its sibling
+    // /calculate-breakdown got in R27. Two ways this used to answer 200 with a
+    // price that was simply invented:
+    //   * `weightKg || 0.5` only catches FALSY values, so a truthy-but-
+    //     unparseable weight ('heavy', 'NaN', {$gt:1}) reached the weight math
+    //     and JSON.stringify turned the resulting NaN into `null` — a blank
+    //     price the client rendered as if it were real. A negative weight was
+    //     silently treated as zero, inventing a cheaper rate.
+    //   * a truthy non-string country ({}, 123) passed the gate above and then
+    //     failed the zone lookup, which quotes the MOST EXPENSIVE zone — a
+    //     US -> US shipment answered with an international DHL rate.
+    // Absent values keep their documented defaults (weightKg 0.5, itemPrice 0);
+    // present-but-malformed values fail closed with 400.
+    const asCountry = (value) =>
+      (typeof value === 'string' && value.trim() ? value.trim() : null);
+    const sellerCountry = asCountry(fromCountry);
+    const buyerCountry = asCountry(toCountry);
+    if (!sellerCountry || !buyerCountry) {
+      return res.status(400).json({ message: 'fromCountry and toCountry must be country code strings' });
+    }
+
+    const numericFields = [
+      ['weightKg', weightKg, 0.5, 500],
+      ['itemPrice', itemPrice, 0, 1e7],
+    ];
+    const parsedNumbers = {};
+    for (const [field, raw, fallback, max] of numericFields) {
+      if (raw === undefined || raw === null) {
+        parsedNumbers[field] = fallback;
+        continue;
+      }
+      const asNumber = typeof raw === 'number'
+        ? raw
+        : (typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN);
+      if (!Number.isFinite(asNumber) || asNumber < 0 || asNumber > max) {
+        return res.status(400).json({ message: `${field} must be a number between 0 and ${max}` });
+      }
+      parsedNumbers[field] = asNumber;
+    }
+
+    const result = calculateShipping(
+      sellerCountry,
+      buyerCountry,
+      parsedNumbers.weightKg,
+      parsedNumbers.itemPrice,
+      options && typeof options === 'object' && !Array.isArray(options) ? options : {}
+    );
 
     // Convert to buyer's currency if different
     if (buyerCurrency && buyerCurrency !== 'USD') {

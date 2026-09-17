@@ -72,4 +72,50 @@ describe('ListingDetail page', () => {
     renderPageWithRoute(<ListingDetail />, { route: '/listing/missing', path: '/listing/:id' });
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/listings/missing'));
   });
+
+  // "Get Estimate" posted { from, to, weight, dimensions } while
+  // POST /api/shipping/calculate reads { fromCountry, toCountry, weightKg,
+  // itemPrice } and 400s when fromCountry/toCountry are missing. The button
+  // therefore ALWAYS failed (the user only ever saw "Could not calculate
+  // shipping") and never rendered an estimate. Pin the wire contract here so a
+  // rename on either side fails loudly instead of silently killing the feature.
+  test('shipping estimate sends the server contract field names', async () => {
+    prime(listing({ shipsFrom: 'US', weight: 2 }));
+    api.post.mockResolvedValue({ data: { cost: 7.5 } });
+    renderPageWithRoute(<ListingDetail />, { route: '/listing/listing123', path: '/listing/:id' });
+    await screen.findByText('Vintage Denim Jacket');
+
+    fireEvent.click(screen.getByRole('button', { name: /Get Estimate/i }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/shipping/calculate',
+      expect.objectContaining({ fromCountry: 'US', toCountry: 'US', weightKg: 2 })
+    ));
+  });
+
+  test('shipping estimate sends the item price so free-shipping rules apply', async () => {
+    prime(listing({ price: 49.99 }));
+    api.post.mockResolvedValue({ data: { cost: 0, freeShipping: true } });
+    renderPageWithRoute(<ListingDetail />, { route: '/listing/listing123', path: '/listing/:id' });
+    await screen.findByText('Vintage Denim Jacket');
+
+    fireEvent.click(screen.getByRole('button', { name: /Get Estimate/i }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/shipping/calculate',
+      expect.objectContaining({ itemPrice: 49.99 })
+    ));
+  });
+
+  test('a successful estimate is rendered with the server cost', async () => {
+    prime();
+    api.post.mockResolvedValue({ data: { cost: 7.5 } });
+    renderPageWithRoute(<ListingDetail />, { route: '/listing/listing123', path: '/listing/:id' });
+    await screen.findByText('Vintage Denim Jacket');
+
+    fireEvent.click(screen.getByRole('button', { name: /Get Estimate/i }));
+
+    expect(await screen.findByText('Estimated Shipping')).toBeInTheDocument();
+    expect(screen.getByText('$7.50')).toBeInTheDocument();
+  });
 });

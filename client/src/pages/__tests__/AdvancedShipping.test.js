@@ -51,4 +51,25 @@ describe('AdvancedShipping page', () => {
     await waitFor(() => expect(document.body).not.toBeEmptyDOMElement());
   });
 
+  test('renders the mock label contract without implying postage was purchased', async () => {
+    api.get.mockResolvedValue({ data: [] });
+    api.post.mockResolvedValue({ data: {
+      trackingNumber: '1ZMOCK123',
+      labelUrl: 'https://example.com/label.pdf',
+      cost: 8.5,
+      carrier: 'UPS',
+      service: 'Ground',
+      weight: 2,
+      mock: true,
+      postagePurchased: false,
+    } });
+
+    renderPage(<AdvancedShipping />);
+    fireEvent.click(await screen.findByRole('button', { name: /Generate Label/i }));
+
+    expect(await screen.findByText(/Tracking Number: 1ZMOCK123/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mock label — postage not purchased/i)).toBeInTheDocument();
+    expect(screen.getByText(/Estimated Cost: \$8\.50/i)).toBeInTheDocument();
+  });
+
 });

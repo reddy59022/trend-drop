@@ -168,6 +168,117 @@ describe('TDD R27 — POST /api/shipping/calculate-breakdown fails closed on hos
   });
 });
 
+// R33 — /api/shipping/calculate had the SAME NaN hole R27 closed on its sibling
+// /api/shipping/calculate-breakdown, but was never covered. `weightKg || 0.5`
+// only guards falsy: a truthy-but-unparseable value ('heavy', 'NaN', an object)
+// flows straight into the weight math, and JSON.stringify serialises the
+// resulting NaN as `null`. So the endpoint answered 200 with
+// `{ cost: null, breakdown: { weightCharge: null } }` — a blank price the
+// listing page renders as if it were real. A negative weight was silently
+// treated as zero, inventing a plausible-looking cheaper rate. Money input
+// must fail closed (400), never answer 200 with unpriceable numbers.
+describe('TDD R33 — POST /api/shipping/calculate fails closed on hostile numeric input', () => {
+  const post = (body) => request(app).post('/api/shipping/calculate').send(body);
+
+  test('the canonical payload still returns finite, positive money', async () => {
+    const res = await post({ fromCountry: 'US', toCountry: 'US', weightKg: 1 });
+    expect(res.status).toBe(200);
+    expect(isUsableNumber(res.body.cost)).toBe(true);
+    expect(res.body.cost).toBeGreaterThan(0);
+    expect(isUsableNumber(res.body.breakdown.weightCharge)).toBe(true);
+  });
+
+  test('heavier parcels cost more (the weight input is genuinely applied)', async () => {
+    const light = await post({ fromCountry: 'US', toCountry: 'GB', weightKg: 0.5 });
+    const heavy = await post({ fromCountry: 'US', toCountry: 'GB', weightKg: 5 });
+    expect(light.status).toBe(200);
+    expect(heavy.status).toBe(200);
+    expect(heavy.body.cost).toBeGreaterThan(light.body.cost);
+  });
+
+  // Every PRESENT-but-malformed numeric must 400; absent keeps its documented
+  // default (weightKg 0.5, itemPrice 0).
+  const malformed = [
+    ['weightKg', 'heavy'],
+    ['weightKg', 'NaN'],
+    ['weightKg', ''],
+    ['weightKg', { $gt: 1 }],
+    ['weightKg', [1]],
+    ['weightKg', true],
+    ['weightKg', -5],
+    ['weightKg', 1e9],
+    ['itemPrice', 'free'],
+    ['itemPrice', { $gt: 0 }],
+    ['itemPrice', -1],
+    ['itemPrice', 1e9],
+  ];
+
+  test.each(malformed)('rejects malformed %s=%j with 400 (never 200 + NaN)', async (field, value) => {
+    const res = await post({
+      fromCountry: 'US', toCountry: 'US', weightKg: 1, itemPrice: 25, [field]: value,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBeTruthy();
+  });
+
+  test('never answers 200 with a non-finite cost', async () => {
+    const bodies = [
+      { fromCountry: 'US', toCountry: 'US', weightKg: 'heavy' },
+      { fromCountry: 'US', toCountry: 'US', weightKg: { $gt: 1 } },
+      { fromCountry: 'US', toCountry: 'US', weightKg: 'NaN' },
+      { fromCountry: 'US', toCountry: 'US', weightKg: 1, itemPrice: 'free' },
+    ];
+    for (const body of bodies) {
+      const res = await post(body);
+      if (res.status === 200) {
+        expect(isUsableNumber(res.body.cost)).toBe(true);
+      }
+      expect(JSON.stringify(res.body)).not.toContain('"cost":null');
+    }
+  });
+
+  test('absent numerics keep their documented defaults', async () => {
+    const res = await post({ fromCountry: 'US', toCountry: 'US' });
+    expect(res.status).toBe(200);
+    expect(isUsableNumber(res.body.cost)).toBe(true);
+  });
+
+  test('missing geography still 400s (unchanged contract)', async () => {
+    const res = await post({ weightKg: 1 });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBeTruthy();
+  });
+
+  // A truthy non-string country used to satisfy the `!fromCountry` gate and
+  // fall through to the zone lookup, which fails to match and therefore quoted
+  // the MOST EXPENSIVE zone: `{ fromCountry: {}, toCountry: 'US' }` answered 200
+  // with a US -> international DHL rate ($23.74) instead of a domestic USPS one
+  // ($5.24). Geography must be a real country code string, not any truthy value.
+  const malformedGeography = [
+    ['fromCountry', {}],
+    ['fromCountry', 123],
+    ['fromCountry', ['US']],
+    ['fromCountry', true],
+    ['fromCountry', '   '],
+    ['toCountry', {}],
+    ['toCountry', 123],
+    ['toCountry', ['GB']],
+  ];
+
+  test.each(malformedGeography)('rejects a non-string %s=%j with 400', async (field, value) => {
+    const res = await post({ fromCountry: 'US', toCountry: 'US', weightKg: 1, [field]: value });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBeTruthy();
+  });
+
+  test('a domestic quote is never priced as an international one', async () => {
+    const us = await post({ fromCountry: 'US', toCountry: 'US', weightKg: 1 });
+    expect(us.status).toBe(200);
+    expect(us.body.isDomestic).toBe(true);
+    expect(us.body.carrier).toBe('USPS');
+  });
+});
+
 describe('TDD R27 — advanced-shipping endpoints fail closed on hostile input', () => {
   let token;
 

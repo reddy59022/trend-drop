@@ -57,19 +57,98 @@ process.env.STRIPE_SECRET_KEY = 'trenddrop_hermetic';
 process.env.STRIPE_WEBHOOK_SECRET = 'trenddrop_hermetic';
 
 // ---------------------------------------------------------------------------
-// 4. Transient-infra retry (ECONNRESET flake mitigation)
+// 4. No retries — every test must pass on its FIRST attempt
 // ---------------------------------------------------------------------------
-// The full 129-suite run talks to ONE shared in-memory mongod through
-// supertest for ~4.5 minutes. Empirically (rounds 23-24) roughly one request
-// per full run dies with "socket hang up" (ECONNRESET) in a DIFFERENT,
-// unrelated test each run, while the same test passes in isolation — i.e. a
-// transport-level flake, not a product regression. Retry each failed test
-// once; the first failure is still logged (logErrorsBeforeRetry) so real
-// regressions stay visible in the output.
-jest.retryTimes(1, { logErrorsBeforeRetry: true });
+// This used to be `jest.retryTimes(1, { logErrorsBeforeRetry: true })` to
+// absorb a transport flake: roughly one request per full run died with
+// "socket hang up" / "Parse Error: Expected HTTP/, RTSP/ or ICE/" in a
+// DIFFERENT, unrelated test each run. Retrying is not a fix — it hides genuine
+// regressions behind a second attempt and it makes "the suite is green" a much
+// weaker statement than it looks.
+//
+// Root cause (see section 5): supertest created and closed a brand-new
+// ephemeral server for every request, so a full run recycled macOS' ~16k
+// ephemeral ports tens of thousands of times and the client could receive a
+// stream that was never its own HTTP response. Section 6 fixes that at the
+// source, so the retry is removed and R33 (harnessTransportIsolation.test.js)
+// guards the invariant. Do NOT reintroduce a retry here: if a transport flake
+// reappears, fix the harness instead.
 
 // ---------------------------------------------------------------------------
-// 5. Stripe SDK mock (routes must never reach api.stripe.com in tests)
+// 5. Stable transport for supertest — one listening server per app per file
+// ---------------------------------------------------------------------------
+// `supertest(app)` creates a BRAND NEW server for EVERY request:
+//
+//   app = http.createServer(app);  app.listen(0);  ...  server.close()
+//   (supertest/lib/test.js — constructor + Test#end)
+//
+// A full `--runInBand` run issues tens of thousands of requests, so it performs
+// tens of thousands of ephemeral listen/close cycles over macOS' ~16k port
+// range; ports are recycled almost immediately (measured: 15 sequential
+// requests already reused a port). When the OS hands back a port whose previous
+// connection still carries TCP state, the client can read a stream that is not
+// its HTTP response and supertest rejects with a transport error instead of an
+// assertion failure — which surfaced as a DIFFERENT random test failing per run:
+//
+//   ... -> THREW Parse Error: Expected HTTP/, RTSP/ or ICE/
+//   ... -> THREW socket hang up
+//
+// Rather than paper over that with `jest.retryTimes()`, give each Express app
+// ONE already-listening server for the lifetime of the test file. `listen(0)`
+// binds synchronously, so `server.address()` is populated immediately and
+// supertest sees a listening server: it neither creates another one nor closes
+// it after each request. No ports are churned, so the failure class disappears
+// and every test must still pass on its FIRST attempt.
+// Regression coverage: tests/harnessTransportIsolation.test.js (R33).
+jest.mock('supertest', () => {
+  // jest.mock factories may only close over `mock*` names, so everything the
+  // wrapper needs is required inside the factory.
+  const actual = jest.requireActual('supertest');
+  const http = require('http');
+
+  const registry = global.__supertestHarnessServers ||
+    (global.__supertestHarnessServers = []);
+  const cache = new WeakMap();
+
+  const serverFor = (app) => {
+    // An already-listening Server (or a URL string) is passed through as-is;
+    // only a bare Express app/handler needs the shared server.
+    if (typeof app !== 'function') return app;
+
+    let server = cache.get(app);
+    if (!server) {
+      server = http.createServer(app);
+      server.listen(0); // synchronous bind — address() is ready for supertest
+      cache.set(app, server);
+      registry.push(server);
+    }
+    return server;
+  };
+
+  const supertest = (app, options) => actual(serverFor(app), options);
+  supertest.agent = (app, options) => actual.agent(serverFor(app), options);
+  supertest.Test = actual.Test;
+  supertest.cookies = actual.cookies;
+  return supertest;
+});
+
+// Release this file's harness servers once its tests are done. The registry is
+// global because jest reuses one process (and one `global`) for every file in a
+// `--runInBand` run, so it must be drained per file rather than at process exit.
+afterAll(() => {
+  const registry = global.__supertestHarnessServers;
+  if (!Array.isArray(registry)) return;
+  for (const server of registry.splice(0)) {
+    try {
+      server.close();
+    } catch (err) {
+      // Already closed — never fail the run because of cleanup.
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 6. Stripe SDK mock (routes must never reach api.stripe.com in tests)
 // ---------------------------------------------------------------------------
 jest.mock('stripe', () => {
   // Shared in-memory store so create/retrieve/confirm/capture stay consistent.

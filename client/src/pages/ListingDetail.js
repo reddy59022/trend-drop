@@ -258,11 +258,18 @@ const ListingDetail = () => {
 
   const handleShippingEstimate = async () => {
     try {
+      // POST /api/shipping/calculate reads { fromCountry, toCountry, weightKg,
+      // itemPrice } and 400s without fromCountry/toCountry. This used to send
+      // { from, to, weight, dimensions } — every field name wrong — so the
+      // request ALWAYS failed and "Get Estimate" never rendered a price; the
+      // user only ever saw "Could not calculate shipping". `itemPrice` is sent
+      // so the server's free-shipping threshold is applied here too, otherwise
+      // the estimate quotes a fee that checkout then waives.
       const res = await api.post('/shipping/calculate', {
-        from: listing.shipsFrom || 'US',
-        to: selectedCountry,
-        weight: listing.weight || 0.5,
-        dimensions: listing.dimensions || { length: 10, width: 10, height: 5 },
+        fromCountry: listing.shipsFrom || 'US',
+        toCountry: selectedCountry,
+        weightKg: listing.weight || 0.5,
+        itemPrice: listing.price,
       });
       setShippingEstimate(res.data);
     } catch (e) {
