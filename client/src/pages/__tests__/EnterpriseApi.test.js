@@ -20,6 +20,7 @@ jest.mock('socket.io-client', () => {
 jest.mock('browser-image-compression', () => ({ __esModule: true, default: jest.fn(async (f) => f) }));
 
 import api from '../../services/api';
+import { toast } from 'react-toastify';
 import { setAuth, setThemeStore, setCartStore, setConfirm, resetTestState, resetApiMock, renderPage, authUser, sampleListing  } from '../../test-utils';
 
 import EnterpriseApi from '../EnterpriseApi';
@@ -49,6 +50,30 @@ describe('EnterpriseApi page', () => {
     api.get.mockRejectedValue(new Error('boom'));
     renderPage(<EnterpriseApi />);
     await waitFor(() => expect(document.body).not.toBeEmptyDOMElement());
+  });
+
+  test('registers a webhook with an event supported by the server', async () => {
+    api.get.mockResolvedValue({ data: [] });
+    api.post.mockResolvedValue({ data: { recordCount: 0, records: [] } });
+    renderPage(<EnterpriseApi />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /register webhook/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /register webhook/i }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/enterprise/webhook', expect.objectContaining({
+      events: expect.arrayContaining(['order.updated']),
+    })));
+  });
+
+  test('export feedback reports the returned record count instead of a missing download URL', async () => {
+    api.get.mockResolvedValue({ data: [] });
+    api.post.mockResolvedValue({ data: { type: 'listings', recordCount: 3, records: [] } });
+    renderPage(<EnterpriseApi />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /export listings/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /export listings/i }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Export ready: 3 records'));
   });
 
 });

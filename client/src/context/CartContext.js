@@ -44,6 +44,25 @@ const toLocalItem = (serverItem) => {
   };
 };
 
+// The server cart intentionally stores only listing and quantity. Preserve
+// accepted-offer metadata from the local item when rehydrating that cart so
+// an offer-priced buy-now flow is not silently converted back to list price.
+// Checkout still validates this metadata against the accepted offer server-side.
+const preserveOfferPricing = (serverItem, localItem) => {
+  if (!localItem || localItem.negotiatedPrice == null) return serverItem;
+  return {
+    ...serverItem,
+    price: localItem.negotiatedPrice,
+    negotiatedPrice: localItem.negotiatedPrice,
+    ...(localItem.offerId ? { offerId: localItem.offerId } : {}),
+  };
+};
+
+const mergeOfferPricing = (serverItems, localItems) => {
+  const localByListing = new Map((localItems || []).map((item) => [item.listingId, item]));
+  return serverItems.map((item) => preserveOfferPricing(item, localByListing.get(item.listingId)));
+};
+
 export const CartProvider = ({ children }) => {
   const { user } = useAuth();
   const isAuthed = Boolean(user);
@@ -82,9 +101,11 @@ export const CartProvider = ({ children }) => {
     try {
       const serverItems = await fetchServerCart();
       setCart(prev => {
-        // Merge: server wins, but keep any local-only items and push them to server below
-        const serverMap = new Map(serverItems.map(i => [i.listingId, i]));
-        const merged = [...serverItems];
+        // Merge: server wins, but preserve local-only negotiated metadata and
+        // push local-only items to the server below.
+        const pricedServerItems = mergeOfferPricing(serverItems, prev);
+        const serverMap = new Map(pricedServerItems.map(i => [i.listingId, i]));
+        const merged = [...pricedServerItems];
         const localOnly = [];
         for (const item of prev) {
           if (!serverMap.has(item.listingId)) localOnly.push(item);
@@ -143,7 +164,7 @@ export const CartProvider = ({ children }) => {
             // Re-pull the canonical cart so quantities stay correct
             try {
               const serverItems = await fetchServerCart();
-              setCart(serverItems);
+              setCart(current => mergeOfferPricing(serverItems, [...current, ...next]));
             } catch { /* ignore */ }
           })
           .catch(err => {
@@ -195,7 +216,7 @@ export const CartProvider = ({ children }) => {
     if (isAuthed) {
       try {
         const serverItems = await fetchServerCart();
-        setCart(serverItems);
+        setCart(current => mergeOfferPricing(serverItems, current));
         setSynced(true);
       } catch {
         setSynced(false);
