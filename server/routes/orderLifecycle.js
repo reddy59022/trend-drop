@@ -315,7 +315,12 @@ router.post('/:id/ship', auth, async (req, res) => {
 // Middleware: Validate order access and state machine transition
 const validateOrderAccess = async (req, res, next) => {
   try {
-    const transaction = await Transaction.findById(req.params.transactionId || req.body.transactionId);
+    const transactionId = req.params.transactionId || req.body.transactionId;
+    if (!isValidObjectId(transactionId)) {
+      return res.status(400).json({ message: 'Invalid transaction ID' });
+    }
+
+    const transaction = await Transaction.findById(transactionId);
     if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
 
     const userId = req.user._id.toString();

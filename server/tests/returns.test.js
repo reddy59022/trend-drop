@@ -209,7 +209,15 @@ describe('Returns & Refund Management', () => {
     expect(['refunded', 'completed']).toContain(res.body.status);
   });
 
-  test('RET.10 - Seller can deny a return request', async () => {
+  test('RET.10 - Malformed return IDs return 400 instead of 500', async () => {
+    const res = await request(app)
+      .get('/api/returns/not-a-mongo-id')
+      .set('Authorization', `Bearer ${buyerToken}`);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/invalid return id/i);
+  });
+
+  test('RET.11 - Seller can deny a return request', async () => {
     const created = await request(app)
       .post('/api/returns')
       .set('Authorization', `Bearer ${buyerToken}`)

@@ -879,6 +879,10 @@ router.get('/', auth, async (req, res) => {
 // GET /api/transactions/:id
 router.get('/:id', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid transaction ID' });
+    }
+
     const transaction = await Transaction.findById(req.params.id)
       .populate('buyer', 'name avatar email country')
       .populate('seller', 'name avatar email country')

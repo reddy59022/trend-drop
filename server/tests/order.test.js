@@ -293,4 +293,12 @@ describe('Enterprise Order Model & API', () => {
     expect(order.totals.total).toBe(138);
     expect(order.totals.total).toBe(order.totals.subtotal + order.totals.shipping + order.totals.protectionFees - order.totals.discounts);
   });
+
+  test('ORD.10 - Malformed transaction IDs return 400 from lifecycle endpoints', async () => {
+    const res = await request(app)
+      .get('/api/orders/not-a-mongo-id/status')
+      .set('Authorization', `Bearer ${buyerToken}`);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/invalid transaction id/i);
+  });
 });

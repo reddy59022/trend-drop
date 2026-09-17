@@ -424,5 +424,13 @@ describe('Transactions Pagination & Filtering', () => {
         .expect(200);
       expect(res.body.transactions).toHaveLength(0);
     });
+
+    test('TE.9 Malformed transaction IDs return 400 instead of a server error', async () => {
+      const res = await request(app)
+        .get('/api/transactions/not-a-mongo-id')
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .expect(400);
+      expect(res.body.message).toMatch(/invalid transaction id/i);
+    });
   });
 });

@@ -155,15 +155,22 @@ export const getPlatformFee = (country) => api.get(`/payments/platform-fee?count
 // RevenueCat endpoint removed - payments handled via Stripe only
 
 // Order Lifecycle
-export const getOrderStatus = (transactionId) => api.get(`/orders/${transactionId}/status`);
-export const cancelOrder = (transactionId, data) => api.post(`/orders/${transactionId}/cancel`, data);
-export const confirmReceived = (transactionId, data) => api.post(`/orders/${transactionId}/confirm-received`, data);
-export const requestReturn = (transactionId, data) => api.post(`/orders/${transactionId}/request-return`, data);
-export const acceptReturn = (transactionId, data) => api.post(`/orders/${transactionId}/accept-return`, data);
-export const rejectReturn = (transactionId, data) => api.post(`/orders/${transactionId}/reject-return`, data);
-export const confirmReturnReceived = (transactionId, data) => api.post(`/orders/${transactionId}/confirm-return-received`, data);
-export const fileDispute = (transactionId, data) => api.post(`/orders/${transactionId}/dispute`, data);
-export const getOrderLifecycle = (transactionId) => api.get(`/orders/${transactionId}/lifecycle`);
+const withValidTransactionId = (transactionId, request) => {
+  if (!isValidMongoId(transactionId)) {
+    return Promise.reject(new Error('Invalid transaction ID'));
+  }
+  return request();
+};
+
+export const getOrderStatus = (transactionId) => withValidTransactionId(transactionId, () => api.get(`/orders/${transactionId}/status`));
+export const cancelOrder = (transactionId, data) => withValidTransactionId(transactionId, () => api.post(`/orders/${transactionId}/cancel`, data));
+export const confirmReceived = (transactionId, data) => withValidTransactionId(transactionId, () => api.post(`/orders/${transactionId}/confirm-received`, data));
+export const requestReturn = (transactionId, data) => withValidTransactionId(transactionId, () => api.post(`/orders/${transactionId}/request-return`, data));
+export const acceptReturn = (transactionId, data) => withValidTransactionId(transactionId, () => api.post(`/orders/${transactionId}/accept-return`, data));
+export const rejectReturn = (transactionId, data) => withValidTransactionId(transactionId, () => api.post(`/orders/${transactionId}/reject-return`, data));
+export const confirmReturnReceived = (transactionId, data) => withValidTransactionId(transactionId, () => api.post(`/orders/${transactionId}/confirm-return-received`, data));
+export const fileDispute = (transactionId, data) => withValidTransactionId(transactionId, () => api.post(`/orders/${transactionId}/dispute`, data));
+export const getOrderLifecycle = (transactionId) => withValidTransactionId(transactionId, () => api.get(`/orders/${transactionId}/lifecycle`));
 
 // Inventory & Boost
 export const boostListing = (listingId, data) => api.post(`/listings/${listingId}/boost`, data);
@@ -205,7 +212,15 @@ export const getPendingSellerVerifications = () => api.get('/admin/seller-badges
 export const reviewSellerBadge = (userId, data) => api.put(`/admin/seller-badges/${userId}/verification`, data);
 
 // ====== Transactions ======
+const isValidMongoId = (value) => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value);
+
 export const getTransactions = (params) => api.get('/transactions', { params });
+export const getTransaction = (id) => {
+  if (!isValidMongoId(id)) {
+    return Promise.reject(new Error('Invalid transaction ID'));
+  }
+  return api.get(`/transactions/${id}`);
+};
 
 // ====== Bundle Discounts (Section 28a) ======
 export const createBundleRule = (data) => api.post('/offers/bundle', data);
@@ -215,15 +230,22 @@ export const deleteBundleRule = (id) => api.delete(`/offers/bundle/${id}`);
 export const applyBundleDiscount = (data) => api.post('/offers/bundle/apply', data);
 
 // ====== Offers to Likers (Section 28b) ======
+const withValidOfferId = (id, request) => {
+  if (!isValidMongoId(id)) {
+    return Promise.reject(new Error('Invalid offer ID'));
+  }
+  return request();
+};
+
 export const sendOfferToLikers = (data) => api.post('/offers/to-likers', data);
 export const getBulkOffers = (listingId) => api.get(`/offers/bulk/${listingId}`);
-export const claimBulkOffer = (offerId) => api.post(`/offers/to-likers/${offerId}/claim`);
+export const claimBulkOffer = (offerId) => withValidOfferId(offerId, () => api.post(`/offers/to-likers/${offerId}/claim`));
 
 // ====== Offer & Bundle Sharing (v45.0) ======
 export const getOfferSharingStats = () => api.get('/offer-sharing/stats');
 export const shareOfferToLikers = (listingId, data) => api.post(`/offer-sharing/to-likers/${listingId}`, data);
 export const createBundleOffer = (data) => api.post('/offer-sharing/bundle', data);
-export const shareOfferWithFriends = (offerId, data) => api.post(`/offer-sharing/share/${offerId}`, data);
+export const shareOfferWithFriends = (offerId, data) => withValidOfferId(offerId, () => api.post(`/offer-sharing/share/${offerId}`, data));
 
 // ====== Advanced Search & Filtering (v44.0) ======
 
@@ -259,13 +281,20 @@ export const claimReferralReward = () => api.post('/referrals/claim');
 export const validateReferralCode = (code) => api.get(`/referrals/${code}`);
 
 // ====== Returns Center ======
+const withValidReturnId = (id, request) => {
+  if (!isValidMongoId(id)) {
+    return Promise.reject(new Error('Invalid return ID'));
+  }
+  return request();
+};
+
 export const getReturns = () => api.get('/returns');
-export const getReturn = (id) => api.get(`/returns/${id}`);
+export const getReturn = (id) => withValidReturnId(id, () => api.get(`/returns/${id}`));
 export const createReturn = (data) => api.post('/returns', data);
-export const approveReturn = (id) => api.put(`/returns/${id}/approve`);
-export const denyReturn = (id, reason) => api.put(`/returns/${id}/deny`, { reason });
-export const shipReturn = (id, trackingNumber) => api.put(`/returns/${id}/ship`, { trackingNumber });
-export const receiveReturn = (id) => api.put(`/returns/${id}/receive`);
+export const approveReturn = (id) => withValidReturnId(id, () => api.put(`/returns/${id}/approve`));
+export const denyReturn = (id, reason) => withValidReturnId(id, () => api.put(`/returns/${id}/deny`, { reason }));
+export const shipReturn = (id, trackingNumber) => withValidReturnId(id, () => api.put(`/returns/${id}/ship`, { trackingNumber }));
+export const receiveReturn = (id) => withValidReturnId(id, () => api.put(`/returns/${id}/receive`));
 
 // ====== Escrow Service (v26.0) ======
 export const initiateEscrow = (data) => api.post('/escrow/initiate', data);

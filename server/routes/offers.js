@@ -8,6 +8,15 @@ const { auth } = require('../middleware/auth');
 const pushService = require('../services/pushService');
 const { isValidObjectId } = require('../utils/validators');
 
+// Keep malformed resource IDs at the API boundary. Without this guard,
+// Mongoose throws a CastError and clients receive an opaque 500 response.
+router.param('id', (req, res, next, id) => {
+  if (!isValidObjectId(id)) {
+    return res.status(400).json({ message: 'Invalid offer ID' });
+  }
+  return next();
+});
+
 // GA-3b: an offer can only be accepted while the listing is actually
 // purchasable. Accepting on a sold/unavailable listing told the buyer to
 // "proceed to purchase" on an item that can never be bought (the purchase
@@ -436,6 +445,9 @@ router.get('/bulk/:listingId', auth, async (req, res) => {
 // POST /api/offers/to-likers/:offerId/claim - Liker claims exclusive offer
 router.post('/to-likers/:offerId/claim', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.offerId)) {
+      return res.status(400).json({ message: 'Invalid offer ID' });
+    }
     const offer = await Offer.findById(req.params.offerId);
     if (!offer) return res.status(404).json({ message: 'Offer not found' });
     if (!offer.bulkOffer || !offer.bulkOffer.isBulk) return res.status(400).json({ message: 'Not a bulk offer' });

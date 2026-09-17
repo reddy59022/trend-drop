@@ -211,6 +211,9 @@ router.get('/', auth, async (req, res) => {
 // number is visible to both buyer and seller.
 router.get('/:id', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid return ID' });
+    }
     const returnRequest = await Return.findById(req.params.id)
       .populate('listing', 'title images price').populate('buyer', 'name avatar').populate('seller', 'name avatar');
     if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
@@ -232,6 +235,9 @@ router.get('/:id', auth, async (req, res) => {
 // PUT /api/returns/:id/approve - Seller approves return request
 router.put('/:id/approve', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid return ID' });
+    }
     const returnRequest = await Return.findById(req.params.id);
     if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
     if (returnRequest.seller.toString() !== req.user._id.toString()) {
@@ -290,6 +296,9 @@ router.put('/:id/approve', auth, async (req, res) => {
 // PUT /api/returns/:id/deny - Seller denies return request
 router.put('/:id/deny', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid return ID' });
+    }
     const returnRequest = await Return.findById(req.params.id);
     if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
     if (returnRequest.seller.toString() !== req.user._id.toString()) {
@@ -326,6 +335,9 @@ router.put('/:id/deny', auth, async (req, res) => {
 // PUT /api/returns/:id/ship - Buyer ships return item back
 router.put('/:id/ship', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid return ID' });
+    }
     const returnRequest = await Return.findById(req.params.id);
     if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
     if (returnRequest.buyer.toString() !== req.user._id.toString()) {
@@ -363,6 +375,9 @@ router.put('/:id/ship', auth, async (req, res) => {
 // mark payout refunded, issue Stripe refund, sync to Transaction lifecycle.
 router.put('/:id/receive', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid return ID' });
+    }
     const returnRequest = await Return.findById(req.params.id);
     if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
     if (returnRequest.seller.toString() !== req.user._id.toString()) {

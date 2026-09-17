@@ -532,8 +532,32 @@ describe('Currency Validation', () => {
       .send({ listingId: jpyListing._id, amount: 9000 });
     expect(res.status).toBe(201);
     expect(res.body.currency).toBe('JPY');
+  });});
+
+describe('Offer identifier validation', () => {
+  test('malformed offer IDs return 400 instead of leaking a Mongoose CastError as 500', async () => {
+    const getRes = await request(app)
+      .get('/api/offers/not-an-object-id')
+      .set('Authorization', `Bearer ${buyerToken}`);
+    expect(getRes.status).toBe(400);
+    expect(getRes.body.message).toBe('Invalid offer ID');
+
+    const patchRes = await request(app)
+      .patch('/api/offers/not-an-object-id/accept')
+      .set('Authorization', `Bearer ${sellerToken}`);
+    expect(patchRes.status).toBe(400);
+    expect(patchRes.body.message).toBe('Invalid offer ID');
+  });
+
+  test('malformed bulk-offer claim IDs return 400 instead of 500', async () => {
+    const res = await request(app)
+      .post('/api/offers/to-likers/not-an-object-id/claim')
+      .set('Authorization', `Bearer ${buyerToken}`);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Invalid offer ID');
   });
 });
+
 
 describe('Revenue Protection via Offers', () => {
   beforeEach(async () => {
