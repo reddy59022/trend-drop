@@ -33,8 +33,8 @@ describe('shipping insurance API contract', () => {
     calculateShippingInsurance({ itemValue: 100, coverageType: 'standard' });
     purchaseShippingInsurance({ transactionId: 'txn-1', coverageType: 'standard' });
     getMyInsurancePolicies();
-    fileInsuranceClaim('policy-1', { reason: 'lost' });
-    refundShippingInsurance('policy-1');
+    fileInsuranceClaim('507f1f77bcf86cd799439011', { reason: 'lost' });
+    refundShippingInsurance('507f1f77bcf86cd799439011');
 
     expect(api.get).toHaveBeenNthCalledWith(1, '/shipping-insurance/settings');
     expect(api.post).toHaveBeenNthCalledWith(1, '/shipping-insurance/calculate', {
@@ -46,7 +46,7 @@ describe('shipping insurance API contract', () => {
       coverageType: 'standard',
     });
     expect(api.get).toHaveBeenNthCalledWith(2, '/shipping-insurance/my');
-    expect(api.post).toHaveBeenNthCalledWith(3, '/shipping-insurance/policy-1/claim', { reason: 'lost' });
-    expect(api.post).toHaveBeenNthCalledWith(4, '/shipping-insurance/policy-1/refund');
+    expect(api.post).toHaveBeenNthCalledWith(3, '/shipping-insurance/507f1f77bcf86cd799439011/claim', { reason: 'lost' });
+    expect(api.post).toHaveBeenNthCalledWith(4, '/shipping-insurance/507f1f77bcf86cd799439011/refund');
   });
 });

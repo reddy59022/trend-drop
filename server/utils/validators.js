@@ -62,14 +62,48 @@ const isValidObjectId = (value) =>
  * Mounted globally in server.js (`app.use('/api', assertObjectId)`).
  */
 const assertObjectId = (req, res, next) => {
-  for (const [key, value] of Object.entries(req.params || {})) {
+  const params = Object.entries(req.params || {});
+
+  // Mounted-router middleware runs before child-router params are assigned,
+  // so inspect the known ID-bearing URL shapes as well. This closes the gap
+  // where `/api/pricehistory/not-an-id` and similar public routes reached
+  // Mongoose before any router-level validator could run.
+  const pathRules = [
+    [/^\/ratings\/seller\/([^/]+)/, 'sellerId'],
+    [/^\/ratings\/listing\/([^/]+)/, 'listingId'],
+    [/^\/users\/([^/]+)\/(?:notifications)/, 'userId'],
+    [/^\/messages\/conversation\/([^/]+)/, 'userId'],
+    [/^\/messages\/read\/([^/]+)/, 'conversationId'],
+    [/^\/messages\/(?!conversations(?:\/|$))([^/]+)/, 'conversationId'],
+    [/^\/wishlist\/(?:check\/)?([^/]+)/, 'listingId'],
+    [/^\/admin\/users\/([^/]+)/, 'id'],
+    [/^\/admin\/reports\/([^/]+)/, 'id'],
+    [/^\/admin\/listings\/([^/]+)/, 'id'],
+    [/^\/admin\/transactions\/([^/]+)/, 'id'],
+    [/^\/admin\/seller-badges\/(?!pending(?:\/|$))([^/]+)/, 'userId'],
+    [/^\/pricehistory\/([^/]+)/, 'listingId'],
+    [/^\/payouts\/process\/([^/]+)/, 'transactionId'],
+    [/^\/listings\/([^/]+)\/(?:boost|deactivate-boost)/, 'id'],
+    [/^\/saved-searches\/([^/]+)/, 'id'],
+    [/^\/offers\/bulk\/([^/]+)/, 'listingId'],
+    [/^\/offer-sharing\/(?:to-likers)\/([^/]+)/, 'listingId'],
+    [/^\/offer-sharing\/share\/([^/]+)/, 'offerId'],
+    [/^\/promos\/(?!validate(?:\/|$))([^/]+)/, 'id'],
+    [/^\/auctions\/([^/]+)/, 'id'],
+    [/^\/shipping-insurance\/([^/]+)\/(?:claim|refund)/, 'id'],
+  ];
+
+  const pathParam = pathRules.find(([pattern]) => pattern.test(req.path));
+  const values = pathParam
+    ? [[pathParam[1], req.path.match(pathParam[0])[1]]]
+    : params;
+
+  for (const [key, value] of values) {
     if (value === undefined || value === null || value === '') continue;
-    // Only validate params that are used as document IDs.
     if (!/Id$|^id$/i.test(key)) continue;
-    // Magic strings (e.g. 'me') are legitimate non-ObjectId values.
     if (MAGIC_PARAM_VALUES.has(String(value).toLowerCase())) continue;
     if (!isValidObjectId(value)) {
-      return res.status(400).json({ message: 'Invalid ID', param: key });
+      return res.status(400).json({ message: `Invalid ${key}` , param: key });
     }
   }
   next();

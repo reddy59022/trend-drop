@@ -100,48 +100,52 @@ api.interceptors.response.use(
 
 // ====== New Feature APIs ======
 
+// Client-side ID validation prevents malformed route parameters from reaching
+// the network. The server also validates IDs, but rejecting here gives callers
+// a deterministic error and avoids wasted requests.
+const withValidResourceId = (id, resource, request) => {
+  if (!isValidMongoId(id)) {
+    return Promise.reject(new Error(`Invalid ${resource} ID`));
+  }
+  return request();
+};
+
 // Ratings
-// Delete a rating (fix syntax error: missing backtick and closing parenthesis)
-export const deleteRating = (id) => api.delete(`/ratings/${id}`);
-// Create a new rating for a listing or transaction
+export const deleteRating = (id) => withValidResourceId(id, 'rating', () => api.delete(`/ratings/${id}`));
 export const createRating = (data) => api.post('/ratings', data);
-export const getRatingsBySeller = (sellerId) => api.get(`/ratings/seller/${sellerId}`);
-export const getRatingsByListing = (listingId) => api.get(`/ratings/listing/${listingId}`);
+export const getRatingsBySeller = (sellerId) => withValidResourceId(sellerId, 'seller', () => api.get(`/ratings/seller/${sellerId}`));
+export const getRatingsByListing = (listingId) => withValidResourceId(listingId, 'listing', () => api.get(`/ratings/listing/${listingId}`));
 
 // Notifications (client helpers for user notification endpoints)
-// Fetch all notifications for a given user ID
-export const getUserNotifications = (userId) => api.get(`/users/${userId}/notifications`);
-// Mark all notifications as read for a user
-export const markAllNotificationsRead = (userId) => api.put(`/users/${userId}/notifications/read`);
+export const getUserNotifications = (userId) => withValidResourceId(userId, 'user', () => api.get(`/users/${userId}/notifications`));
+export const markAllNotificationsRead = (userId) => withValidResourceId(userId, 'user', () => api.put(`/users/${userId}/notifications/read`));
 
 // Messages
 export const startConversation = (data) => api.post('/messages', data);
 export const getConversations = () => api.get('/messages/conversations');
-export const getConversation = (userId, listingId) => api.get(`/messages/conversation/${userId}/${listingId}`);
-// Unified thread with a person: ALL messages across ALL listings + every offer,
-// grouped by the other user (one conversation per person, never per listing).
-export const getConversationWithUser = (userId) => api.get(`/messages/conversation/${userId}`);
-export const sendMessage = (conversationId, data) => api.post(`/messages/${conversationId}`, data);
-export const markAsRead = (conversationId) => api.put(`/messages/read/${conversationId}`);
+export const getConversation = (userId, listingId) => withValidResourceId(userId, 'user', () => withValidResourceId(listingId, 'listing', () => api.get(`/messages/conversation/${userId}/${listingId}`)));
+export const getConversationWithUser = (userId) => withValidResourceId(userId, 'user', () => api.get(`/messages/conversation/${userId}`));
+export const sendMessage = (conversationId, data) => withValidResourceId(conversationId, 'conversation', () => api.post(`/messages/${conversationId}`, data));
+export const markAsRead = (conversationId) => withValidResourceId(conversationId, 'conversation', () => api.put(`/messages/read/${conversationId}`));
 
 // Wishlist
 export const getWishlist = () => api.get('/wishlist');
-export const addToWishlist = (listingId) => api.post('/wishlist', { listingId });
-export const removeFromWishlist = (listingId) => api.delete(`/wishlist/${listingId}`);
-export const checkInWishlist = (listingId) => api.get(`/wishlist/check/${listingId}`);
+export const addToWishlist = (listingId) => withValidResourceId(listingId, 'listing', () => api.post('/wishlist', { listingId }));
+export const removeFromWishlist = (listingId) => withValidResourceId(listingId, 'listing', () => api.delete(`/wishlist/${listingId}`));
+export const checkInWishlist = (listingId) => withValidResourceId(listingId, 'listing', () => api.get(`/wishlist/check/${listingId}`));
 
 // Reports
 export const reportListing = (data) => api.post('/reports', data);
 export const getReports = () => api.get('/admin/reports');
-export const resolveReport = (id, status) => api.put(`/admin/reports/${id}/status`, { status });
+export const resolveReport = (id, status) => withValidResourceId(id, 'report', () => api.put(`/admin/reports/${id}/status`, { status }));
 
 // Price History
 export const trackPrice = (data) => api.post('/pricehistory', data);
-export const getPriceHistory = (listingId) => api.get(`/pricehistory/${listingId}`);
+export const getPriceHistory = (listingId) => withValidResourceId(listingId, 'listing', () => api.get(`/pricehistory/${listingId}`));
 
 // Payouts
 export const getPayoutDashboard = () => api.get('/payouts/dashboard');
-export const processPayout = (transactionId) => api.post(`/payouts/process/${transactionId}`);
+export const processPayout = (transactionId) => withValidResourceId(transactionId, 'transaction', () => api.post(`/payouts/process/${transactionId}`));
 export const getSellerBalance = () => api.get('/payouts/balance');
 export const getCommissionInfo = () => api.get('/payouts/commission-info');
 
@@ -173,17 +177,17 @@ export const fileDispute = (transactionId, data) => withValidTransactionId(trans
 export const getOrderLifecycle = (transactionId) => withValidTransactionId(transactionId, () => api.get(`/orders/${transactionId}/lifecycle`));
 
 // Inventory & Boost
-export const boostListing = (listingId, data) => api.post(`/listings/${listingId}/boost`, data);
-export const deactivateBoost = (listingId) => api.post(`/listings/${listingId}/deactivate-boost`);
+export const boostListing = (listingId, data) => withValidResourceId(listingId, 'listing', () => api.post(`/listings/${listingId}/boost`, data));
+export const deactivateBoost = (listingId) => withValidResourceId(listingId, 'listing', () => api.post(`/listings/${listingId}/deactivate-boost`));
 // New: fetch boost configuration (tiers, fees, limits)
 export const getBoostConfig = () => api.get('/boost/config');
 
 // ====== Saved Searches ======
 export const saveSearch = (data) => api.post('/saved-searches', data);
 export const getSavedSearches = () => api.get('/saved-searches');
-export const getSavedSearchResults = (id) => api.get(`/saved-searches/${id}/results`);
-export const updateSavedSearch = (id, data) => api.put(`/saved-searches/${id}`, data);
-export const deleteSavedSearch = (id) => api.delete(`/saved-searches/${id}`);
+export const getSavedSearchResults = (id) => withValidResourceId(id, 'saved search', () => api.get(`/saved-searches/${id}/results`));
+export const updateSavedSearch = (id, data) => withValidResourceId(id, 'saved search', () => api.put(`/saved-searches/${id}`, data));
+export const deleteSavedSearch = (id) => withValidResourceId(id, 'saved search', () => api.delete(`/saved-searches/${id}`));
 
 // ====== Collections / Storefront ======
 export const createCollection = (data) => api.post('/collections', data);
@@ -197,19 +201,19 @@ export const deleteCollection = (id) => api.delete(`/collections/${id}`);
 // ====== Admin Panel ======
 export const getAdminDashboard = () => api.get('/admin/dashboard');
 export const getAdminUsers = (params) => api.get('/admin/users', { params });
-export const getAdminUser = (id) => api.get(`/admin/users/${id}`);
-export const updateUserRole = (id, role) => api.put(`/admin/users/${id}/role`, { role });
-export const suspendUser = (id) => api.post(`/admin/users/${id}/suspend`);
-export const unsuspendUser = (id) => api.post(`/admin/users/${id}/unsuspend`);
+export const getAdminUser = (id) => withValidResourceId(id, 'admin user', () => api.get(`/admin/users/${id}`));
+export const updateUserRole = (id, role) => withValidResourceId(id, 'admin user', () => api.put(`/admin/users/${id}/role`, { role }));
+export const suspendUser = (id) => withValidResourceId(id, 'admin user', () => api.post(`/admin/users/${id}/suspend`));
+export const unsuspendUser = (id) => withValidResourceId(id, 'admin user', () => api.post(`/admin/users/${id}/unsuspend`));
 export const getAdminListings = (params) => api.get('/admin/listings', { params });
-export const deleteAdminListing = (id) => api.delete(`/admin/listings/${id}`);
+export const deleteAdminListing = (id) => withValidResourceId(id, 'admin listing', () => api.delete(`/admin/listings/${id}`));
 export const getAdminReports = (params) => api.get('/admin/reports', { params });
-export const updateAdminReportStatus = (id, status) => api.put(`/admin/reports/${id}/status`, { status });
+export const updateAdminReportStatus = (id, status) => withValidResourceId(id, 'admin report', () => api.put(`/admin/reports/${id}/status`, { status }));
 export const getAdminTransactions = (params) => api.get('/admin/transactions', { params });
-export const adminRefundTransaction = (id) => api.post(`/admin/transactions/${id}/refund`);
+export const adminRefundTransaction = (id) => withValidResourceId(id, 'transaction', () => api.post(`/admin/transactions/${id}/refund`));
 export const autoSuspendUsers = () => api.post('/admin/auto-suspend');
 export const getPendingSellerVerifications = () => api.get('/admin/seller-badges/pending');
-export const reviewSellerBadge = (userId, data) => api.put(`/admin/seller-badges/${userId}/verification`, data);
+export const reviewSellerBadge = (userId, data) => withValidResourceId(userId, 'user', () => api.put(`/admin/seller-badges/${userId}/verification`, data));
 
 // ====== Transactions ======
 const isValidMongoId = (value) => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value);
@@ -225,8 +229,8 @@ export const getTransaction = (id) => {
 // ====== Bundle Discounts (Section 28a) ======
 export const createBundleRule = (data) => api.post('/offers/bundle', data);
 export const getBundleRules = () => api.get('/offers/bundle');
-export const updateBundleRule = (id, data) => api.put(`/offers/bundle/${id}`, data);
-export const deleteBundleRule = (id) => api.delete(`/offers/bundle/${id}`);
+export const updateBundleRule = (id, data) => withValidResourceId(id, 'bundle rule', () => api.put(`/offers/bundle/${id}`, data));
+export const deleteBundleRule = (id) => withValidResourceId(id, 'bundle rule', () => api.delete(`/offers/bundle/${id}`));
 export const applyBundleDiscount = (data) => api.post('/offers/bundle/apply', data);
 
 // ====== Offers to Likers (Section 28b) ======
@@ -238,12 +242,12 @@ const withValidOfferId = (id, request) => {
 };
 
 export const sendOfferToLikers = (data) => api.post('/offers/to-likers', data);
-export const getBulkOffers = (listingId) => api.get(`/offers/bulk/${listingId}`);
+export const getBulkOffers = (listingId) => withValidResourceId(listingId, 'listing', () => api.get(`/offers/bulk/${listingId}`));
 export const claimBulkOffer = (offerId) => withValidOfferId(offerId, () => api.post(`/offers/to-likers/${offerId}/claim`));
 
 // ====== Offer & Bundle Sharing (v45.0) ======
 export const getOfferSharingStats = () => api.get('/offer-sharing/stats');
-export const shareOfferToLikers = (listingId, data) => api.post(`/offer-sharing/to-likers/${listingId}`, data);
+export const shareOfferToLikers = (listingId, data) => withValidResourceId(listingId, 'listing', () => api.post(`/offer-sharing/to-likers/${listingId}`, data));
 export const createBundleOffer = (data) => api.post('/offer-sharing/bundle', data);
 export const shareOfferWithFriends = (offerId, data) => withValidOfferId(offerId, () => api.post(`/offer-sharing/share/${offerId}`, data));
 
@@ -267,10 +271,10 @@ export const getSavedSearchFilters = () => api.get('/search/saved');
 // ====== Promotions / Coupon Codes (Section 28c) ======
 export const createPromo = (data) => api.post('/promos', data);
 export const getPromos = () => api.get('/promos');
-export const updatePromo = (id, data) => api.put(`/promos/${id}`, data);
-export const deletePromo = (id) => api.delete(`/promos/${id}`);
+export const updatePromo = (id, data) => withValidResourceId(id, 'promo', () => api.put(`/promos/${id}`, data));
+export const deletePromo = (id) => withValidResourceId(id, 'promo', () => api.delete(`/promos/${id}`));
 export const validatePromo = (data) => api.post('/promos/validate', data);
-export const usePromo = (id) => api.post(`/promos/${id}/use`);
+export const usePromo = (id) => withValidResourceId(id, 'promo', () => api.post(`/promos/${id}/use`));
 
 // ====== Referral Program (v30.0) ======
 export const getReferralSettings = () => api.get('/referrals/settings');
@@ -309,8 +313,8 @@ export const getShippingInsuranceSettings = () => api.get('/shipping-insurance/s
 export const calculateShippingInsurance = (data) => api.post('/shipping-insurance/calculate', data);
 export const purchaseShippingInsurance = (data) => api.post('/shipping-insurance/purchase', data);
 export const getMyInsurancePolicies = () => api.get('/shipping-insurance/my');
-export const fileInsuranceClaim = (policyId, data) => api.post(`/shipping-insurance/${policyId}/claim`, data);
-export const refundShippingInsurance = (policyId) => api.post(`/shipping-insurance/${policyId}/refund`);
+export const fileInsuranceClaim = (policyId, data) => withValidResourceId(policyId, 'insurance policy', () => api.post(`/shipping-insurance/${policyId}/claim`, data));
+export const refundShippingInsurance = (policyId) => withValidResourceId(policyId, 'insurance policy', () => api.post(`/shipping-insurance/${policyId}/refund`));
 
 // ====== Cart (v29.0) ======
 export const getCart = () => api.get('/cart');
@@ -327,11 +331,11 @@ export const flagFraud = (data) => api.post('/fraud/flag', data);
 
 // ====== Auctions (v27.0) ======
 export const getAuctions = (params) => api.get('/auctions', { params });
-export const getAuction = (id) => api.get(`/auctions/${id}`);
+export const getAuction = (id) => withValidResourceId(id, 'auction', () => api.get(`/auctions/${id}`));
 export const createAuction = (data) => api.post('/auctions', data);
-export const placeBid = (auctionId, amount) => api.post(`/auctions/${auctionId}/bids`, { amount });
-export const endAuction = (auctionId) => api.post(`/auctions/${auctionId}/close`);
-export const cancelAuction = (auctionId) => api.delete(`/auctions/${auctionId}`);
+export const placeBid = (auctionId, amount) => withValidResourceId(auctionId, 'auction', () => api.post(`/auctions/${auctionId}/bids`, { amount }));
+export const endAuction = (auctionId) => withValidResourceId(auctionId, 'auction', () => api.post(`/auctions/${auctionId}/close`));
+export const cancelAuction = (auctionId) => withValidResourceId(auctionId, 'auction', () => api.delete(`/auctions/${auctionId}`));
 export const getMyAuctions = () => api.get('/auctions', { params: { mine: 'true' } });
 
 // ====== Price Suggestion AI (v28.0) ======

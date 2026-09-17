@@ -16,10 +16,10 @@ import { reviewSellerBadge } from './api';
 const api = axios.create.mock.results[0].value;
 
 test('reviewSellerBadge sends the admin approval decision and reason', () => {
-  reviewSellerBadge('seller-123', { decision: 'reject', reason: 'Unreadable document' });
+  reviewSellerBadge('507f1f77bcf86cd799439011', { decision: 'reject', reason: 'Unreadable document' });
 
   expect(api.put).toHaveBeenCalledWith(
-    '/admin/seller-badges/seller-123/verification',
+    '/admin/seller-badges/507f1f77bcf86cd799439011/verification',
     { decision: 'reject', reason: 'Unreadable document' }
   );
 });
