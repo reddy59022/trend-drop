@@ -66,6 +66,7 @@ const Cart = () => {
     cart.map(item => ({
       listingId: item.listingId,
       quantity: item.quantity,
+      ...(item.offerId ? { offerId: item.offerId } : {}),
       ...(item.negotiatedPrice != null ? { negotiatedPrice: item.negotiatedPrice } : {}),
       currency: item.currency || 'USD'
     }));

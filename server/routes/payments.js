@@ -297,8 +297,10 @@ router.post('/create-intent', auth, async (req, res) => {
         if (rule.applicableCategories && rule.applicableCategories.length > 0) {
           eligibleItems = group.items.filter(d => rule.applicableCategories.includes(d.listing.category));
         }
-        if (eligibleItems.length >= rule.minQuantity) {
-          const discount = eligibleItems.reduce((sum, d) => sum + d.salePrice, 0) * (rule.discountPercent / 100);
+        const eligibleQuantity = eligibleItems.reduce((sum, d) => sum + d.quantity, 0);
+        if (eligibleQuantity >= rule.minQuantity) {
+          const eligibleSubtotal = eligibleItems.reduce((sum, d) => sum + (d.salePrice * d.quantity), 0);
+          const discount = eligibleSubtotal * (rule.discountPercent / 100);
           bundleDiscountTotal += Math.round(discount * 100) / 100;
         }
       }
@@ -850,14 +852,19 @@ router.post('/confirm-batch', auth, async (req, res) => {
       let subtotalTotal = 0;
 
       for (const group of sellerGroups.values()) {
-        // Bundle shipping: same-seller multiple items → one label
-        const bundle = Order.calculateBundleShipping(group.items);
+        // The payment intent charges each item's calculated shipping. The
+        // order confirmation must use that same authoritative amount rather
+        // than replacing it with a different bundle-shipping heuristic.
+        const chargedShipping = group.txns.reduce(
+          (sum, g) => sum + (g.plan.shippingCostTotal || 0),
+          0
+        );
         const shipmentTxns = group.txns.map((g) => g.txn._id);
         const first = group.txns[0];
         shipments.push({
           seller: group.seller._id,
           items: shipmentTxns,
-          shippingCost: bundle.shippingCost,
+          shippingCost: Math.round(chargedShipping * 100) / 100,
           currency: first.plan.breakdown.sellerCurrency || 'USD',
           labelStatus: 'created',
           status: 'pending',
@@ -882,7 +889,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
           subtotalTotal += t.itemPrice || 0;
           protectionTotal += t.paymentBreakdown?.buyerProtectionFee || 0;
         }
-        shippingTotal += bundle.shippingCost;
+        shippingTotal += chargedShipping;
       }
 
       const totalHeld = Math.round((subtotalTotal + shippingTotal + protectionTotal) * 100) / 100;

@@ -148,6 +148,26 @@ describe('Cart checkout — payment confirmation status (R32)', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  test('preserves the accepted offer id through server checkout payloads', async () => {
+    setCartStore({
+      cart: [{ ...ITEM, offerId: 'offer_accepted_1', negotiatedPrice: 35, price: 35 }],
+      clearCart: jest.fn(),
+    });
+    prepareCheckout();
+    const pay = await renderCheckout();
+    fireEvent.click(pay);
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/payments/confirm-batch', expect.objectContaining({
+        items: [expect.objectContaining({
+          listingId: ITEM.listingId,
+          negotiatedPrice: 35,
+          offerId: 'offer_accepted_1',
+        })],
+      }));
+    });
+  });
+
   test('if the ORDER fails after authorization, the hold is released, not stranded', async () => {
     prepareCheckout();
     // Order placement fails (e.g. the item sold to someone else meanwhile).

@@ -179,6 +179,7 @@ const OrderDetail = () => {
         subtotal: viewOrder.totals?.subtotal,
         shippingCost: viewOrder.totals?.shipping,
         buyerProtectionFee: viewOrder.totals?.protectionFees,
+        discounts: viewOrder.totals?.discounts || 0,
         totalPaid: viewOrder.totals?.total,
       },
       shippingAddress: viewOrder.shippingAddress || {},
@@ -210,6 +211,12 @@ const OrderDetail = () => {
     : [{ id, title: viewOrder.listing?.title, status: viewOrder.status }];
 
   const primaryTransactionId = actionUnits[0]?.id || id;
+  const discountTotal = Number(
+    order?.totals?.discounts
+      ?? viewOrder.totals?.discounts
+      ?? viewOrder.paymentBreakdown?.discounts
+      ?? 0
+  );
 
   // ===== Escrow handlers =====
   const handleEscrowInitiate = async () => {
@@ -784,6 +791,10 @@ const OrderDetail = () => {
                   <span>{formatPrice(viewOrder.paymentBreakdown.buyerProtectionFee, viewOrder.currency || 'USD')}</span>
                 </div>
               )}
+              <div className="flex-between" style={{ color: discountTotal > 0 ? 'var(--td-success)' : 'var(--td-text-secondary)' }}>
+                <span>Coupon / Bundle Savings</span>
+                <span>{discountTotal > 0 ? '-' : ''}{formatPrice(discountTotal, viewOrder.currency || 'USD')}</span>
+              </div>
               <div style={{ height: 1, background: 'var(--td-border)', margin: '4px 0' }} />
               <div className="flex-between" style={{ fontWeight: 700, fontSize: 16 }}>
                 <span>Total Paid</span>

@@ -129,6 +129,29 @@ describe('Bundle Discounts (Section 28a)', () => {
     expect(res.body.totalBundleDiscount).toBe(20);
   });
 
+  test('BD.12 create-intent applies bundle discounts to item quantities, not item count', async () => {
+    await BundleRule.updateMany({ seller: seller._id }, { isActive: false });
+    const rule = await BundleRule.create({
+      seller: seller._id,
+      name: 'Quantity-aware checkout rule',
+      minQuantity: 2,
+      discountPercent: 20,
+    });
+    testBundleIds.push(rule._id);
+
+    const res = await request(app)
+      .post('/api/payments/create-intent')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({
+        items: [{ listingId: listing._id, quantity: 2 }],
+        shippingAddress: { country: 'US' },
+        buyerCountry: 'US',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.bundleDiscount).toBe(20);
+  });
+
   test('BD.11 malformed listing ids are rejected without a server error', async () => {
     const res = await request(app)
       .post('/api/offers/bundle/apply')

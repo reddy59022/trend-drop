@@ -301,6 +301,35 @@ describe('Batch Checkout: Payment + Order Creation', () => {
   });
 
   // ============================
+  // ORDER TOTAL PARITY
+  // ============================
+  describe('Order confirmation total parity', () => {
+    test('order total matches the payment summary for a multi-item checkout', async () => {
+      const first = await createListing({ title: 'Batch Test Item Total One', price: 30, quantity: 1, weight: 1 });
+      const second = await createListing({ title: 'Batch Test Item Total Two', price: 75, quantity: 1, weight: 1 });
+      const pi = mockPaymentIntent('succeeded');
+      const expected = [first, second].reduce((sum, item) => {
+        return sum + calculatePaymentBreakdown(item.price, 'US', 'US', item.weight).buyer.totalPaid;
+      }, 0);
+
+      const response = await request(app)
+        .post('/api/payments/confirm-batch')
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .send({
+          paymentIntentId: pi.id,
+          items: [
+            { listingId: first._id.toString(), quantity: 1 },
+            { listingId: second._id.toString(), quantity: 1 },
+          ],
+          shippingAddress,
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.orders?.[0]?.totals?.total).toBeCloseTo(expected, 2);
+    });
+  });
+
+  // ============================
   // CANCEL PAYMENT (AUTHORIZATION RELEASE)
   // ============================
   describe('Cancel payment', () => {
