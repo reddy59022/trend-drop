@@ -12,6 +12,9 @@ client/node_modules/
 client/build/
 client/dist/
 
+#freebuff
+project-id
+
 # IDE
 .vscode/
 .idea/
