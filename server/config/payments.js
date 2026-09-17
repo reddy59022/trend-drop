@@ -161,22 +161,34 @@ const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
 //   R32.9/R32.10). Must be <= the authorized amount.
 const capturePaymentIntent = async (paymentIntentId, amountToCapture = null) => {
   if (!stripe) {
-    // Test/dev mode: return mock capture result
+    // Test/dev mode: mirror STRIPE's real capture contract.
+    // Stripe REJECTS a capture above the authorized amount
+    // (invalid_request_error / amount_too_large). The mock used to silently
+    // clamp the request to `stored.amount`, which made an over-capture request
+    // invisible to every suite: a promo/bundle-discounted order validated,
+    // "captured" and committed locally while live Stripe would have failed
+    // the capture, leaving the buyer authorized with no order. Failing here
+    // exactly as the provider does is what keeps the suites honest.
+    // The captured amount is recorded on the stored intent the way Stripe
+    // reports it (`amount_captured`) so tests can assert what was charged.
+    const stored = global.__mockPaymentIntents?.[paymentIntentId];
     if (amountToCapture !== null && amountToCapture !== undefined && amountToCapture > 0) {
-      // Partial capture: return only the requested amount.
-      // If the intent exists in the mock store, the captured amount is capped
-      // at the authorized amount; otherwise use the requested amount directly
-      // (test helper path — the caller knows what they authorized).
-      const stored = global.__mockPaymentIntents?.[paymentIntentId];
-      const capturedAmount = stored
-        ? Math.min(amountToCapture, stored.amount || 0)
-        : Math.round(amountToCapture);
+      if (stored && Number(stored.amount) > 0 && amountToCapture > Number(stored.amount)) {
+        const err = new Error('Amount to capture cannot be greater than the amount authorized.');
+        err.type = 'invalid_request_error';
+        err.code = 'amount_too_large';
+        throw err;
+      }
+      const capturedAmount = Math.round(amountToCapture);
+      if (stored) stored.amount_captured = capturedAmount;
       return {
         id: paymentIntentId,
         status: 'succeeded',
         amount: capturedAmount,
       };
     }
+    // Full capture (no amount_to_capture): the whole authorized amount.
+    if (stored) stored.amount_captured = Number(stored.amount) || 0;
     return { id: paymentIntentId, status: 'succeeded' };
   }
   const captureParams = {};

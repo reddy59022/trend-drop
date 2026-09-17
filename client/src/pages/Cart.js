@@ -144,34 +144,59 @@ const Cart = () => {
       }
 
       if (confirmError) throw new Error(confirmError.message);
-      if (paymentIntent?.status !== 'succeeded') throw new Error(`Payment status: ${paymentIntent?.status}`);
-
-      // STEP 3: Confirm batch with all items (same payload shape as intent)
-      const confirmRes = await api.post('/payments/confirm-batch', {
-        paymentIntentId,
-        items: buildItemsPayload(),
-        shippingAddress: shippingInfo,
-      });
-
-      // Use promo code if applied (mark usage)
-      if (appliedPromo) {
-        try {
-          await api.post(`/promos/${appliedPromo._id}/use`);
-        } catch (e) {
-          console.error('Failed to mark promo used:', e);
-        }
+      // R32 FIX (production /cart bug): confirm-batch (manual capture,
+      // capture_method:'manual') authorizes the card WITHOUT charging it, so
+      // Stripe.js resolves the confirmation with status 'requires_capture'.
+      // The old `!== 'succeeded'` guard treated every real authorization as a
+      // failure: the buyer's money was HELD but the order was never placed —
+      // "payment confirmed, order placement failed, stuck on cart". Accept
+      // both terminal payment states here; the server capture happens in
+      // confirm-batch (STEP 3) after the order is validated.
+      if (!['succeeded', 'requires_capture'].includes(paymentIntent?.status)) {
+        throw new Error(`Payment status: ${paymentIntent?.status}`);
       }
 
-      clearCart();
-      setShowForm(false);
-      toast.success('Order placed successfully! 🎉');
+      // STEP 3: Confirm batch with all items (same payload shape as intent)
+      try {
+        const confirmRes = await api.post('/payments/confirm-batch', {
+          paymentIntentId,
+          items: buildItemsPayload(),
+          shippingAddress: shippingInfo,
+        });
 
-      // Navigate with the router — window.location.href deep-links are a
-      // hard page load that breaks inside the Capacitor WebView
-      // (capacitor://localhost/orders/... is not a real URL).
-      const orderId = confirmRes.data.orders?.[0]?._id || confirmRes.data.transactions?.[0]?._id;
-      if (orderId) {
-        setTimeout(() => navigate(`/orders/${orderId}`), 1500);
+        // Use promo code if applied (mark usage)
+        if (appliedPromo) {
+          try {
+            await api.post(`/promos/${appliedPromo._id}/use`);
+          } catch (e) {
+            console.error('Failed to mark promo used:', e);
+          }
+        }
+
+        clearCart();
+        setShowForm(false);
+        toast.success('Order placed successfully! 🎉');
+
+        // Navigate with the router — window.location.href deep-links are a
+        // hard page load that breaks inside the Capacitor WebView
+        // (capacitor://localhost/orders/... is not a real URL).
+        const orderId = confirmRes.data.orders?.[0]?._id || confirmRes.data.transactions?.[0]?._id;
+        if (orderId) {
+          setTimeout(() => navigate(`/orders/${orderId}`), 1500);
+        }
+      } catch (orderError) {
+        // R32.2 FIX: order placement failed AFTER the card was authorized.
+        // Without this, the buyer is left with funds HELD on their card and
+        // no order (a stranded hold for ~7 days). Hand the authorization back
+        // so no money stays reserved, then surface the failure.
+        console.error('Order placement failed after payment authorization:', orderError);
+        try {
+          await api.post('/payments/cancel-payment', { paymentIntentId });
+        } catch (e) {
+          // Never mask the original failure with a release error.
+          console.error('Failed to release the payment authorization:', e);
+        }
+        throw orderError;
       }
     } catch (error) {
       console.error('Checkout error:', error);

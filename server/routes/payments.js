@@ -402,7 +402,20 @@ router.post('/confirm-batch', auth, async (req, res) => {
       });
     }
 
-    // Verify payment status from Stripe
+    // Verify payment status from Stripe.
+    // R34 GUARD: retrievePaymentIntent's mock mode FABRICATES a
+    // status:'succeeded', amount:0 intent for UNKNOWN ids, which would let
+    // the flow walk straight into capture + commit with no real authorization
+    // behind it. Money state may only ever be produced by an intent that
+    // actually exists (mock registry or Stripe). Use the strict lookup: an
+    // unknown id is a terminal 400 — deterministic client recovery, never a
+    // fabricated order, never a 500.
+    const knownIntent = await findPaymentIntent(paymentIntentId);
+    if (!knownIntent) {
+      return res.status(400).json({
+        message: 'Payment not authorized. Payment intent not found — create a new payment.',
+      });
+    }
     const paymentIntent = await retrievePaymentIntent(paymentIntentId);
     const VALID_STATUSES = ['succeeded', 'requires_capture'];
     if (!VALID_STATUSES.includes(paymentIntent.status)) {
@@ -587,9 +600,29 @@ router.post('/confirm-batch', auth, async (req, res) => {
     // order total. Capture ONLY the order total so the buyer is not over-charged.
     // Stripe's capture_method:'manual' intents hold the full authorized amount by
     // default — we must explicitly pass amount_to_capture.
+    //
+    // The capture amount must match what the buyer is actually charged: the
+    // planned total MINUS any promo/bundle discounts that were applied at
+    // create-intent time (the authorized amount already reflects the discount).
     let captureResult = null;
     if (paymentIntent.status === 'requires_capture') {
-      const orderTotalCents = Math.round(plannedTotal * 100);
+      // R35 FIX: the authorization created by create-intent ALREADY has the
+      // promo/bundle discounts subtracted, so the capture must ask for the
+      // discounted total. Capturing the undiscounted planned total exceeded the
+      // hold and Stripe rejects it (amount_too_large) — the order failed after
+      // the buyer was authorized, the "payment confirmed, order failed"
+      // symptom. For an unchanged cart this captures exactly the authorized
+      // amount; a trimmed cart captures proportionally less.
+      const discountedCents = Math.round((plannedTotal - batchMetaDiscount) * 100);
+      const plannedCents = Math.round(plannedTotal * 100);
+      const authorizedCents = Number(paymentIntent.amount) || 0;
+      // A discount can exceed the recomputed plan when a listing price changes
+      // between authorization and capture. Stripe cannot capture ≤ 0, so floor
+      // at the recomputed plan total — never fall through to the ENTIRE hold,
+      // which would charge the buyer the old authorization for a near-free
+      // order. The request also never exceeds the hold (Stripe rejects one).
+      const requestedCents = discountedCents > 0 ? discountedCents : plannedCents;
+      const orderTotalCents = authorizedCents > 0 ? Math.min(requestedCents, authorizedCents) : requestedCents;
       captureResult = await capturePaymentIntent(paymentIntentId, orderTotalCents);
     } else {
       captureResult = { id: paymentIntentId, status: 'succeeded' };
@@ -1009,6 +1042,15 @@ router.post('/confirm', auth, async (req, res) => {
 
     if (!paymentIntentId) return res.status(400).json({ message: 'Missing paymentIntentId' });
 
+    // R34 GUARD (parity with confirm-batch): an unknown intent id must be a
+    // terminal 400 — retrievePaymentIntent's mock-mode fabrication
+    // (status:'succeeded', amount:0) must never reach capture/commit.
+    const knownIntent = await findPaymentIntent(paymentIntentId);
+    if (!knownIntent) {
+      return res.status(400).json({
+        message: 'Payment not authorized. Payment intent not found — create a new payment.',
+      });
+    }
     const paymentIntent = await retrievePaymentIntent(paymentIntentId);
     const VALID_STATUSES = ['succeeded', 'requires_capture'];
     if (!VALID_STATUSES.includes(paymentIntent.status)) {

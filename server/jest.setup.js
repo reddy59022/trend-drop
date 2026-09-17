@@ -287,12 +287,26 @@ const jsonResponse = (body, status = 200) => ({
   text: async () => JSON.stringify(body),
 });
 
-const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
-  modulusLength: 2048,
-});
-// NOTE: Node 24 rejects createPublicKey(publicKey) with
-// "Invalid key object type public, expected private", so export directly.
-const publicJwk = publicKey.export({ format: 'jwk' });
+// The RSA test keypair is generated ONCE in jest.globalSetup.js and handed
+// off via the cache dir (next to the Mongo URI file). Generating an RSA-2048
+// pair here in every test file used to cost ~100ms x ~140 files per run.
+// Fall back to generating locally when the cache file is absent (e.g. a bare
+// setup run that skipped globalSetup) so suites always have a working pair.
+const KEYS_FILE = path.join(__dirname, 'node_modules', '.cache', 'trenddrop-test-jwt-keys.json');
+
+let privateKey;
+let publicKey;
+let publicJwk;
+try {
+  privateKey = crypto.createPrivateKey(JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8')).privateKeyPem);
+  publicKey = crypto.createPublicKey(privateKey);
+  publicJwk = publicKey.export({ format: 'jwk' });
+} catch (err) {
+  ({ privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+  }));
+  publicJwk = publicKey.export({ format: 'jwk' });
+}
 const APPLE_JWK = {
   kty: 'RSA',
   kid: APPLE_KID,

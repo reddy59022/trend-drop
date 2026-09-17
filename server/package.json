@@ -7,9 +7,9 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed": "node seed.js",
-    "test": "NODE_ENV=test jest --runInBand --forceExit --detectOpenHandles --verbose",
-    "test:coverage": "NODE_ENV=test jest --runInBand --forceExit --detectOpenHandles --coverage",
-    "test:ci": "NODE_ENV=test jest --runInBand --forceExit --detectOpenHandles"
+    "test": "NODE_ENV=test jest --runInBand --forceExit --verbose",
+    "test:coverage": "NODE_ENV=test jest --runInBand --forceExit --coverage",
+    "test:ci": "NODE_ENV=test jest --runInBand --forceExit"
   },
   "dependencies": {
     "@sendinblue/client": "^3.3.1",
@@ -41,7 +41,7 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testTimeout": 30000,
+    "testTimeout": 15000,
     "globalSetup": "./jest.globalSetup.js",
     "globalTeardown": "./jest.globalTeardown.js",
     "setupFilesAfterEnv": [
