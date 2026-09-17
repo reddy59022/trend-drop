@@ -34,6 +34,9 @@ router.get('/me', auth, async (req, res) => {
 // GET /api/seller-badges/:userId - Get user's badge (public)
 router.get('/:userId', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return res.status(400).json({ message: 'Invalid seller id' });
+    }
     const badge = await SellerBadge.findOne({ userId: req.params.userId });
     
     if (!badge) {
@@ -83,6 +86,11 @@ router.put('/update-stats', auth, async (req, res) => {
       }
       if (value !== undefined) badge[field] = value;
     }
+
+    // Recompute tier benefits from the new authoritative stats. Without
+    // resetting this flag, a former gold/platinum seller keeps featured
+    // placement after dropping to a lower tier.
+    badge.benefits.featuredListings = false;
 
     // Calculate tier
     const tiers = SellerBadge.TIERS;

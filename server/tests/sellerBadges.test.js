@@ -86,12 +86,17 @@ describe('v39.0 Verified Badges & Seller Levels', () => {
     await User.findByIdAndDelete(otherUser._id);
   });
 
-  test('v39.6 - Should require auth for me endpoint', async () => {
+  test('v39.6 - Should reject malformed public seller IDs with 400', async () => {
+    const res = await request(app).get('/api/seller-badges/not-an-object-id');
+    expect(res.status).toBe(400);
+  });
+
+  test('v39.7 - Should require auth for me endpoint', async () => {
     const res = await request(app).get('/api/seller-badges/me');
     expect(res.status).toBe(401);
   });
 
-  test('v39.7 - Should calculate platinum tier for high stats', async () => {
+  test('v39.8 - Should calculate platinum tier for high stats', async () => {
     const res = await request(app)
       .put('/api/seller-badges/update-stats')
       .set('Authorization', `Bearer ${userToken}`)
@@ -107,7 +112,7 @@ describe('v39.0 Verified Badges & Seller Levels', () => {
     expect(res.body.badge.benefits.featuredListings).toBe(true);
   });
 
-  test('v39.8 - Should reject response rates outside the normalized 0..1 contract', async () => {
+  test('v39.9 - Should reject response rates outside the normalized 0..1 contract', async () => {
     const res = await request(app)
       .put('/api/seller-badges/update-stats')
       .set('Authorization', `Bearer ${userToken}`)
@@ -116,7 +121,7 @@ describe('v39.0 Verified Badges & Seller Levels', () => {
     expect(res.status).toBe(400);
   });
 
-  test('v39.9 - Should preserve intentional zero stats updates', async () => {
+  test('v39.10 - Should preserve intentional zero stats updates', async () => {
     const res = await request(app)
       .put('/api/seller-badges/update-stats')
       .set('Authorization', `Bearer ${userToken}`)
@@ -127,9 +132,10 @@ describe('v39.0 Verified Badges & Seller Levels', () => {
     expect(res.body.badge.avgRating).toBe(0);
     expect(res.body.badge.responseRate).toBe(0);
     expect(res.body.badge.returnRate).toBe(0);
+    expect(res.body.badge.benefits.featuredListings).toBe(false);
   });
 
-  test('v39.10 - Should not grant verification benefits before admin approval', async () => {
+  test('v39.11 - Should not grant verification benefits before admin approval', async () => {
     const badge = await SellerBadge.findOne({ userId: user._id });
     expect(badge.verificationRequested).toBe(true);
     expect(badge.isVerified).toBe(false);

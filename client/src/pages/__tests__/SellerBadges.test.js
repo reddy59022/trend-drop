@@ -72,6 +72,21 @@ describe('SellerBadges page', () => {
     await waitFor(() => expect(screen.getByText('95%')).toBeInTheDocument());
   });
 
+  test('renders legitimate zero response and return rates as 0%', async () => {
+    getMySellerBadge.mockResolvedValue({ data: { badge: {
+      tier: 'bronze', isVerified: false, verificationRequested: false,
+      salesCount: 0, avgRating: 0, responseRate: 0, returnRate: 0,
+      benefits: { reducedFees: false, prioritySupport: false, featuredListings: false },
+    } } });
+
+    renderPage(<SellerBadges />);
+
+    await waitFor(() => {
+      expect(screen.getByText('0%')).toBeInTheDocument();
+      expect(screen.getByText('0.0%')).toBeInTheDocument();
+    });
+  });
+
   test('does not submit duplicate verification requests while one is pending', async () => {
     getMySellerBadge.mockResolvedValue({ data: { badge: {
       tier: 'bronze', isVerified: false, verificationRequested: false,

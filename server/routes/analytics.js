@@ -5,6 +5,8 @@ const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Subscription = require('../models/Subscription');
 
+const NON_REVENUE_STATUSES = ['cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled', 'refunded'];
+
 // GET /api/analytics/dashboard - Get seller analytics dashboard
 router.get('/dashboard', auth, async (req, res) => {
   try {
@@ -44,7 +46,7 @@ router.get('/dashboard', auth, async (req, res) => {
 // GET /api/analytics/sales - Get sales analytics
 router.get('/sales', auth, async (req, res) => {
   try {
-    const transactions = await Transaction.find({ seller: req.user._id })
+    const transactions = await Transaction.find({ seller: req.user._id, status: { $nin: NON_REVENUE_STATUSES } })
       .sort({ createdAt: -1 })
       .limit(30);
     
@@ -116,8 +118,7 @@ router.get('/analytics/overview', auth, async (req, res) => {
       .sort({ createdAt: -1 });
     const listings = await Listing.find({ seller: req.user._id });
 
-    const cancelled = ['cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled'];
-    const paidTxns = transactions.filter(t => !cancelled.includes(t.status));
+    const paidTxns = transactions.filter(t => !NON_REVENUE_STATUSES.includes(t.status));
     const totalRevenue = paidTxns.reduce((sum, t) => sum + (t.paymentBreakdown?.sellerEarnings || t.amount || 0), 0);
     const totalSales = paidTxns.length;
     const totalViews = listings.reduce((sum, l) => sum + (l.views || 0), 0);
@@ -131,6 +132,7 @@ router.get('/analytics/overview', auth, async (req, res) => {
       overview: {
         totalRevenue,
         totalSales,
+        avgOrderValue: totalSales > 0 ? totalRevenue / totalSales : 0,
         totalViews,
         conversionRate,
         avgRating,
@@ -156,8 +158,11 @@ router.get('/analytics/revenue', auth, async (req, res) => {
     const days = period === '7d' ? 7 : period === '90d' ? 90 : period === '1y' ? 365 : 30;
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const transactions = await Transaction.find({ seller: req.user._id, createdAt: { $gte: since } })
-      .sort({ createdAt: 1 });
+    const transactions = await Transaction.find({
+      seller: req.user._id,
+      status: { $nin: NON_REVENUE_STATUSES },
+      createdAt: { $gte: since },
+    }).sort({ createdAt: 1 });
 
     const buckets = {};
     transactions.forEach(t => {
@@ -181,7 +186,7 @@ router.get('/analytics/top-listings', auth, async (req, res) => {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
     const top = await Transaction.aggregate([
-      { $match: { seller: req.user._id, createdAt: { $gte: since } } },
+      { $match: { seller: req.user._id, status: { $nin: NON_REVENUE_STATUSES }, createdAt: { $gte: since } } },
       { $group: { _id: '$listing', revenue: { $sum: '$paymentBreakdown.sellerEarnings' }, sales: { $sum: 1 } } },
       { $sort: { revenue: -1 } },
       { $limit: 10 },

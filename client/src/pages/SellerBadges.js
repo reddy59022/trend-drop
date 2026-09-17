@@ -115,11 +115,11 @@ const SellerBadges = () => {
           </div>
           <div className="stat-box" style={{ padding: 12, borderRadius: 12, background: 'var(--td-bg-secondary)' }}>
             <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Response Rate</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{badge?.responseRate ? `${Math.round(badge.responseRate * 100)}%` : '—'}</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>{badge?.responseRate !== undefined && badge?.responseRate !== null ? `${Math.round(badge.responseRate * 100)}%` : '—'}</div>
           </div>
           <div className="stat-box" style={{ padding: 12, borderRadius: 12, background: 'var(--td-bg-secondary)' }}>
             <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>Return Rate</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{badge?.returnRate ? `${(badge.returnRate * 100).toFixed(1)}%` : '—'}</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>{badge?.returnRate !== undefined && badge?.returnRate !== null ? `${(badge.returnRate * 100).toFixed(1)}%` : '—'}</div>
           </div>
         </div>
 

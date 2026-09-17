@@ -11,6 +11,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 let user;
 let userToken;
 let testListing;
+let cancelledTransaction;
 
 beforeAll(async () => {
   if (mongoose.connection.readyState !== 1) {
@@ -37,6 +38,12 @@ beforeAll(async () => {
     listing: testListing._id, itemPrice: 100,
     paymentBreakdown: { subtotal: 100, sellerEarnings: 85, totalPaid: 108 },
   });
+
+  cancelledTransaction = await Transaction.create({
+    seller: user._id, buyer: user._id, amount: 999, status: 'cancelled',
+    listing: testListing._id, itemPrice: 999,
+    paymentBreakdown: { subtotal: 999, sellerEarnings: 999, totalPaid: 999 },
+  });
 });
 
 afterAll(async () => {
@@ -61,7 +68,25 @@ describe('v50.0 Advanced Analytics Dashboard', () => {
     expect(res.body.totalListings).toBeDefined();
   });
 
-  test('v50.3 - Should get sales analytics', async () => {
+  test('v50.3 - Should return seller average order value in overview', async () => {
+    const res = await request(app)
+      .get('/api/users/me/analytics/overview?period=30d')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.overview.avgOrderValue).toBe(85);
+  });
+
+  test('v50.4 - Should exclude cancelled transactions from revenue analytics', async () => {
+    const res = await request(app)
+      .get('/api/users/me/analytics/revenue?period=30d')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.revenue.reduce((sum, row) => sum + row.revenue, 0)).toBe(85);
+  });
+
+  test('v50.5 - Should get sales analytics', async () => {
     const res = await request(app)
       .get('/api/analytics/sales')
       .set('Authorization', `Bearer ${userToken}`);
@@ -70,7 +95,7 @@ describe('v50.0 Advanced Analytics Dashboard', () => {
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  test('v50.4 - Should get inventory analytics', async () => {
+  test('v50.6 - Should get inventory analytics', async () => {
     const res = await request(app)
       .get('/api/analytics/inventory')
       .set('Authorization', `Bearer ${userToken}`);
@@ -79,7 +104,7 @@ describe('v50.0 Advanced Analytics Dashboard', () => {
     expect(res.body.total).toBeDefined();
   });
 
-  test('v50.5 - Should get forecast', async () => {
+  test('v50.7 - Should get forecast', async () => {
     const res = await request(app)
       .post('/api/analytics/forecast')
       .set('Authorization', `Bearer ${userToken}`);

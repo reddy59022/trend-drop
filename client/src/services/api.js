@@ -319,7 +319,12 @@ export const getLoyaltyHistory = () => api.get('/loyalty/history');
 
 // ====== Seller Badges / Verification (v39.0) ======
 export const getMySellerBadge = () => api.get('/seller-badges/me');
-export const getSellerBadge = (userId) => api.get(`/seller-badges/${userId}`);
+export const getSellerBadge = (userId) => {
+  if (!/^[a-f\d]{24}$/i.test(String(userId || ''))) {
+    return Promise.reject(new Error('Invalid seller id'));
+  }
+  return api.get(`/seller-badges/${userId}`);
+};
 export const requestSellerVerification = () => api.put('/seller-badges/verify');
 export const updateSellerBadgeStats = (data) => api.put('/seller-badges/update-stats', data);
 

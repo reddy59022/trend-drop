@@ -44,6 +44,39 @@ describe('SellerAnalytics page', () => {
     await waitFor(() => expect(document.querySelector('h1') || screen.queryByText(/loading/i) || screen.queryByText(/error/i) || document.body).toBeTruthy());
   });
 
+  test('renders the server-provided average order value', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/overview')) {
+        return Promise.resolve({ data: { overview: {
+          totalRevenue: 170, totalSales: 2, avgOrderValue: 85,
+          totalViews: 10, conversionRate: 20, avgRating: 4.5, totalRatings: 2,
+          activeListings: 1, soldListings: 2, recentActivity: [],
+        } } });
+      }
+      return Promise.resolve({ data: { revenue: [], topListings: [] } });
+    });
+
+    renderPage(<SellerAnalytics />);
+
+    await waitFor(() => expect(screen.getByText('$85.00')).toBeInTheDocument());
+  });
+
+  test('renders the server-authoritative revenue series', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/overview')) return Promise.resolve({ data: { overview: {
+        totalRevenue: 85, totalSales: 1, avgOrderValue: 85, totalViews: 1,
+        conversionRate: 100, avgRating: 0, totalRatings: 0, activeListings: 0,
+        soldListings: 1, recentActivity: [],
+      } } });
+      if (url.includes('/revenue')) return Promise.resolve({ data: { revenue: [{ date: '2026-09-17', revenue: 85, sales: 1 }] } });
+      return Promise.resolve({ data: { topListings: [] } });
+    });
+
+    renderPage(<SellerAnalytics />);
+
+    await waitFor(() => expect(screen.getByText(/2026-09-17: \$85\.00/)).toBeInTheDocument());
+  });
+
   test('survives API failure without crashing', async () => {
     Object.keys(api).filter(k => k.startsWith('get')).forEach(k => api[k].mockRejectedValue(new Error('boom')));
     api.get.mockRejectedValue(new Error('boom'));
