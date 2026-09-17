@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaDollarSign, FaEye, FaTag, FaStar, FaPercentage, FaShoppingBag, FaSpinner } from 'react-icons/fa';
+import { FaDollarSign, FaEye, FaTag, FaStar, FaPercentage, FaShoppingBag } from 'react-icons/fa';
 
 const SellerAnalytics = () => {
-  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [revenueData, setRevenueData] = useState([]);
@@ -16,6 +14,8 @@ const SellerAnalytics = () => {
     fetchOverview();
     fetchRevenue();
     fetchTopListings();
+    // These functions are page-local analytics request handlers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
 
   const fetchOverview = async () => {

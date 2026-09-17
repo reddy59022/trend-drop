@@ -164,7 +164,7 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
 
         {/* Offer Status Banner */}
         {offer && (
-          <div style={{ flexShrink: 0, padding: '12px 20px', background: offerExpired ? 'rgba(148,148,184,0.05)' : offer.status === 'accepted' ? 'rgba(16,217,142,0.06)' : offer.status === 'declined' ? 'rgba(255,77,109,0.06)' : 'rgba(108,59,255,0.04)', borderBottom: '1px solid var(--td-border-light)' }}>
+          <div style={{ flexShrink: 0, padding: '12px 20px', background: offerExpired ? 'rgba(148,148,184,0.05)' : offer.status === 'accepted' ? 'rgba(16,217,142,0.06)' : offer.status === 'declined' ? 'rgba(255,77,109,0.06)' : 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--td-border-light)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <FaTag size={13} style={{ color: 'var(--td-primary)' }} />
@@ -209,7 +209,7 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
                   <div key={msg._id || i} style={{ display: 'flex', justifyContent: isOwn ? 'flex-end' : 'flex-start', alignItems: isOwn ? 'flex-end' : 'flex-start', gap: 8, marginBottom: isLast ? 12 : 4 }}>
                     {!isOwn && showAvatar && <img src={seller?.avatar || defaultAvatar} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
                     {!isOwn && !showAvatar && <div style={{ width: 28, flexShrink: 0 }} />}
-                    <div style={{ maxWidth: '72%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : '#fff', color: isOwn ? '#fff' : 'var(--td-text)', boxShadow: isOwn ? '0 4px 12px rgba(108,59,255,0.3)' : 'var(--td-shadow-sm)' }}>
+                    <div style={{ maxWidth: '72%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : '#fff', color: isOwn ? '#fff' : 'var(--td-text)', boxShadow: isOwn ? '0 4px 12px rgba(124,58,237,0.3)' : 'var(--td-shadow-sm)' }}>
                       {msg.listing && (msg.listing._id || msg.listing) !== (listing?._id || listing?.id) && (
                         <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <FaTag size={9} /> Re: {msg.listing.title}
@@ -234,7 +234,7 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
         {/* Input */}
         <form onSubmit={handleSend} style={{ flexShrink: 0, padding: '12px 16px', background: 'var(--td-surface)', borderTop: '1px solid var(--td-border-light)', display: 'flex', gap: 10, alignItems: 'center' }}>
           <input ref={inputRef} type="text" placeholder="Type a message..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} maxLength={2000} autoComplete="off" style={{ flex: 1, padding: '12px 18px', borderRadius: '24px', border: '1px solid var(--td-border)', fontSize: 14, background: 'var(--td-surface-secondary)', outline: 'none' }} />
-          <button type="submit" disabled={sending || !newMessage.trim()} style={{ flexShrink: 0, width: 46, height: 46, borderRadius: '50%', border: 'none', background: newMessage.trim() ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : 'var(--td-surface-tertiary)', color: newMessage.trim() ? '#fff' : 'var(--td-text-tertiary)', cursor: newMessage.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: newMessage.trim() ? '0 4px 12px rgba(108,59,255,0.35)' : 'none' }}>
+          <button type="submit" disabled={sending || !newMessage.trim()} style={{ flexShrink: 0, width: 46, height: 46, borderRadius: '50%', border: 'none', background: newMessage.trim() ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : 'var(--td-surface-tertiary)', color: newMessage.trim() ? '#fff' : 'var(--td-text-tertiary)', cursor: newMessage.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: newMessage.trim() ? '0 4px 12px rgba(124,58,237,0.35)' : 'none' }}>
             {sending ? <FaSpinner className="spinner-sm" /> : <FaPaperPlane size={16} />}
           </button>
         </form>

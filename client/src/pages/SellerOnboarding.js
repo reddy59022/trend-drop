@@ -4,7 +4,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaUser, FaTag, FaTruck, FaCreditCard, FaBook, FaCheckCircle, FaArrowRight, FaArrowLeft, FaSpinner } from 'react-icons/fa';
+import { FaUser, FaTag, FaTruck, FaCreditCard, FaBook, FaCheckCircle, FaArrowRight, FaSpinner } from 'react-icons/fa';
 
 const STEPS = [
   { key: 'profileSetup', title: 'Profile Setup', description: 'Add a photo and bio so buyers trust you', icon: FaUser },
@@ -26,6 +26,8 @@ const SellerOnboarding = () => {
   useEffect(() => {
     fetchOnboarding();
     fetchTips();
+    // These functions are page-local request handlers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchOnboarding = async () => {
@@ -106,7 +108,7 @@ const SellerOnboarding = () => {
     <div className="onboarding-page">
       <div className="container">
         <div className="onboarding-header">
-          <h1>Welcome to AURAVEST, {user?.name?.split(' ')[0]}!</h1>
+          <h1>Welcome to TrendDrop, {user?.name?.split(' ')[0]}!</h1>
           <p className="subtitle">Let's get you set up as a seller</p>
         </div>
 

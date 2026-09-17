@@ -6,16 +6,26 @@ set -e
 
 PLATFORM=${1:-both}
 CLIENT_DIR="$(cd "$(dirname "$0")" && pwd)/client"
-JDK21="$(/usr/libexec/java_home -v 21+ 2>/dev/null || true)"
-JAVA_HOME_21="${JAVA_HOME_21:-$JDK21}"
-ANDROID_HOME="$HOME/Library/Android/sdk"
+ANDROID_HOME="${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}"
+JAVA_HOME_21="${JAVA_HOME:-${JAVA_HOME_21:-}}"
+if [ -z "$JAVA_HOME_21" ] && [ -x "$HOME/.local/share/trenddrop-toolchain/jdk-21/Contents/Home/bin/java" ]; then
+  JAVA_HOME_21="$HOME/.local/share/trenddrop-toolchain/jdk-21/Contents/Home"
+fi
+if [ -z "$JAVA_HOME_21" ]; then
+  JAVA_HOME_21="$(/usr/libexec/java_home -v 21+ 2>/dev/null || true)"
+fi
+if [ -z "$JAVA_HOME_21" ]; then
+  echo "❌ Java 21 is required for the Capacitor Android build. Set JAVA_HOME or install a JDK 21." >&2
+  exit 1
+fi
 RUBY_PATH="$(brew --prefix 2>/dev/null)/Library/Homebrew/vendor/portable-ruby/current/bin"
 
 build_android() {
   echo "🔨 Building Android..."
   export JAVA_HOME="$JAVA_HOME_21"
   export ANDROID_HOME="$ANDROID_HOME"
-  export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
+  export ANDROID_SDK_ROOT="$ANDROID_HOME"
+  export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
   
   cd "$CLIENT_DIR"
   npm run build

@@ -166,7 +166,7 @@ export const getVideoPlatformColor = (videoInfo) => {
     youtube: '#FF0000',
     instagram: '#E4405F',
     facebook: '#1877F2',
-    direct: '#6C63FF',
+    direct: 'var(--td-primary)',
     tiktok: '#000000',
     vimeo: '#1AB7EA',
     twitter: '#1DA1F2',

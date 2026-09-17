@@ -1,16 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
-import { formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import { FaCalendarAlt, FaUsers, FaShare, FaClock, FaTag, FaHeart, FaSearch, FaPlus } from 'react-icons/fa';
 
 const Parties = () => {
   const { user } = useAuth();
-  const { currency } = useTheme();
-  const navigate = useNavigate();
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -28,6 +24,8 @@ const Parties = () => {
 
   useEffect(() => {
     fetchParties();
+    // fetchParties is a page-local request handler for the selected category.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCategory]);
 
   const fetchParties = async () => {
@@ -46,7 +44,7 @@ const Parties = () => {
   const handleCreateParty = async (e) => {
     e.preventDefault();
     try {
-      const res = await api.post('/parties', {
+      await api.post('/parties', {
         ...newParty,
         startTime: new Date(newParty.startTime),
         endTime: new Date(newParty.endTime),

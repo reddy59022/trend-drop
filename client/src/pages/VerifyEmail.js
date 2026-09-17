@@ -25,7 +25,7 @@ const VerifyEmail = () => {
         if (res.data.token) {
           localStorage.setItem('token', res.data.token);
           authLogin(res.data.user.email, '');
-          toast.success('Email verified! Welcome to AURAVEST!');
+          toast.success('Email verified! Welcome to TrendDrop!');
           setStatus('success');
           setMessage('Email verified successfully!');
           setTimeout(() => navigate('/feed'), 2000);

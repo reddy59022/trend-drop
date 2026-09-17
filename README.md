@@ -207,9 +207,11 @@ Render can auto-configure from `render.yaml` if present in your repo root.
 TrendDrop uses **Capacitor** to deploy as native iOS and Android apps. The Render backend serves as the API server for all platforms (web, iOS, Android).
 
 ### Prerequisites for Mobile
-- **Android:** Android Studio (for Android builds)
+- **Android:** Java/JDK 21, Android SDK Platform 35, Android Emulator (for local builds and QA)
 - **iOS:** Xcode + macOS (for iOS builds)
 - Node.js >= 14.0.0
+
+For Android builds, Gradle requires Java 21. The build helper automatically uses `JAVA_HOME`, a user-local JDK at `$HOME/.local/share/trenddrop-toolchain/jdk-21/Contents/Home`, or `/usr/libexec/java_home -v 21`. Set `ANDROID_SDK_ROOT` when the SDK is not at `$HOME/Library/Android/sdk`.
 
 ### Build for Web
 ```bash

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaCode, FaDownload, FaLink, FaKey, FaChartBar, FaShareSquare } from 'react-icons/fa';
+import { FaCode, FaDownload, FaChartBar, FaShareSquare } from 'react-icons/fa';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 
@@ -9,8 +9,6 @@ const EnterpriseApi = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [listings, setListings] = useState([]);
-  const [showExport, setShowExport] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -23,8 +21,8 @@ const EnterpriseApi = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/enterprise/listings');
-      setListings(res.data || []);
+      // The endpoint check also verifies the current enterprise session.
+      await api.get('/enterprise/listings');
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -43,7 +41,7 @@ const EnterpriseApi = () => {
 
   const handleRegisterWebhook = async () => {
     try {
-      const res = await api.post('/enterprise/webhook', {
+      await api.post('/enterprise/webhook', {
         url: 'https://your-app.com/webhook',
         events: ['order.created', 'order.shipped']
       });

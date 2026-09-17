@@ -50,8 +50,8 @@ const Notifications = () => {
   };
 
   const getIconColor = (type) => {
-    const colors = { like: '#FF385C', comment: '#2979FF', follow: '#00BCD4', offer: '#FF9100', sale: '#00C853', share: '#6C63FF', purchase: '#00C853', shipping: '#2979FF', review: '#FFD700' };
-    return colors[type] || '#8E8EA0';
+    const colors = { like: 'var(--td-error)', comment: 'var(--td-info)', follow: 'var(--td-aurora-cyan)', offer: 'var(--td-warning)', sale: 'var(--td-success)', share: 'var(--td-primary)', purchase: 'var(--td-success)', shipping: 'var(--td-info)', review: 'var(--td-aurora-gold)' };
+    return colors[type] || 'var(--td-text-tertiary)';
   };
 
   const getNotificationLink = (notification) => {
@@ -112,7 +112,7 @@ const Notifications = () => {
             <Link key={notification._id} to={getNotificationLink(notification)}
               className={`notification-item ${!notification.read ? 'unread' : ''}`}
               style={{ animationDelay: `${i * 0.03}s`, animation: 'fadeInUp 0.3s ease-out both' }}>
-              <div className="notification-icon" style={{ background: `${getIconColor(notification.type)}15`, color: getIconColor(notification.type) }}>
+              <div className="notification-icon" style={{ background: `color-mix(in srgb, ${getIconColor(notification.type)} 12%, transparent)`, color: getIconColor(notification.type) }}>
                 {getIcon(notification.type)}
               </div>
               <div className="notification-content">

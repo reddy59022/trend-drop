@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { getPayoutDashboard, getCommissionInfo, getRatingsBySeller, getBundleRules, createBundleRule, updateBundleRule, deleteBundleRule, getPromos, createPromo, updatePromo, deletePromo, sendOfferToLikers, getBulkOffers } from '../services/api';
+import { getPayoutDashboard, getCommissionInfo, getRatingsBySeller, getBundleRules, createBundleRule, updateBundleRule, deleteBundleRule, getPromos, createPromo, updatePromo, deletePromo, sendOfferToLikers } from '../services/api';
 import api from '../services/api';
 import StarRating from '../components/StarRating';
 import ShopBoostCard from '../components/ShopBoostCard';
 import { formatPrice } from '../utils/helpers';
 import { useTheme } from '../context/ThemeContext';
-import { FaStore, FaDollarSign, FaChartLine, FaHistory, FaRocket, FaQuestionCircle, FaTags, FaBoxes, FaBullhorn, FaTrash, FaPlus, FaEdit, FaTimes, FaCheckCircle, FaSpinner, FaExchangeAlt, FaToggleOn, FaToggleOff } from 'react-icons/fa';
+import { FaStore, FaDollarSign, FaChartLine, FaHistory, FaRocket, FaQuestionCircle, FaTags, FaBoxes, FaBullhorn, FaTrash, FaPlus, FaEdit, FaCheckCircle, FaSpinner, FaExchangeAlt, FaToggleOn, FaToggleOff } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 
 const SellerDashboard = () => {
@@ -264,7 +264,7 @@ const SellerDashboard = () => {
           {commissionInfo && (
             <div className="commission-section" style={{ borderRadius: 'var(--td-radius-xl)', marginBottom: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 14, opacity: 0.9, marginBottom: 4 }}>AURAVEST Commission</div>
+                <div style={{ fontSize: 14, opacity: 0.9, marginBottom: 4 }}>TrendDrop Commission</div>
                 <div style={{ fontSize: 48, fontWeight: 800, marginBottom: 4 }}>Only {commissionInfo.commissionPercent}%</div>
                 <div style={{ fontSize: 16, marginBottom: 16 }}>You keep {commissionInfo.sellerKeeps} of every sale</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, background: 'rgba(255,255,255,0.12)', borderRadius: 'var(--td-radius-md)', padding: 16, maxWidth: 400, margin: '0 auto' }}>

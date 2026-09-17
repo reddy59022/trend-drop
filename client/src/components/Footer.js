@@ -19,17 +19,17 @@ const Footer = () => {
                   <path d="M12 18h8v4h-8z" fill="white"/>
                   <defs>
                     <linearGradient id="footer-logo-gradient" x1="0" y1="0" x2="32" y2="32">
-                      <stop stopColor="#6C3BFF"/>
-                      <stop offset="0.55" stopColor="#8B5CFF"/>
-                      <stop offset="1" stopColor="#FF6BC1"/>
+                      <stop stopColor="#7C3AED"/>
+                      <stop offset="0.55" stopColor="#A855F7"/>
+                      <stop offset="1" stopColor="#FF7A59"/>
                     </linearGradient>
                   </defs>
                 </svg>
               </span>
-              <span className="footer-brand-name">AURAVEST</span>
+              <span className="footer-brand-name">TrendDrop</span>
             </div>
             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, lineHeight: 1.7, marginBottom: 16 }}>
-              Wear the Extraordinary. The world's most beautiful fashion marketplace — curated designers, verified authenticity, and a community that lives in style.
+              Find what moves you. A global marketplace for standout style, thoughtful finds, and people who know what they like.
             </p>
             <div className="social-icons">
               <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
@@ -88,7 +88,7 @@ const Footer = () => {
 
         <div className="footer-bottom">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-            <span>© {currentYear} AURAVEST. All rights reserved.</span>
+            <span>© {currentYear} TrendDrop. All rights reserved.</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ opacity: 0.5 }}>🌍 Available in 85+ countries</span>
               <span style={{ opacity: 0.5 }}>|</span>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaGlobeAmericas, FaPlus, FaSave, FaBox, FaInfoCircle } from 'react-icons/fa';
+import { FaGlobeAmericas, FaSave, FaBox, FaInfoCircle } from 'react-icons/fa';
 import api from '../services/api';
 import { getFeatureFlags } from '../services/features';
 

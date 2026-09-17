@@ -231,14 +231,14 @@ const Navbar = () => {
               <path d="M12 18h8v4h-8z" fill="white" />
               <defs>
                 <linearGradient id="logo-gradient" x1="0" y1="0" x2="32" y2="32">
-                  <stop stopColor="#6C3BFF" />
-                  <stop offset="0.55" stopColor="#8B5CFF" />
-                  <stop offset="1" stopColor="#FF6BC1" />
+                  <stop stopColor="#7C3AED" />
+                  <stop offset="0.55" stopColor="#A855F7" />
+                  <stop offset="1" stopColor="#FF7A59" />
                 </linearGradient>
               </defs>
             </svg>
           </span>
-          <span className="logo-text">AURAVEST</span>
+          <span className="logo-text">TrendDrop</span>
         </Link>
 
         {/* Search */}
@@ -251,7 +251,7 @@ const Navbar = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => searchSuggestions.length > 0 && setShowSuggestions(true)}
             className="search-input"
-            aria-label="Search"
+            aria-label="Search brands and items"
           />
           
           {/* Search Suggestions */}
@@ -349,7 +349,7 @@ const Navbar = () => {
                   aria-label="Profile menu"
                 >
                   <img
-                    src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'U')}&background=6C3BFF&color=fff&size=68`}
+                    src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'U')}&background=7C3AED&color=fff&size=68`}
                     alt={user.name}
                     className="nav-avatar"
                   />
@@ -538,7 +538,7 @@ const Navbar = () => {
           <button 
             className="menu-toggle" 
             onClick={() => setMenuOpen(!menuOpen)}
-            aria-label="Toggle menu"
+            aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           >
             {menuOpen ? <FaTimes /> : <FaBars />}
           </button>

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaRobot, FaHeart, FaSave, FaPlus, FaTrash, FaCalendarAlt, FaShoppingBag, FaMagic } from 'react-icons/fa';
-import { getAIPreferences, updateAIPreferences, getAIRecommendations, generateAIRecommendations, getAITrends, getUserOutfits, createOutfit } from '../services/api';
+import { FaRobot, FaHeart, FaPlus, FaTrash, FaCalendarAlt, FaMagic } from 'react-icons/fa';
+import { updateAIPreferences, getAIRecommendations, generateAIRecommendations, getAITrends, getUserOutfits, createOutfit } from '../services/api';
 import ListingCard from '../components/ListingCard';
 import { toast } from 'react-toastify';
 import { formatPrice } from '../utils/helpers';
@@ -29,6 +29,8 @@ const AIStylist = () => {
       return;
     }
     fetchData();
+  // fetchData is a page-local request handler for the active tab.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate, activeTab]);
 
   const fetchData = async () => {

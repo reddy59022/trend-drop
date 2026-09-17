@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { FaFilter, FaTimes, FaSlidersH, FaChevronDown, FaSave, FaTag } from 'react-icons/fa';
-import api, { getSearchBrands, getSearchColors, getSearchSizes, saveSearchFilter, getSavedSearchFilters, shareOfferToLikers } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { FaFilter, FaTimes, FaSlidersH, FaSave, FaTag } from 'react-icons/fa';
+import api, { getSearchBrands, getSearchColors, getSearchSizes, saveSearchFilter } from '../services/api';
 import ListingCard from '../components/ListingCard';
 import Pagination from '../components/Pagination';
 import { toast } from 'react-toastify';
 
 const Search = () => {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState(null);
@@ -29,8 +28,6 @@ const Search = () => {
   const [colorSuggestions, setColorSuggestions] = useState([]);
   const [sizeSuggestions, setSizeSuggestions] = useState([]);
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
-  const [showColorDropdown, setShowColorDropdown] = useState(false);
-  const [showSaveSearch, setShowSaveSearch] = useState(false);
 
   const query = searchParams.get('q') || '';
 
@@ -91,7 +88,6 @@ const Search = () => {
         filters,
         name: `${filters.category || 'All'} Search`,
       });
-      setShowSaveSearch(false);
       toast.success('Search saved! You can find it in Saved Searches.');
     } catch (error) {
       console.error('Error saving search:', error);

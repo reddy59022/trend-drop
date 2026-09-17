@@ -35,7 +35,7 @@ const VirtualTryOn = () => {
   const [cameraError, setCameraError] = useState(null); // 'denied' | 'nodevice' | 'busy' | null
   // Heuristic availability: null = unknown (assume available, let getUserMedia decide),
   // true = devices seen, false = user has no camera hardware at all.
-  const [cameraAvailable, setCameraAvailable] = useState(null);
+  const [, setCameraAvailable] = useState(null);
   const [settings, setSettings] = useState(null);
   const streamRef = useRef(null);
 
@@ -77,6 +77,8 @@ const VirtualTryOn = () => {
         }
       } catch { /* noop */ }
     };
+    // These handlers coordinate camera/device lifecycle for this page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listingId, user]);
 
   const fetchSettings = async () => {

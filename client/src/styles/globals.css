@@ -1,8 +1,7 @@
 /* =====================================================
-   AURAVEST — Global Design System
-   "Wear the Extraordinary"
-   Ultra-premium fashion marketplace. Royal Violet + Champagne Gold.
-   Liquid glass surfaces. Aurora gradient meshes. Editorial typography.
+   TRENDDROP — Global Design System
+   "Find what moves you"
+   A confident marketplace system: electric plum, warm coral, and ink.
    ===================================================== */
 
 /* ---- Font Imports ---- */
@@ -11,23 +10,23 @@
 /* ---- CSS Custom Properties (Light Mode Default) ---- */
 :root {
   /* Brand — Royal Violet signature */
-  --td-primary: #6C3BFF;
-  --td-primary-dark: #4A23C9;
-  --td-primary-light: #9D74FF;
-  --td-primary-glow: rgba(108, 59, 255, 0.35);
-  --td-secondary: #08081A;
-  --td-secondary-light: #1A1A33;
+  --td-primary: #7C3AED;
+  --td-primary-dark: #5B21B6;
+  --td-primary-light: #A78BFA;
+  --td-primary-glow: rgba(124, 58, 237, 0.28);
+  --td-secondary: #111827;
+  --td-secondary-light: #1F2937;
 
   /* Champagne Gold accent */
-  --td-accent: #FFB86B;
-  --td-accent-light: #FFD9A8;
-  --td-accent-dark: #E89B3C;
+  --td-accent: #FF7A59;
+  --td-accent-light: #FFB09A;
+  --td-accent-dark: #E85D3F;
 
   /* Aurora spectrum */
-  --td-aurora-violet: #6C3BFF;
-  --td-aurora-rose: #FF6BC1;
-  --td-aurora-cyan: #00D4FF;
-  --td-aurora-gold: #FFD700;
+  --td-aurora-violet: #7C3AED;
+  --td-aurora-rose: #FF7A59;
+  --td-aurora-cyan: #22D3EE;
+  --td-aurora-gold: #FBBF24;
 
   /* Semantic */
   --td-success: #10D98E;
@@ -39,23 +38,23 @@
 
   /* Surfaces — Pearl light */
   --td-surface: #FFFFFF;
-  --td-surface-secondary: #F7F5FE;
-  --td-surface-tertiary: #EDE9FA;
-  --td-surface-hover: #F1EEFC;
-  --td-surface-2: #F7F5FE;
-  --td-bg-secondary: #F7F5FE;
+  --td-surface-secondary: #F7F5FF;
+  --td-surface-tertiary: #EEEAFB;
+  --td-surface-hover: #F1EEFF;
+  --td-surface-2: #F7F5FF;
+  --td-bg-secondary: #F7F5FF;
 
   /* Text */
-  --td-text: #0D0D24;
-  --td-text-secondary: #4A4A70;
-  --td-text-tertiary: #9494B8;
+  --td-text: #17152B;
+  --td-text-secondary: #514D6B;
+  --td-text-tertiary: #8C879F;
   --td-text-inverse: #FFFFFF;
-  --td-text-link: #6C3BFF;
+  --td-text-link: #7C3AED;
 
   /* Borders */
-  --td-border: #E3DEF6;
-  --td-border-light: #F1EEFC;
-  --td-border-focus: #6C3BFF;
+  --td-border: #E5E1F2;
+  --td-border-light: #F1EEFF;
+  --td-border-focus: #7C3AED;
 
   /* Shadows */
   --td-shadow-sm: 0 1px 3px rgba(13,13,36,0.06), 0 1px 2px rgba(13,13,36,0.04);
@@ -63,9 +62,9 @@
   --td-shadow-lg: 0 12px 28px -4px rgba(76,29,149,0.14), 0 4px 8px -2px rgba(76,29,149,0.08);
   --td-shadow-xl: 0 22px 40px -6px rgba(76,29,149,0.20), 0 10px 12px -6px rgba(76,29,149,0.08);
   --td-shadow-xxl: 0 30px 60px -12px rgba(76,29,149,0.30);
-  --td-shadow-glow: 0 0 24px rgba(108, 59, 255, 0.18);
+  --td-shadow-glow: 0 0 24px rgba(124, 58, 237, 0.18);
   --td-shadow-card: 0 2px 12px rgba(76,29,149,0.08), 0 0 1px rgba(76,29,149,0.12);
-  --td-shadow-card-hover: 0 12px 40px rgba(76,29,149,0.18), 0 0 0 1px rgba(108,59,255,0.12);
+  --td-shadow-card-hover: 0 12px 40px rgba(76,29,149,0.18), 0 0 0 1px rgba(124,58,237,0.12);
 
   /* Spacing */
   --td-space-xs: 4px;
@@ -141,10 +140,10 @@
   --td-glass-blur: 14px;
 
   /* Signature gradients */
-  --td-gradient-brand: linear-gradient(135deg, #6C3BFF 0%, #8B5CFF 45%, #FF6BC1 100%);
-  --td-gradient-gold: linear-gradient(135deg, #FFD700 0%, #FFB86B 50%, #E89B3C 100%);
-  --td-gradient-text: linear-gradient(120deg, #6C3BFF 0%, #9D74FF 40%, #FF6BC1 100%);
-  --td-aurora-mesh: radial-gradient(circle at 20% 20%, rgba(108,59,255,0.25) 0%, transparent 50%), radial-gradient(circle at 80% 30%, rgba(255,107,193,0.20) 0%, transparent 50%), radial-gradient(circle at 50% 80%, rgba(0,212,255,0.15) 0%, transparent 50%);
+  --td-gradient-brand: linear-gradient(135deg, #7C3AED 0%, #A855F7 45%, #FF7A59 100%);
+  --td-gradient-gold: linear-gradient(135deg, #FBBF24 0%, #FFB09A 50%, #E85D3F 100%);
+  --td-gradient-text: linear-gradient(120deg, #6D28D9 0%, #A855F7 40%, #E85D3F 100%);
+  --td-aurora-mesh: radial-gradient(circle at 20% 20%, rgba(124,58,237,0.16) 0%, transparent 50%), radial-gradient(circle at 80% 30%, rgba(255,122,89,0.12) 0%, transparent 50%), radial-gradient(circle at 50% 80%, rgba(34,211,238,0.10) 0%, transparent 50%);
 
   /* Safe areas */
   --td-safe-area-top: env(safe-area-inset-top, 0px);
@@ -176,7 +175,7 @@
     --td-shadow-lg: 0 12px 28px -4px rgba(0,0,0,0.55), 0 4px 8px -2px rgba(0,0,0,0.35);
     --td-shadow-xl: 0 22px 40px -6px rgba(0,0,0,0.65), 0 10px 12px -6px rgba(0,0,0,0.45);
     --td-shadow-card: 0 2px 12px rgba(0,0,0,0.40);
-    --td-shadow-card-hover: 0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(108,59,255,0.25);
+    --td-shadow-card-hover: 0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(124,58,237,0.25);
 
     --td-glass-bg: rgba(20, 20, 43, 0.72);
     --td-glass-border: rgba(255, 255, 255, 0.12);
@@ -203,7 +202,7 @@
   --td-shadow-lg: 0 12px 28px -4px rgba(0,0,0,0.55);
   --td-shadow-xl: 0 22px 40px -6px rgba(0,0,0,0.65);
   --td-shadow-card: 0 2px 12px rgba(0,0,0,0.40);
-  --td-shadow-card-hover: 0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(108,59,255,0.25);
+  --td-shadow-card-hover: 0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(124,58,237,0.25);
   --td-glass-bg: rgba(20, 20, 43, 0.72);
   --td-glass-border: rgba(255, 255, 255, 0.12);
   --td-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.40);
@@ -211,14 +210,14 @@
 
 [data-theme="light"] {
   --td-surface: #FFFFFF;
-  --td-surface-secondary: #F7F5FE;
-  --td-surface-tertiary: #EDE9FA;
-  --td-surface-hover: #F1EEFC;
-  --td-surface-2: #F7F5FE;
-  --td-bg-secondary: #F7F5FE;
-  --td-text: #0D0D24;
-  --td-text-secondary: #4A4A70;
-  --td-text-tertiary: #9494B8;
+  --td-surface-secondary: #F7F5FF;
+  --td-surface-tertiary: #EEEAFB;
+  --td-surface-hover: #F1EEFF;
+  --td-surface-2: #F7F5FF;
+  --td-bg-secondary: #F7F5FF;
+  --td-text: #17152B;
+  --td-text-secondary: #514D6B;
+  --td-text-tertiary: #8C879F;
   --td-text-inverse: #FFFFFF;
   --td-border: #E3DEF6;
   --td-border-light: #F1EEFC;
@@ -334,6 +333,7 @@ button {
   font-size: inherit;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  min-height: 44px;
 }
 
 input, textarea, select {
@@ -516,7 +516,7 @@ ul, ol {
   background: var(--td-surface);
   box-shadow:
     -6px -6px 12px rgba(255, 255, 255, 0.8),
-    6px 6px 12px rgba(108, 59, 255, 0.06);
+    6px 6px 12px rgba(124, 58, 237, 0.06);
   border-radius: var(--td-radius-lg);
 }
 
@@ -530,7 +530,7 @@ ul, ol {
 .neumorph-pressed {
   box-shadow:
     inset -3px -3px 6px rgba(255, 255, 255, 0.8),
-    inset 3px 3px 6px rgba(108, 59, 255, 0.06);
+    inset 3px 3px 6px rgba(124, 58, 237, 0.06);
 }
 
 /* ---- Button System ---- */
@@ -604,7 +604,7 @@ ul, ol {
 .btn-outline:hover {
   border-color: var(--td-primary);
   color: var(--td-primary);
-  background: rgba(108, 59, 255, 0.05);
+  background: rgba(124, 58, 237, 0.05);
 }
 
 .btn-ghost {
@@ -749,7 +749,7 @@ textarea.form-input {
 
 select.form-input {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236C3BFF' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237C3AED' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 14px center;
   padding-right: 38px;
@@ -777,7 +777,7 @@ select.form-input {
 }
 
 .badge-primary {
-  background: rgba(108, 59, 255, 0.10);
+  background: rgba(124, 58, 237, 0.10);
   color: var(--td-primary);
 }
 

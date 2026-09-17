@@ -95,13 +95,10 @@ const CurrencyScope = ({ children }) => {
 };
 
 const NativeAppLifecycle = () => {
-  const { handleOAuthCallback } = useAuth();
-
   useEffect(() => {
     const handleUrl = (url) => {
       if (!url) return;
       if (isOAuthCallbackUrl(url)) {
-        handleOAuthCallback(url);
         window.dispatchEvent(new CustomEvent('oauth-callback', { detail: { url: String(url) } }));
         return;
       }
@@ -115,10 +112,8 @@ const NativeAppLifecycle = () => {
       }
     };
 
-    let capApp;
     let listenerCleanup = () => {};
     import('@capacitor/app').then(({ App }) => {
-      capApp = App;
       // Keep the returned handle so the deep-link listener is removed on
       // unmount (avoids duplicate appUrlOpen handlers accumulating on
       // iOS/Android when the provider re-mounts).

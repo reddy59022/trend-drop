@@ -101,6 +101,10 @@ const ListingCard = ({ listing }) => {
               src={videoThumbnail}
               alt={listing.title}
               onLoad={() => setImageLoaded(true)}
+              onError={(event) => {
+                event.currentTarget.src = defaultAvatar;
+                setImageLoaded(true);
+              }}
               style={{
                 width: '100%',
                 height: '100%',
@@ -125,7 +129,7 @@ const ListingCard = ({ listing }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#6C63FF',
+                color: 'var(--td-primary)',
                 fontSize: 24,
                 boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
                 transition: 'transform 0.2s',
@@ -142,6 +146,10 @@ const ListingCard = ({ listing }) => {
               src={listing.images?.[0] || defaultAvatar}
               alt={listing.title}
               onLoad={() => setImageLoaded(true)}
+              onError={(event) => {
+                event.currentTarget.src = defaultAvatar;
+                setImageLoaded(true);
+              }}
               style={{ opacity: imageLoaded ? 1 : 0 }}
             />
           </>
@@ -165,6 +173,8 @@ const ListingCard = ({ listing }) => {
             onClick={handleAddToCart}
             disabled={addingToCart}
             title="Quick add to cart"
+            aria-label={`Add ${listing.title} to cart`}
+            aria-busy={addingToCart}
           >
             <FaShoppingBag />
           </button>
@@ -175,6 +185,8 @@ const ListingCard = ({ listing }) => {
           className={`like-btn ${liked ? 'liked' : ''}`}
           onClick={handleLike}
           title={liked ? 'Unlike' : 'Like'}
+          aria-label={liked ? `Unlike ${listing.title}` : `Like ${listing.title}`}
+          aria-pressed={liked}
         >
           <FaHeart />
         </button>

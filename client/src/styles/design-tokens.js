@@ -1,30 +1,30 @@
 // =====================================================
-// AURAVEST Design System — Centralized Design Tokens
-// Ultra-premium fashion ecosystem brand identity.
-// "Wear the Extraordinary"
+// TrendDrop Design System — Centralized Design Tokens
+// A confident marketplace system for standout style and thoughtful finds.
+// "Find what moves you"
 // =====================================================
 
 export const colors = {
   // Brand Core — Royal Violet Signature
-  primary: '#6C3BFF',
-  primaryDark: '#4A23C9',
-  primaryLight: '#9D74FF',
-  primaryGlow: 'rgba(108, 59, 255, 0.35)',
+  primary: '#7C3AED',
+  primaryDark: '#5B21B6',
+  primaryLight: '#A78BFA',
+  primaryGlow: 'rgba(124, 58, 237, 0.28)',
 
   // Midnight Ink
-  secondary: '#08081A',
-  secondaryLight: '#1A1A33',
+  secondary: '#111827',
+  secondaryLight: '#1F2937',
 
   // Champagne Gold Accent
-  accent: '#FFB86B',
-  accentLight: '#FFD9A8',
-  accentDark: '#E89B3C',
+  accent: '#FF7A59',
+  accentLight: '#FFB09A',
+  accentDark: '#E85D3F',
 
   // Aurora Spectrum
-  auroraViolet: '#6C3BFF',
-  auroraRose: '#FF6BC1',
-  auroraCyan: '#00D4FF',
-  auroraGold: '#FFD700',
+  auroraViolet: '#7C3AED',
+  auroraRose: '#FF7A59',
+  auroraCyan: '#22D3EE',
+  auroraGold: '#FBBF24',
 
   // Semantic
   success: '#10D98E',
@@ -35,9 +35,9 @@ export const colors = {
 
   // Surface — Light (Pearl)
   surface: '#FFFFFF',
-  surfaceSecondary: '#F7F5FE',
-  surfaceTertiary: '#EDE9FA',
-  surfaceHover: '#F1EEFC',
+  surfaceSecondary: '#F7F5FF',
+  surfaceTertiary: '#EEEAFB',
+  surfaceHover: '#F1EEFF',
 
   // Surface — Dark (Obsidian)
   surfaceDark: '#08081A',
@@ -46,11 +46,11 @@ export const colors = {
   surfaceDarkHover: '#24244A',
 
   // Text — Light
-  text: '#0D0D24',
-  textSecondary: '#4A4A70',
-  textTertiary: '#9494B8',
+  text: '#17152B',
+  textSecondary: '#514D6B',
+  textTertiary: '#8C879F',
   textInverse: '#FFFFFF',
-  textLink: '#6C3BFF',
+  textLink: '#7C3AED',
 
   // Text — Dark
   textDark: '#EDEBFF',
@@ -58,10 +58,10 @@ export const colors = {
   textDarkTertiary: '#6E6C99',
 
   // Borders
-  border: '#E3DEF6',
-  borderLight: '#F1EEFC',
+  border: '#E5E1F2',
+  borderLight: '#F1EEFF',
   borderDark: '#24244A',
-  borderFocus: '#6C3BFF',
+  borderFocus: '#7C3AED',
 
   // Special
   overlay: 'rgba(8, 8, 26, 0.6)',
@@ -70,13 +70,13 @@ export const colors = {
   shimmerDark: 'linear-gradient(90deg, #14142B 25%, #1E1E3F 50%, #14142B 75%)',
 
   // Categories
-  women: '#FF6BC1',
-  men: '#6C3BFF',
+  women: '#FF7A59',
+  men: '#7C3AED',
   kids: '#FFB020',
   electronics: '#00D4FF',
   home: '#10D98E',
   beauty: '#FF8ACB',
-  accessories: '#FFB86B',
+  accessories: '#FFB09A',
 
   // Social
   facebook: '#1877F2',
@@ -92,11 +92,11 @@ export const colors = {
   glassBorderDark: 'rgba(255, 255, 255, 0.12)',
 
   // Signature gradients (Aurora Mesh)
-  gradientBrand: 'linear-gradient(135deg, #6C3BFF 0%, #8B5CFF 45%, #FF6BC1 100%)',
-  gradientBrandSoft: 'linear-gradient(135deg, rgba(108,59,255,0.12) 0%, rgba(255,107,193,0.12) 100%)',
-  gradientGold: 'linear-gradient(135deg, #FFD700 0%, #FFB86B 50%, #E89B3C 100%)',
-  gradientAurora: 'radial-gradient(circle at 20% 20%, rgba(108,59,255,0.25) 0%, transparent 50%), radial-gradient(circle at 80% 30%, rgba(255,107,193,0.2) 0%, transparent 50%), radial-gradient(circle at 50% 80%, rgba(0,212,255,0.15) 0%, transparent 50%)',
-  gradientText: 'linear-gradient(120deg, #6C3BFF 0%, #9D74FF 40%, #FF6BC1 100%)',
+  gradientBrand: 'linear-gradient(135deg, #7C3AED 0%, #A855F7 45%, #FF7A59 100%)',
+  gradientBrandSoft: 'linear-gradient(135deg, rgba(124,58,237,0.12) 0%, rgba(255,122,89,0.12) 100%)',
+  gradientGold: 'linear-gradient(135deg, #FBBF24 0%, #FFB09A 50%, #E85D3F 100%)',
+  gradientAurora: 'radial-gradient(circle at 20% 20%, rgba(124,58,237,0.16) 0%, transparent 50%), radial-gradient(circle at 80% 30%, rgba(255,122,89,0.12) 0%, transparent 50%), radial-gradient(circle at 50% 80%, rgba(34,211,238,0.10) 0%, transparent 50%)',
+  gradientText: 'linear-gradient(120deg, #7C3AED 0%, #A78BFA 40%, #FF7A59 100%)',
 };
 
 export const spacing = {
@@ -126,10 +126,10 @@ export const shadows = {
   lg: '0 12px 28px -4px rgba(76, 29, 149, 0.14), 0 4px 8px -2px rgba(76, 29, 149, 0.08)',
   xl: '0 22px 40px -6px rgba(76, 29, 149, 0.20), 0 10px 12px -6px rgba(76, 29, 149, 0.08)',
   xxl: '0 30px 60px -12px rgba(76, 29, 149, 0.30)',
-  glow: '0 0 24px rgba(108, 59, 255, 0.18)',
-  glowIntense: '0 0 48px rgba(108, 59, 255, 0.30)',
+  glow: '0 0 24px rgba(124, 58, 237, 0.18)',
+  glowIntense: '0 0 48px rgba(124, 58, 237, 0.30)',
   card: '0 2px 12px rgba(76, 29, 149, 0.08), 0 0 1px rgba(76, 29, 149, 0.12)',
-  cardHover: '0 12px 40px rgba(76, 29, 149, 0.18), 0 0 0 1px rgba(108, 59, 255, 0.12)',
+  cardHover: '0 12px 40px rgba(76, 29, 149, 0.18), 0 0 0 1px rgba(124, 58, 237, 0.12)',
 
   dark: {
     sm: '0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2)',

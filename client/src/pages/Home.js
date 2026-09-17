@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { FaSearch, FaCamera, FaHeart, FaUsers, FaBolt, FaShieldAlt, FaGlobeAmericas, FaGem, FaSpinner, FaExclamationTriangle, FaStore, FaTag, FaStar, FaTruck } from 'react-icons/fa';
+import { FaSearch, FaCamera, FaHeart, FaUsers, FaBolt, FaShieldAlt, FaGlobeAmericas, FaGem, FaSpinner, FaExclamationTriangle, FaTag, FaStar, FaTruck } from 'react-icons/fa';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
 
@@ -46,14 +46,14 @@ const Home = () => {
   }, [fetchData]);
 
   const categories = [
-    { name: 'Women', icon: '👗', color: '#FF385C', count: '12.5K', ariaLabel: 'Browse Women fashion' },
-    { name: 'Men', icon: '👔', color: '#1A1A2E', count: '8.3K', ariaLabel: 'Browse Men fashion' },
-    { name: 'Kids', icon: '🧸', color: '#FF8C42', count: '4.1K', ariaLabel: 'Browse Kids fashion' },
-    { name: 'Electronics', icon: '📱', color: '#00BCD4', count: '6.7K', ariaLabel: 'Browse Electronics' },
-    { name: 'Home', icon: '🏠', color: '#4CAF50', count: '5.2K', ariaLabel: 'Browse Home goods' },
-    { name: 'Beauty', icon: '💄', color: '#E040FB', count: '3.8K', ariaLabel: 'Browse Beauty products' },
-    { name: 'Accessories', icon: '👜', color: '#FF9800', count: '9.4K', ariaLabel: 'Browse Accessories' },
-    { name: 'Vintage', icon: '🎭', color: '#6C63FF', count: '2.6K', ariaLabel: 'Browse Vintage items' },
+    { name: 'Women', icon: '👗', color: '#FF7A59', count: '12.5K', ariaLabel: 'Browse Women fashion' },
+    { name: 'Men', icon: '👔', color: '#7C3AED', count: '8.3K', ariaLabel: 'Browse Men fashion' },
+    { name: 'Kids', icon: '🧸', color: '#FBBF24', count: '4.1K', ariaLabel: 'Browse Kids fashion' },
+    { name: 'Electronics', icon: '📱', color: '#22D3EE', count: '6.7K', ariaLabel: 'Browse Electronics' },
+    { name: 'Home', icon: '🏠', color: '#10D98E', count: '5.2K', ariaLabel: 'Browse Home goods' },
+    { name: 'Beauty', icon: '💄', color: '#FF8ACB', count: '3.8K', ariaLabel: 'Browse Beauty products' },
+    { name: 'Accessories', icon: '👜', color: '#FFB09A', count: '9.4K', ariaLabel: 'Browse Accessories' },
+    { name: 'Vintage', icon: '🎭', color: '#A78BFA', count: '2.6K', ariaLabel: 'Browse Vintage items' },
   ];
 
   const stats = [
@@ -91,22 +91,22 @@ const Home = () => {
 
   // Fixed commission display - matches actual 8% platform fee
   const commissionData = [
-    { platform: 'AURAVEST', rate: '8%', highlight: true, note: '+ 5% buyer protection' },
+    { platform: 'TrendDrop', rate: '8%', highlight: true, note: '+ 5% buyer protection' },
     { platform: 'Poshmark', rate: '20%', highlight: false, note: 'flat rate' },
     { platform: 'Mercari', rate: '10%', highlight: false, note: '+ payment fee' },
     { platform: 'Depop', rate: '10%', highlight: false, note: '+ PayPal fee' },
   ];
 
   return (
-    <div className="home-page" role="main" aria-label="AURAVEST Home">
+    <div className="home-page" role="main" aria-label="TrendDrop Home">
       {/* ===== Hero Section ===== */}
       <section className="hero" aria-label="Hero banner">
         <div className="hero-content">
           <div className="hero-badge">
-            <FaBolt aria-hidden="true" /> The New Standard in Fashion
+            <FaBolt aria-hidden="true" /> Style, reimagined
           </div>
-          <h1>Wear the<br/><span className="av-serif">Extraordinary</span></h1>
-          <p>Discover designer pieces, vintage treasures, and verified luxury — curated by a global community that lives in style.</p>
+          <h1>Find what<br/><span className="av-serif">moves you</span></h1>
+          <p>Discover standout pieces, vintage treasures, and everyday finds — curated by a global community with great taste.</p>
           <div className="hero-actions">
             <Link to="/search" className="btn btn-primary btn-lg" aria-label="Start shopping">
               <FaSearch aria-hidden="true" /> Start Shopping
@@ -197,7 +197,7 @@ const Home = () => {
             <div className="commission-text">
               <span className="commission-badge">💎 Lowest Fees</span>
               <h2>Keep Up to 92% of Your Sales</h2>
-              <p>AURAVEST has one of the lowest commission rates in fashion — just 8%. More money in your pocket, and more time in style.</p>
+              <p>TrendDrop has one of the lowest commission rates in fashion — just 8%. More money in your pocket, and more time in style.</p>
               <Link to="/seller-dashboard" className="btn btn-primary btn-lg" aria-label="Start selling, keep more">
                 Start Selling — Keep More 💰
               </Link>
@@ -244,9 +244,9 @@ const Home = () => {
       </section>
 
       {/* ===== Features ===== */}
-      <section className="section bg-light" aria-label="Why AURAVEST features">
+      <section className="section bg-light" aria-label="Why TrendDrop features">
         <div className="container">
-          <h2 className="section-title">The AURAVEST Difference</h2>
+          <h2 className="section-title">The TrendDrop Difference</h2>
           <div className="features-grid">
             <div className="feature-card glass">
               <div className="feature-icon-wrap">

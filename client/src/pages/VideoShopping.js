@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaVideo, FaUpload, FaPlay, FaHeart, FaShare, FaChartLine, FaPlus, FaFilm, FaEye } from 'react-icons/fa';
+import { FaVideo, FaUpload, FaHeart, FaShare, FaChartLine, FaPlus, FaFilm, FaEye } from 'react-icons/fa';
 import api from '../services/api';
 
 const VideoShopping = () => {

@@ -109,7 +109,7 @@ const Profile = () => {
       <div className="profile-header" style={{ animation: 'fadeInUp 0.5s ease-out 0.1s both', borderRadius: 'var(--td-radius-xl)' }}>
         <div style={{ flexShrink: 0 }}>
           <img
-            src={profile.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'U')}&background=FF385C&color=fff&size=200`}
+            src={profile.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'U')}&background=7C3AED&color=fff&size=200`}
             alt={profile.name}
             className="profile-avatar"
           />

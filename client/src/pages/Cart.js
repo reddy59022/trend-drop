@@ -8,7 +8,7 @@ import { toast } from 'react-toastify';
 import api, { validatePromo, applyBundleDiscount } from '../services/api';
 import { formatPrice, convertAmount } from '../utils/helpers';
 import StripeCheckoutForm from '../components/StripeCheckoutForm';
-import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaPercent, FaBoxes } from 'react-icons/fa';
+import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaBoxes } from 'react-icons/fa';
 
 const Cart = () => {
   const navigate = useNavigate();
@@ -122,6 +122,7 @@ const Cart = () => {
   };
 
   const handleSuccess = async (paymentMethod) => {
+    let authorizedStatus = null;
     try {
       if (!clientSecret || !paymentIntentId) throw new Error('Payment not initialized');
       const stripe = await stripePromise;
@@ -144,7 +145,10 @@ const Cart = () => {
       }
 
       if (confirmError) throw new Error(confirmError.message);
-      if (paymentIntent?.status !== 'succeeded') throw new Error(`Payment status: ${paymentIntent?.status}`);
+      authorizedStatus = paymentIntent?.status;
+      if (!['succeeded', 'requires_capture'].includes(authorizedStatus)) {
+        throw new Error(`Payment status: ${authorizedStatus}`);
+      }
 
       // STEP 3: Confirm batch with all items (same payload shape as intent)
       const confirmRes = await api.post('/payments/confirm-batch', {
@@ -175,6 +179,15 @@ const Cart = () => {
       }
     } catch (error) {
       console.error('Checkout error:', error);
+      // A manual-capture authorization must be released when order creation
+      // fails; otherwise the buyer can be left with a card hold and no order.
+      if (authorizedStatus === 'requires_capture' && paymentIntentId) {
+        try {
+          await api.post('/payments/cancel-payment', { paymentIntentId });
+        } catch (cancelError) {
+          console.error('Failed to release payment authorization:', cancelError);
+        }
+      }
       toast.error(error.response?.data?.message || 'Failed to place order');
     }
   };
@@ -227,6 +240,9 @@ const Cart = () => {
       fetchBreakdowns();
       fetchBundleDiscounts();
     }
+  // fetchBundleDiscounts is intentionally defined in component scope because it
+  // uses the current cart; the effect is keyed to the same cart/country inputs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, shippingInfo.country]);
 
   // Group cart items by seller for package display

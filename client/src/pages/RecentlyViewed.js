@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import { formatPrice, defaultAvatar } from '../utils/helpers';
@@ -8,7 +7,6 @@ import { toast } from 'react-toastify';
 import { FaHistory, FaTrash, FaSearch } from 'react-icons/fa';
 
 const RecentlyViewed = () => {
-  const { user } = useAuth();
   // Subscribe to currency changes (formatPrice reads the preferred-currency
   // store itself; the routed subtree also remounts on currency switches).
   useTheme();

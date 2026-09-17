@@ -1,23 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
-import { formatPrice, countries } from '../utils/helpers';
 import { toast } from 'react-toastify';
-import { FaRulerHorizontal, FaUser, FaShoppingBag, FaHeart, FaShare, FaComment, FaHashtag, FaSearch, FaCamera, FaVideo } from 'react-icons/fa';
+import { FaRulerHorizontal } from 'react-icons/fa';
 
 const SizeRecommendation = () => {
   const { user } = useAuth();
-  const { currency } = useTheme();
-  const navigate = useNavigate();
   const [measurements, setMeasurements] = useState({
     bust: '',
     waist: '',
     hip: '',
     inseam: '',
   });
-  const [recommendations, setRecommendations] = useState([]);
   const [savedMeasurements, setSavedMeasurements] = useState(null);
   const [loading, setLoading] = useState(false);
 

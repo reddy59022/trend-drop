@@ -5,9 +5,9 @@ import { MemoryRouter } from 'react-router-dom';
 import Footer from '../Footer';
 
 describe('Footer', () => {
-  test('renders the AURAVEST branding', () => {
+  test('renders the TrendDrop branding', () => {
     render(<MemoryRouter><Footer /></MemoryRouter>);
-    expect(screen.getByText('AURAVEST')).toBeInTheDocument();
+    expect(screen.getByText('TrendDrop')).toBeInTheDocument();
   });
   test('renders the footer navigation columns', () => {
     render(<MemoryRouter><Footer /></MemoryRouter>);

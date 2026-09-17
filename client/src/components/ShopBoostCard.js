@@ -44,7 +44,7 @@ const ShopBoostCard = () => {
   const daysRemaining = endDate ? Math.max(0, Math.ceil((endDate - Date.now()) / (1000 * 60 * 60 * 24))) : 0;
 
   return (
-    <div className="glass-card" style={{ padding: 'var(--td-space-xl)', marginBottom: 'var(--td-space-lg)', borderRadius: 'var(--td-radius-xl)', border: active ? '2px solid var(--td-success)' : '1px solid var(--td-border)', background: active ? 'linear-gradient(135deg, rgba(16,217,142,0.08) 0%, rgba(108,59,255,0.05) 100%)' : 'var(--td-surface)', boxShadow: active ? '0 0 30px rgba(16,217,142,0.15)' : 'var(--td-shadow-card)' }}>
+    <div className="glass-card" style={{ padding: 'var(--td-space-xl)', marginBottom: 'var(--td-space-lg)', borderRadius: 'var(--td-radius-xl)', border: active ? '2px solid var(--td-success)' : '1px solid var(--td-border)', background: active ? 'linear-gradient(135deg, rgba(16,217,142,0.08) 0%, rgba(124,58,237,0.05) 100%)' : 'var(--td-surface)', boxShadow: active ? '0 0 30px rgba(16,217,142,0.15)' : 'var(--td-shadow-card)' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
         <div style={{ width: 56, height: 56, borderRadius: 'var(--td-radius-lg)', background: active ? 'linear-gradient(135deg, var(--td-success) 0%, #06b6d4 100%)' : 'var(--td-surface-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: active ? '#fff' : 'var(--td-text-tertiary)', flexShrink: 0, boxShadow: active ? '0 4px 15px rgba(16,217,142,0.4)' : 'none' }}><FaRocket size={24} /></div>
         <div style={{ flex: 1 }}>

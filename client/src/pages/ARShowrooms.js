@@ -27,6 +27,8 @@ const ARShowrooms = () => {
       return;
     }
     fetchData();
+  // fetchData is a page-local request handler for the active tab.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate, activeTab]);
 
   const fetchData = async () => {

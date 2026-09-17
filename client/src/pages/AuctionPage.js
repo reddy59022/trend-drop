@@ -17,6 +17,8 @@ const AuctionPage = () => {
 
   useEffect(() => {
     fetchAuctions();
+    // fetchAuctions is a page-local request handler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   const fetchAuctions = async () => {

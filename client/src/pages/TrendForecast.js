@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaChartLine, FaFire, FaBell, FaSync, FaRobot, FaLightbulb } from 'react-icons/fa';
+import { FaFire, FaBell, FaSync, FaRobot, FaLightbulb } from 'react-icons/fa';
 import api from '../services/api';
 
 const TrendForecast = () => {
@@ -9,7 +9,6 @@ const TrendForecast = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [forecasts, setForecasts] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(null);
   const [timeframe, setTimeframe] = useState('weekly');
   const [alerts, setAlerts] = useState([]);
 
@@ -154,7 +153,7 @@ const TrendForecast = () => {
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button 
-                onClick={() => setSelectedCategory(forecast.category)}
+                onClick={() => handleGenerateForecast(forecast.category)}
                 className="btn btn-outline"
                 style={{ flex: 1 }}
               >

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
-import { FaUsers, FaShare, FaGift, FaTrash, FaEdit, FaTimes, FaPlus, FaTag, FaUserFriends } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+import { FaUsers, FaShare, FaGift } from 'react-icons/fa';
 import { getOfferSharingStats, shareOfferToLikers, createBundleOffer } from '../services/api';
 import api from '../services/api';
 import { toast } from 'react-toastify';
@@ -17,7 +17,7 @@ const OfferSharing = () => {
   const [selectedListing, setSelectedListing] = useState(null);
   const [selectedListings, setSelectedListings] = useState([]);
   const [shareData, setShareData] = useState({ discountValue: 10, discountType: 'percentage' });
-  const [bundleData, setBundleData] = useState({ buyerId: '', discountPercent: 10 });
+  const [bundleData] = useState({ buyerId: '', discountPercent: 10 });
 
   useEffect(() => {
     if (!user) {
@@ -42,7 +42,7 @@ const OfferSharing = () => {
   const fetchUserListings = async () => {
     try {
       const res = await api.get('/listings?status=active&limit=50');
-      setUserListings(res.data.listings || res.data.docs || []);
+      setUserListings(res?.data?.listings || res?.data?.docs || []);
     } catch (error) {
       console.error('Error fetching listings:', error);
     }
@@ -64,7 +64,7 @@ const OfferSharing = () => {
   const handleCreateBundle = async () => {
     if (selectedListings.length < 2) return;
     try {
-      const res = await createBundleOffer({
+      await createBundleOffer({
         listingIds: selectedListings,
         buyerId: bundleData.buyerId,
       });

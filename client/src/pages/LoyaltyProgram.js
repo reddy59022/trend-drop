@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaGem, FaTrophy, FaHistory, FaGift, FaStar } from 'react-icons/fa';
+import { FaGem, FaHistory, FaGift, FaStar } from 'react-icons/fa';
 import api from '../services/api';
 
 const LoyaltyProgram = () => {

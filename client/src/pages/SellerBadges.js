@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { getMySellerBadge, requestSellerVerification, updateSellerBadgeStats } from '../services/api';
 import { toast } from 'react-toastify';
 
@@ -18,7 +17,6 @@ const TIER_REQUIREMENTS = [
 ];
 
 const SellerBadges = () => {
-  const { user } = useAuth();
   const [badge, setBadge] = useState(null);
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);

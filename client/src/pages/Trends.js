@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FaFire, FaChartLine, FaSync, FaClock, FaEye, FaRetweet, FaComment, FaHeart } from 'react-icons/fa';
 import api from '../services/api';
-import ListingCard from '../components/ListingCard';
 
 const Trends = () => {
   const [trends, setTrends] = useState([]);
@@ -11,6 +10,8 @@ const Trends = () => {
 
   useEffect(() => {
     fetchTrends();
+    // fetchTrends is a page-local request handler for the selected filters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeframe, activeTab]);
 
   const fetchTrends = async () => {

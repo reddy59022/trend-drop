@@ -93,7 +93,7 @@
 
 .listing-card.selected {
   border-color: var(--td-primary);
-  background: rgba(108, 59, 255, 0.06);
+  background: rgba(124, 58, 237, 0.06);
 }
 
 .listing-image-wrapper {

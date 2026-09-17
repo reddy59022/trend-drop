@@ -122,7 +122,14 @@ export const resetApiMock = (apiModule) => {
 
 // Render any UI inside a MemoryRouter at the given route.
 export const renderPage = (ui, { route = '/' } = {}) =>
-  render(<MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>);
+  render(
+    <MemoryRouter
+      initialEntries={[route]}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
+      {ui}
+    </MemoryRouter>
+  );
 
 // Render a page that reads useParams() (e.g. /listing/:id) with a matching
 // <Route path> so the params actually resolve. Without this, useParams()
@@ -131,7 +138,10 @@ export const renderPage = (ui, { route = '/' } = {}) =>
 import { Routes as _Routes, Route as _Route } from 'react-router-dom';
 export const renderPageWithRoute = (ui, { route = '/', path = '/' } = {}) =>
   render(
-    <MemoryRouter initialEntries={[route]}>
+    <MemoryRouter
+      initialEntries={[route]}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <_Routes>
         <_Route path={path} element={ui} />
       </_Routes>

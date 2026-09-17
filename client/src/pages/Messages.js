@@ -226,7 +226,7 @@ const Messages = () => {
                   <div key={msg._id || i} style={{ display: 'flex', justifyContent: isOwn ? 'flex-end' : 'flex-start', alignItems: isOwn ? 'flex-end' : 'flex-start', gap: 8, marginBottom: isLast ? 8 : 2 }}>
                     {!isOwn && showAvatar && <img src={other.avatar || defaultAvatar} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
                     {!isOwn && !showAvatar && <div style={{ width: 28, flexShrink: 0 }} />}
-                    <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : '#fff', color: isOwn ? '#fff' : 'var(--td-text)', boxShadow: isOwn ? '0 4px 12px rgba(108,59,255,0.3)' : 'var(--td-shadow-sm)' }}>
+                    <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : '#fff', color: isOwn ? '#fff' : 'var(--td-text)', boxShadow: isOwn ? '0 4px 12px rgba(124,58,237,0.3)' : 'var(--td-shadow-sm)' }}>
                       {msg.listing && <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}><FaTag size={9} /> Re: {msg.listing.title}</div>}
                       <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.text}</div>
                       <div style={{ fontSize: 10, marginTop: 4, opacity: isOwn ? 0.8 : 0.5, textAlign: isOwn ? 'right' : 'left' }}>
@@ -247,7 +247,7 @@ const Messages = () => {
         {/* Input */}
         <form onSubmit={handleSend} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <input ref={inputRef} type="text" placeholder="Type a message..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} maxLength={2000} autoComplete="off" style={{ flex: 1, padding: '12px 18px', borderRadius: '24px', border: '1px solid var(--td-border)', fontSize: 14, background: 'var(--td-surface)', outline: 'none' }} />
-          <button type="submit" disabled={sending || !newMessage.trim()} style={{ flexShrink: 0, width: 46, height: 46, borderRadius: '50%', border: 'none', background: newMessage.trim() ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : 'var(--td-surface-tertiary)', color: newMessage.trim() ? '#fff' : 'var(--td-text-tertiary)', cursor: newMessage.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: newMessage.trim() ? '0 4px 12px rgba(108,59,255,0.35)' : 'none' }}>
+          <button type="submit" disabled={sending || !newMessage.trim()} style={{ flexShrink: 0, width: 46, height: 46, borderRadius: '50%', border: 'none', background: newMessage.trim() ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : 'var(--td-surface-tertiary)', color: newMessage.trim() ? '#fff' : 'var(--td-text-tertiary)', cursor: newMessage.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: newMessage.trim() ? '0 4px 12px rgba(124,58,237,0.35)' : 'none' }}>
             {sending ? <FaSpinner className="spinner-sm" /> : <FaPaperPlane size={16} />}
           </button>
         </form>
