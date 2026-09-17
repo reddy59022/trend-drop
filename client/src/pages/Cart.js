@@ -305,7 +305,13 @@ const Cart = () => {
   // discount is converted into the preferred currency before it is subtracted
   // from (and displayed next to) the converted totals.
   const bundleDiscountPreferred = convertAmount(bundleDiscount, cart[0]?.currency || 'USD', currency || 'USD');
-  const displayTotal = bundleDiscountPreferred > 0 ? Math.max(0, grandTotal - bundleDiscountPreferred) : grandTotal;
+  const promoDiscountPreferred = appliedPromo?.discountAmount
+    ? convertAmount(appliedPromo.discountAmount, cart[0]?.currency || 'USD', currency || 'USD')
+    : 0;
+  const totalDiscountPreferred = bundleDiscountPreferred + promoDiscountPreferred;
+  const displayTotal = totalDiscountPreferred > 0
+    ? Math.max(0, grandTotal - totalDiscountPreferred)
+    : grandTotal;
 
   return (
     <div className="page-container">
@@ -462,6 +468,12 @@ const Cart = () => {
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaShieldAlt size={12} /> Buyer Protection</span>
                   <span>{formatPrice(totalProtection, currency || 'USD')}</span>
                 </div>
+                {promoDiscountPreferred > 0 && (
+                  <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-success)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaTag size={12} /> Promo Savings</span>
+                    <span>-{formatPrice(promoDiscountPreferred, currency || 'USD')}</span>
+                  </div>
+                )}
                 {bundleDiscount > 0 && (
                   <div className="flex-between" style={{ fontSize: 14, color: 'var(--td-success)' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><FaBoxes size={12} /> Bundle Savings</span>
