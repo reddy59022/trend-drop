@@ -59,13 +59,21 @@ const Cart = () => {
     initStripe();
   }, []);
 
-  // Build the exact item payload the server expects. negotiatedPrice is ONLY
-  // sent for genuinely negotiated items — otherwise it could override the
-  // listing price and bypass offer validation.
+  // Build the exact item payload the server expects. Cart state can come from
+  // stale/tampered local storage, so never forward a non-integral quantity to
+  // money endpoints. The server validates this too; normalizing here gives
+  // the buyer a recoverable checkout instead of a confusing NaN/400 response.
+  const normalizeQuantity = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed >= 1 ? parsed : 1;
+  };
+
+  // negotiatedPrice is ONLY sent for genuinely negotiated items — otherwise it
+  // could override the listing price and bypass offer validation.
   const buildItemsPayload = () =>
     cart.map(item => ({
       listingId: item.listingId,
-      quantity: item.quantity,
+      quantity: normalizeQuantity(item.quantity),
       ...(item.offerId ? { offerId: item.offerId } : {}),
       ...(item.negotiatedPrice != null ? { negotiatedPrice: item.negotiatedPrice } : {}),
       currency: item.currency || 'USD'
@@ -83,7 +91,7 @@ const Cart = () => {
           setPaymentLoading(false);
           return;
         }
-        if (listing.quantity < item.quantity) {
+        if (listing.quantity < normalizeQuantity(item.quantity)) {
           toast.error(`Only ${listing.quantity} left of "${listing.title}"`);
           setPaymentLoading(false);
           return;

@@ -60,6 +60,55 @@ beforeAll(async () => {
   }
 });
 
+describe('TDD R35 — payment quantity input is finite and integral', () => {
+  test('create-intent rejects a malformed quantity instead of authorizing a null/NaN total', async () => {
+    const seller = await makeUser('PI quantity seller', `pi_qty_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI quantity buyer', `pi_qty_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100);
+
+    const res = await request(app).post('/api/payments/create-intent')
+      .set('Authorization', `Bearer ${buyer.token}`)
+      .send({
+        items: [{ listingId: listing._id.toString(), quantity: 'lots' }],
+        shippingAddress: { ...US },
+        buyerCountry: 'US',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/quantity/i);
+    expect(JSON.stringify(res.body)).not.toContain('"amount":null');
+  });
+
+  test.each([-1, 0.5, {}, [], true])('create-intent rejects invalid quantity %j', async (quantity) => {
+    const seller = await makeUser('PI quantity seller', `pi_qty_seller_${Date.now()}_${Math.random()}@test.com`);
+    const buyer = await makeUser('PI quantity buyer', `pi_qty_buyer_${Date.now()}_${Math.random()}@test.com`);
+    const listing = await makeListing(seller.user, 100);
+
+    const res = await request(app).post('/api/payments/create-intent')
+      .set('Authorization', `Bearer ${buyer.token}`)
+      .send({ items: [{ listingId: listing._id.toString(), quantity }], shippingAddress: { ...US }, buyerCountry: 'US' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/quantity/i);
+  });
+
+  test('confirm-batch rejects malformed quantity before creating an order', async () => {
+    const seller = await makeUser('PI confirm quantity seller', `pi_confirm_qty_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI confirm quantity buyer', `pi_confirm_qty_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100);
+    const paymentIntentId = mockIntent(buyer.user._id, [listing._id.toString()], 'requires_capture');
+
+    const res = await request(app).post('/api/payments/confirm-batch')
+      .set('Authorization', `Bearer ${buyer.token}`)
+      .send({ paymentIntentId, items: [{ listingId: listing._id.toString(), quantity: 'lots' }], shippingAddress: { ...US } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/quantity/i);
+    expect(await Transaction.findOne({ 'paymentBreakdown.paymentIntentId': paymentIntentId })).toBeNull();
+    expect((await Listing.findById(listing._id)).quantity).toBe(10);
+  });
+});
+
 describe('ZD23 — confirm-batch rollback restores the FULL purchased quantity', () => {
   test('a failed batch with qty=3 puts every unit back', async () => {
     const seller = await makeUser('PI1', `pi1_${Date.now()}@test.com`);

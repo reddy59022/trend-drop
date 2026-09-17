@@ -168,6 +168,23 @@ describe('Cart checkout — payment confirmation status (R32)', () => {
     });
   });
 
+  test('normalizes tampered cart quantities before sending payment requests', async () => {
+    setCartStore({
+      cart: [{ ...ITEM, quantity: 'lots' }],
+      clearCart: jest.fn(),
+    });
+    prepareCheckout();
+    const pay = await renderCheckout();
+    fireEvent.click(pay);
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/payments/create-intent', expect.objectContaining({
+      items: [expect.objectContaining({ listingId: ITEM.listingId, quantity: 1 })],
+    })));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/payments/confirm-batch', expect.objectContaining({
+      items: [expect.objectContaining({ listingId: ITEM.listingId, quantity: 1 })],
+    })));
+  });
+
   test('if the ORDER fails after authorization, the hold is released, not stranded', async () => {
     prepareCheckout();
     // Order placement fails (e.g. the item sold to someone else meanwhile).

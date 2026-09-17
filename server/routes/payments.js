@@ -137,6 +137,17 @@ router.post('/create-intent', auth, async (req, res) => {
     let appliedPromo = null;
 
     for (const item of itemsArray) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return res.status(400).json({ message: 'Each item must be an object with a valid quantity' });
+      }
+      const hasQuantity = Object.prototype.hasOwnProperty.call(item, 'quantity');
+      if (hasQuantity && (typeof item.quantity !== 'number'
+        || !Number.isFinite(item.quantity)
+        || !Number.isInteger(item.quantity)
+        || item.quantity < 1)) {
+        return res.status(400).json({ message: 'quantity must be a positive integer', failedItem: item.listingId });
+      }
+      const requestedQuantity = hasQuantity ? item.quantity : 1;
       const listing = await Listing.findById(item.listingId);
       if (!listing) return res.status(404).json({ message: `Listing ${item.listingId} not found` });
       if (listing.seller.toString() === req.user._id.toString()) {
@@ -145,7 +156,7 @@ router.post('/create-intent', auth, async (req, res) => {
       if (!listing.available || listing.sold || listing.quantity <= 0) {
         return res.status(400).json({ message: `"${listing.title}" is no longer available` });
       }
-      if (listing.quantity < (item.quantity || 1)) {
+      if (listing.quantity < requestedQuantity) {
         return res.status(400).json({ message: `Only ${listing.quantity} left of "${listing.title}"` });
       }
 
@@ -217,7 +228,7 @@ router.post('/create-intent', auth, async (req, res) => {
 
       const buyerCurrency = (countryCommissions[toCountry] || countryCommissions.default).currency;
       const exchangeRate = await fetchExchangeRate(buyerCurrency);
-      const qty = Math.max(1, Math.floor(item.quantity || 1));
+      const qty = requestedQuantity;
       // ZERO-LEAKAGE PARITY: authorize EXACTLY what confirm-batch will record.
       // One label per listing quantity → shipping on COMBINED weight;
       // item subtotal + buyer protection scale linearly with qty.
@@ -446,6 +457,17 @@ router.post('/confirm-batch', auth, async (req, res) => {
     const orderPlans = [];
 
     for (const item of items) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return releaseAuthOnFailure(res, 400, { message: 'Each item must be an object with a valid quantity' });
+      }
+      const hasQuantity = Object.prototype.hasOwnProperty.call(item, 'quantity');
+      if (hasQuantity && (typeof item.quantity !== 'number'
+        || !Number.isFinite(item.quantity)
+        || !Number.isInteger(item.quantity)
+        || item.quantity < 1)) {
+        return releaseAuthOnFailure(res, 400, { message: 'quantity must be a positive integer', failedItem: item.listingId });
+      }
+      const requestedQuantity = hasQuantity ? item.quantity : 1;
       const listing = await Listing.findById(item.listingId);
       if (!listing || !listing.available || listing.sold || listing.quantity <= 0) {
         return releaseAuthOnFailure(res, 400, {
@@ -455,7 +477,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       }
 
       // ZERO-LEAKAGE QUANTITY FIX: validate requested qty against stock
-      const qty = Math.max(1, Math.floor(item.quantity || 1));
+      const qty = requestedQuantity;
       if (listing.quantity < qty) {
         return releaseAuthOnFailure(res, 400, {
           message: `Only ${listing.quantity} left of "${listing.title}"`,

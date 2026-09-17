@@ -38,6 +38,16 @@ describe('v51.0 Subscription Seller Plans', () => {
     expect(res.body.length).toBe(4);
   });
 
+  // TDD regression: the UI advertises annual billing as "Save 20%" but the
+  // plans response previously exposed only the monthly price, so the client
+  // rendered the monthly amount with a `/year` suffix and the server stored
+  // the monthly amount for annual subscriptions.
+  test('v51.1a - annual plans expose discounted annual prices', async () => {
+    const res = await request(app).get('/api/subscriptions/plans');
+    const pro = res.body.find((plan) => plan.id === 'pro');
+    expect(pro.annualPrice).toBe(287.90);
+  });
+
   test('v51.2 - Should require auth for subscription', async () => {
     const res = await request(app).get('/api/subscriptions');
     expect(res.status).toBe(401);
@@ -60,6 +70,34 @@ describe('v51.0 Subscription Seller Plans', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.tier).toBe('pro');
+  });
+
+  // TDD regression: updating an existing subscription used to change only
+  // tier/billingCycle. The stored price and feature entitlements stayed on the
+  // old plan, so a seller could be shown Enterprise while retaining Pro
+  // entitlements (or be charged the Pro amount). Billing cycle was also not
+  // validated, allowing an unpriceable subscription state.
+  test('v51.4a - switching plans refreshes authoritative price/features and validates cycle', async () => {
+    const switched = await request(app)
+      .post('/api/subscriptions/subscribe')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ tier: 'enterprise', billingCycle: 'annual' });
+
+    expect(switched.status).toBe(200);
+    expect(switched.body.tier).toBe('enterprise');
+    expect(switched.body.billingCycle).toBe('annual');
+    expect(switched.body.price).toBe(959.90);
+    expect(switched.body.features).toEqual(expect.objectContaining({
+      customDomain: true,
+      enhancedPromotions: true,
+      prioritySupport: true,
+    }));
+
+    const invalidCycle = await request(app)
+      .post('/api/subscriptions/subscribe')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ tier: 'basic', billingCycle: 'weekly' });
+    expect(invalidCycle.status).toBe(400);
   });
 
   test('v51.5 - Should reject invalid tier', async () => {

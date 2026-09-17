@@ -108,7 +108,7 @@ const Subscriptions = () => {
             <div style={{ fontSize: 48, marginBottom: 12 }}>{getPlanIcon(plan.id)}</div>
             <h3 style={{ margin: '0 0 8px 0' }}>{plan.name}</h3>
             <div style={{ fontSize: 32, fontWeight: 700, margin: '12px 0' }}>
-              ${plan.price}
+              ${(billingCycle === 'annual' ? (plan.annualPrice ?? plan.price) : plan.price).toFixed(2)}
               <span style={{ fontSize: 14, color: 'var(--td-text-secondary)' }}>
                 /{billingCycle === 'annual' ? 'year' : 'month'}
               </span>

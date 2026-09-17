@@ -51,4 +51,51 @@ describe('Subscriptions page', () => {
     await waitFor(() => expect(document.body).not.toBeEmptyDOMElement());
   });
 
+  // TDD contract regression: the annual/monthly selection is part of the
+  // subscription request. A client that drops it lets the server persist a
+  // different cycle than the one the seller selected.
+  test('sends the selected annual billing cycle when subscribing', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/subscriptions/plans') {
+        return Promise.resolve({ data: [
+          { id: 'free', name: 'Free', price: 0, features: {} },
+          { id: 'basic', name: 'Basic', price: 9.99, annualPrice: 95.90, features: {} },
+          { id: 'pro', name: 'Pro', price: 29.99, annualPrice: 287.90, features: {} },
+          { id: 'enterprise', name: 'Enterprise', price: 99.99, annualPrice: 959.90, features: {} },
+        ] });
+      }
+      if (url === '/subscriptions') return Promise.resolve({ data: { tier: 'free' } });
+      return Promise.resolve({ data: [] });
+    });
+    api.post.mockResolvedValue({ data: { tier: 'enterprise', billingCycle: 'annual' } });
+
+    renderPage(<Subscriptions />);
+    expect(await screen.findByText('Enterprise')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Annual/i }));
+    expect(screen.getByText('$959.90')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Subscribe' })[2]);
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/subscriptions/subscribe',
+      { tier: 'enterprise', billingCycle: 'annual' }
+    ));
+  });
+
+  test('shows annual plan pricing instead of monthly pricing when annual is selected', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/subscriptions/plans') return Promise.resolve({ data: [
+        { id: 'free', name: 'Free', price: 0, annualPrice: 0, features: {} },
+        { id: 'basic', name: 'Basic', price: 9.99, annualPrice: 95.90, features: {} },
+      ] });
+      if (url === '/subscriptions') return Promise.resolve({ data: { tier: 'free' } });
+      return Promise.resolve({ data: [] });
+    });
+    renderPage(<Subscriptions />);
+    expect(await screen.findByText('Basic')).toBeInTheDocument();
+    expect(screen.getByText('$9.99')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Annual/i }));
+    expect(screen.getByText('$95.90')).toBeInTheDocument();
+    expect(screen.queryByText('$9.99')).not.toBeInTheDocument();
+  });
+
 });
