@@ -4,16 +4,27 @@ const router = express.Router();
 const SellerBadge = require('../models/SellerBadge');
 const { auth } = require('../middleware/auth');
 
+const getOrCreateBadge = async (userId) => {
+  try {
+    return await SellerBadge.findOneAndUpdate(
+      { userId },
+      { $setOnInsert: { userId } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+  } catch (error) {
+    // A unique-index race can still reject one concurrent upsert; return the
+    // winner rather than exposing a transient 500 to the buyer or seller.
+    if (error && error.code === 11000) {
+      return SellerBadge.findOne({ userId });
+    }
+    throw error;
+  }
+};
+
 // GET /api/seller-badges/me - Get current user's badge
 router.get('/me', auth, async (req, res) => {
   try {
-    let badge = await SellerBadge.findOne({ userId: req.user._id });
-    
-    if (!badge) {
-      badge = new SellerBadge({ userId: req.user._id });
-      await badge.save();
-    }
-    
+    const badge = await getOrCreateBadge(req.user._id);
     res.json({ badge });
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch badge' });
@@ -38,12 +49,8 @@ router.get('/:userId', async (req, res) => {
 // PUT /api/seller-badges/verify - Request verification (admin triggered)
 router.put('/verify', auth, async (req, res) => {
   try {
-    let badge = await SellerBadge.findOne({ userId: req.user._id });
-    
-    if (!badge) {
-      badge = new SellerBadge({ userId: req.user._id });
-    }
-    
+    const badge = await getOrCreateBadge(req.user._id);
+
     // A seller may request verification, but cannot self-approve it or grant
     // themselves reduced fees/priority benefits. Admin review must set the
     // authoritative verification fields separately.
@@ -60,12 +67,7 @@ router.put('/verify', auth, async (req, res) => {
 // PUT /api/seller-badges/update-stats - Update seller stats (internal/cron)
 router.put('/update-stats', auth, async (req, res) => {
   try {
-    let badge = await SellerBadge.findOne({ userId: req.user._id });
-    
-    if (!badge) {
-      badge = new SellerBadge({ userId: req.user._id });
-    }
-    
+    const badge = await getOrCreateBadge(req.user._id);
     const { salesCount, avgRating, responseRate, returnRate } = req.body;
     const providedStats = { salesCount, avgRating, responseRate, returnRate };
     const validators = {

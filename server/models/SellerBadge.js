@@ -37,6 +37,16 @@ const SellerBadgeSchema = new mongoose.Schema({
     default: false,
   },
   verifiedAt: Date,
+  verificationReviewedAt: Date,
+  verificationReviewedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  verificationRejectionReason: {
+    type: String,
+    maxlength: 500,
+    default: '',
+  },
   benefits: {
     reducedFees: { type: Boolean, default: false },
     prioritySupport: { type: Boolean, default: false },

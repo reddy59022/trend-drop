@@ -201,6 +201,8 @@ export const updateAdminReportStatus = (id, status) => api.put(`/admin/reports/$
 export const getAdminTransactions = (params) => api.get('/admin/transactions', { params });
 export const adminRefundTransaction = (id) => api.post(`/admin/transactions/${id}/refund`);
 export const autoSuspendUsers = () => api.post('/admin/auto-suspend');
+export const getPendingSellerVerifications = () => api.get('/admin/seller-badges/pending');
+export const reviewSellerBadge = (userId, data) => api.put(`/admin/seller-badges/${userId}/verification`, data);
 
 // ====== Transactions ======
 export const getTransactions = (params) => api.get('/transactions', { params });

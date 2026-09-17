@@ -72,6 +72,22 @@ describe('SellerBadges page', () => {
     await waitFor(() => expect(screen.getByText('95%')).toBeInTheDocument());
   });
 
+  test('does not submit duplicate verification requests while one is pending', async () => {
+    getMySellerBadge.mockResolvedValue({ data: { badge: {
+      tier: 'bronze', isVerified: false, verificationRequested: false,
+      salesCount: 0, avgRating: 0, responseRate: 0, returnRate: 0,
+      benefits: { reducedFees: false, prioritySupport: false, featuredListings: false },
+    } } });
+    requestSellerVerification.mockImplementation(() => new Promise(() => {}));
+
+    renderPage(<SellerBadges />);
+    const button = await screen.findByRole('button', { name: /Request Verification/i });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    expect(requestSellerVerification).toHaveBeenCalledTimes(1);
+  });
+
   test('survives API failure without crashing', async () => {
     Object.keys(api).filter(k => k.startsWith('get')).forEach(k => api[k].mockRejectedValue(new Error('boom')));
     api.get.mockRejectedValue(new Error('boom'));

@@ -22,7 +22,7 @@ import api from '../../services/api';
 import {
   getAdminDashboard, getAdminUsers, updateUserRole, suspendUser, unsuspendUser,
   getAdminListings, deleteAdminListing, getAdminReports, updateAdminReportStatus,
-  getAdminTransactions, adminRefundTransaction, autoSuspendUsers,
+  getAdminTransactions, adminRefundTransaction, autoSuspendUsers, getPendingSellerVerifications, reviewSellerBadge,
 } from '../../services/api';
 import { setAuth, setThemeStore, setCartStore, setConfirm, resetTestState, resetApiMock, renderPage, authUser } from '../../test-utils';
 
@@ -44,6 +44,8 @@ beforeEach(() => {
   getAdminReports.mockResolvedValue({ data: { reports: [], totalPages: 1 } });
   getAdminTransactions.mockResolvedValue({ data: { transactions: [], totalPages: 1 } });
   autoSuspendUsers.mockResolvedValue({ data: { message: '2 users suspended' } });
+  getPendingSellerVerifications.mockResolvedValue({ data: { badges: [] } });
+  reviewSellerBadge.mockResolvedValue({ data: { badge: {} } });
 });
 
 describe('Admin page', () => {
@@ -57,6 +59,18 @@ describe('Admin page', () => {
     expect(await screen.findByText('100')).toBeInTheDocument();
     expect(screen.getByText('250')).toBeInTheDocument();
   });
+  test('renders seller verification tab and loads pending requests', async () => {
+    getPendingSellerVerifications.mockResolvedValue({ data: { badges: [{
+      _id: 'badge-1', updatedAt: '2026-09-17T00:00:00.000Z',
+      userId: { _id: 'seller-1', name: 'Pending Seller', email: 'seller@test.com', country: 'US' },
+    }] } });
+    renderPage(<Admin />);
+    fireEvent.click(await screen.findByRole('button', { name: /Verifications/ }));
+    expect(await screen.findByText('Pending Seller')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Approve/ }));
+    await waitFor(() => expect(reviewSellerBadge).toHaveBeenCalledWith('seller-1', { decision: 'approve' }));
+  });
+
   test('renders all five management tabs', async () => {
     renderPage(<Admin />);
     await screen.findByText('Admin Panel');
@@ -86,6 +100,12 @@ describe('Admin page', () => {
     await screen.findByText('Admin Panel');
     fireEvent.click(screen.getByRole('button', { name: /Auto-Suspend/i }));
     await waitFor(() => expect(autoSuspendUsers).toHaveBeenCalled());
+  });
+  test('moderators can view the panel but not seller verification controls', async () => {
+    setAuth(authUser({ role: 'moderator' }));
+    renderPage(<Admin />);
+    expect(await screen.findByText('Admin Panel')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Verifications/ })).not.toBeInTheDocument();
   });
   test('moderators can view the panel', async () => {
     setAuth(authUser({ role: 'moderator' }));

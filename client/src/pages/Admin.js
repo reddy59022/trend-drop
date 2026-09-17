@@ -16,6 +16,8 @@ import {
   getAdminTransactions,
   adminRefundTransaction,
   autoSuspendUsers,
+  getPendingSellerVerifications,
+  reviewSellerBadge,
 } from '../services/api';
 import { FaShieldAlt, FaUsers, FaList, FaFlag, FaExchangeAlt, FaSearch, FaTimes, FaCheck, FaBan, FaTrash } from 'react-icons/fa';
 import { formatPrice } from '../utils/helpers';
@@ -30,6 +32,7 @@ const Admin = () => {
   const [listings, setListings] = useState([]);
   const [reports, setReports] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [sellerVerifications, setSellerVerifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -60,6 +63,9 @@ const Admin = () => {
       } else if (activeTab === 'transactions') {
         const res = await getAdminTransactions({ page, limit: 20 });
         setTransactions(res.data.transactions || []);
+      } else if (activeTab === 'verifications') {
+        const res = await getPendingSellerVerifications();
+        setSellerVerifications(res.data.badges || []);
       }
     } catch (error) {
       console.error('Admin fetch error:', error);
@@ -136,6 +142,19 @@ const Admin = () => {
     }
   };
 
+  const handleReviewSellerBadge = async (userId, decision) => {
+    try {
+      await reviewSellerBadge(userId, {
+        decision,
+        ...(decision === 'reject' ? { reason: 'Verification requirements were not met' } : {}),
+      });
+      toast.success(decision === 'approve' ? 'Seller verification approved' : 'Seller verification rejected');
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to review seller verification');
+    }
+  };
+
   const handleAutoSuspend = async () => {
     const ok = await confirmDialog({
       title: 'Auto-suspend users?',
@@ -159,6 +178,7 @@ const Admin = () => {
     { id: 'listings', label: 'Listings', icon: <FaList /> },
     { id: 'reports', label: 'Reports', icon: <FaFlag /> },
     { id: 'transactions', label: 'Transactions', icon: <FaExchangeAlt /> },
+    { id: 'verifications', label: 'Verifications', icon: <FaCheck /> },
   ];
 
   if (!user || (user.role !== 'admin' && user.role !== 'moderator')) return null;
@@ -171,7 +191,7 @@ const Admin = () => {
 
       {/* Tab Navigation */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 'var(--td-space-lg)', overflowX: 'auto', paddingBottom: 8 }}>
-        {tabs.map(tab => (
+        {tabs.filter(tab => tab.id !== 'verifications' || user.role === 'admin').map(tab => (
           <button
             key={tab.id}
             onClick={() => { setActiveTab(tab.id); setPage(1); }}
@@ -431,6 +451,50 @@ const Admin = () => {
                       </tr>
                     ))
                   )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Seller Verification Tab */}
+      {activeTab === 'verifications' && (
+        <div>
+          {loading ? (
+            <div className="skeleton" style={{ height: 200, borderRadius: 'var(--td-radius-lg)' }} />
+          ) : (
+            <div className="glass-card" style={{ overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Seller</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Country</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Requested</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sellerVerifications.length === 0 ? (
+                    <tr><td colSpan={4} style={{ padding: 32, textAlign: 'center', color: 'var(--td-text-tertiary)' }}>No pending verifications</td></tr>
+                  ) : sellerVerifications.map((badge) => (
+                    <tr key={badge._id} style={{ borderBottom: '1px solid var(--td-border-light)' }}>
+                      <td style={{ padding: '12px 16px' }}>
+                        <strong>{badge.userId?.name || 'Unknown seller'}</strong>
+                        <div style={{ color: 'var(--td-text-tertiary)', fontSize: 12 }}>{badge.userId?.email}</div>
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>{badge.userId?.country || '—'}</td>
+                      <td style={{ padding: '12px 16px' }}>{badge.updatedAt ? new Date(badge.updatedAt).toLocaleDateString() : '—'}</td>
+                      <td style={{ padding: '12px 16px' }}>
+                        {user.role === 'admin' && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => handleReviewSellerBadge(badge.userId?._id, 'approve')} className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none' }}><FaCheck /> Approve</button>
+                            <button onClick={() => handleReviewSellerBadge(badge.userId?._id, 'reject')} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none' }}><FaTimes /> Reject</button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

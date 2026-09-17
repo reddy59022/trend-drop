@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { adminAuth } = require('../middleware/admin');
@@ -8,9 +9,69 @@ const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
 const Report = require('../models/Report');
 const Offer = require('../models/Offer');
+const SellerBadge = require('../models/SellerBadge');
 
 // All admin routes require auth + adminAuth
 router.use(auth, adminAuth);
+
+// ============================================================
+// SELLER VERIFICATION
+// ============================================================
+
+// GET /api/admin/seller-badges/pending - List pending seller verification requests
+router.get('/seller-badges/pending', async (req, res) => {
+  try {
+    const badges = await SellerBadge.find({ verificationRequested: true })
+      .sort({ updatedAt: 1 })
+      .populate('userId', 'name email country createdAt');
+    res.json({ badges });
+  } catch (error) {
+    console.error('Admin pending seller verification error:', error);
+    res.status(500).json({ message: 'Failed to fetch pending seller verifications' });
+  }
+});
+
+// PUT /api/admin/seller-badges/:userId/verification - Review a seller request
+router.put('/seller-badges/:userId/verification', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { decision, reason } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid seller id' });
+    }
+    if (!['approve', 'reject'].includes(decision)) {
+      return res.status(400).json({ message: 'decision must be approve or reject' });
+    }
+    if (decision === 'reject' && (typeof reason !== 'string' || !reason.trim())) {
+      return res.status(400).json({ message: 'A rejection reason is required' });
+    }
+
+    const badge = await SellerBadge.findOne({ userId });
+    if (!badge) {
+      return res.status(404).json({ message: 'Seller badge not found' });
+    }
+    if (!badge.verificationRequested && decision === 'approve') {
+      return res.status(409).json({ message: 'No pending verification request' });
+    }
+
+    const approved = decision === 'approve';
+    badge.isVerified = approved;
+    badge.verificationRequested = false;
+    badge.verifiedAt = approved ? new Date() : null;
+    badge.verificationReviewedAt = new Date();
+    badge.verificationReviewedBy = req.user._id;
+    badge.verificationRejectionReason = approved ? '' : reason.trim();
+    badge.benefits.reducedFees = approved;
+    badge.benefits.prioritySupport = approved;
+    await badge.save();
+
+    res.json({ badge });
+  } catch (error) {
+    console.error('Admin seller verification review error:', error);
+    res.status(500).json({ message: 'Failed to review seller verification' });
+  }
+});
 
 // ============================================================
 // DASHBOARD
