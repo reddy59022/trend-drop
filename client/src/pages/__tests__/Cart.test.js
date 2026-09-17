@@ -18,7 +18,7 @@ jest.mock('socket.io-client', () => {
   return { __esModule: true, io: ioMock, default: ioMock, connect: ioMock };
 });
 
-import api from '../../services/api';
+import api, { applyBundleDiscount } from '../../services/api';
 import { setAuth, setThemeStore, setCartStore, setConfirm, resetTestState, resetApiMock, renderPage, authUser, sampleListing } from '../../test-utils';
 
 import Cart from '../Cart';
@@ -46,6 +46,29 @@ describe('Cart page', () => {
     expect(screen.queryByRole('button', { name: /Proceed to Checkout/ })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Start Shopping' })).toHaveAttribute('href', '/search');
   });
+  test('bundle discount validation does not send client-controlled prices', async () => {
+    setCartStore({ cart: [{ listingId: 'listing123', title: 'Jacket', price: 50, currency: 'USD', quantity: 2, thumbnail: '', available: 5 }] });
+    api.get.mockResolvedValue({ data: {} });
+    applyBundleDiscount.mockResolvedValue({ data: { discounts: [], totalDiscount: 0 } });
+    renderPage(<Cart />);
+
+    await waitFor(() => expect(applyBundleDiscount).toHaveBeenCalledWith({
+      items: [{ listingId: 'listing123', quantity: 2 }],
+    }));
+  });
+
+  test('renders the server bundle discount in the displayed total', async () => {
+    setCartStore({ cart: [{ listingId: 'listing123', title: 'Jacket', price: 50, currency: 'USD', quantity: 2, thumbnail: '', available: 5 }] });
+    api.get.mockResolvedValue({ data: {} });
+    applyBundleDiscount.mockResolvedValue({ data: {
+      discounts: [{ ruleName: 'Buy two', discountAmount: 10 }],
+      totalBundleDiscount: 10,
+    } });
+    renderPage(<Cart />);
+
+    await waitFor(() => expect(screen.getByText('$102.98')).toBeInTheDocument());
+  });
+
   test('promo apply flow calls validatePromo', async () => {
     setCartStore({ cart: [{ listingId: 'listing123', title: 'Jacket', price: 50, currency: 'USD', quantity: 1, thumbnail: '', available: 5 }] });
     api.get.mockResolvedValue({ data: {} });

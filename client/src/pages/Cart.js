@@ -210,11 +210,11 @@ const Cart = () => {
     if (cart.length === 0) return;
     try {
       const res = await applyBundleDiscount({
-        items: cart.map(i => ({ listingId: i.listingId, price: i.price, quantity: i.quantity }))
+        items: cart.map(i => ({ listingId: i.listingId, quantity: i.quantity }))
       });
       if (res.data.discounts) {
         setBundleDiscounts(res.data.discounts);
-        setBundleDiscount(res.data.totalDiscount || 0);
+        setBundleDiscount(res.data.totalBundleDiscount || 0);
       }
     } catch (e) {
       // Bundle discounts may not be configured - this is non-critical

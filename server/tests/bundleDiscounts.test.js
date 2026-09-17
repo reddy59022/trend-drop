@@ -111,6 +111,34 @@ describe('Bundle Discounts (Section 28a)', () => {
     expect(res.body.totalBundleDiscount).toBe(0);
   });
 
+  test('BD.10 bundle discount uses the authoritative listing price', async () => {
+    const rule = await BundleRule.create({
+      seller: seller._id,
+      name: 'Authoritative price rule',
+      minQuantity: 2,
+      discountPercent: 20,
+    });
+    testBundleIds.push(rule._id);
+
+    const res = await request(app)
+      .post('/api/offers/bundle/apply')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ items: [{ listingId: listing._id, quantity: 2, price: 1000 }] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.totalBundleDiscount).toBe(20);
+  });
+
+  test('BD.11 malformed listing ids are rejected without a server error', async () => {
+    const res = await request(app)
+      .post('/api/offers/bundle/apply')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ items: [{ listingId: 'not-an-id', quantity: 2 }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/listing/i);
+  });
+
   test('BD.7 Unauthorized access', async () => {
     const res = await request(app).post('/api/offers/bundle').send({ name: 'Hack', minQuantity: 2, discountPercent: 10 });
     expect(res.status).toBe(401);

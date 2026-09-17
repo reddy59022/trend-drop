@@ -300,6 +300,10 @@ router.post('/bundle/apply', auth, async (req, res) => {
     }
 
     const Listing = require('../models/Listing');
+    if (items.some(item => !item || typeof item !== 'object' || Array.isArray(item)
+      || !isValidObjectId(item.listingId))) {
+      return res.status(400).json({ message: 'Each item must include a valid listingId' });
+    }
     const listingIds = items.map(i => i.listingId);
     const listings = await Listing.find({ _id: { $in: listingIds } });
 
@@ -309,9 +313,12 @@ router.post('/bundle/apply', auth, async (req, res) => {
       if (!listing) continue;
       const sellerId = listing.seller.toString();
       if (!sellerGroups[sellerId]) sellerGroups[sellerId] = { seller: sellerId, items: [], totalPrice: 0, totalQuantity: 0 };
-      sellerGroups[sellerId].items.push({ ...item, category: listing.category, title: listing.title });
-      sellerGroups[sellerId].totalPrice += (item.price || 0) * (item.quantity || 1);
-      sellerGroups[sellerId].totalQuantity += item.quantity || 1;
+      // Bundle pricing is a discount decision: use the current listing price,
+      // never a client-supplied price that can inflate the seller's discount.
+      const quantity = Number.isInteger(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+      sellerGroups[sellerId].items.push({ ...item, price: listing.price, category: listing.category, title: listing.title, quantity });
+      sellerGroups[sellerId].totalPrice += listing.price * quantity;
+      sellerGroups[sellerId].totalQuantity += quantity;
     }
 
     const discounts = [];
