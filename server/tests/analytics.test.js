@@ -66,6 +66,8 @@ describe('v50.0 Advanced Analytics Dashboard', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.totalListings).toBeDefined();
+    expect(res.body.totalRevenue).toBe(85);
+    expect(res.body.totalTransactions).toBe(1);
   });
 
   test('v50.3 - Should return seller average order value in overview', async () => {

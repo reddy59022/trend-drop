@@ -11,7 +11,7 @@ const NON_REVENUE_STATUSES = ['cancelled', 'cancelled_by_buyer', 'cancelled_by_s
 router.get('/dashboard', auth, async (req, res) => {
   try {
     // Get transaction stats
-    const transactions = await Transaction.find({ seller: req.user._id });
+    const transactions = await Transaction.find({ seller: req.user._id, status: { $nin: NON_REVENUE_STATUSES } });
     
     // Get listing stats
     const listings = await Listing.find({ seller: req.user._id });
@@ -19,7 +19,10 @@ router.get('/dashboard', auth, async (req, res) => {
     const soldListings = listings.filter(l => l.status === 'sold').length;
     
     // Calculate revenue
-    const totalRevenue = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const totalRevenue = transactions.reduce(
+      (sum, t) => sum + (t.paymentBreakdown?.sellerEarnings ?? t.amount ?? 0),
+      0
+    );
     
     // Get subscription for fee calculation
     const subscription = await Subscription.findOne({ seller: req.user._id, status: 'active' });
