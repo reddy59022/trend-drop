@@ -24,6 +24,7 @@ process.env.MONGOMS_VERSION = process.env.MONGOMS_VERSION || '7.0.14';
 
 const STATE_FILE = path.join(os.tmpdir(), 'trenddrop-mongoms-state.json');
 const URI_FILE = path.join(__dirname, 'node_modules', '.cache', 'trenddrop-test-mongo-uri');
+const KEYS_FILE = path.join(__dirname, 'node_modules', '.cache', 'trenddrop-test-jwt-keys.json');
 
 module.exports = async () => {
   const mongod = await MongoMemoryServer.create({
@@ -39,6 +40,15 @@ module.exports = async () => {
   fs.mkdirSync(path.dirname(URI_FILE), { recursive: true });
   fs.writeFileSync(URI_FILE, uri);
   fs.writeFileSync(STATE_FILE, JSON.stringify({ uri, instanceInfo: mongod.instanceInfo }));
+
+  // Generate the Apple-login TEST keypair once per run. jest.setup.js used to
+  // regenerate an RSA-2048 pair inside every test file (~140x per run, ~100ms
+  // each); the PEM is handed off to workers via the cache dir exactly like the
+  // Mongo URI. This is a throwaway test key, not a secret.
+  const { privateKey } = require('crypto').generateKeyPairSync('rsa', { modulusLength: 2048 });
+  fs.writeFileSync(KEYS_FILE, JSON.stringify({
+    privateKeyPem: privateKey.export({ format: 'pem', type: 'pkcs8' }),
+  }));
 
   // Share the running instance with globalTeardown (same global context),
   // with the state file as a fallback if that contract ever changes.

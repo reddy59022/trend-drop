@@ -85,11 +85,11 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-// Logging (minimal in production)
-if (process.env.NODE_ENV === 'production') {
-  app.use(morgan('combined'));
-} else {
-  app.use(morgan('dev'));
+// Logging. Never mount morgan in test mode: a full server jest run issues
+// tens of thousands of supertest requests, and a "dev"-format line per request
+// floods the terminal (which makes IDEs sluggish and masks real test output).
+if (process.env.NODE_ENV !== 'test') {
+  app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 }
 
 // CORS for all platforms

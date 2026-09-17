@@ -42,4 +42,7 @@ module.exports = async () => {
 
   try { fs.unlinkSync(STATE_FILE); } catch (err) { /* ignore */ }
   try { fs.unlinkSync(URI_FILE); } catch (err) { /* ignore */ }
+  try {
+    fs.unlinkSync(path.join(__dirname, 'node_modules', '.cache', 'trenddrop-test-jwt-keys.json'));
+  } catch (err) { /* ignore */ }
 };
