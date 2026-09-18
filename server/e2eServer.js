@@ -52,6 +52,19 @@ async function main() {
   if (!process.env.BREVO_API_KEY) process.env.BREVO_API_KEY = 'xkeysib-placeholder';
   if (!process.env.GOOGLE_CLIENT_ID) process.env.GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
   if (!process.env.REACT_APP_GOOGLE_CLIENT_ID) process.env.REACT_APP_GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
+  // Legal-entity gate (server/config/legal.js assertProductionLegalConfig) throws
+  // in production when the entity values still contain placeholder markers like
+  // '[' or end in '.invalid'. The E2E harness runs with NODE_ENV=production to
+  // exercise production middleware, so provide entity values that pass the
+  // assert (non-empty, no '[' and not a .invalid contact).
+  if (!process.env.LEGAL_ENTITY_NAME) process.env.LEGAL_ENTITY_NAME = 'TrendDrop E2E Entity';
+  if (!process.env.LEGAL_ENTITY_ADDRESS) process.env.LEGAL_ENTITY_ADDRESS = '1 Test Way, Testville, TS 00000';
+  if (!process.env.LEGAL_ENTITY_JURISDICTION) process.env.LEGAL_ENTITY_JURISDICTION = 'California, USA';
+  if (!process.env.LEGAL_CONTACT_EMAIL) process.env.LEGAL_CONTACT_EMAIL = 'legal-e2e@trenddrop.test';
+  // config/legal captures process.env into its ENTITY object at require time,
+  // so this require MUST stay below the env-var defaults above (and below the
+  // NODE_ENV=production assignment) — server.js will reuse the cached module.
+  const { getPublicDocuments, CURRENT_VERSIONS } = require('./config/legal');
 
   // 3. Seed data (must happen after mongoose connects, so we require models
   //    and connect manually before seeding; server.js will reuse the connection)
@@ -94,6 +107,8 @@ async function main() {
       email: 'e2e-buyer@trenddrop.test',
       password: passwordHash,
       emailVerified: true,
+      legalConsent: { termsVersion: CURRENT_VERSIONS.terms, privacyVersion: CURRENT_VERSIONS.privacy, buyerVersion: CURRENT_VERSIONS.buyer, sellerVersion: CURRENT_VERSIONS.seller, acceptedAt: thirtyDaysAgo, country: 'US' },
+      ageConfirmed: true,
       authProvider: 'email',
       role: 'user',
       country: 'US',
@@ -108,6 +123,8 @@ async function main() {
       email: 'e2e-seller@trenddrop.test',
       password: passwordHash,
       emailVerified: true,
+      legalConsent: { termsVersion: CURRENT_VERSIONS.terms, privacyVersion: CURRENT_VERSIONS.privacy, buyerVersion: CURRENT_VERSIONS.buyer, sellerVersion: CURRENT_VERSIONS.seller, acceptedAt: thirtyDaysAgo, country: 'US' },
+      ageConfirmed: true,
       authProvider: 'email',
       role: 'user',
       country: 'US',
@@ -123,6 +140,8 @@ async function main() {
       email: 'e2e-seller2@trenddrop.test',
       password: passwordHash,
       emailVerified: true,
+      legalConsent: { termsVersion: CURRENT_VERSIONS.terms, privacyVersion: CURRENT_VERSIONS.privacy, buyerVersion: CURRENT_VERSIONS.buyer, sellerVersion: CURRENT_VERSIONS.seller, acceptedAt: thirtyDaysAgo, country: 'US' },
+      ageConfirmed: true,
       authProvider: 'email',
       role: 'user',
       country: 'US',
@@ -603,6 +622,42 @@ async function main() {
     },
   ]);
   console.log('[e2eServer] Seeded 3 trends');
+
+  // 3b. Publish a jurisdiction policy pack for every launch market. In
+  //     production mode the market-access gate (config/legalRuntime) checks
+  //     JurisdictionPolicyPack.exists({ country, status: 'published' }) for
+  //     every request — register, feed, cart, checkout all 403 without one
+  //     (NODE_ENV=test skips this check, which is why jest never caught it).
+  //     Use the app's own baseline documents so /legal endpoints and consent
+  //     version checks see consistent content.
+  const crypto = require('crypto');
+  const { POLICY_PACK_TARGET_CODES } = require('./config/marketplace');
+  const JurisdictionPolicyPack = require('./models/JurisdictionPolicyPack');
+  const checksum = (value) => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const baselineDocs = getPublicDocuments().map((doc) => ({
+    type: doc.type,
+    version: CURRENT_VERSIONS[doc.type],
+    content: { title: doc.title, summary: doc.summary, sections: doc.sections, counselReviewRequired: true },
+    checksum: checksum({ title: doc.title, summary: doc.summary, sections: doc.sections }),
+    translations: [],
+  }));
+  await JurisdictionPolicyPack.insertMany(POLICY_PACK_TARGET_CODES.map((country) => ({
+    country,
+    version: `${country}-e2e-1`,
+    status: 'published',
+    language: 'en',
+    requiredLanguages: ['en'],
+    signoffs: [],
+    changeSummary: `E2E harness seed pack for ${country} — enables the production-mode market-access gate during automated testing.`,
+    documents: baselineDocs,
+    governingLaw: 'E2E harness (not legal advice)',
+    disputeResolution: 'E2E harness baseline',
+    mandatoryRightsSummary: 'Seeded by the E2E harness so production-mode flows are exercisable; not a reviewed policy.',
+    createdBy: seller._id,
+    publishedBy: seller._id,
+    publishedAt: new Date(),
+  })));
+  console.log(`[e2eServer] Published ${POLICY_PACK_TARGET_CODES.length} jurisdiction policy packs`);
 
   // 4. Start the real application (listens on PORT, serves client build)
   require('../server/server.js');

@@ -63,3 +63,15 @@ services:
         sync: false
       - key: FB_APP_SECRET
         sync: false
+      # Legal entity config — required by the production startup gate in
+      # server/config/legal.js (assertProductionLegalConfig). Startup fails
+      # with LEGAL_CONFIG_INCOMPLETE until these are set in the dashboard:
+      # no empty values, no '[' placeholders, and contact must not end in .invalid.
+      - key: LEGAL_ENTITY_NAME
+        sync: false
+      - key: LEGAL_ENTITY_ADDRESS
+        sync: false
+      - key: LEGAL_ENTITY_JURISDICTION
+        sync: false
+      - key: LEGAL_CONTACT_EMAIL
+        sync: false
