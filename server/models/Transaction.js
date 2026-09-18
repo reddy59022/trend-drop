@@ -198,6 +198,24 @@ const transactionSchema = new mongoose.Schema({
     evidenceDueBy: { type: Date, default: null },
     closedAt: { type: Date, default: null },
   },
+  // Atomic provider-refund claim. This prevents concurrent admin/support
+  // refund requests from issuing duplicate refunds or reversing inventory
+  // twice. Failed provider attempts clear the flag so the request is retryable.
+  refundProcessing: {
+    type: Boolean,
+    default: false,
+  },
+  // Exactly-once claim for auto-completion. This prevents concurrent cron/manual
+  // completion attempts from releasing the same seller earnings twice.
+  completionProcessing: {
+    type: Boolean,
+    default: false,
+  },
+  // Exactly-once claim for return settlement/refund processing.
+  returnProcessing: {
+    type: Boolean,
+    default: false,
+  },
   // Cancellation info
   cancellation: {
     cancelledBy: String,

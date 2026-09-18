@@ -157,9 +157,12 @@ export const CartProvider = ({ children }) => {
           )
         : [...prev, { ...item, quantity: item.quantity || 1 }];
 
-      // Sync to server when authenticated
+      // The server treats POST /cart/items quantity as the canonical total,
+      // not an increment. Send the resulting quantity so local and server
+      // carts cannot silently diverge when an existing item is increased.
       if (isAuthed) {
-        api.post('/cart/items', { listingId: item.listingId, quantity: qtyToAdd })
+        const resultingItem = next.find((entry) => entry.listingId === item.listingId);
+        api.post('/cart/items', { listingId: item.listingId, quantity: resultingItem.quantity })
           .then(async () => {
             // Re-pull the canonical cart so quantities stay correct
             try {

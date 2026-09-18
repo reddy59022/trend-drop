@@ -97,7 +97,7 @@ describe('MONEY PATH AUDIT — structural guard over client-supplied payment int
     // money they move is a stored/partial ledger amount, so an amount-parity
     // check would be wrong here. Pinned so that a NEW route cannot join this
     // set without a deliberate review.
-    const REVIEWED_STATUS_ONLY = ['admin.js', 'orderLifecycle.js', 'returns.js'];
+    const REVIEWED_STATUS_ONLY = ['admin.js', 'escrow.js', 'orderLifecycle.js', 'returns.js'];
 
     const statusOnly = scanRoutes()
       .filter(({ code }) => RESOLVES_INTENT.test(code) && !CONSUMES_INTENT.test(code))

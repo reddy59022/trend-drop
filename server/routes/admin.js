@@ -10,6 +10,7 @@ const Payout = require('../models/Payout');
 const Report = require('../models/Report');
 const Offer = require('../models/Offer');
 const SellerBadge = require('../models/SellerBadge');
+const { clawbackSellerEarnings } = require('../utils/balances');
 
 // All admin routes require auth + adminAuth
 router.use(auth, adminAuth);
@@ -384,13 +385,24 @@ router.post('/transactions/:id/refund', async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'Invalid transaction ID' });
     }
-    const txn = await Transaction.findById(req.params.id);
+    let txn = await Transaction.findById(req.params.id);
     if (!txn) return res.status(404).json({ message: 'Transaction not found' });
     if (txn.status === 'refunded') return res.status(400).json({ message: 'Already refunded' });
 
+    // Claim the refund atomically before contacting the provider or changing
+    // local balances. A duplicate admin click must not issue two refunds or
+    // restore inventory twice.
+    const claimedTxn = await Transaction.findOneAndUpdate(
+      { _id: txn._id, status: { $ne: 'refunded' }, refundProcessing: { $ne: true } },
+      { $set: { refundProcessing: true } },
+      { new: true },
+    );
+    if (!claimedTxn) return res.status(400).json({ message: 'Refund is already being processed or has completed' });
+    txn = claimedTxn;
+
     // Issue refund via Stripe
     const { issueRefund, releaseAuthorization } = require('../config/payments');
-    const paymentIntentId = txn.payout?.transactionId;
+    const paymentIntentId = txn.payout?.transactionId || txn.paymentBreakdown?.paymentIntentId;
     
     if (paymentIntentId) {
       try {
@@ -404,17 +416,16 @@ router.post('/transactions/:id/refund', async (req, res) => {
       } catch (stripeErr) {
         console.error('Stripe refund error:', stripeErr.message);
         // Do not mark the transaction refunded or claw back seller funds when
-        // the provider did not accept the refund. The admin can safely retry.
+        // the provider did not accept the refund. Clear the claim so the admin
+        // can safely retry.
+        await Transaction.updateOne({ _id: txn._id, refundProcessing: true }, { $set: { refundProcessing: false } });
         return res.status(502).json({ message: 'Refund could not be processed. No ledger changes were made.' });
       }
     }
 
-    // Remove seller earnings
-    const seller = await User.findById(txn.seller);
-    if (seller) {
-      seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - (txn.paymentBreakdown?.sellerEarnings || 0));
-      await seller.save();
-    }
+    // Remove seller earnings atomically so a refund cannot overwrite a
+    // concurrent sale/payout balance update.
+    await clawbackSellerEarnings(txn.seller, txn.paymentBreakdown?.sellerEarnings || 0);
 
     // Restore the exact quantity sold. Restoring one unit for a bulk
     // transaction strands inventory and leaves quantitySold inconsistent.
@@ -425,6 +436,7 @@ router.post('/transactions/:id/refund', async (req, res) => {
     });
 
     txn.status = 'refunded';
+    txn.refundProcessing = false;
     txn.payout.status = 'refunded';
     txn.cancellation = {
       cancelledBy: 'admin',
@@ -436,6 +448,16 @@ router.post('/transactions/:id/refund', async (req, res) => {
 
     res.json({ message: 'Admin refund processed', transaction: txn });
   } catch (error) {
+    // If local settlement failed after the atomic claim, leave the transaction
+    // retryable. Provider refunds are idempotent by payment intent in the
+    // payment adapter, so an admin retry can finish reconciliation.
+    if (typeof txn !== 'undefined' && txn?.refundProcessing) {
+      try {
+        await Transaction.updateOne({ _id: txn._id, refundProcessing: true }, { $set: { refundProcessing: false } });
+      } catch (restoreError) {
+        console.error('Admin refund claim rollback failed:', restoreError.message);
+      }
+    }
     console.error('Admin refund error:', error);
     res.status(500).json({ message: 'Server error' });
   }

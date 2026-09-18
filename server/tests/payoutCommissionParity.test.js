@@ -112,6 +112,22 @@ describe('PC · Legacy confirm-received payout uses the 8% platform commission',
     expect(payout.commissionAmount).toBe(8);
   });
 
+  test('PC.0c cron does not release funds before the delivery return window expires', async () => {
+    const txn = await mkPaidTxnWithoutPayout();
+    txn.status = 'buyer_confirmed';
+    txn.buyerConfirmed = { received: true, confirmedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) };
+    txn.shipping.actualDelivery = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+    await txn.save();
+    await User.updateOne({ _id: seller._id }, {
+      $set: { createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'stats.totalSales': 5, 'balance.pending': 92 },
+    });
+
+    await autoProcessOrders();
+
+    expect((await Transaction.findById(txn._id)).status).toBe('buyer_confirmed');
+    expect(await Payout.countDocuments({ transaction: txn._id })).toBe(0);
+  });
+
   test('PC.0b order auto-complete preserves the 8% platform rate when legacy fields are absent', async () => {
     const txn = await mkPaidTxnWithoutPayout();
     txn.status = 'buyer_confirmed';

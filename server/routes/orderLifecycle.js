@@ -723,8 +723,15 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
 
     // CRITICAL FIX #2 & #3: Apply seller reserve and new seller hold
     const seller = await User.findById(txn.seller);
-    if (seller) {
-      // FIX #3: New seller hold - first 5 sales held for 14 days
+    // A completed sale without a valid seller account would capture the buyer's
+    // money and finalize the transaction without crediting anyone. Fail closed
+    // before claiming or mutating any money state so finance can repair the
+    // orphaned record and retry safely.
+    if (!seller) {
+      return res.status(409).json({ message: 'Seller account is unavailable; funds were not released. Please retry after repair.' });
+    }
+    {
+      // FIX #3: New seller hold - first 5 sales held 14 days
       const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
       if (isNewSeller) {
         const accountAge = Date.now() - new Date(seller.createdAt).getTime();
@@ -737,7 +744,19 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
           });
         }
       }
-      
+
+      // Claim completion exactly once after all timing/hold checks pass. A
+      // concurrent cron/manual request must not release the same earnings twice.
+      const claimed = await Transaction.findOneAndUpdate(
+        { _id: txn._id, status: orderStates.BUYER_CONFIRMED, completionProcessing: { $ne: true } },
+        { $set: { completionProcessing: true } },
+        { new: true },
+      );
+      if (!claimed) {
+        return res.status(400).json({ message: 'Order completion is already being processed or has completed' });
+      }
+      txn.completionProcessing = true;
+
       // FIX #2: 10% rolling reserve held for 60 days
       const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
       const availableAmount = sellerEarnings - reserveAmount;
@@ -785,6 +804,7 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
     await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
 
     txn.status = orderStates.COMPLETED;
+    txn.completionProcessing = false;
     await txn.save();
 
     // Keep the consolidated Enterprise Order in sync when ALL txns complete
@@ -839,6 +859,16 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
       sellerEarnings,
     });
   } catch (error) {
+    if (typeof txn !== 'undefined' && txn?.completionProcessing) {
+      try {
+        await Transaction.updateOne(
+          { _id: txn._id, completionProcessing: true },
+          { $set: { completionProcessing: false } },
+        );
+      } catch (rollbackError) {
+        console.error('Completion claim rollback failed:', rollbackError.message);
+      }
+    }
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -1140,7 +1170,7 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
 // CRITICAL: Refund buyer, deduct from seller, restore inventory
 router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess, async (req, res) => {
   try {
-    const txn = req.transaction;
+    let txn = req.transaction;
 
     if (req.orderRole !== 'seller') {
       return res.status(403).json({ message: 'Only seller can confirm return receipt' });
@@ -1150,18 +1180,17 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
       return res.status(400).json({ message: 'Cannot confirm return receipt in current status' });
     }
 
+    const claimedReturn = await Transaction.findOneAndUpdate(
+      { _id: txn._id, status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] }, returnProcessing: { $ne: true } },
+      { $set: { returnProcessing: true } },
+      { new: true },
+    );
+    if (!claimedReturn) {
+      return res.status(400).json({ message: 'Return settlement is already being processed or has completed' });
+    }
+    txn = claimedReturn;
+
     const { condition, inspectionNotes, sellerPackingProof } = req.body;
-
-    // Restore listing inventory - EXACT quantity bought, never a fixed 1
-    await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
-      $set: { sold: false, available: true },
-    });
-
-    // ROBUST: Boost fee is never charged for a returned order.
-    // Reverse the listing-level boost fee (item-level, never cross-subsidized).
-    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
-    await markPayoutRefunded(txn);
 
     // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
     const refundAmount = txn.paymentBreakdown.totalPaid || 0;
@@ -1180,9 +1209,20 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
           stripeRefundResult = await releaseAuthorization(paymentIntentId);
         }
       } catch (stripeErr) {
-        console.error('Stripe refund on return:', stripeErr.message);
+        stripeErr.statusCode = 502;
+        throw stripeErr;
       }
     }
+
+    // Provider refund succeeded (or authorization was released); now apply
+    // the local zero-sum unwind. No inventory or ledger mutation occurs before
+    // this point, so provider failures remain fully retryable.
+    await Listing.findByIdAndUpdate(txn.listing, {
+      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
+      $set: { sold: false, available: true },
+    });
+    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+    await markPayoutRefunded(txn);
 
     // Notify buyer of refund
     const buyer = await User.findById(txn.buyer);
@@ -1219,6 +1259,7 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
       sellerInspectionProof: sellerPackingProof || [],
     };
     txn.payout = { status: 'refunded', processedAt: new Date() };
+    txn.returnProcessing = false;
 
     await txn.save();
 
@@ -1232,8 +1273,15 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
       stripeRefund: stripeRefundResult,
     });
   } catch (error) {
+    if (typeof txn !== 'undefined' && txn?.returnProcessing) {
+      try {
+        await Transaction.updateOne({ _id: txn._id, returnProcessing: true }, { $set: { returnProcessing: false } });
+      } catch (rollbackError) {
+        console.error('Return settlement claim rollback failed:', rollbackError.message);
+      }
+    }
     console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(error.statusCode || 500).json({ message: error.statusCode === 502 ? 'Refund could not be processed right now. Please retry.' : 'Server error' });
   }
 });
 
@@ -1242,7 +1290,7 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
 // Kept for backward compatibility - delegates to the robust implementation
 router.post('/:transactionId/process-return', auth, validateOrderAccess, async (req, res) => {
   try {
-    const txn = req.transaction;
+    let txn = req.transaction;
 
     if (req.orderRole !== 'seller') {
       return res.status(403).json({ message: 'Only seller can process return' });
@@ -1253,18 +1301,17 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
       return res.status(400).json({ message: 'Cannot process return in current status' });
     }
 
+    const claimedReturn = await Transaction.findOneAndUpdate(
+      { _id: txn._id, status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] }, returnProcessing: { $ne: true } },
+      { $set: { returnProcessing: true } },
+      { new: true },
+    );
+    if (!claimedReturn) {
+      return res.status(400).json({ message: 'Return settlement is already being processed or has completed' });
+    }
+    txn = claimedReturn;
+
     const { condition, inspectionNotes, sellerPackingProof } = req.body;
-
-    // Restore listing inventory - EXACT quantity bought, never a fixed 1
-    await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
-      $set: { sold: false, available: true },
-    });
-
-    // ROBUST: Boost fee is never charged for a returned order.
-    // Reverse the listing-level boost fee (item-level, never cross-subsidized).
-    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
-    await markPayoutRefunded(txn);
 
     // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
     const refundAmount = txn.paymentBreakdown.totalPaid || 0;
@@ -1283,9 +1330,20 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
           stripeRefundResult = await releaseAuthorization(paymentIntentId);
         }
       } catch (stripeErr) {
-        console.error('Stripe refund on return:', stripeErr.message);
+        stripeErr.statusCode = 502;
+        throw stripeErr;
       }
     }
+
+    // Provider refund succeeded (or authorization was released); now apply
+    // the local zero-sum unwind. No inventory or ledger mutation occurs before
+    // this point, so provider failures remain fully retryable.
+    await Listing.findByIdAndUpdate(txn.listing, {
+      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
+      $set: { sold: false, available: true },
+    });
+    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+    await markPayoutRefunded(txn);
 
     // Notify buyer of refund
     const buyer = await User.findById(txn.buyer);
@@ -1321,6 +1379,7 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
       sellerInspectionProof: sellerPackingProof || [],
     };
     txn.payout = { status: 'refunded', processedAt: new Date() };
+    txn.returnProcessing = false;
 
     await txn.save();
 
@@ -1334,8 +1393,15 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
       stripeRefund: stripeRefundResult,
     });
   } catch (error) {
+    if (typeof txn !== 'undefined' && txn?.returnProcessing) {
+      try {
+        await Transaction.updateOne({ _id: txn._id, returnProcessing: true }, { $set: { returnProcessing: false } });
+      } catch (rollbackError) {
+        console.error('Return settlement claim rollback failed:', rollbackError.message);
+      }
+    }
     console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(error.statusCode || 500).json({ message: error.statusCode === 502 ? 'Refund could not be processed right now. Please retry.' : 'Server error' });
   }
 });
 
@@ -1582,11 +1648,33 @@ router.post('/auto-process', async (req, res) => {
     for (const txn of confirmedOrders) {
       const confirmTime = txn.buyerConfirmed?.confirmedAt ? new Date(txn.buyerConfirmed.confirmedAt).getTime() : new Date(txn.updatedAt).getTime();
       if (now - confirmTime >= timeWindows.AUTO_COMPLETE) {
+        // Atomically claim this completion before any balance/stat/payout
+        // mutation. Concurrent cron invocations must process a transaction
+        // exactly once.
+        const claimed = await Transaction.findOneAndUpdate(
+          { _id: txn._id, status: orderStates.BUYER_CONFIRMED, completionProcessing: { $ne: true } },
+          { $set: { completionProcessing: true } },
+          { new: true },
+        );
+        if (!claimed) continue;
+        txn.completionProcessing = true;
+
         const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
 
         // Release funds to seller with 10% rolling reserve
         const seller = await User.findById(txn.seller);
-        if (seller) {
+        if (!seller) {
+          // Do not finalize a paid sale when its seller account is missing:
+          // otherwise the buyer's payment is captured but no seller ledger is
+          // credited. Clear the claim and leave the transaction retryable for
+          // reconciliation after the account is repaired.
+          await Transaction.updateOne(
+            { _id: txn._id, completionProcessing: true },
+            { $set: { completionProcessing: false } },
+          );
+          continue;
+        }
+        {
           // CRITICAL: Apply 10% rolling reserve and new seller hold checks
           const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
           let canRelease = true;
@@ -1644,6 +1732,7 @@ router.post('/auto-process', async (req, res) => {
         await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
 
         txn.status = orderStates.COMPLETED;
+        txn.completionProcessing = false;
         await txn.save();
 
         // Keep the consolidated Enterprise Order in sync after batch completion
@@ -1662,7 +1751,7 @@ router.post('/auto-process', async (req, res) => {
               transaction: txn._id,
               listing: txn.listing,
               salePrice: itemPrice,
-              commissionRate: (txn.paymentBreakdown?.platformFeePercent || 10) / 100,
+              commissionRate: (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100,
               commissionAmount,
               payoutAmount,
               status: 'completed',

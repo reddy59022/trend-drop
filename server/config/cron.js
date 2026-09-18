@@ -20,6 +20,7 @@ const Return = require('../models/Return');
 const Offer = require('../models/Offer');
 
 const { orderStates, timeWindows } = require('./orderLifecycle');
+const { releaseSellerEarnings } = require('../utils/balances');
 
 // ──────────────────────────────────────────────
 // JOB 1: Auto-Expire Listings (Every 6 hours)
@@ -97,11 +98,38 @@ async function autoProcessOrders() {
         : new Date(txn.updatedAt).getTime();
       
       if (now - confirmTime >= timeWindows.AUTO_COMPLETE) {
+        const deliveredTime = txn.shipping?.actualDelivery
+          ? new Date(txn.shipping.actualDelivery).getTime()
+          : null;
+        // The cron path must enforce the same delivery-based return hold as
+        // the manual endpoint. Checking only buyer confirmation can release
+        // seller funds before the buyer's return window has expired.
+        if (deliveredTime && now - deliveredTime < timeWindows.PAYOUT_HOLD_FROM_DELIVERY) {
+          continue;
+        }
+
+        // Claim before any balance, stats, or payout mutation. Overlapping cron
+        // runs must not release one transaction twice.
+        const claimed = await Transaction.findOneAndUpdate(
+          { _id: txn._id, status: 'buyer_confirmed', completionProcessing: { $ne: true } },
+          { $set: { completionProcessing: true } },
+          { new: true },
+        );
+        if (!claimed) continue;
+        txn.completionProcessing = true;
+
         const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
 
         // Release funds to seller with 10% rolling reserve + new seller hold
         const seller = await User.findById(txn.seller);
-        if (seller && sellerEarnings > 0) {
+        if (!seller) {
+          await Transaction.updateOne(
+            { _id: txn._id, completionProcessing: true },
+            { $set: { completionProcessing: false } },
+          );
+          continue;
+        }
+        if (sellerEarnings > 0) {
           const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
           let canRelease = true;
           
@@ -112,31 +140,46 @@ async function autoProcessOrders() {
             }
           }
           
+          let sellerNotification = null;
           if (canRelease) {
-            // Apply 10% rolling reserve
+            // Use the same atomic balance helper as the manual completion path.
+            // Read-modify-save here could lose a concurrent payout/refund.
             const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
             const availableAmount = sellerEarnings - reserveAmount;
-            
-            seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-            seller.balance.available = (seller.balance.available || 0) + availableAmount;
-            seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
-            
-            // Track reserve
-            if (!seller.balance.reserve) seller.balance.reserve = 0;
-            if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
-            seller.balance.reserve += reserveAmount;
-            seller.balance.reserveReleaseDate.push({
-              amount: reserveAmount,
-              releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
-              transactionId: txn._id,
+            await releaseSellerEarnings(seller._id, {
+              earnings: sellerEarnings,
+              availableAmount,
+              reserveAmount,
+              reserveRelease: {
+                amount: reserveAmount,
+                releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+                transactionId: txn._id,
+              },
             });
+            sellerNotification = `Payment of ${availableAmount} ${txn.currency} released; ${reserveAmount} ${txn.currency} held in reserve.`;
           } else {
-            // New seller hold - funds stay in pending
+            // New seller hold - funds stay in pending.
             console.log(`[CRON] New seller hold active for seller ${seller._id}`);
+            sellerNotification = 'Payment held: New seller hold is active.';
           }
-          
-          seller.stats.totalSales = (seller.stats.totalSales || 0) + 1;
-          await seller.save();
+
+          await User.updateOne(
+            { _id: seller._id },
+            {
+              $inc: { 'stats.totalSales': 1 },
+              $push: {
+                notifications: {
+                  $each: [{
+                    type: 'sale',
+                    listing: txn.listing,
+                    transaction: txn._id,
+                    message: sellerNotification,
+                  }],
+                  $position: 0,
+                },
+              },
+            },
+          );
         }
 
         // Update buyer stats
@@ -147,6 +190,7 @@ async function autoProcessOrders() {
         }
 
         txn.status = 'completed';
+        txn.completionProcessing = false;
         await txn.save();
 
         // Create payout record if not exists

@@ -9,8 +9,19 @@ const {
   isWebhookSignatureRequired,
   getWebhookSecret,
 } = require('../config/payments');
-const { clawbackSellerEarnings, reverseEscrowHold, debitPendingAllowNegative } = require('../utils/balances');
+const { clawbackSellerEarnings, reverseEscrowHold } = require('../utils/balances');
 const { increment } = require('../utils/metrics');
+
+// Transactions created by older checkout paths stored the provider intent only
+// in paymentBreakdown.paymentIntentId. Webhook reconciliation must support both
+// representations or provider refunds/disputes can be acknowledged while the
+// local ledger remains paid.
+const paymentIntentMatch = (paymentIntentId) => ({
+  $or: [
+    { stripePaymentIntentId: paymentIntentId },
+    { 'paymentBreakdown.paymentIntentId': paymentIntentId },
+  ],
+});
 
 // Stripe webhook endpoint - handles chargeback events
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -55,9 +66,7 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
         console.log(`[WEBHOOK] charge.dispute.created for payment_intent=${paymentIntentId}`);
         
         // Find the transaction by payment intent
-        const transaction = await Transaction.findOne({
-          'stripePaymentIntentId': paymentIntentId
-        });
+        const transaction = await Transaction.findOne(paymentIntentMatch(paymentIntentId));
         
         console.log(`[WEBHOOK] found transaction:`, transaction ? transaction._id : 'NOT FOUND');
         
@@ -120,18 +129,27 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
               transaction.status = 'chargeback_won';
               // Restore seller's pending balance
               if (transaction.paymentBreakdown?.sellerEarnings) {
-                const seller = await User.findById(transaction.seller);
-                if (seller) {
-                  seller.balance.pending = (seller.balance.pending || 0) + transaction.paymentBreakdown.sellerEarnings;
-                  seller.notifications.unshift({
-                    type: 'dispute',
-                    from: transaction.buyer,
-                    listing: transaction.listing,
-                    transaction: transaction._id,
-                    message: `Chargeback resolved in your favor. Funds restored.`,
-                  });
-                  await seller.save();
-                }
+                // Credit and notify atomically. A read-modify-save here could
+                // overwrite a concurrent sale, payout, or refund balance update
+                // with a stale seller document.
+                await User.updateOne(
+                  { _id: transaction.seller },
+                  {
+                    $inc: { 'balance.pending': transaction.paymentBreakdown.sellerEarnings },
+                    $push: {
+                      notifications: {
+                        $each: [{
+                          type: 'dispute',
+                          from: transaction.buyer,
+                          listing: transaction.listing,
+                          transaction: transaction._id,
+                          message: 'Chargeback resolved in your favor. Funds restored.',
+                        }],
+                        $position: 0,
+                      },
+                    },
+                  },
+                );
               }
             }
           } else if (dispute.status === 'lost') {
@@ -140,23 +158,28 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
               transaction.status = 'chargeback_lost';
               // Deduct from seller's balance if available
               if (transaction.paymentBreakdown?.sellerEarnings) {
-                const seller = await User.findById(transaction.seller);
-                if (seller) {
-                  // ATOMIC (round 25): a lost dispute intentionally allows the
-                  // pending balance to go negative (seller owes the platform).
-                  await debitPendingAllowNegative(
-                    seller._id,
-                    transaction.paymentBreakdown.sellerEarnings
-                  );
-                  seller.notifications.unshift({
-                    type: 'dispute',
-                    from: transaction.buyer,
-                    listing: transaction.listing,
-                    transaction: transaction._id,
-                    message: `Chargeback lost. The sale amount has been deducted from your balance.`,
-                  });
-                  await seller.save();
-                }
+                // ATOMIC (round 25): a lost dispute intentionally allows the
+                // pending balance to go negative (seller owes the platform).
+                // Keep the debit and notification in one update so a stale
+                // seller document cannot restore unrelated balance changes.
+                await User.updateOne(
+                  { _id: transaction.seller },
+                  {
+                    $inc: { 'balance.pending': -transaction.paymentBreakdown.sellerEarnings },
+                    $push: {
+                      notifications: {
+                        $each: [{
+                          type: 'dispute',
+                          from: transaction.buyer,
+                          listing: transaction.listing,
+                          transaction: transaction._id,
+                          message: 'Chargeback lost. The sale amount has been deducted from your balance.',
+                        }],
+                        $position: 0,
+                      },
+                    },
+                  },
+                );
               }
             }
           }
@@ -190,25 +213,47 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
         // retries forever). Signature is already verified, but metadata is
         // still untrusted input — validate before touching the DB.
         const txId = paymentIntent.metadata?.transactionId;
+        let transaction = null;
         if (txId && mongoose.isValidObjectId(txId)) {
-          // Find transaction by metadata
-          const transaction = await Transaction.findById(txId);
-          if (transaction && transaction.status === 'paid') {
-            transaction.stripePaymentIntentId = paymentIntent.id;
-            await transaction.save();
-          }
+          // Prefer the authenticated transaction binding when present.
+          transaction = await Transaction.findOne({ _id: txId, status: 'paid' });
+        }
+        // Older checkout paths did not include transactionId metadata, but did
+        // persist the intent in paymentBreakdown.paymentIntentId. Reconcile by
+        // provider ID as a safe fallback rather than silently acknowledging the
+        // event with an unlinked paid transaction.
+        if (!transaction && paymentIntent.id) {
+          transaction = await Transaction.findOne({
+            ...paymentIntentMatch(paymentIntent.id),
+            status: 'paid',
+          });
+        }
+        if (transaction) {
+          transaction.stripePaymentIntentId = paymentIntent.id;
+          await transaction.save();
         }
         break;
       }
 
       case 'charge.refunded': {
         const charge = event.data.object;
-        const transaction = await Transaction.findOne({
-          'stripePaymentIntentId': charge.payment_intent,
-        });
+        let transaction = await Transaction.findOne(paymentIntentMatch(charge.payment_intent));
         if (transaction && transaction.status !== 'refunded') {
           const wasReleased = transaction.status === 'completed'
             || transaction.payout?.status === 'completed';
+          // Claim the reconciliation atomically before touching balances or
+          // inventory. Stripe retries can arrive concurrently; a read-then-
+          // save status check lets both deliveries reverse the same sale.
+          const claimed = await Transaction.findOneAndUpdate(
+            { _id: transaction._id, status: { $ne: 'refunded' } },
+            { $set: { status: 'refunded', 'payout.status': 'refunded' } },
+            { new: true }
+          );
+          if (!claimed) {
+            increment('trenddrop_webhook_retries_total', { event_type: 'charge.refunded' });
+            break;
+          }
+          transaction = claimed;
           // REVENUE INTEGRITY (round 25): a refund issued outside the platform
           // (Stripe dashboard, manual support action) previously only flipped
           // the status — the seller kept their earnings, the listing stayed

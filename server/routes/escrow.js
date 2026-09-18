@@ -4,7 +4,11 @@ const { auth } = require('../middleware/auth');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
+const Payout = require('../models/Payout');
+const Order = require('../models/Order');
 const { isValidObjectId } = require('../utils/validators');
+const { findPaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
+const { releaseSellerEarnings, reverseEscrowHold } = require('../utils/balances');
 
 // ===================== ESCROW SERVICE =====================
 // For high-value items (>$500), hold funds in escrow until both parties confirm satisfaction
@@ -300,7 +304,7 @@ router.post('/dispute', auth, async (req, res) => {
 // POST /api/escrow/resolve-dispute - Admin resolves escrow dispute
 router.post('/resolve-dispute', auth, async (req, res) => {
   try {
-    const { transactionId, resolution, releaseTo } = req.body;
+    const { transactionId, resolution } = req.body;
     
     if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'transactionId is required' });
@@ -317,53 +321,124 @@ router.post('/resolve-dispute', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only admin can resolve escrow disputes' });
     }
     
-    // Check escrow is in disputed state
+    // Resolution is a money-moving state transition. Validate it before
+    // touching the transaction so malformed admin input cannot create a
+    // terminal state with no settlement.
+    if (!['release_to_buyer', 'release_to_seller'].includes(resolution)) {
+      return res.status(400).json({ message: 'Invalid escrow resolution' });
+    }
     if (transaction.escrow?.status !== 'disputed') {
       return res.status(400).json({ message: 'Escrow not in disputed state' });
     }
-    
+
+    const paymentIntentId = transaction.paymentBreakdown?.paymentIntentId
+      || transaction.payout?.transactionId;
+    const refundAmount = Number(transaction.paymentBreakdown?.totalPaid || 0);
+    const sellerEarnings = Number(transaction.paymentBreakdown?.sellerEarnings || 0);
+    const quantity = Number.isInteger(transaction.quantity) && transaction.quantity > 0 ? transaction.quantity : 1;
+
+    // Settle with the provider before mutating the ledger. If Stripe rejects
+    // the refund/release, the dispute remains retryable and no local balance,
+    // inventory, payout, or transaction state is changed.
+    if (resolution === 'release_to_buyer') {
+      try {
+        const paymentIntent = paymentIntentId ? await findPaymentIntent(paymentIntentId) : null;
+        if (!paymentIntent) {
+          return res.status(502).json({ message: 'Payment provider reference could not be verified' });
+        }
+        if (paymentIntent.status === 'requires_capture') {
+          await releaseAuthorization(paymentIntentId);
+        } else if (paymentIntentId) {
+          await issueRefund(paymentIntentId);
+        } else {
+          return res.status(502).json({ message: 'Payment provider reference is missing' });
+        }
+      } catch (providerError) {
+        console.error('Escrow dispute refund error:', providerError.message);
+        return res.status(502).json({ message: 'Escrow refund could not be processed. No ledger changes were made.' });
+      }
+
+      await reverseEscrowHold(transaction.seller, sellerEarnings);
+      await Listing.findOneAndUpdate(
+        { _id: transaction.listing },
+        {
+          $inc: { quantity, quantitySold: -quantity },
+          $set: { available: true, sold: false },
+        },
+        { new: true },
+      );
+      await Payout.updateMany(
+        { transaction: transaction._id, status: { $ne: 'refunded' } },
+        { $set: { status: 'refunded', refundedAt: new Date() } },
+      );
+      transaction.status = 'refunded';
+      if (transaction.payout) transaction.payout.status = 'refunded';
+      transaction.cancellation = {
+        cancelledBy: 'admin',
+        reason: 'Escrow dispute resolved in favor of buyer',
+        cancelledAt: new Date(),
+        refundAmount,
+      };
+    } else {
+      const reserveAmount = Math.round(sellerEarnings * 0.10 * 100) / 100;
+      const availableAmount = Math.round((sellerEarnings - reserveAmount) * 100) / 100;
+      await releaseSellerEarnings(transaction.seller, {
+        earnings: sellerEarnings,
+        availableAmount,
+        reserveAmount,
+        reserveRelease: {
+          amount: reserveAmount,
+          releaseDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+          transactionId: transaction._id,
+        },
+      });
+      await Payout.updateMany(
+        { transaction: transaction._id, status: { $nin: ['completed', 'refunded'] } },
+        { $set: { status: 'completed', paidAt: new Date() } },
+      );
+      transaction.status = 'completed';
+      if (transaction.payout) transaction.payout.status = 'completed';
+    }
+
     transaction.escrow.status = 'resolved';
     transaction.escrow.resolution = resolution;
     transaction.escrow.resolvedAt = new Date();
     transaction.escrow.resolvedBy = req.user._id;
-    
-    if (resolution === 'release_to_buyer') {
-      // Refund to buyer
-      const refundAmount = transaction.paymentBreakdown?.totalPaid || 0;
-      const buyer = await User.findById(transaction.buyer);
-      if (buyer) {
-        buyer.balance.available = (buyer.balance.available || 0) + refundAmount;
-        buyer.notifications.unshift({
-          type: 'sale',
-          listing: transaction.listing,
-          transaction: transaction._id,
-          message: `Escrow dispute resolved. ${refundAmount} ${transaction.currency} refunded to your account.`,
-        });
-        await buyer.save();
-      }
-    } else if (resolution === 'release_to_seller') {
-      // Release to seller
-      const sellerEarnings = transaction.paymentBreakdown?.sellerEarnings || 0;
-      const seller = await User.findById(transaction.seller);
-      if (seller) {
-        const reserveAmount = Math.round(sellerEarnings * 0.10 * 100) / 100;
-        const availableAmount = sellerEarnings - reserveAmount;
-        
-        seller.balance.available = (seller.balance.available || 0) + availableAmount;
-        seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
-        
-        seller.notifications.unshift({
-          type: 'sale',
-          listing: transaction.listing,
-          transaction: transaction._id,
-          message: `Escrow dispute resolved. ${availableAmount} ${transaction.currency} added to your account.`,
-        });
-        await seller.save();
-      }
-    }
-    
     await transaction.save();
-    
+
+    // Keep consolidated order state aligned with the underlying transaction.
+    // Otherwise a refunded escrow item can remain visible as an active order
+    // and a completed dispute can keep funds marked as held at order level.
+    const orders = await Order.find({ 'items.transaction': transaction._id });
+    for (const order of orders) {
+      if (resolution === 'release_to_buyer') {
+        order.items = (order.items || []).filter((item) => String(item.transaction) !== String(transaction._id));
+        (order.shipments || []).forEach((shipment) => {
+          shipment.items = (shipment.items || []).filter((id) => String(id) !== String(transaction._id));
+          if (shipment.items.length === 0) shipment.status = 'cancelled';
+        });
+        order.cancellation = {
+          cancelledBy: 'admin',
+          reason: 'Escrow dispute resolved in favor of buyer',
+          cancelledAt: new Date(),
+          refundAmount: Math.round(((order.cancellation?.refundAmount || 0) + refundAmount) * 100) / 100,
+          currency: transaction.currency || order.currency || 'USD',
+        };
+        if (order.items.length === 0) {
+          order.status = 'refunded';
+          if (order.payment) order.payment.status = 'refunded';
+        }
+      } else {
+        const transactionIds = (order.items || []).map((item) => item.transaction).filter(Boolean);
+        const remaining = await Transaction.countDocuments({ _id: { $in: transactionIds }, status: { $nin: ['completed'] } });
+        if (remaining === 0) {
+          order.status = 'completed';
+          if (order.payment) order.payment.status = 'captured';
+        }
+      }
+      await order.save();
+    }
+
     res.json({
       message: `Escrow dispute resolved: ${resolution}`,
       transaction,

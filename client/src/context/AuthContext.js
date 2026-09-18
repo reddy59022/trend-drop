@@ -139,10 +139,10 @@ export const AuthProvider = ({ children }) => {
   // so we must exchange the SDK-produced token here — never navigate away.
   const exchangeOAuthToken = async (url, payload) => {
     const res = await api.post(url, payload);
-    storeToken(res.data.token);
-    setToken(res.data.token);
-    setUser(res.data.user);
-    return res.data;
+    // OAuth must use the same validated session path as password login.
+    // Persisting a tokenless or malformed provider response could make the
+    // client appear authenticated while every subsequent request was 401.
+    return setAuthenticatedSession(res.data);
   };
 
   // Dynamically load an external OAuth SDK script (works in browser AND

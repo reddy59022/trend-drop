@@ -217,6 +217,44 @@ describe('Admin Transaction Management', () => {
 });
 
 describe('Admin Refund Integrity', () => {
+  test('AD.20 concurrent force refunds settle the transaction exactly once', async () => {
+    const listing = await Listing.create({
+      seller: adminId,
+      title: `Admin refund race ${TEST_RUN_ID}`,
+      description: 'concurrent refund regression',
+      price: 50,
+      category: 'Women',
+      condition: 'Good',
+      quantity: 0,
+      quantitySold: 1,
+      sold: true,
+      available: false,
+    });
+    testListingIds.push(listing._id);
+    await User.findByIdAndUpdate(adminId, { $set: { 'balance.pending': 100 } });
+    const txn = await Transaction.create({
+      listing: listing._id,
+      buyer: userId,
+      seller: adminId,
+      quantity: 1,
+      itemPrice: 50,
+      paymentBreakdown: { subtotal: 50, totalPaid: 57.5, sellerEarnings: 46, platformFee: 4 },
+      payout: { status: 'pending' },
+      status: 'paid',
+    });
+
+    const [first, second] = await Promise.all([
+      request(app).post(`/api/admin/transactions/${txn._id}/refund`).set('Authorization', `Bearer ${adminToken}`),
+      request(app).post(`/api/admin/transactions/${txn._id}/refund`).set('Authorization', `Bearer ${adminToken}`),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 400]);
+
+    const restored = await Listing.findById(listing._id);
+    expect(restored.quantity).toBe(1);
+    expect(restored.quantitySold).toBe(0);
+    expect((await User.findById(adminId)).balance.pending).toBe(54);
+  });
+
   test('AD.19 force refund restores the transaction quantity, not just one unit', async () => {
     const listing = await Listing.create({
       seller: adminId,

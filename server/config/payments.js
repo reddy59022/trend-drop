@@ -455,7 +455,8 @@ const issueRefund = async (paymentIntentId, amount) => {
   const refundParams = { payment_intent: paymentIntentId };
   if (amount) refundParams.amount = Math.round(amount * 100);
   try {
-    const result = await stripe.refunds.create(refundParams);
+    const idempotencyKey = generateIdempotencyKey({ paymentIntentId, action: 'refund', amount: amount ?? null });
+    const result = await stripe.refunds.create(refundParams, { idempotencyKey });
     increment('trenddrop_refunds_total', { source: 'payment_config', status: 'succeeded' });
     return result;
   } catch (error) {

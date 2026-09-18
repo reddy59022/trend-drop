@@ -9,6 +9,7 @@ const Listing = require('../models/Listing');
 const { orderStates, isValidTransition } = require('../config/orderLifecycle');
 const { isValidObjectId } = require('../utils/validators');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
+const { clawbackSellerEarnings } = require('../utils/balances');
 
 // Reuse the listing image pipeline (Cloudinary in prod, deterministic mock in test).
 const { uploadListingImages } = (() => {
@@ -378,7 +379,7 @@ router.put('/:id/receive', auth, async (req, res) => {
     if (!isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'Invalid return ID' });
     }
-    const returnRequest = await Return.findById(req.params.id);
+    let returnRequest = await Return.findById(req.params.id);
     if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
     if (returnRequest.seller.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
@@ -386,6 +387,20 @@ router.put('/:id/receive', auth, async (req, res) => {
     if (returnRequest.status !== 'shipped') {
       return res.status(400).json({ message: 'Return must be shipped before receiving' });
     }
+
+    // Claim the return atomically before contacting the payment provider or
+    // mutating inventory. Two seller clicks/retries must not both issue a
+    // refund and restore the same unit.
+    const claimedReturn = await Return.findOneAndUpdate(
+      { _id: returnRequest._id, seller: req.user._id, status: 'shipped' },
+      { $set: { status: 'received' } },
+      { new: true },
+    );
+    if (!claimedReturn) {
+      return res.status(400).json({ message: 'Return is already being processed or has been settled' });
+    }
+    returnRequest = claimedReturn;
+
     const txn = await Transaction.findById(returnRequest.transaction);
     if (!txn) return res.status(404).json({ message: 'Associated transaction not found' });
 
@@ -424,6 +439,10 @@ router.put('/:id/receive', auth, async (req, res) => {
         // No inventory, payout, or balance mutation has happened yet. Keep
         // the return retryable if the provider rejects the refund.
         console.error('Stripe refund on receive:', stripeErr.message);
+        await Return.updateOne(
+          { _id: returnRequest._id, status: 'received' },
+          { $set: { status: 'shipped' } },
+        );
         return res.status(502).json({ message: 'Refund could not be processed. Please retry.' });
       }
     }
@@ -440,19 +459,24 @@ router.put('/:id/receive', auth, async (req, res) => {
     await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
     await markPayoutRefunded(txn);
 
-    // Claw back seller earnings from available or pending balance
+    // Claw back seller earnings atomically from available, then pending.
+    // This prevents a return settlement from losing or duplicating balance
+    // updates when another payout/refund changes the seller concurrently.
     try {
-      const seller = await User.findById(txn.seller);
-      if (seller && seller.balance) {
-        const available = seller.balance.available || 0;
-        const pending = seller.balance.pending || 0;
-        let remaining = sellerEarnings;
-        if (available >= remaining) { seller.balance.available = available - remaining; remaining = 0; }
-        else { seller.balance.available = 0; remaining = remaining - available; }
-        if (remaining > 0) { seller.balance.pending = Math.max(0, pending - remaining); }
-        seller.balance.totalEarned = Math.max(0, (seller.balance.totalEarned || 0) - sellerEarnings);
-        seller.notifications.unshift({ type: 'sale', listing: txn.listing, transaction: txn._id, message: `Return received and confirmed. ${buyerRefund} ${txn.currency || 'USD'} refunded to buyer.` });
-        await seller.save();
+      const seller = await User.findById(txn.seller).select('_id').lean();
+      if (seller) {
+        await clawbackSellerEarnings(seller._id, sellerEarnings);
+        await User.updateOne(
+          { _id: seller._id },
+          {
+            $push: {
+              notifications: {
+                $each: [{ type: 'sale', listing: txn.listing, transaction: txn._id, message: `Return received and confirmed. ${buyerRefund} ${txn.currency || 'USD'} refunded to buyer.` }],
+                $position: 0,
+              },
+            },
+          },
+        );
       }
     } catch (sellerErr) { console.error('Claw back seller earnings:', sellerErr.message); }
 
@@ -480,6 +504,18 @@ router.put('/:id/receive', auth, async (req, res) => {
 
     res.json(returnRequest);
   } catch (error) {
+    // A claimed return remains retryable if local/provider processing failed
+    // before it reached the terminal refunded state.
+    if (returnRequest?.status === 'received') {
+      try {
+        await Return.updateOne(
+          { _id: returnRequest._id, status: 'received' },
+          { $set: { status: 'shipped' } },
+        );
+      } catch (restoreError) {
+        console.error('Return claim rollback failed:', restoreError.message);
+      }
+    }
     console.error('Receive return error:', error);
     res.status(500).json({ message: 'Failed to receive return' });
   }

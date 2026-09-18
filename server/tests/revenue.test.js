@@ -15,7 +15,8 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
-const { calculatePaymentBreakdown, countryCommissions } = require('../config/payments');
+const payments = require('../config/payments');
+const { calculatePaymentBreakdown, countryCommissions } = payments;
 
 const mkEmail = p => `${p}_rev_${Date.now()}@test.com`;
 const PASS = 'password123';
@@ -244,6 +245,35 @@ describe('Return & Refund Revenue Flow', () => {
     
     if (refund.status !== 200) {
       console.log('Return confirm status:', refund.status, refund.body?.message);
+    }
+  });
+
+  test('RF.2 provider refund failure leaves return retryable and ledger untouched', async () => {
+    const listing = await createListing(sellerId, { price: 100, quantity: 2, title: 'Rev Test Stripe Return Failure' });
+    const txn = await buy(buyerToken, listing._id);
+    const beforeListing = await Listing.findById(listing._id);
+    const beforeSeller = await User.findById(sellerId);
+    const paymentIntentId = authorizedPaymentIntent();
+    await Transaction.findByIdAndUpdate(txn._id, {
+      status: 'return_in_transit',
+      'shipping.actualDelivery': new Date(),
+      'payout.transactionId': paymentIntentId,
+    });
+
+    const refundSpy = jest.spyOn(payments, 'issueRefund').mockRejectedValueOnce(new Error('stripe unavailable'));
+    const releaseSpy = jest.spyOn(payments, 'releaseAuthorization').mockRejectedValueOnce(new Error('stripe unavailable'));
+    try {
+      const response = await request(app)
+        .post(`/api/orders/${txn._id}/confirm-return-received`)
+        .set('Authorization', `Bearer ${sellerToken}`)
+        .send({ condition: 'Good', inspectionNotes: 'Retryable failure' });
+      expect(response.status).toBe(502);
+      expect((await Transaction.findById(txn._id)).status).toBe('return_in_transit');
+      expect((await Listing.findById(listing._id)).quantity).toBe(beforeListing.quantity);
+      expect((await User.findById(sellerId)).balance.pending).toBe(beforeSeller.balance.pending);
+    } finally {
+      refundSpy.mockRestore();
+      releaseSpy.mockRestore();
     }
   });
 });

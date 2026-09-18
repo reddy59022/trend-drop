@@ -56,6 +56,8 @@ describe('Escrow Service', () => {
       seller: sellerId,
       available: true,
       sold: false,
+      quantity: 0,
+      quantitySold: 1,
       status: 'active',
     });
     listingId = listing._id;
@@ -70,6 +72,7 @@ describe('Escrow Service', () => {
         subtotal: 600,
         totalPaid: 600,
         sellerEarnings: 540,
+        paymentIntentId: `pi_escrow_${Date.now()}`,
       },
       status: 'paid',
       shipping: {
@@ -300,13 +303,62 @@ describe('Escrow Service', () => {
       expect(res.statusCode).toBe(403);
     });
 
-    it('ESCROW.15 should resolve dispute to buyer', async () => {
+    it('ESCROW.14b rejects an unknown resolution without mutating the dispute', async () => {
+      await Transaction.findByIdAndUpdate(transactionId, {
+        escrow: {
+          status: 'disputed',
+          amount: 600,
+          releaseConditions: { buyerConfirmed: false, sellerConfirmed: false, inspectionPeriodDays: 7 },
+        },
+      });
+      const res = await request(app)
+        .post('/api/escrow/resolve-dispute')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ transactionId, resolution: 'pay_someone_else' });
+      expect(res.statusCode).toBe(400);
+      expect((await Transaction.findById(transactionId)).escrow.status).toBe('disputed');
+    });
+
+    it('ESCROW.14c leaves local state untouched when the provider reference is missing', async () => {
+      await Transaction.findByIdAndUpdate(transactionId, {
+        escrow: {
+          status: 'disputed',
+          amount: 600,
+          releaseConditions: { buyerConfirmed: false, sellerConfirmed: false, inspectionPeriodDays: 7 },
+        },
+        'paymentBreakdown.paymentIntentId': '',
+        'payout.transactionId': '',
+      });
+      const res = await request(app)
+        .post('/api/escrow/resolve-dispute')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ transactionId, resolution: 'release_to_buyer' });
+      expect(res.statusCode).toBe(502);
+      const fresh = await Transaction.findById(transactionId);
+      expect(fresh.escrow.status).toBe('disputed');
+      expect((await Listing.findById(listingId)).quantity).toBe(0);
+    });
+
+    it('ESCROW.15 refunds the provider and unwinds buyer-side ledger state', async () => {
       await Transaction.findByIdAndUpdate(transactionId, {
         escrow: { 
           status: 'disputed', 
           amount: 600,
           releaseConditions: { buyerConfirmed: false, sellerConfirmed: false, inspectionPeriodDays: 7 },
         },
+      });
+
+      const paymentIntentId = `pi_escrow_buyer_${transactionId}`;
+      global.__mockPaymentIntents = global.__mockPaymentIntents || {};
+      global.__mockPaymentIntents[paymentIntentId] = {
+        id: paymentIntentId,
+        status: 'succeeded',
+        amount: 60000,
+        metadata: {},
+      };
+      await Transaction.findByIdAndUpdate(transactionId, {
+        'paymentBreakdown.paymentIntentId': paymentIntentId,
+        'payout.transactionId': paymentIntentId,
       });
 
       const res = await request(app)
@@ -316,15 +368,24 @@ describe('Escrow Service', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.transaction.escrow.status).toBe('resolved');
+      expect(res.body.transaction.status).toBe('refunded');
+      expect(global.__mockPaymentIntents[paymentIntentId].status).toBe('refunded');
+      expect((await Listing.findById(listingId)).quantity).toBe(1);
+      expect((await Transaction.findById(transactionId)).payout.status).toBe('refunded');
     });
 
-    it('ESCROW.16 should resolve dispute to seller', async () => {
+    it('ESCROW.16 releases seller escrow exactly once and clears pending funds', async () => {
       await Transaction.findByIdAndUpdate(transactionId, {
         escrow: { 
           status: 'disputed', 
           amount: 600,
           releaseConditions: { buyerConfirmed: false, sellerConfirmed: false, inspectionPeriodDays: 7 },
         },
+      });
+
+      await User.findByIdAndUpdate(sellerId, {
+        'balance.pending': 540,
+        'balance.available': 1000,
       });
 
       const res = await request(app)
@@ -334,6 +395,11 @@ describe('Escrow Service', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.transaction.escrow.status).toBe('resolved');
+      const sellerAfter = await User.findById(sellerId);
+      expect(sellerAfter.balance.pending).toBe(0);
+      expect(sellerAfter.balance.available).toBe(1486);
+      expect(sellerAfter.balance.reserve).toBe(54);
+      expect((await Transaction.findById(transactionId)).status).toBe('completed');
     });
   });
 

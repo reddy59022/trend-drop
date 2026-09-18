@@ -94,6 +94,49 @@ test('Phase-4 seller save failure after inventory decrement fully restores listi
     ]);
   });
 
+  it('inventory claim failure cannot create a paid transaction or credit the seller', async () => {
+    const seller = await User.create({
+      name: 'Atomic Claim Seller', email: mkEmail('rb_claim_seller'), password: 'password123',
+      country: 'US', authProvider: 'email', emailVerified: true,
+      balance: { available: 0, pending: 0, currency: 'USD' },
+    });
+    const listing = await Listing.create({
+      seller: seller._id, title: 'Atomic Claim Item', description: 'd', price: 50,
+      category: 'Men', condition: 'New with tags', available: true, sold: false,
+      quantity: 1, shipsFrom: 'US', weight: 1,
+    });
+    const pi = mockPaymentIntent('succeeded');
+    // Simulate the atomic stock claim losing a race after the payment was
+    // captured. The endpoint must unwind the staged transaction and payment;
+    // it must never return success for an item it did not reserve.
+    const claimSpy = jest.spyOn(Listing, 'findOneAndUpdate').mockResolvedValueOnce(null);
+    let res;
+    try {
+      res = await request(app)
+        .post('/api/payments/confirm-batch')
+        .set('Authorization', `Bearer ${buyerToken}`)
+        .send({
+          paymentIntentId: pi.id,
+          items: [{ listingId: listing._id, quantity: 1 }],
+          shippingAddress: { fullName: 'Bob', street: '1', city: 'C', state: 'CA', postalCode: '1', country: 'US' },
+        });
+    } finally {
+      claimSpy.mockRestore();
+    }
+
+    expect([400, 409, 500]).toContain(res.status);
+    expect(await Transaction.countDocuments({ 'paymentBreakdown.paymentIntentId': pi.id })).toBe(0);
+    expect(await Payout.countDocuments({ paymentIntentId: pi.id })).toBe(0);
+    expect((await Listing.findById(listing._id)).quantity).toBe(1);
+    expect((await User.findById(seller._id)).balance.pending || 0).toBe(0);
+    expect(['cancelled', 'canceled', 'refunded']).toContain(global.__mockPaymentIntents[pi.id].status);
+
+    await Promise.all([
+      User.deleteOne({ _id: seller._id }),
+      Listing.deleteOne({ _id: listing._id }),
+    ]);
+  });
+
   it('successful confirm-batch with legacy-location seller works and creates order', async () => {
     // The OTHER half of the live bug: with the pre('validate') sanitizer, a
     // legacy seller (raw object location) must survive sellerDoc.save() and

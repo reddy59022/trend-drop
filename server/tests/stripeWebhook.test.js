@@ -102,6 +102,19 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(res.status).toBe(200);
       expect(res.body.received).toBe(true);
     });
+
+    it('WH.9 reconciles transactions that store the intent in the payment breakdown', async () => {
+      tx.paymentBreakdown.paymentIntentId = 'pi_breakdown_only';
+      await tx.save();
+
+      const res = await postWebhook({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_breakdown_only', metadata: {} } },
+      });
+      expect(res.status).toBe(200);
+      const updated = await Transaction.findById(tx._id);
+      expect(updated.stripePaymentIntentId).toBe('pi_breakdown_only');
+    });
   });
 
   describe('charge.dispute.created idempotency', () => {
@@ -220,6 +233,45 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       const sellerAfter = await User.findById(seller._id);
       expect(sellerAfter.balance.available).toBe(35);
       expect(sellerAfter.balance.pending).toBe(100);
+    });
+
+    it('WH.10 provider refunds reconcile transactions using the canonical breakdown intent id', async () => {
+      tx.paymentBreakdown.paymentIntentId = 'pi_breakdown_refund';
+      tx.quantity = 2;
+      await tx.save();
+      await Listing.updateOne({ _id: listing._id }, {
+        $set: { quantity: 0, quantitySold: 2, sold: true, available: false },
+      });
+
+      const res = await postWebhook({
+        type: 'charge.refunded',
+        data: { object: { payment_intent: 'pi_breakdown_refund' } },
+      });
+      expect(res.status).toBe(200);
+      expect((await Transaction.findById(tx._id)).status).toBe('refunded');
+      expect((await Listing.findById(listing._id)).quantity).toBe(2);
+    });
+
+    it('WH.11 concurrent provider refund deliveries reverse the ledger exactly once', async () => {
+      tx.stripePaymentIntentId = 'pi_refund_concurrent';
+      tx.quantity = 2;
+      await tx.save();
+      await User.updateOne({ _id: seller._id }, { $set: { 'balance.pending': 100, 'balance.available': 0 } });
+      await Listing.updateOne({ _id: listing._id }, {
+        $set: { quantity: 0, quantitySold: 2, sold: true, available: false },
+      });
+
+      const responses = await Promise.all([
+        postWebhook({ type: 'charge.refunded', data: { object: { payment_intent: 'pi_refund_concurrent' } } }),
+        postWebhook({ type: 'charge.refunded', data: { object: { payment_intent: 'pi_refund_concurrent' } } }),
+      ]);
+      responses.forEach((res) => expect(res.status).toBe(200));
+
+      const sellerAfter = await User.findById(seller._id);
+      const listingAfter = await Listing.findById(listing._id);
+      expect(sellerAfter.balance.pending).toBe(55);
+      expect(listingAfter.quantity).toBe(2);
+      expect(listingAfter.quantitySold).toBe(0);
     });
 
     it('WH.5 "lost" re-delivery debits the seller exactly once', async () => {

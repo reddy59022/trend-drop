@@ -217,6 +217,40 @@ describe('Returns & Refund Management', () => {
     expect(res.body.message).toMatch(/invalid return id/i);
   });
 
+  test('RET.12 - concurrent receipt confirmations settle the refund exactly once', async () => {
+    const created = await request(app)
+      .post('/api/returns')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ transactionId, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
+    await request(app)
+      .put(`/api/returns/${created.body._id}/approve`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    await request(app)
+      .put(`/api/returns/${created.body._id}/ship`)
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ trackingNumber: 'RET-RACE-1' });
+
+    const listingBeforeReceive = await Listing.findById(created.body.listing);
+    const quantityBeforeReceive = listingBeforeReceive.quantity;
+    const quantitySoldBeforeReceive = listingBeforeReceive.quantitySold || 0;
+    const [first, second] = await Promise.all([
+      request(app).put(`/api/returns/${created.body._id}/receive`)
+        .set('Authorization', `Bearer ${sellerToken}`),
+      request(app).put(`/api/returns/${created.body._id}/receive`)
+        .set('Authorization', `Bearer ${sellerToken}`),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual([200, 400]);
+    const settled = await request(app)
+      .get(`/api/returns/${created.body._id}`)
+      .set('Authorization', `Bearer ${buyerToken}`);
+    expect(settled.status).toBe(200);
+    expect(settled.body.status).toBe('refunded');
+    const listing = await Listing.findById(settled.body.listing._id || settled.body.listing);
+    expect(listing.quantity).toBe(quantityBeforeReceive + 1);
+    expect(listing.quantitySold || 0).toBe(quantitySoldBeforeReceive - 1);
+  });
+
   test('RET.11 - Seller can deny a return request', async () => {
     const created = await request(app)
       .post('/api/returns')

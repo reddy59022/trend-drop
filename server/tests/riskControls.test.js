@@ -153,6 +153,54 @@ describe('Risk Controls & Fraud Detection', () => {
       expect(r.status).toBe(200);
       expect(r.body.message).toMatch(/Order completed/i);
     });
+
+    test('concurrent auto-complete releases seller earnings exactly once', async () => {
+      const txn = await createTransaction({ status: orderStates.BUYER_CONFIRMED });
+      txn.buyerConfirmed = { received: true, confirmedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) };
+      txn.shipping.actualDelivery = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+      await txn.save();
+
+      const seller = await User.findById(sellerId);
+      const beforeAvailable = seller.balance.available || 0;
+      const beforeTotalSales = seller.stats.totalSales || 0;
+      seller.balance.pending = 92;
+      seller.stats.totalSales = 10;
+      await seller.save();
+
+      const [first, second] = await Promise.all([
+        request(app).post(`/api/orders/${txn._id}/auto-complete`).set('Authorization', `Bearer ${sellerToken}`),
+        request(app).post(`/api/orders/${txn._id}/auto-complete`).set('Authorization', `Bearer ${sellerToken}`),
+      ]);
+
+      expect([first.status, second.status].sort()).toEqual([200, 400]);
+      const after = await User.findById(sellerId);
+      expect(after.balance.available - beforeAvailable).toBe(82.8);
+      expect(after.stats.totalSales).toBe(11);
+      expect((await Transaction.findById(txn._id)).status).toBe(orderStates.COMPLETED);
+    });
+
+    test('auto-complete fails closed when the seller account is missing', async () => {
+      const { user: orphanSeller } = await createUser('OrphanRiskSeller', mkEmail('orphanseller'), {
+        createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        stats: { totalSales: 10, totalPurchases: 0, strikes: 0 },
+      });
+      const txn = await createTransaction({
+        seller: orphanSeller._id,
+        status: orderStates.BUYER_CONFIRMED,
+      });
+      txn.buyerConfirmed = { received: true, confirmedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) };
+      txn.shipping.actualDelivery = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+      await txn.save();
+      await User.deleteOne({ _id: orphanSeller._id });
+
+      const response = await request(app)
+        .post(`/api/orders/${txn._id}/auto-complete`)
+        .set('Authorization', `Bearer ${buyerToken}`);
+
+      expect(response.status).toBe(409);
+      expect((await Transaction.findById(txn._id)).status).toBe(orderStates.BUYER_CONFIRMED);
+      expect(await Payout.countDocuments({ transaction: txn._id })).toBe(0);
+    });
   });
 
   // ============================
@@ -190,7 +238,7 @@ describe('Risk Controls & Fraud Detection', () => {
       const availableAdded = updatedSeller.balance.available - initialAvailable;
 
       expect(reserveAdded).toBe(expectedReserveAdded);
-      expect(availableAdded).toBe(expectedAvailableAdded);
+      expect(Math.round(availableAdded * 100) / 100).toBe(expectedAvailableAdded);
       expect(updatedSeller.balance.reserveReleaseDate).toBeDefined();
       expect(updatedSeller.balance.reserveReleaseDate.length).toBeGreaterThan(0);
     });

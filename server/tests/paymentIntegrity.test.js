@@ -184,6 +184,39 @@ describe('TDD R37 — legacy batch authorization rejects invalid quantities', ()
   });
 });
 
+describe('ZD22 — single-item confirm compensates failures after capture', () => {
+  test('seller-credit failure refunds payment and restores transaction, inventory, and boost ledger', async () => {
+    const seller = await makeUser('PI single seller', `pi_single_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI single buyer', `pi_single_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100, {
+      quantity: 1,
+      boost: { active: true, tier: 'standard', feeLedger: { owed: 0, collected: 0, reversed: 0 } },
+    });
+    const pi = mockIntent(buyer.user._id, [listing._id.toString()], 'succeeded', 20000);
+
+    const updateSpy = jest.spyOn(User, 'updateOne')
+      .mockRejectedValueOnce(new Error('seller credit failure after capture'));
+    let res;
+    try {
+      res = await request(app).post('/api/payments/confirm')
+        .set('Authorization', `Bearer ${buyer.token}`)
+        .send({ paymentIntentId: pi, listingId: listing._id.toString(), shippingAddress: { ...US } });
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    expect(res.status).toBe(500);
+    expect(await Transaction.countDocuments({ 'paymentBreakdown.paymentIntentId': pi })).toBe(0);
+    const after = await Listing.findById(listing._id);
+    expect(after.quantity).toBe(1);
+    expect(after.quantitySold || 0).toBe(0);
+    expect(after.sold).toBe(false);
+    expect(after.available).toBe(true);
+    expect(after.boost?.feeLedger?.owed || 0).toBe(0);
+    expect(global.__mockPaymentIntents[pi].status).toBe('refunded');
+  });
+});
+
 describe('ZD23 — confirm-batch rollback restores the FULL purchased quantity', () => {
   test('a failed batch with qty=3 puts every unit back', async () => {
     const seller = await makeUser('PI1', `pi1_${Date.now()}@test.com`);

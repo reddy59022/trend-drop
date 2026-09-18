@@ -811,6 +811,24 @@ router.post('/confirm-batch', auth, async (req, res) => {
         },
         { new: true }
       );
+      // A successful capture without an atomic inventory claim is not a sale.
+      // Throw immediately so the common rollback releases/refunds the payment
+      // and removes the staged transaction/payout instead of crediting a seller
+      // for stock this request did not reserve.
+      if (!updated) {
+        // The boost ledger was reserved before the stock claim. Undo that
+        // reservation immediately when the claim loses a race; otherwise a
+        // failed sale leaves platform fees owed forever.
+        if (boostFee > 0) {
+          await Listing.findOneAndUpdate(
+            { _id: listing._id, 'boost.feeLedger.owed': { $gte: boostFee } },
+            { $inc: { 'boost.feeLedger.owed': -boostFee, 'boost.feeLedger.reversed': boostFee } },
+          );
+        }
+        const inventoryError = new Error('Item sold out while completing checkout');
+        inventoryError.code = 'INVENTORY_CLAIM_FAILED';
+        throw inventoryError;
+      }
       // Rollback metadata: restore the EXACT quantity taken and revert any
       // boost-fee ledger entry written for this item.
       inventoryChanges.push({ listingId: listing._id, updated, qty: plan.qty, boostFee });
@@ -1107,6 +1125,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
 router.post('/confirm', auth, async (req, res) => {
   let createdTransaction = null;
   let captured = false;
+  let inventoryClaimed = false;
+  let boostFeeRecorded = false;
+  let sellerCredited = false;
+  let boostFee = 0;
 
   try {
     const { paymentIntentId, listingId, shippingAddress } = req.body;
@@ -1208,10 +1230,11 @@ router.post('/confirm', auth, async (req, res) => {
     }, carrierCode);
 
     // Boost fee: flat % of sale price, charged only upon successful sale
-    const boostFee = getBoostFee(listing, listing.price);
+    boostFee = getBoostFee(listing, listing.price);
 
     // Item-level boost fee ledger (this listing only)
     await recordBoostFeeOwed(listing._id, boostFee, 1);
+    boostFeeRecorded = boostFee > 0;
 
     createdTransaction = await Transaction.create({
       listing: listingId,
@@ -1275,11 +1298,19 @@ router.post('/confirm', auth, async (req, res) => {
 
     if (!inventoryUpdate) {
       await issueRefund(paymentIntentId);
+      if (boostFee > 0) {
+        await Listing.findOneAndUpdate(
+          { _id: listingId, 'boost.feeLedger.owed': { $gte: boostFee } },
+          { $inc: { 'boost.feeLedger.owed': -boostFee, 'boost.feeLedger.reversed': boostFee } },
+        );
+        boostFeeRecorded = false;
+      }
       createdTransaction.status = 'refunded';
       createdTransaction.payout.status = 'refunded';
       await createdTransaction.save();
       return res.status(400).json({ message: 'Item sold out between authorization and capture. Full refund issued.' });
     }
+    inventoryClaimed = true;
 
     if (seller) {
       // ATOMIC credit — concurrent purchases of the same seller's items must
@@ -1301,6 +1332,7 @@ router.post('/confirm', auth, async (req, res) => {
           },
         }
       );
+      sellerCredited = true;
     }
 
     try {
@@ -1345,7 +1377,35 @@ router.post('/confirm', auth, async (req, res) => {
     if (captured && req.body.paymentIntentId) {
       try { await issueRefund(req.body.paymentIntentId); } catch (e) {}
     }
-    if (createdTransaction && !captured) {
+    // Compensate every post-capture failure, not just pre-capture failures.
+    // Without this, a seller-credit/notification error after capture leaves a
+    // refunded buyer with a sold listing and a live transaction, while a boost
+    // fee remains owed for a sale that never completed.
+    if (sellerCredited && createdTransaction?.seller) {
+      try {
+        await User.updateOne(
+          { _id: createdTransaction.seller },
+          { $inc: { 'balance.pending': -(createdTransaction.paymentBreakdown?.sellerEarnings || 0) } },
+        );
+      } catch (e) { console.error('Seller credit rollback failed:', e.message); }
+    }
+    if (inventoryClaimed && req.body.listingId) {
+      try {
+        await Listing.findOneAndUpdate(
+          { _id: req.body.listingId },
+          { $inc: { quantity: 1, quantitySold: -1 }, $set: { sold: false, available: true } },
+        );
+      } catch (e) { console.error('Inventory rollback failed:', e.message); }
+    }
+    if (boostFeeRecorded && req.body.listingId) {
+      try {
+        await Listing.findOneAndUpdate(
+          { _id: req.body.listingId, 'boost.feeLedger.owed': { $gte: boostFee } },
+          { $inc: { 'boost.feeLedger.owed': -boostFee } },
+        );
+      } catch (e) { console.error('Boost ledger rollback failed:', e.message); }
+    }
+    if (createdTransaction) {
       try { await Transaction.findByIdAndDelete(createdTransaction._id); } catch (e) {}
     }
 
