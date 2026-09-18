@@ -20,6 +20,14 @@ test.describe('Auth flows', () => {
       const confirm = page.locator('input[placeholder*="onfirm"], input[placeholder*="epeat"]').first();
       if (await confirm.count()) await confirm.fill('NewUserPass123!');
     }
+    // The registration form requires accepting the current legal documents
+    // (terms, privacy) and confirming the minimum age before submit works.
+    const consentBoxes = page.locator('input[type="checkbox"]');
+    await expect(consentBoxes).toHaveCount(3, { timeout: 15_000 });
+    for (let i = 0; i < 3; i++) await consentBoxes.nth(i).check();
+    // Wait until the legal versions loaded ('version loading' placeholders gone)
+    // so the submit guard does not bounce with a toast error.
+    await expect(page.getByText(/version loading/i)).toHaveCount(0, { timeout: 15_000 });
     await page.getByRole('button', { name: /sign up|register|create account/i }).first().click();
     // Real flow: pending user → verification email screen
     await expect(page.getByText(/verify|verification|check your email/i).first()).toBeVisible({ timeout: 15_000 });
