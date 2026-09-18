@@ -113,9 +113,8 @@ jobs:
           # 2,065 tests across 151 files (the shard totals are 565 + 508 +
           # 557 + 435). A missing shard or accidental Jest filter must fail
           # CI rather than quietly reporting a partial green suite.
-          read -r tests_passed tests_total suites_passed suites_total <<EOF_COUNTS
-$(awk '/^Tests:/{gsub(",", "", $2); gsub(",", "", $4); passed += $2; total += $4} /^Test Suites:/{gsub(",", "", $3); gsub(",", "", $5); suites += $3; suites_all += $5} END{printf "%d %d %d %d\n", passed, total, suites, suites_all}' /tmp/jest.log)
-EOF_COUNTS
+          counts=$(awk '/^Tests:/{gsub(",", "", $2); gsub(",", "", $4); passed += $2; total += $4} /^Test Suites:/{gsub(",", "", $3); gsub(",", "", $5); suites += $3; suites_all += $5} END{printf "%d %d %d %d", passed, total, suites, suites_all}' /tmp/jest.log)
+          read -r tests_passed tests_total suites_passed suites_total <<< "$counts"
           echo "Server Jest aggregate: $tests_passed passed, $tests_total total across 4 shards ($suites_passed/$suites_total suites)"
           if [ "$tests_total" -lt 2000 ]; then
             echo "::error::Server Jest ran only $tests_total tests; expected at least 2000 across all shards"
