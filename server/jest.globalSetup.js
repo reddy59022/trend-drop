@@ -33,6 +33,14 @@ module.exports = async () => {
       // Keep the on-disk footprint modest and avoid oplog/journal overhead
       // in CI. (--nojournal was removed in MongoDB 5+, so we skip it.)
       storageEngine: 'wiredTiger',
+      // Cap WiredTiger's cache. Without this, mongod sizes its cache from
+      // TOTAL system RAM (default ~50%: 3.5GB on 7GB CI runners), and the
+      // combined footprint (mongod + node/jest) drives the GitHub Actions
+      // runner into memory pressure where its oom daemon terminates the
+      // whole job — Jest dies with SIGTERM ("Process completed with exit
+      // code 143"), mid-suite, at a variable time. 256MB is far more than
+      // the working set of these test databases needs.
+      args: ['--wiredTigerCacheSizeGB', '0.25'],
     },
   });
   const uri = mongod.getUri('trend-drop-test');

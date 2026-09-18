@@ -86,6 +86,13 @@ jobs:
       - name: Server tests (jest, full suite)
         id: jest
         working-directory: server
+        env:
+          # Bound Jest's V8 heap (default would be ~3.5GB on the 7GB runner).
+          # Together with the mongod WiredTiger cache cap set in
+          # jest.globalSetup.js this keeps the whole job well below the memory
+          # pressure threshold where the runner's oom daemon kills the job with
+          # SIGTERM (exit code 143) mid-suite.
+          NODE_OPTIONS: "--max-old-space-size=2048"
         run: |
           set -o pipefail
           npm run test:ci 2>&1 | tee /tmp/jest.log
@@ -148,6 +155,22 @@ jobs:
           name: jest-log
           path: /tmp/jest.log
           retention-days: 7
+
+      - name: OOM diagnostics (on failure)
+        # Exit code 143 (SIGTERM) with every later step skipped means the
+        # runner itself was torn down — almost always the oom daemon acting on
+        # memory pressure. Surface the kernel evidence directly in the job log
+        # instead of leaving a bare 143 to guess at.
+        if: failure()
+        run: |
+          echo "## Memory diagnostics" 
+          echo "--- free ---"; free -h || true
+          echo "--- oom / kill events (journalctl) ---"
+          sudo journalctl -k --no-pager 2>/dev/null | grep -iE "oom|killed process|out of memory" | tail -50 || true
+          echo "--- oom / kill events (dmesg) ---"
+          sudo dmesg 2>/dev/null | grep -iE "oom|killed process|out of memory" | tail -50 || true
+          echo "--- systemd-oomd ---"
+          systemctl status systemd-oomd --no-pager 2>/dev/null | tail -20 || true
 
   android-release:
     name: Android release APK (TD-2.1)
