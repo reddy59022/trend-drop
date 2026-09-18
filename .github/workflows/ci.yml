@@ -12,9 +12,14 @@ on:
   pull_request:
     branches: [main]
 
+# Do not terminate an in-flight verification run when another push/PR event
+# arrives for the same ref. GitHub sends SIGTERM to the cancelled job, which
+# surfaces as exit code 143 from the Jest process and looks like a test crash.
+# Keeping runs queued makes the result reproducible and preserves the failure
+# logs/artifacts needed for diagnosis.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CI: "true"
@@ -26,7 +31,12 @@ jobs:
   test:
     name: Jest + build + Playwright E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The full server suite uses an in-memory MongoDB and intentionally runs
+    # serially for database isolation. GitHub-hosted runners are materially
+    # slower than the local workstation, so leave enough headroom for npm,
+    # Jest, the client build, and Playwright without the runner killing Jest
+    # with SIGTERM (143).
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
