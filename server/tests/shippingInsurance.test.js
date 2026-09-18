@@ -165,15 +165,16 @@ describe('Seller Shipping Insurance', () => {
       });
       const before = (await User.findById(sellerId)).balance.available || 0;
 
-      const first = await request(app)
-        .post(`/api/shipping-insurance/${insurance._id}/refund`)
-        .set('Authorization', `Bearer ${sellerToken}`);
-      const second = await request(app)
-        .post(`/api/shipping-insurance/${insurance._id}/refund`)
-        .set('Authorization', `Bearer ${sellerToken}`);
+      const [first, second] = await Promise.all([
+        request(app)
+          .post(`/api/shipping-insurance/${insurance._id}/refund`)
+          .set('Authorization', `Bearer ${sellerToken}`),
+        request(app)
+          .post(`/api/shipping-insurance/${insurance._id}/refund`)
+          .set('Authorization', `Bearer ${sellerToken}`),
+      ]);
 
-      expect(first.statusCode).toBe(200);
-      expect(second.statusCode).toBe(400);
+      expect([first.statusCode, second.statusCode].sort()).toEqual([200, 400]);
       const seller = await User.findById(sellerId);
       expect(seller.balance.available).toBe(before + 100);
     });

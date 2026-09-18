@@ -108,36 +108,45 @@ const Cart = () => {
       return;
     }
 
-    // Create the intent NOW so the Stripe button displays the SERVER amount.
-    // This guarantees displayed = charged (promo, bundle, combined-weight
-    // shipping all included) with zero drift from client-side estimates.
-    try {
-      const createRes = await api.post('/payments/create-intent', {
-        items: buildItemsPayload(),
-        shippingAddress: shippingInfo,
-        buyerCountry: shippingInfo.country || 'US',
-        promoCode: appliedPromo ? appliedPromo.code : null,
-      });
-      setClientSecret(createRes.data.clientSecret);
-      setPaymentIntentId(createRes.data.paymentIntentId);
-      setServerTotalAmount(createRes.data.amount != null ? createRes.data.amount : null);
-      setShowForm(true);
-    } catch (error) {
-      console.error('Create intent error:', error);
-      toast.error(error.response?.data?.message || 'Failed to initialize payment');
-    } finally {
-      setPaymentLoading(false);
-    }
+    // Show the payment form only after availability is checked. The intent is
+    // created when the buyer submits the card, after shipping details have
+    // been entered. Creating it here used the default US address, then a
+    // buyer changing country authorized the wrong shipping total and caused
+    // confirm-batch to reject the payment (or risked amount drift).
+    setClientSecret(null);
+    setPaymentIntentId(null);
+    setServerTotalAmount(null);
+    setShowForm(true);
+    setPaymentLoading(false);
   };
 
   const handleSuccess = async (paymentMethod) => {
     try {
-      if (!clientSecret || !paymentIntentId) throw new Error('Payment not initialized');
       const stripe = await stripePromise;
       if (!stripe) throw new Error('Stripe not loaded');
 
+      // Create the authorization from the final shipping address. Shipping
+      // country changes the server-computed total, so this must happen after
+      // the buyer has completed the form rather than on the initial checkout
+      // click.
+      let activeClientSecret = clientSecret;
+      let activePaymentIntentId = paymentIntentId;
+      if (!activeClientSecret || !activePaymentIntentId) {
+        const createRes = await api.post('/payments/create-intent', {
+          items: buildItemsPayload(),
+          shippingAddress: shippingInfo,
+          buyerCountry: shippingInfo.country || 'US',
+          promoCode: appliedPromo ? appliedPromo.code : null,
+        });
+        activeClientSecret = createRes.data.clientSecret;
+        activePaymentIntentId = createRes.data.paymentIntentId;
+        setClientSecret(activeClientSecret);
+        setPaymentIntentId(activePaymentIntentId);
+        setServerTotalAmount(createRes.data.amount != null ? createRes.data.amount : null);
+      }
+
       // STEP 2: Confirm payment with Stripe (3DS2/SCA-aware)
-      let { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+      let { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(activeClientSecret, {
         payment_method: paymentMethod.id,
       });
 
@@ -146,7 +155,7 @@ const Cart = () => {
       // instead of failing every SCA card on iOS/Android/web.
       let attempts = 0;
       while (!confirmError && paymentIntent?.status === 'requires_action' && attempts < 5) {
-        const { error: actionError, paymentIntent: updatedPi } = await stripe.handleCardAction(clientSecret);
+        const { error: actionError, paymentIntent: updatedPi } = await stripe.handleCardAction(activeClientSecret);
         confirmError = actionError || null;
         if (updatedPi) paymentIntent = updatedPi;
         attempts += 1;
@@ -168,7 +177,7 @@ const Cart = () => {
       // STEP 3: Confirm batch with all items (same payload shape as intent)
       try {
         const confirmRes = await api.post('/payments/confirm-batch', {
-          paymentIntentId,
+          paymentIntentId: activePaymentIntentId,
           items: buildItemsPayload(),
           shippingAddress: shippingInfo,
         });
@@ -200,16 +209,18 @@ const Cart = () => {
         // so no money stays reserved, then surface the failure.
         console.error('Order placement failed after payment authorization:', orderError);
         try {
-          await api.post('/payments/cancel-payment', { paymentIntentId });
+          await api.post('/payments/cancel-payment', { paymentIntentId: activePaymentIntentId });
         } catch (e) {
           // Never mask the original failure with a release error.
           console.error('Failed to release the payment authorization:', e);
         }
         throw orderError;
       }
+      return true;
     } catch (error) {
       console.error('Checkout error:', error);
       toast.error(error.response?.data?.message || 'Failed to place order');
+      return false;
     }
   };
 

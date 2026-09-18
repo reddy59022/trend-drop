@@ -15,12 +15,13 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
+const { autoProcessOrders } = require('../config/cron');
 
 const SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 const RUN = `pc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 const mkEmail = (p) => `${p}_${RUN}@test.com`;
 
-let seller, buyer, buyerToken;
+let seller, buyer, buyerToken, sellerToken;
 const testUserIds = [];
 const testListingIds = [];
 
@@ -58,7 +59,7 @@ async function mkPaidTxnWithoutPayout() {
     currency: 'USD',
     paymentBreakdown: { subtotal: 100, shippingCost: 5, buyerProtectionFee: 5, buyerProtectionPercent: 5, tax: 0, totalPaid: 110, platformFee: 8, platformFeePercent: 8, shippingPayout: 5, sellerEarnings: 92 },
     shippingAddress: { fullName: 'PC Buyer', street1: '1 St', city: 'C', state: 'S', postalCode: '00000', country: 'US' },
-    status: 'shipped',
+    status: 'delivered',
     payout: { status: 'pending', transactionId: `pi_pc_${Date.now()}` },
   });
 }
@@ -70,6 +71,7 @@ beforeAll(async () => {
   seller = await mkUser('PC Seller', 'seller');
   buyer = await mkUser('PC Buyer', 'buyer');
   buyerToken = jwt.sign({ id: buyer._id }, SECRET, { expiresIn: '30d' });
+  sellerToken = jwt.sign({ id: seller._id }, SECRET, { expiresIn: '30d' });
 });
 
 afterAll(async () => {
@@ -80,6 +82,58 @@ afterAll(async () => {
 });
 
 describe('PC · Legacy confirm-received payout uses the 8% platform commission', () => {
+  test('PC.0 cannot confirm receipt before trusted delivery', async () => {
+    const txn = await mkPaidTxnWithoutPayout();
+    txn.status = 'shipped';
+    await txn.save();
+    const res = await request(app)
+      .post('/api/shipping/confirm-received')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ transactionId: txn._id });
+    expect(res.status).toBe(400);
+    expect(await Payout.countDocuments({ transaction: txn._id })).toBe(0);
+  });
+
+  test('PC.0a cron auto-complete preserves the 8% platform rate when legacy fields are absent', async () => {
+    const txn = await mkPaidTxnWithoutPayout();
+    txn.status = 'buyer_confirmed';
+    txn.buyerConfirmed = { received: true, confirmedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) };
+    txn.paymentBreakdown.platformFeePercent = undefined;
+    txn.paymentBreakdown.platformFee = undefined;
+    await txn.save();
+    await User.updateOne({ _id: seller._id }, {
+      $set: { createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'stats.totalSales': 5, 'balance.pending': 92 },
+    });
+
+    await autoProcessOrders();
+    const payout = await Payout.findOne({ transaction: txn._id });
+    expect(payout).toBeTruthy();
+    expect(payout.commissionRate).toBe(0.08);
+    expect(payout.commissionAmount).toBe(8);
+  });
+
+  test('PC.0b order auto-complete preserves the 8% platform rate when legacy fields are absent', async () => {
+    const txn = await mkPaidTxnWithoutPayout();
+    txn.status = 'buyer_confirmed';
+    txn.buyerConfirmed = { received: true, confirmedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) };
+    txn.shipping.actualDelivery = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+    txn.paymentBreakdown.platformFeePercent = undefined;
+    txn.paymentBreakdown.platformFee = undefined;
+    await txn.save();
+    await User.updateOne({ _id: seller._id }, {
+      $set: { createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'stats.totalSales': 5, 'balance.pending': 92 },
+    });
+
+    const res = await request(app)
+      .post(`/api/orders/${txn._id}/auto-complete`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    expect(res.status).toBe(200);
+    const payout = await Payout.findOne({ transaction: txn._id });
+    expect(payout).toBeTruthy();
+    expect(payout.commissionRate).toBe(0.08);
+    expect(payout.commissionAmount).toBe(8);
+  });
+
   test('PC.1 auto-created payout matches the 8% platform rate (not 10%)', async () => {
     const txn = await mkPaidTxnWithoutPayout();
     const res = await request(app)

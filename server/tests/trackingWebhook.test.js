@@ -152,6 +152,60 @@ describe('TW · Tracking webhook advances a shipment to delivered', () => {
     expect(res.status).toBe(404);
   });
 
+  test('TW.6a production fails closed when the tracking secret is missing', async () => {
+    const txn = await mkShippedTxn();
+    const previousEnv = process.env.NODE_ENV;
+    const previousSecret = process.env.TRACKING_WEBHOOK_SECRET;
+    process.env.NODE_ENV = 'production';
+    delete process.env.TRACKING_WEBHOOK_SECRET;
+    try {
+      const res = await request(app)
+        .post('/api/shipping/tracking-event')
+        .set('x-tracking-secret', 'trenddrop-tracking-dev')
+        .send({ transactionId: txn._id, status: 'delivered' });
+      expect(res.status).toBe(503);
+      expect((await Transaction.findById(txn._id)).status).toBe('shipped');
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+      if (previousSecret === undefined) delete process.env.TRACKING_WEBHOOK_SECRET;
+      else process.env.TRACKING_WEBHOOK_SECRET = previousSecret;
+    }
+  });
+
+  test('TW.6b production auto-track fails closed without its cron secret', async () => {
+    const txn = await mkShippedTxn({
+      'shipping.labelCreatedDate': new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+    });
+    const previousEnv = process.env.NODE_ENV;
+    const previousSecret = process.env.AUTO_TRACK_SECRET;
+    process.env.NODE_ENV = 'production';
+    delete process.env.AUTO_TRACK_SECRET;
+    try {
+      const res = await request(app).post('/api/shipping/auto-track');
+      expect(res.status).toBe(503);
+      expect((await Transaction.findById(txn._id)).status).toBe('shipped');
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+      if (previousSecret === undefined) delete process.env.AUTO_TRACK_SECRET;
+      else process.env.AUTO_TRACK_SECRET = previousSecret;
+    }
+  });
+
+  test('TW.6c production order auto-process fails closed without its job secret', async () => {
+    const previousEnv = process.env.NODE_ENV;
+    const previousSecret = process.env.ORDER_AUTO_PROCESS_SECRET;
+    process.env.NODE_ENV = 'production';
+    delete process.env.ORDER_AUTO_PROCESS_SECRET;
+    try {
+      const res = await request(app).post('/api/orders/auto-process');
+      expect(res.status).toBe(503);
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+      if (previousSecret === undefined) delete process.env.ORDER_AUTO_PROCESS_SECRET;
+      else process.env.ORDER_AUTO_PROCESS_SECRET = previousSecret;
+    }
+  });
+
   test('TW.7 auto-track reaches delivered after 7 days (B5 regression: no setDate crash)', async () => {
     const txn = await mkShippedTxn({
       'shipping.labelCreatedDate': new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),

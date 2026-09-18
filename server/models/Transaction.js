@@ -58,7 +58,7 @@ const transactionSchema = new mongoose.Schema({
 
     // What the seller receives
     platformFee: { type: Number, default: 0 },
-    platformFeePercent: { type: Number, default: 10 },
+    platformFeePercent: { type: Number, default: 8 },
     shippingPayout: { type: Number, default: 0 },
     sellerEarnings: { type: Number, required: true },
     // Boost fees - BUG 9: Added missing fields that transactions.js sets

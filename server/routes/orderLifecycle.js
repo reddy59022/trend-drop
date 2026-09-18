@@ -773,9 +773,12 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
     try {
       const existingPayout = await Payout.findOne({ transaction: txn._id });
       const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
-      const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
+      const storedCommission = txn.paymentBreakdown?.platformFee;
+      const commissionRate = (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100;
+      const commissionAmount = Number.isFinite(storedCommission) && storedCommission > 0
+        ? storedCommission
+        : Math.round(itemPrice * commissionRate * 100) / 100;
       const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
-      const commissionRate = (txn.paymentBreakdown?.platformFeePercent || 10) / 100;
 
       if (!existingPayout) {
         await Payout.create({
@@ -1064,9 +1067,12 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
       try {
         const existingPayout = await Payout.findOne({ transaction: txn._id });
         const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
-        const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
+        const storedCommission = txn.paymentBreakdown?.platformFee;
+        const commissionRate = (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100;
+        const commissionAmount = Number.isFinite(storedCommission) && storedCommission > 0
+          ? storedCommission
+          : Math.round(itemPrice * commissionRate * 100) / 100;
         const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
-        const commissionRate = (txn.paymentBreakdown?.platformFeePercent || 10) / 100;
 
         if (!existingPayout) {
           await Payout.create({
@@ -1505,6 +1511,18 @@ router.post('/:transactionId/resolve-dispute', auth, validateOrderAccess, async 
 // ============================================================
 router.post('/auto-process', async (req, res) => {
   try {
+    // This endpoint releases seller funds across the entire platform. It is
+    // an internal job endpoint, not a public API: production must configure a
+    // dedicated secret so arbitrary callers cannot trigger early payouts.
+    const configuredJobSecret = process.env.ORDER_AUTO_PROCESS_SECRET;
+    if (process.env.NODE_ENV === 'production' && !configuredJobSecret) {
+      console.error('Order auto-process disabled: ORDER_AUTO_PROCESS_SECRET is not configured');
+      return res.status(503).json({ message: 'Order auto-process is not configured' });
+    }
+    if (process.env.NODE_ENV === 'production' && req.get('x-order-auto-process-secret') !== configuredJobSecret) {
+      return res.status(403).json({ message: 'Invalid order auto-process secret' });
+    }
+
     const now = Date.now();
     let updated = 0;
     let completed = 0;

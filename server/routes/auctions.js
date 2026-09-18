@@ -170,16 +170,32 @@ router.post('/:id/bids', auth, async (req, res) => {
       return res.status(400).json({ message: 'Bid currency must match auction currency' });
     }
     
-    // Add bid
-    auction.bids.push({
+    // Claim the bid atomically. A read-then-save allows two simultaneous bids
+    // to both pass the current-bid check and then overwrite one another,
+    // losing a valid bid and potentially closing an auction below the highest
+    // amount. The currentBid predicate makes the loser retry with fresh state.
+    const bid = {
       bidder: req.user._id,
       amount: numericAmount,
       currency: bidCurrency,
       timestamp: new Date(),
-    });
-    auction.currentBid = numericAmount;
-    
-    await auction.save();
+    };
+    const updatedAuction = await Auction.findOneAndUpdate(
+      {
+        _id: auction._id,
+        status: 'active',
+        endTime: { $gt: new Date() },
+        currentBid: { $lt: numericAmount },
+      },
+      {
+        $push: { bids: bid },
+        $set: { currentBid: numericAmount },
+      },
+      { new: true, runValidators: true },
+    );
+    if (!updatedAuction) {
+      return res.status(409).json({ message: 'Auction bid was superseded. Please submit a higher bid.' });
+    }
     
     // Notify seller of new bid (non-critical: a notification failure must never
     // prevent a valid bid from being accepted)
@@ -197,7 +213,7 @@ router.post('/:id/bids', auth, async (req, res) => {
       console.error('Failed to notify seller of bid:', notifErr.message);
     }
     
-    const populatedAuction = await Auction.findById(auctionId).populate('bids.bidder', 'name');
+    const populatedAuction = await Auction.findById(updatedAuction._id).populate('bids.bidder', 'name');
     
     res.json({ auction: populatedAuction });
   } catch (error) {

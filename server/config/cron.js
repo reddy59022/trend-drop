@@ -154,14 +154,22 @@ async function autoProcessOrders() {
           const existingPayout = await Payout.findOne({ transaction: txn._id });
           if (!existingPayout) {
             const itemPrice = txn.paymentBreakdown?.subtotal || txn.itemPrice || 0;
-            const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
+            // Keep the payout ledger aligned with the checkout breakdown.
+            // Falling back to 10% here overstates seller commission and leaks
+            // 2% of every legacy/auto-completed sale whose breakdown omits the
+            // field. The platform rule is 8%.
+            const commissionRate = (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100;
+            const storedCommission = txn.paymentBreakdown?.platformFee;
+            const commissionAmount = Number.isFinite(storedCommission) && storedCommission > 0
+              ? storedCommission
+              : Math.round(itemPrice * commissionRate * 100) / 100;
             const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
             await Payout.create({
               seller: txn.seller,
               transaction: txn._id,
               listing: txn.listing,
               salePrice: itemPrice,
-              commissionRate: (txn.paymentBreakdown?.platformFeePercent || 10) / 100,
+              commissionRate,
               commissionAmount,
               payoutAmount,
               status: 'completed',

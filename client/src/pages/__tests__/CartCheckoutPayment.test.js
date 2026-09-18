@@ -114,6 +114,21 @@ const renderCheckout = async () => {
   return screen.findByRole('button', { name: /Pay|Place Order/i });
 };
 describe('Cart checkout — payment confirmation status (R32)', () => {
+  test('creates the payment intent from the final shipping country', async () => {
+    prepareCheckout();
+    const pay = await renderCheckout();
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'GB' } });
+    fireEvent.click(pay);
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/payments/create-intent', expect.objectContaining({
+        buyerCountry: 'GB',
+        shippingAddress: expect.objectContaining({ country: 'GB' }),
+      }));
+    });
+  });
+
   test('a manual-capture authorization (requires_capture) still places the order', async () => {
     prepareCheckout();
     const pay = await renderCheckout();
@@ -223,5 +238,6 @@ describe('Cart checkout — payment confirmation status (R32)', () => {
     });
     expect(toast.error).toHaveBeenCalled();
     expect(globalThis.__tdCart.clearCart).not.toHaveBeenCalled();
+    expect(screen.queryByText('Payment Successful!')).not.toBeInTheDocument();
   });
 });

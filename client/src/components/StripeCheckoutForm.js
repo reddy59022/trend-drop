@@ -52,10 +52,15 @@ const StripeCheckoutForm = ({ amount, currency, totalAmount, onSuccess, onError,
         return;
       }
 
-      // Call parent's onSuccess with payment method
-      await onSuccess(paymentMethod);
-      setSuccess(true);
-      toast.success('Payment successful! 🎉');
+      // Call parent's onSuccess with payment method. The parent may handle
+      // provider/order errors itself; only show the terminal success state when
+      // it explicitly confirms completion. Otherwise a failed fulfilment was
+      // displayed as "Payment Successful" and prevented a safe retry.
+      const completed = await onSuccess(paymentMethod);
+      if (completed !== false) {
+        setSuccess(true);
+        toast.success('Payment successful! 🎉');
+      }
     } catch (err) {
       setCardError(err.message || 'Payment failed');
       onError?.(err);

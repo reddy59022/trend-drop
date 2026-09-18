@@ -92,7 +92,7 @@ const listingSchema = new mongoose.Schema({
   paymentBreakdown: {
     sellerEarnings: { type: Number, default: 0 },
     platformFee: { type: Number, default: 0 },
-    platformFeePercent: { type: Number, default: 10 },
+    platformFeePercent: { type: Number, default: 8 },
     shippingCost: { type: Number, default: 0 },
     buyerTotal: { type: Number, default: 0 },
   },

@@ -403,6 +403,9 @@ router.post('/transactions/:id/refund', async (req, res) => {
         }
       } catch (stripeErr) {
         console.error('Stripe refund error:', stripeErr.message);
+        // Do not mark the transaction refunded or claw back seller funds when
+        // the provider did not accept the refund. The admin can safely retry.
+        return res.status(502).json({ message: 'Refund could not be processed. No ledger changes were made.' });
       }
     }
 

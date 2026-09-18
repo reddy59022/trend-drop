@@ -605,7 +605,19 @@ router.get('/tracking-statuses', (req, res) => {
 // POST /api/shipping/auto-track - Simulate daily auto-tracking update (admin/cron)
 router.post('/auto-track', async (req, res) => {
   try {
-    // In production, this would be called by a cron job daily
+    // This endpoint mutates every active shipment. Never leave it publicly
+    // triggerable in production; an attacker could advance shipments to
+    // delivered and unlock seller payouts/returns without carrier proof.
+    const configuredCronSecret = process.env.AUTO_TRACK_SECRET;
+    if (process.env.NODE_ENV === 'production' && !configuredCronSecret) {
+      console.error('Auto-track disabled: AUTO_TRACK_SECRET is not configured');
+      return res.status(503).json({ message: 'Auto-track is not configured' });
+    }
+    if (process.env.NODE_ENV === 'production' && req.get('x-auto-track-secret') !== configuredCronSecret) {
+      return res.status(403).json({ message: 'Invalid auto-track secret' });
+    }
+
+    // In production, this is called by a protected cron job daily
     const activeTransactions = await Transaction.find({
       status: { $in: ['shipped', 'in_transit', 'out_for_delivery'] },
       'shipping.trackingNumber': { $ne: '' },
@@ -658,7 +670,15 @@ router.post('/auto-track', async (req, res) => {
 // shipment to 'delivered', so receive/return/dispute flows were unreachable.
 router.post('/tracking-event', async (req, res) => {
   try {
-    const secret = process.env.TRACKING_WEBHOOK_SECRET || 'trenddrop-tracking-dev';
+    // Never accept a predictable development secret in production. A leaked
+    // default would let anyone mark shipments delivered and unlock returns,
+    // disputes, and seller payouts.
+    const configuredSecret = process.env.TRACKING_WEBHOOK_SECRET;
+    if (process.env.NODE_ENV === 'production' && !configuredSecret) {
+      console.error('Tracking webhook disabled: TRACKING_WEBHOOK_SECRET is not configured');
+      return res.status(503).json({ message: 'Tracking webhook is not configured' });
+    }
+    const secret = configuredSecret || 'trenddrop-tracking-dev';
     if (!req.get('x-tracking-secret') || req.get('x-tracking-secret') !== secret) {
       return res.status(403).json({ message: 'Invalid tracking webhook secret' });
     }
@@ -723,6 +743,14 @@ router.post('/confirm-received', auth, async (req, res) => {
     }
     if (transaction.buyer.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Receipt confirmation is only valid after a trusted carrier event has
+    // marked the package delivered. Allowing a buyer to confirm a merely
+    // shipped order releases the seller before delivery and defeats the
+    // escrow/return protections.
+    if (!['delivered', 'buyer_confirmed'].includes(transaction.status)) {
+      return res.status(400).json({ message: 'Transaction must be delivered before confirming receipt' });
     }
 
     // Idempotency: confirming twice must not notify twice or risk a second

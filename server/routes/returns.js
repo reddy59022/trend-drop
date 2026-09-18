@@ -389,18 +389,6 @@ router.put('/:id/receive', auth, async (req, res) => {
     const txn = await Transaction.findById(returnRequest.transaction);
     if (!txn) return res.status(404).json({ message: 'Associated transaction not found' });
 
-    // Restore listing inventory - exact quantity bought
-    try {
-      await Listing.findByIdAndUpdate(txn.listing, {
-        $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
-        $set: { sold: false, available: true },
-      });
-    } catch (listingErr) { console.error('Restore listing on receive:', listingErr.message); }
-
-    // Reverse boost fee + mark payout refunded
-    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
-    await markPayoutRefunded(txn);
-
     // ============================================================
     // BUSINESS RULES: "Return shipping cost responsibility varies by
     // reason (buyer/seller)" — honour the classification recorded at
@@ -432,8 +420,25 @@ router.put('/:id/receive', auth, async (req, res) => {
           await issueRefund(paymentIntentId, responsibility === 'buyer' ? buyerRefund : undefined);
         }
         else if (pi.status === 'requires_capture') { await releaseAuthorization(paymentIntentId); }
-      } catch (stripeErr) { console.error('Stripe refund on receive:', stripeErr.message); }
+      } catch (stripeErr) {
+        // No inventory, payout, or balance mutation has happened yet. Keep
+        // the return retryable if the provider rejects the refund.
+        console.error('Stripe refund on receive:', stripeErr.message);
+        return res.status(502).json({ message: 'Refund could not be processed. Please retry.' });
+      }
     }
+
+    // Provider refund succeeded; now unwind local inventory and ledger exactly
+    // once. Ordering these steps prevents a failed provider call from leaving
+    // a retry that can restore stock or claw back funds twice.
+    try {
+      await Listing.findByIdAndUpdate(txn.listing, {
+        $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
+        $set: { sold: false, available: true },
+      });
+    } catch (listingErr) { console.error('Restore listing on receive:', listingErr.message); }
+    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+    await markPayoutRefunded(txn);
 
     // Claw back seller earnings from available or pending balance
     try {

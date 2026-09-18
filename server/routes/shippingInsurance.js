@@ -199,26 +199,58 @@ router.post('/:id/refund', auth, async (req, res) => {
       return res.status(400).json({ message: 'Insurance claim not approved for refund' });
     }
 
-    // Add refund to seller's balance
-    const seller = await User.findById(req.user._id);
-    if (seller) {
-      const payoutAmount = insurance.claim.payoutAmount || Math.min(insurance.itemValue, ShippingInsurance.getCoverageLimit(insurance.coverageType));
-      seller.balance.available = (seller.balance.available || 0) + payoutAmount;
-      seller.balance.totalEarned = (seller.balance.totalEarned || 0) + payoutAmount;
-      
-      insurance.claim.paidAt = new Date();
-      insurance.claim.payoutCurrency = insurance.currency;
-      insurance.refunded = true;
-      insurance.status = 'claimed'; // Keep status as claimed after payout
-      
-      await seller.save();
+    // Claim the insurance payout atomically. The previous read/check/save
+    // sequence allowed two concurrent requests to both credit the seller.
+    const paidAt = new Date();
+    const claimed = await ShippingInsurance.findOneAndUpdate(
+      {
+        _id: insurance._id,
+        seller: req.user._id,
+        status: 'claimed',
+        'claim.status': 'approved',
+        refunded: false,
+      },
+      {
+        $set: {
+          refunded: true,
+          status: 'claimed',
+          'claim.paidAt': paidAt,
+          'claim.payoutCurrency': insurance.currency,
+        },
+      },
+      { new: true }
+    );
+    if (!claimed) {
+      return res.status(400).json({ message: 'Insurance refund already processed' });
     }
 
-    await insurance.save();
+    const payoutAmount = claimed.claim?.payoutAmount
+      || Math.min(claimed.itemValue, ShippingInsurance.getCoverageLimit(claimed.coverageType));
+    const seller = await User.findOneAndUpdate(
+      { _id: req.user._id },
+      {
+        $inc: {
+          'balance.available': payoutAmount,
+          'balance.totalEarned': payoutAmount,
+        },
+      },
+      { new: true }
+    );
+    if (!seller) {
+      // Restore the claim if the seller disappeared between authentication and
+      // crediting. This keeps the payout retryable rather than losing money.
+      await ShippingInsurance.updateOne(
+        { _id: claimed._id, refunded: true, 'claim.paidAt': paidAt },
+        { $set: { refunded: false }, $unset: { 'claim.paidAt': '', 'claim.payoutCurrency': '' } }
+      );
+      return res.status(404).json({ message: 'Seller not found' });
+    }
+
+    const insuranceAfterPayment = await ShippingInsurance.findById(claimed._id);
 
     res.json({
       message: 'Insurance refund processed',
-      insurance,
+      insurance: insuranceAfterPayment,
     });
   } catch (error) {
     console.error('Insurance refund error:', error);

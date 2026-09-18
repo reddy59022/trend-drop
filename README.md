@@ -98,6 +98,12 @@ JWT_SECRET=your-random-jwt-secret-here
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+TRACKING_WEBHOOK_SECRET=generate-a-long-random-secret
+AUTO_TRACK_SECRET=generate-a-long-random-secret
+ORDER_AUTO_PROCESS_SECRET=generate-a-long-random-secret
+FRONTEND_URL=https://your-production-frontend.example
 NODE_ENV=development
 ```
 
@@ -146,6 +152,12 @@ The web app will be available at `http://localhost:3000`
    - `CLOUDINARY_CLOUD_NAME` = your cloud name
    - `CLOUDINARY_API_KEY` = your API key
    - `CLOUDINARY_API_SECRET` = your API secret
+   - `STRIPE_SECRET_KEY` = your live Stripe secret key
+   - `STRIPE_WEBHOOK_SECRET` = the signing secret for `/api/payments/webhook`
+   - `TRACKING_WEBHOOK_SECRET` = a long random secret for carrier tracking events
+   - `AUTO_TRACK_SECRET` = a separate long random secret for the protected auto-track job
+   - `ORDER_AUTO_PROCESS_SECRET` = a separate long random secret for the protected payout auto-process job
+   - `FRONTEND_URL` = your production frontend URL
 7. Deploy!
 
 ### Alternative: Using render.yaml

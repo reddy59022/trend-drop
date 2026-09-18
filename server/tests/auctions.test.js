@@ -286,6 +286,44 @@ describe('Auction/Bidding System', () => {
       expect(res.body.message).toContain('reserve price');
     });
 
+    it('AUCTION.8c keeps the highest bid when bids arrive concurrently', async () => {
+      const listing = await Listing.create({
+        title: 'Concurrent Auction Item',
+        description: 'Item for auction',
+        price: 100,
+        category: 'Men',
+        condition: 'Good',
+        seller: sellerId,
+        available: true,
+        sold: false,
+        status: 'active',
+      });
+      listingId = listing._id;
+      const auction = await Auction.create({
+        listing: listing._id,
+        seller: sellerId,
+        startTime: new Date(Date.now() - 60 * 60 * 1000),
+        endTime: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        reservePrice: 100,
+        currentBid: 100,
+        status: 'active',
+      });
+      auctionId = auction._id;
+
+      const otherBuyer = await createUser(`other_buyer_auction_${Date.now()}@example.com`);
+      const otherToken = jwt.sign({ id: otherBuyer._id }, process.env.JWT_SECRET || 'fallback_secret_change_me', { expiresIn: '1h' });
+      const [first, second] = await Promise.all([
+        request(app).post(`/api/auctions/${auctionId}/bids`).set('Authorization', `Bearer ${buyerToken}`).send({ amount: 150 }),
+        request(app).post(`/api/auctions/${auctionId}/bids`).set('Authorization', `Bearer ${otherToken}`).send({ amount: 200 }),
+      ]);
+
+      expect([first.statusCode, second.statusCode].every(status => [200, 409].includes(status))).toBe(true);
+      const stored = await Auction.findById(auctionId);
+      expect(stored.currentBid).toBe(200);
+      expect(stored.bids.map((bid) => bid.amount)).toContain(200);
+      await User.deleteOne({ _id: otherBuyer._id });
+    });
+
     it('AUCTION.8b should accept bid when seller has a dispute notification (regression for 500 error)', async () => {
       const listing = await Listing.create({
         title: 'Auction Item',
