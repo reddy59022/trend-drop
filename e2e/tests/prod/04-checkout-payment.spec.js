@@ -107,13 +107,29 @@ test.describe('04 · Checkout → payment → order creation (production + Strip
     const tB = byListing[String(state.listings.B.id)];
     expect(tA && tB, 'one transaction per listing').toBeTruthy();
 
-    // BOOST FEE RECONCILIATION: boosted listing B (premium 15% of $80) pays a
-    // $12 boost fee out of the seller's earnings; plain listing A pays $0.
-    expect(tB.paymentBreakdown?.boostFee).toBe(12);
-    expect(tA.paymentBreakdown?.boostFee ?? 0).toBe(0);
+    // BOOST FEE RECONCILIATION (seller-only data): the buyer's confirm-batch
+    // receipt no longer carries the seller's boost fee, so the reconciliation
+    // runs against the seller's own view — and both the buyer's privacy and the
+    // seller's self-closing column are asserted.
+    //   boosted B (premium 15% of $80) => $12.00 fee; plain A => no fee
+    expect(tB.paymentBreakdown?.boostFee).toBeUndefined();
+    expect(tA.paymentBreakdown?.boostFee).toBeUndefined();
     // Seller earnings = price − 8% commission (− boost fee when boosted)
     expect(tA.paymentBreakdown?.sellerEarnings).toBe(41.4);  // 45 − 3.6
     expect(tB.paymentBreakdown?.sellerEarnings).toBe(61.6);  // 80 − 6.4 − 12
+
+    const viewB = await api.req('get', `/api/transactions/${tB._id}`, { token: alexToken });
+    expect(viewB.status, JSON.stringify(viewB.data)).toBe(200);
+    expect(viewB.data.paymentBreakdown?.boostFee).toBe(12);
+    expect(viewB.data.sellerBreakdown?.boostTierLabel).toBe('Premium Boost');
+    expect(viewB.data.sellerBreakdown?.reconciled).toBe(true);
+    expect(
+      Math.round((viewB.data.sellerBreakdown.itemPrice - viewB.data.sellerBreakdown.platformFee - viewB.data.sellerBreakdown.boostFee) * 100) / 100
+    ).toBe(viewB.data.sellerBreakdown.sellerEarnings);
+
+    const viewA = await api.req('get', `/api/transactions/${tA._id}`, { token: alexToken });
+    expect(viewA.data.sellerBreakdown?.boostFee).toBe(0);
+    expect(viewA.data.sellerBreakdown?.reconciled).toBe(true);
     expect(tA.status).toBe('paid');
 
     state.orders.batch = { orderId: r.data.orderId };

@@ -29,6 +29,9 @@ const {
 const { isInternationalAllowed } = require('../config/shipping');
 const { isValidObjectId } = require('../utils/validators');
 const { increment } = require('../utils/metrics');
+// Viewer-aware transaction shaping: a purchase receipt is a BUYER payload, so
+// the seller's boost fee is never serialised into it (utils/transactionView.js).
+const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require('../utils/transactionView');
 const { boostConfig } = require('../config/boost');
 
 // Flat per-sale boost fee: price × tier.feePercent / 100
@@ -1029,7 +1032,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
     // tests) expects a Created response carrying the grouped Order id so the
     // buyer can track shipments and the seller can mark them dispatched.
     res.status(201).json({
-      transactions: createdTransactions,
+      transactions: sanitizeTransactionsForViewer(createdTransactions, req.user._id),
       captureResult: { id: captureResult.id, status: captureResult.status },
       orders: createdOrder ? [createdOrder] : [],
       orderId: createdOrder ? createdOrder._id : null,
@@ -1134,7 +1137,7 @@ router.post('/confirm', auth, async (req, res) => {
       ],
     });
     if (existingTxn) {
-      return res.json({ message: 'Order already exists for this payment', transaction: existingTxn });
+      return res.json({ message: 'Order already exists for this payment', transaction: sanitizeTransactionForViewer(existingTxn, req.user._id) });
     }
 
     const listing = await Listing.findById(listingId);
@@ -1322,7 +1325,7 @@ router.post('/confirm', auth, async (req, res) => {
 
     await createdTransaction.populate(['buyer', 'seller', 'listing']);
     res.json({
-      transaction: createdTransaction,
+      transaction: sanitizeTransactionForViewer(createdTransaction, req.user._id),
       breakdown,
       captureResult: { id: captureResult.id, status: captureResult.status },
       shipping: {

@@ -12,6 +12,9 @@ const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, ve
 const { boostConfig } = require('../config/boost');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
+// Viewer-aware transaction shaping: sellers get the canonical, self-closing
+// earnings column; buyers never receive the seller's boost fee.
+const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require('../utils/transactionView');
 
 // TDD-B1: legacy transaction endpoints must verify a real authorized payment
 // before creating any money state (parity with /api/cart/checkout gate).
@@ -359,7 +362,9 @@ router.post('/guest', async (req, res) => {
     });
 
     res.status(201).json({
-      ...transaction.toObject(),
+      // Guest checkout: no authenticated viewer, so this is a buyer-shaped
+      // payload (the seller's boost fee is never serialised to a buyer).
+      ...sanitizeTransactionForViewer(transaction, null),
       buyer: {
         _id: guestUser._id,
         name: guestUser.name,
@@ -619,7 +624,7 @@ router.post('/', auth, async (req, res) => {
     }
 
     await transaction.populate(['buyer', 'seller', 'listing']);
-    res.status(201).json(transaction);
+    res.status(201).json(sanitizeTransactionForViewer(transaction, req.user._id));
   } catch (error) {
     console.error(error);
     // Money-only-upon-success: a purchase that failed part-way through must
@@ -813,7 +818,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       return res.status(409).json({ message: 'This offer has already been used for another purchase' });
     }
 
-    res.status(201).json({ transaction, offer: claimedOffer });
+    res.status(201).json({ transaction: sanitizeTransactionForViewer(transaction, req.user._id), offer: claimedOffer });
   } catch (error) {
     console.error(error);
     // Money-only-upon-success: a failed offer purchase must leave no
@@ -887,7 +892,9 @@ router.get('/', auth, async (req, res) => {
     const totalPages = Math.ceil(total / limit);
 
     res.json({
-      transactions,
+      // Viewer-aware payload: a seller receives their reconciled earnings
+      // column, a buyer never receives the seller's boost fee.
+      transactions: sanitizeTransactionsForViewer(transactions, req.user._id),
       pagination: {
         total,
         totalPages,
@@ -929,7 +936,7 @@ router.get('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    res.json(transaction);
+    res.json(sanitizeTransactionForViewer(transaction, req.user._id));
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

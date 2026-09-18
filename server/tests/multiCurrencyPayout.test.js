@@ -290,8 +290,20 @@ describe('Multi-Currency Comprehensive Payout & Financial Tests', () => {
     expect(txnRes.status).toBe(201);
     const txn = txnRes.body;
 
-    expect(txn.paymentBreakdown.boostFee).toBeGreaterThan(0);
-    expect(txn.paymentBreakdown.sellerEarnings).toBeLessThan(184);
+    // A buyer's receipt never carries the seller's boost fee: how much a seller
+    // spends on advertising is seller-only data (utils/transactionView.js).
+    expect(txn.paymentBreakdown.boostFee).toBeUndefined();
+
+    // The SELLER sees the fee, and the column the UI renders reconciles:
+    // $200 - $16 (8% platform) - $20 (10% standard boost) = $164.
+    const sellerView = await request(app)
+      .get(`/api/transactions/${txn._id}`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    expect(sellerView.status).toBe(200);
+    expect(sellerView.body.paymentBreakdown.boostFee).toBeGreaterThan(0);
+    expect(sellerView.body.paymentBreakdown.sellerEarnings).toBeLessThan(184);
+    expect(sellerView.body.sellerBreakdown.reconciled).toBe(true);
+    expect(sellerView.body.sellerBreakdown.boostFee).toBeGreaterThan(0);
   });
 
   test('10a. Platform always gets 8% commission (capped at $500)', async () => {

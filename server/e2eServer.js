@@ -42,6 +42,13 @@ async function main() {
   if (!process.env.STRIPE_SECRET_KEY) process.env.STRIPE_SECRET_KEY = 'sk_test_placeholder';
   if (!process.env.STRIPE_PUBLISHABLE_KEY) process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_placeholder';
   if (!process.env.STRIPE_WEBHOOK_SECRET) process.env.STRIPE_WEBHOOK_SECRET = 'placeholder';
+  // The carrier webhook (POST /api/shipping/tracking-event) is how the E2E
+  // specs advance a shipment to 'delivered' so return/dispute flows are
+  // reachable. The route refuses a MISSING secret when NODE_ENV=production
+  // (which this harness runs as), so configure the same dev default the specs
+  // sign with — otherwise specs 30/32 fail with a 503 before the secret is
+  // even checked. Only set when absent, so a real secret flows through.
+  if (!process.env.TRACKING_WEBHOOK_SECRET) process.env.TRACKING_WEBHOOK_SECRET = 'trenddrop-tracking-dev';
   if (!process.env.BREVO_API_KEY) process.env.BREVO_API_KEY = 'xkeysib-placeholder';
   if (!process.env.GOOGLE_CLIENT_ID) process.env.GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';
   if (!process.env.REACT_APP_GOOGLE_CLIENT_ID) process.env.REACT_APP_GOOGLE_CLIENT_ID = 'placeholder.apps.googleusercontent.com';

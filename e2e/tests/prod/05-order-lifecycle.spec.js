@@ -83,11 +83,20 @@ test.describe('05 · Order lifecycle (production)', () => {
   });
 
   test('transaction status endpoint reflects shipped + payment breakdown', async () => {
-    const r = await api.req('get', `/api/orders/${txnB}/status`, { token: jordanToken });
+    // BUYER view: status/tracking, and never the seller's advertising spend.
+    const asBuyer = await api.req('get', `/api/orders/${txnB}/status`, { token: jordanToken });
+    expect(asBuyer.status, JSON.stringify(asBuyer.data)).toBe(200);
+    expect(asBuyer.data.payment.boostFee).toBeUndefined();
+    expect(asBuyer.data.sellerBreakdown).toBeUndefined();
+
+    // SELLER view: the boost fee is visible and the earnings column reconciles.
+    const r = await api.req('get', `/api/orders/${txnB}/status`, { token: alexToken });
     expect(r.status, JSON.stringify(r.data)).toBe(200);
     expect(r.data.status).toBe('shipped');
     expect(Array.isArray(r.data.allowedActions)).toBe(true);
-    expect(r.data.payment.boostFee).toBe(12); // boosted item reconciliation
+    expect(r.data.payment.boostFee).toBe(12); // boosted item reconciliation (seller-only)
+    expect(r.data.sellerBreakdown.boostFee).toBe(12);
+    expect(r.data.sellerBreakdown.reconciled).toBe(true);
     expect(r.data.timeline.shippedAt).toBeTruthy();
     expect(r.data.eligibility.canCancel).toBe(false); // too late to cancel after shipment
   });

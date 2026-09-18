@@ -65,6 +65,17 @@ async function createListingWithBoost(sellerToken, overrides = {}) {
   return req;
 }
 
+// Boost fees are SELLER-ONLY data: the buyer's purchase receipt deliberately
+// omits them (utils/transactionView.js). Revenue-split assertions therefore read
+// the PERSISTED ledger -- the row the payout and the cancel/return reversal
+// logic reads back -- which is a stronger claim than the receipt ever was.
+const persistedBreakdown = async (txnOrId) => {
+  const id = txnOrId && txnOrId._id ? txnOrId._id : txnOrId;
+  const stored = await Transaction.findById(id);
+  expect(stored).toBeTruthy();
+  return stored.paymentBreakdown;
+};
+
 beforeAll(async () => {
   const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/trend-drop-test';
   if (mongoose.connection.readyState === 0) await mongoose.connect(uri);
@@ -286,7 +297,7 @@ describe('Revenue Split with Boost', () => {
     expect(buyRes.status).toBe(201);
     
     const txn = buyRes.body;
-    const pb = txn.paymentBreakdown;
+    const pb = await persistedBreakdown(txn);
     
     // Platform fee: 8% of $100 = $8
     expect(pb.platformFee).toBe(8);
@@ -323,7 +334,7 @@ describe('Revenue Split with Boost', () => {
         buyerCountry: 'US',
       });
     
-    const pb = buyRes.body.paymentBreakdown;
+    const pb = (await persistedBreakdown(buyRes.body));
     
     // Platform fee: 8% of $200 = $16
     expect(pb.platformFee).toBe(16);
@@ -358,7 +369,7 @@ describe('Revenue Split with Boost', () => {
         buyerCountry: 'US',
       });
     
-    const pb = buyRes.body.paymentBreakdown;
+    const pb = (await persistedBreakdown(buyRes.body));
     
     // Platform fee: 8% of $500 = $40
     expect(pb.platformFee).toBe(40);
@@ -392,7 +403,7 @@ describe('Revenue Split with Boost', () => {
         buyerCountry: 'US',
       });
     
-    const pb = buyRes.body.paymentBreakdown;
+    const pb = (await persistedBreakdown(buyRes.body));
     
     expect(pb.platformFee).toBe(8);
     expect(pb.boostFee).toBe(0);
@@ -720,19 +731,19 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
       });
     
     // Verify Seller 1 (Standard boost): $100 - $8 (8%) - $10 (10%) = $82
-    const pb1 = buy1.body.paymentBreakdown;
+    const pb1 = (await persistedBreakdown(buy1.body));
     expect(pb1.platformFee).toBe(8);
     expect(pb1.boostFee).toBe(10);
     expect(pb1.sellerEarnings).toBe(82);
     
     // Verify Seller 2 (Premium boost): $200 - $16 (8%) - $30 (15%) = $154
-    const pb2 = buy2.body.paymentBreakdown;
+    const pb2 = (await persistedBreakdown(buy2.body));
     expect(pb2.platformFee).toBe(16);
     expect(pb2.boostFee).toBe(30);
     expect(pb2.sellerEarnings).toBe(154);
     
     // Verify Seller 3 (No boost): $150 - $12 (8%) - $0 = $138
-    const pb3 = buy3.body.paymentBreakdown;
+    const pb3 = (await persistedBreakdown(buy3.body));
     expect(pb3.platformFee).toBe(12);
     expect(pb3.boostFee).toBe(0);
     expect(pb3.sellerEarnings).toBe(138);
@@ -793,18 +804,18 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
     expect(buy2.status).toBe(201);
     
     // Seller 1 (Elite boost): $300 - $24 (8%) - $60 (20%) = $216
-    expect(buy1.body.paymentBreakdown.platformFee).toBe(24);
-    expect(buy1.body.paymentBreakdown.boostFee).toBe(60);
-    expect(buy1.body.paymentBreakdown.sellerEarnings).toBe(216);
+    expect((await persistedBreakdown(buy1.body)).platformFee).toBe(24);
+    expect((await persistedBreakdown(buy1.body)).boostFee).toBe(60);
+    expect((await persistedBreakdown(buy1.body)).sellerEarnings).toBe(216);
     
     // Seller 2 (No boost): $100 - $8 (8%) - $0 = $92
-    expect(buy2.body.paymentBreakdown.platformFee).toBe(8);
-    expect(buy2.body.paymentBreakdown.boostFee).toBe(0);
-    expect(buy2.body.paymentBreakdown.sellerEarnings).toBe(92);
+    expect((await persistedBreakdown(buy2.body)).platformFee).toBe(8);
+    expect((await persistedBreakdown(buy2.body)).boostFee).toBe(0);
+    expect((await persistedBreakdown(buy2.body)).sellerEarnings).toBe(92);
     
     // Total platform revenue: ($24+$60) + $8 = $92
-    const totalPlatform = (buy1.body.paymentBreakdown.platformFee + buy1.body.paymentBreakdown.boostFee) +
-                          (buy2.body.paymentBreakdown.platformFee + buy2.body.paymentBreakdown.boostFee);
+    const totalPlatform = ((await persistedBreakdown(buy1.body)).platformFee + (await persistedBreakdown(buy1.body)).boostFee) +
+                          ((await persistedBreakdown(buy2.body)).platformFee + (await persistedBreakdown(buy2.body)).boostFee);
     expect(totalPlatform).toBe(92);
   });
   
@@ -854,8 +865,8 @@ describe('Multi-Seller Orders with Mixed Boost', () => {
     expect(sellerAfter.balance.pending).toBe(sellerBefore.balance.pending + 82 + 144);
     
     // Total platform: ($8+$10) + ($16+$40) = $74
-    const totalPlatform = (buy1.body.paymentBreakdown.platformFee + buy1.body.paymentBreakdown.boostFee) +
-                          (buy2.body.paymentBreakdown.platformFee + buy2.body.paymentBreakdown.boostFee);
+    const totalPlatform = ((await persistedBreakdown(buy1.body)).platformFee + (await persistedBreakdown(buy1.body)).boostFee) +
+                          ((await persistedBreakdown(buy2.body)).platformFee + (await persistedBreakdown(buy2.body)).boostFee);
     expect(totalPlatform).toBe(74);
   });
 });
@@ -887,7 +898,7 @@ describe('Returns and Refunds with Boost', () => {
       });
     
     const txnId = buyRes.body._id;
-    const pb = buyRes.body.paymentBreakdown;
+    const pb = (await persistedBreakdown(buyRes.body));
     
     // Verify transaction has correct boost data for return calculations
     expect(pb.boostFee).toBe(15); // 15% of $100
@@ -1000,19 +1011,19 @@ describe('Returns and Refunds with Boost', () => {
       });
     
     // Item 1 (Standard 10%): $100 - $8 - $10 = $82
-    const pb1 = buy1.body.paymentBreakdown;
+    const pb1 = (await persistedBreakdown(buy1.body));
     expect(pb1.platformFee).toBe(8);
     expect(pb1.boostFee).toBe(10);
     expect(pb1.sellerEarnings).toBe(82);
     
     // Item 2 (Premium 15%): $150 - $12 - $22.50 = $115.50
-    const pb2 = buy2.body.paymentBreakdown;
+    const pb2 = (await persistedBreakdown(buy2.body));
     expect(pb2.platformFee).toBe(12);
     expect(pb2.boostFee).toBe(22.50);
     expect(pb2.sellerEarnings).toBe(115.50);
     
     // Item 3 (No boost): $200 - $16 - $0 = $184
-    const pb3 = buy3.body.paymentBreakdown;
+    const pb3 = (await persistedBreakdown(buy3.body));
     expect(pb3.platformFee).toBe(16);
     expect(pb3.boostFee).toBe(0);
     expect(pb3.sellerEarnings).toBe(184);
@@ -1051,7 +1062,7 @@ describe('Platform Revenue Verification', () => {
         buyerCountry: 'US',
       });
     
-    const pb = buyRes.body.paymentBreakdown;
+    const pb = (await persistedBreakdown(buyRes.body));
     
     // Platform fee: 8% of $500 = $40
     expect(pb.platformFee).toBe(40);
@@ -1096,7 +1107,7 @@ describe('Platform Revenue Verification', () => {
           buyerCountry: 'US',
         });
       
-      const pb = buyRes.body.paymentBreakdown;
+      const pb = (await persistedBreakdown(buyRes.body));
       
       expect(pb.platformFee).toBe(tc.expectedPlatform);
       expect(pb.boostFee).toBe(tc.expectedBoost);

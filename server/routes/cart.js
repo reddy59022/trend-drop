@@ -12,6 +12,8 @@ const { getPreferredCarrier, generateLabel } = require('../config/shipping');
 const { isValidObjectId } = require('../utils/validators');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
+// Viewer-aware transaction shaping: a cart receipt is a BUYER payload.
+const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require('../utils/transactionView');
 
 // Shared per-line pricing for cart checkout (TDD R26). The amount-parity
 // gate and the commit loop MUST use identical math, so it lives in ONE
@@ -557,8 +559,10 @@ router.post('/checkout', auth, async (req, res) => {
     await cart.save();
 
     res.json({
-      transaction: createdTransactions[0], // Return first transaction for simplicity
-      transactions: createdTransactions,
+      // Buyer-facing receipt: shaped through the same viewer rule as the
+      // transaction endpoints (seller-only boost data is never serialised).
+      transaction: sanitizeTransactionForViewer(createdTransactions[0], req.user._id), // Return first transaction for simplicity
+      transactions: sanitizeTransactionsForViewer(createdTransactions, req.user._id),
       message: 'Cart checkout completed successfully',
     });
   } catch (error) {

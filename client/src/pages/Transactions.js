@@ -24,6 +24,68 @@ const DEFAULT_STATUSES = {
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
+// ---------------------------------------------------------------------------
+// Seller earnings column
+//
+// `paymentBreakdown.sellerEarnings` is stored NET of the boost fee, but the
+// boost row was never rendered, so the column could not add up (a $30 sale
+// showed $24.60 with no $3.00 boost row). The API now sends the canonical
+// `sellerBreakdown` (server/utils/transactionView.js); the helpers below only
+// mirror it for payloads that predate that field (cached / older responses).
+// ---------------------------------------------------------------------------
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+// "standard" -> "Standard Boost" (matches config/boost.js tier names) without
+// duplicating the tier table that Sell.js / EditListing.js already carry.
+const tierLabelFromKey = (tier) => {
+  const key = String(tier || '').trim();
+  if (!key) return '';
+  return `${key.charAt(0).toUpperCase()}${key.slice(1)} Boost`;
+};
+
+const deriveSellerBreakdown = (breakdown = {}, currency = 'USD') => {
+  const itemPrice = round2(breakdown.subtotal);
+  const platformFee = round2(breakdown.platformFee);
+  const platformFeePercent = Number.isFinite(Number(breakdown.platformFeePercent))
+    ? Number(breakdown.platformFeePercent)
+    : null;
+  const boostFee = round2(breakdown.boostFee);
+  const boostTier = String(breakdown.boostTier || '');
+  const shippingPayout = round2(breakdown.shippingPayout);
+  const sellerEarnings = round2(breakdown.sellerEarnings);
+
+  // Two legitimate ledger shapes (see server/utils/transactionView.js).
+  const shippingExcluded = round2(itemPrice - platformFee - boostFee);
+  const shippingIncluded = round2(shippingExcluded + shippingPayout);
+  const matchesExcluded = Math.abs(shippingExcluded - sellerEarnings) <= 0.01;
+  const matchesIncluded = Math.abs(shippingIncluded - sellerEarnings) <= 0.01;
+  const shippingIncludedInEarnings = !matchesExcluded && matchesIncluded;
+  const expectedEarnings = shippingIncludedInEarnings ? shippingIncluded : shippingExcluded;
+  const residual = round2(sellerEarnings - expectedEarnings);
+
+  return {
+    currency,
+    itemPrice,
+    platformFee,
+    platformFeePercent,
+    boostFee,
+    boostTier,
+    boostTierLabel: boostFee > 0 ? tierLabelFromKey(boostTier) : '',
+    shippingPayout,
+    shippingIncludedInEarnings,
+    sellerEarnings,
+    expectedEarnings,
+    residual,
+    reconciled: Math.abs(residual) <= 0.01,
+  };
+};
+
+// Signed money for adjustment rows ("-$4.60" / "+$4.60").
+const formatSignedAmount = (value, currency) => {
+  const amount = round2(value);
+  return `${amount < 0 ? '-' : '+'}${formatPrice(Math.abs(amount), currency)}`;
+};
+
 function Transactions() {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState([]);
@@ -236,9 +298,17 @@ function Transactions() {
         <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {transactions.map(txn => {
-            const isBuyer = (txn.buyer?._id?.toString() || txn.buyer?.toString()) === (user?.id || user?._id)?.toString();
+            // The server decides the role from the record (never inferred from a
+            // client hint); fall back to id comparison for older payloads.
+            const viewerRole = txn.viewerRole
+              || (((txn.buyer?._id?.toString() || txn.buyer?.toString()) === (user?.id || user?._id)?.toString()) ? 'buyer' : 'seller');
+            const isBuyer = viewerRole === 'buyer';
             const isExpanded = expandedId === txn._id;
             const breakdown = txn.paymentBreakdown || {};
+            // Seller-only money view: boost fee included, column reconciled.
+            const sellerView = isBuyer
+              ? null
+              : (txn.sellerBreakdown || deriveSellerBreakdown(breakdown, txn.currency));
             const statusColor = getStatusColor(txn.status);
 
             return (
@@ -258,7 +328,7 @@ function Transactions() {
                   </div>
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
                     <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--td-primary)' }}>
-                      {isBuyer ? formatPrice(breakdown.totalPaid, txn.currency) : formatPrice(breakdown.sellerEarnings, txn.currency)}
+                      {isBuyer ? formatPrice(breakdown.totalPaid, txn.currency) : formatPrice(sellerView.sellerEarnings, txn.currency)}
                     </div>
                     <span className="badge" style={{ background: `${statusColor}15`, color: statusColor, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {getStatusIcon(txn.status)} {getStatusLabel(txn.status)}
@@ -280,6 +350,9 @@ function Transactions() {
                     )}
 
                     {/* Payment Breakdown */}
+                    {/* Seller column: every deduction is itemised (including the
+                        seller-only boost fee) so the rows add up to "Your
+                        Earnings" — the exact net figure credited as the payout. */}
                     <div style={{ marginTop: 12 }}>
                       <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 14, color: 'var(--td-text-secondary)' }}>{isBuyer ? 'What You Paid' : 'What You Earned'}</div>
                       <div style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -287,18 +360,47 @@ function Transactions() {
                           <>
                             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Item Price</span><span>{formatPrice(breakdown.subtotal, txn.currency)}</span></div>
                             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Shipping</span><span>{formatPrice(breakdown.shippingCost, txn.currency)}</span></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Buyer Protection (5%)</span><span>{formatPrice(breakdown.buyerProtectionFee, txn.currency)}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>{breakdown.buyerProtectionPercent != null ? `Buyer Protection (${breakdown.buyerProtectionPercent}%)` : 'Buyer Protection'}</span><span>{formatPrice(breakdown.buyerProtectionFee, txn.currency)}</span></div>
                             <div style={{ borderTop: '1px solid var(--td-border)', paddingTop: 6, marginTop: 4 }}><div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>Total Paid</span><span>{formatPrice(breakdown.totalPaid, txn.currency)}</span></div></div>
                           </>
                         ) : (
                           <>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Item Price</span><span>{formatPrice(breakdown.subtotal, txn.currency)}</span></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--td-error)' }}><span>Platform Fee (10%)</span><span>-{formatPrice(breakdown.platformFee, txn.currency)}</span></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Shipping Payout</span><span>{formatPrice(breakdown.shippingPayout, txn.currency)}</span></div>
-                            <div style={{ borderTop: '1px solid var(--td-border)', paddingTop: 6, marginTop: 4 }}><div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: 'var(--td-success)' }}><span>Your Earnings</span><span>{formatPrice(breakdown.sellerEarnings, txn.currency)}</span></div></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Item Price</span><span>{formatPrice(sellerView.itemPrice, txn.currency)}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--td-error)' }}><span>{sellerView.platformFeePercent != null ? `Platform Fee (${sellerView.platformFeePercent}%)` : 'Platform Fee'}</span><span>-{formatPrice(sellerView.platformFee, txn.currency)}</span></div>
+                            {sellerView.boostFee > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--td-error)' }}>
+                                <span>{sellerView.boostTierLabel ? `Boost Fee (${sellerView.boostTierLabel})` : 'Boost Fee'}</span>
+                                <span>-{formatPrice(sellerView.boostFee, txn.currency)}</span>
+                              </div>
+                            )}
+                            {sellerView.shippingIncludedInEarnings && sellerView.shippingPayout > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--td-text-secondary)' }}>Shipping Payout</span><span>+{formatPrice(sellerView.shippingPayout, txn.currency)}</span></div>
+                            )}
+                            {!sellerView.reconciled && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--td-error)' }} title="Historic record: this sale predates the itemised boost/bundled fees shown above.">
+                                <span>Adjustments &amp; fees</span><span>{formatSignedAmount(sellerView.residual, txn.currency)}</span>
+                              </div>
+                            )}
+                            <div style={{ borderTop: '1px solid var(--td-border)', paddingTop: 6, marginTop: 4 }}><div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: 'var(--td-success)' }}><span>Your Earnings</span><span>{formatPrice(sellerView.sellerEarnings, txn.currency)}</span></div></div>
                           </>
                         )}
                       </div>
+
+                      {/* Shipping is a label-cost reimbursement: when the stored
+                          net earnings already include it, it is shown as a row in
+                          the tally above; otherwise it stays out of the total so
+                          the column keeps adding up. */}
+                      {!isBuyer && !sellerView.shippingIncludedInEarnings && sellerView.shippingPayout > 0 && (
+                        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--td-border-light)' }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--td-text-tertiary)', marginBottom: 6 }}>
+                            Shipping reimbursement <span style={{ fontWeight: 400 }}>— covers your label cost, not part of earnings</span>
+                          </div>
+                          <div style={{ fontSize: 14, display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--td-text-secondary)' }}>Shipping label payout</span>
+                            <span>{formatPrice(sellerView.shippingPayout, txn.currency)}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {txn.shippingAddress && (

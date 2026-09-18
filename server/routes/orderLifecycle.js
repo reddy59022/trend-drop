@@ -12,6 +12,8 @@ const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundR
 const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
 const { releaseSellerEarnings, clawbackSellerEarnings } = require('../utils/balances');
 const { isValidObjectId } = require('../utils/validators');
+// Viewer-aware transaction shaping (seller earnings column + boost privacy).
+const { sanitizeTransactionForViewer } = require('../utils/transactionView');
 
 // ============================================================
 // ITEM-LEVEL BOOST FEE LEDGER (reversal/collection)
@@ -156,6 +158,12 @@ router.get('/', auth, async (req, res) => {
       // G5 FIX: materialize the totalAmount virtual so the API never returns NaN
       return {
         ...raw,
+        // Embedded transactions follow the same viewer rule as /api/transactions:
+        // a seller sees their boost fee + reconciled column, a buyer sees neither.
+        items: (raw.items || []).map((item) => ({
+          ...item,
+          transaction: item.transaction ? sanitizeTransactionForViewer(item.transaction, userId) : item.transaction,
+        })),
         totalAmount: raw.totals && typeof raw.totals.total === 'number' ? raw.totals.total : 0,
         role,
         allowedActions: Order.getAllowedOrderActions(o, role, userId),
@@ -197,6 +205,11 @@ router.get('/:id', auth, async (req, res) => {
     const raw = order.toObject();
     const payload = {
       ...raw,
+      // Same viewer rule as the transaction endpoints (boost fee is seller-only).
+      items: (raw.items || []).map((item) => ({
+        ...item,
+        transaction: item.transaction ? sanitizeTransactionForViewer(item.transaction, userId) : item.transaction,
+      })),
       totalAmount: raw.totals && typeof raw.totals.total === 'number' ? raw.totals.total : 0,
       role,
       allowedActions: Order.getAllowedOrderActions(order, role, userId),
@@ -300,6 +313,12 @@ router.post('/:id/ship', auth, async (req, res) => {
     const raw = order.toObject();
     const payload = {
       ...raw,
+      // Seller-only endpoint, so this payload carries the reconciled earnings
+      // column; the raw boost ledger fields are shaped by the same helper.
+      items: (raw.items || []).map((item) => ({
+        ...item,
+        transaction: item.transaction ? sanitizeTransactionForViewer(item.transaction, userId) : item.transaction,
+      })),
       totalAmount: raw.totals && typeof raw.totals.total === 'number' ? raw.totals.total : 0,
       role,
       allowedActions: Order.getAllowedOrderActions(order, role, userId),
@@ -348,6 +367,8 @@ router.get('/:transactionId/status', auth, validateOrderAccess, async (req, res)
     const role = req.orderRole;
     const now = Date.now();
     const deliveredAt = txn.shipping?.actualDelivery || (txn.status === 'delivered' ? txn.updatedAt : null);
+    // Viewer-aware money view (buyers never see the seller's boost fee).
+    const txnView = sanitizeTransactionForViewer(txn, req.user._id);
     const returnWindowEnd = deliveredAt ? new Date(deliveredAt).getTime() + timeWindows.RETURN_WINDOW : null;
     const canReturn = returnWindowEnd && now <= returnWindowEnd;
     const isAutoCompletable = txn.status === orderStates.BUYER_CONFIRMED &&
@@ -370,7 +391,9 @@ router.get('/:transactionId/status', auth, validateOrderAccess, async (req, res)
         canFileDispute: isValidTransition(txn.status, orderStates.DISPUTED),
         isAutoCompletable,
       },
-      payment: txn.paymentBreakdown,
+      payment: txnView.paymentBreakdown,
+      // Seller-only: the reconciled earnings column behind "What You Earned".
+      ...(txnView.sellerBreakdown ? { sellerBreakdown: txnView.sellerBreakdown } : {}),
     });
   } catch (error) {
     console.error(error);
@@ -1672,9 +1695,11 @@ router.get('/:transactionId/lifecycle', auth, validateOrderAccess, async (req, r
     const role = req.orderRole;
     const now = Date.now();
     const deliveredAt = txn.shipping?.actualDelivery ? new Date(txn.shipping.actualDelivery).getTime() : null;
+    // Viewer-aware money view (buyers never see the seller's boost fee).
+    const txnView = sanitizeTransactionForViewer(txn, req.user._id);
 
     res.json({
-      transaction: txn,
+      transaction: txnView,
       role,
       status: txn.status,
       allowedActions: getAllowedActions(txn.status, role),
@@ -1692,7 +1717,8 @@ router.get('/:transactionId/lifecycle', auth, validateOrderAccess, async (req, r
         canReturn: deliveredAt && now <= deliveredAt + timeWindows.RETURN_WINDOW,
         canDispute: deliveredAt && now <= deliveredAt + timeWindows.DISPUTE_WINDOW,
       },
-      payment: txn.paymentBreakdown,
+      payment: txnView.paymentBreakdown,
+      ...(txnView.sellerBreakdown ? { sellerBreakdown: txnView.sellerBreakdown } : {}),
     });
   } catch (error) {
     console.error(error);
