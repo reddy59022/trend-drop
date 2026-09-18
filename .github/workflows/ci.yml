@@ -2,7 +2,7 @@ name: CI
 
 # TD-8.1 — CI pipeline (GitHub Actions)
 # Runs the full verification gate on every push to main and every PR:
-#   server jest suite (>=1084 tests) -> client production build -> Playwright E2E (>=25/25)
+#   server jest suite (>=2000 tests across all shards) -> client production build -> Playwright E2E (>=25/25)
 # A failing step fails the job and blocks merge (when branch protection
 # requires the "test" status check). A green run posts a test summary.
 
@@ -108,10 +108,21 @@ jobs:
             NODE_ENV=test npx jest --runInBand --forceExit --shard=$i/4 2>&1 | tee -a /tmp/jest.log || fail=1
             echo "::endgroup::"
           done
+          # Aggregate every shard instead of exposing only the last shard's
+          # count. This protects the full-suite contract: the current suite is
+          # 2,065 tests across 151 files (the shard totals are 565 + 508 +
+          # 557 + 435). A missing shard or accidental Jest filter must fail
+          # CI rather than quietly reporting a partial green suite.
+          read -r tests_passed tests_total suites_passed suites_total <<EOF_COUNTS
+$(awk '/^Tests:/{gsub(",", "", $2); gsub(",", "", $4); passed += $2; total += $4} /^Test Suites:/{gsub(",", "", $3); gsub(",", "", $5); suites += $3; suites_all += $5} END{printf "%d %d %d %d\n", passed, total, suites, suites_all}' /tmp/jest.log)
+EOF_COUNTS
+          echo "Server Jest aggregate: $tests_passed passed, $tests_total total across 4 shards ($suites_passed/$suites_total suites)"
+          if [ "$tests_total" -lt 2000 ]; then
+            echo "::error::Server Jest ran only $tests_total tests; expected at least 2000 across all shards"
+            fail=1
+          fi
           {
-            echo "summary<<EOF_SUMMARY"
-            grep -E '^Tests:' /tmp/jest.log | sed 's/^Tests: *//' | paste -sd' | ' -
-            echo "EOF_SUMMARY"
+            echo "summary=**$tests_passed passed, $tests_total total** across 4 shards ($suites_passed/$suites_total suites)"
           } >> "$GITHUB_OUTPUT"
           exit $fail
 
