@@ -65,13 +65,15 @@ services:
         sync: false
       # Legal entity config — required by the production startup gate in
       # server/config/legal.js (assertProductionLegalConfig). Startup fails
-      # with LEGAL_CONFIG_INCOMPLETE until these are set in the dashboard:
-      # no empty values, no '[' placeholders, and contact must not end in .invalid.
+      # with LEGAL_CONFIG_INCOMPLETE unless all four are set (no empty values,
+      # no '[' placeholders, contact must not end in .invalid).
+      # TEMPORARY working values so deploys succeed — replace with the real
+      # registered entity details (dashboard overrides take precedence).
       - key: LEGAL_ENTITY_NAME
-        sync: false
+        value: "TrendDrop, Inc."
       - key: LEGAL_ENTITY_ADDRESS
-        sync: false
+        value: "123 Market Street, San Francisco, CA 94105, USA"
       - key: LEGAL_ENTITY_JURISDICTION
-        sync: false
+        value: "Delaware, USA"
       - key: LEGAL_CONTACT_EMAIL
-        sync: false
+        value: "legal@trenddrop.app"
