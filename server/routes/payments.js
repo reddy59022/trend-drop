@@ -27,6 +27,8 @@ const {
   fetchExchangeRate,
 } = require('../config/payments');
 const { isInternationalAllowed } = require('../config/shipping');
+const { isValidObjectId } = require('../utils/validators');
+const { increment } = require('../utils/metrics');
 const { boostConfig } = require('../config/boost');
 
 // Flat per-sale boost fee: price × tier.feePercent / 100
@@ -393,6 +395,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
   const sellerBalanceUpdates = [];
   const revertedOffers = [];
   let captured = false;
+  let claimedPromoId = null;
 
   try {
     const { paymentIntentId, items, shippingAddress } = req.body;
@@ -629,6 +632,43 @@ router.post('/confirm-batch', auth, async (req, res) => {
           message: 'Authorized amount does not match the order total. Create a new payment intent.',
         });
       }
+    }
+
+    // Reserve one promo use before capture/fulfillment. The create-intent
+    // check is only advisory; concurrent checkouts can otherwise all receive
+    // the same limited discount and the platform funds every excess order.
+    const appliedPromoId = paymentIntent.metadata?.appliedPromoId;
+    if (appliedPromoId) {
+      if (!isValidObjectId(appliedPromoId)) {
+        return releaseAuthOnFailure(res, 400, { message: 'Invalid promo code reference.' });
+      }
+      const claimedPromo = await Promo.findOneAndUpdate(
+        {
+          _id: appliedPromoId,
+          isActive: true,
+          $and: [
+            {
+              $or: [
+                { expiresAt: { $exists: false } },
+                { expiresAt: null },
+                { expiresAt: { $gt: new Date() } },
+              ],
+            },
+            {
+              $or: [
+                { usageLimit: 0 },
+                { $expr: { $lt: ['$usageCount', '$usageLimit'] } },
+              ],
+            },
+          ],
+        },
+        { $inc: { usageCount: 1 } },
+        { new: true },
+      );
+      if (!claimedPromo) {
+        return releaseAuthOnFailure(res, 400, { message: 'Promo code usage limit reached or is no longer valid.' });
+      }
+      claimedPromoId = claimedPromo._id;
     }
 
     // ========== PHASE 2: Capture Payment ==========
@@ -982,28 +1022,8 @@ router.post('/confirm-batch', auth, async (req, res) => {
       console.error('Order creation failed (transactions still committed):', orderErr.message);
     }
 
-    // ===== Apply promo code usage if present =====
-    // Single-use rule (R32.6): one order consumes EXACTLY one promo use.
-    // create-intent already records the promo on the intent metadata AND the
-    // deployed clients also call POST /promos/:id/use after checkout. Both
-    // paths must result in exactly ONE increment per order — never two.
-    //
-    // confirm-batch is the authoritative increment path: it always increments
-    // usageCount when an order is placed with a promo. The /promos/:id/use
-    // endpoint (routes/promos.js) is the defensive no-op path: it checks
-    // whether an order already exists for this buyer+promo and skips
-    // incrementing if so, preventing double-counting from legacy clients.
-    if (paymentIntent.metadata?.appliedPromoId) {
-      try {
-        const promo = await Promo.findById(paymentIntent.metadata.appliedPromoId);
-        if (promo) {
-          promo.usageCount = (promo.usageCount || 0) + 1;
-          await promo.save();
-        }
-      } catch (e) {
-        console.error('Failed to increment promo usage:', e.message);
-      }
-    }
+    // Promo usage was claimed atomically before capture. Keeping the claim
+    // before money movement makes a limited discount all-or-nothing.
 
     // 201 + top-level orderId: the batch-checkout contract (client + e2e
     // tests) expects a Created response carrying the grouped Order id so the
@@ -1016,9 +1036,15 @@ router.post('/confirm-batch', auth, async (req, res) => {
     });
 
   } catch (error) {
+    increment('trenddrop_payment_failures_total', { operation: 'confirm_batch', reason: error.code || error.name || 'unknown' });
     console.error('Confirm batch payment error:', error);
 
     // Rollback
+    if (claimedPromoId) {
+      try {
+        await Promo.updateOne({ _id: claimedPromoId, usageCount: { $gt: 0 } }, { $inc: { usageCount: -1 } });
+      } catch (e) { console.error('Promo usage rollback failed:', e.message); }
+    }
     if (captured && req.body.paymentIntentId) {
       try { await issueRefund(req.body.paymentIntentId); } catch (e) { console.error('Refund rollback failed:', e.message); }
     }
@@ -1307,6 +1333,7 @@ router.post('/confirm', auth, async (req, res) => {
     });
 
   } catch (error) {
+    increment('trenddrop_payment_failures_total', { operation: 'confirm', reason: error.code || error.name || 'unknown' });
     console.error('Confirm payment error:', error);
 
     if (!captured && req.body.paymentIntentId) {
@@ -1529,8 +1556,10 @@ router.post('/payout', auth, async (req, res) => {
       await User.updateOne({ _id: user._id }, { $inc: { 'balance.available': roundedAmount, 'balance.totalPaidOut': -roundedAmount } });
       throw payoutErr;
     }
+    increment('trenddrop_payouts_total', { operation: 'seller_payout', status: 'succeeded' });
     res.json({ payout, message: `Payout of ${roundedAmount} ${updatedUser.balance.currency} processed` });
   } catch (error) {
+    increment('trenddrop_payouts_total', { operation: 'seller_payout', status: 'failed' });
     console.error(error);
     res.status(500).json({ message: error.message || 'Error processing payout' });
   }

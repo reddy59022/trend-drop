@@ -82,6 +82,8 @@ const payoutSchema = new mongoose.Schema({
 
 payoutSchema.index({ seller: 1, status: 1 });
 payoutSchema.index({ seller: 1, createdAt: -1 });
+// Confirm/retry deduplication looks payouts up by provider intent.
+payoutSchema.index({ paymentIntentId: 1 });
 // REVENUE INVARIANT (round 25): one transaction can produce EXACTLY ONE payout
 // record. The find-then-create in /process and /auto-create races under
 // concurrent retries (double-click, mobile flaky network) and could mint two

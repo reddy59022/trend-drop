@@ -235,6 +235,11 @@ transactionSchema.index({ status: 1 });
 transactionSchema.index({ 'shipping.trackingNumber': 1 });
 transactionSchema.index({ 'autoTracking.nextCheck': 1, status: 1 });
 transactionSchema.index({ 'disputeInfo.stripeDisputeId': 1 });
+// Payment reconciliation and checkout replay guards query these fields on
+// every webhook/retry. Keep them indexed so idempotency remains fast as the
+// ledger grows instead of degrading into collection scans.
+transactionSchema.index({ 'stripePaymentIntentId': 1 });
+transactionSchema.index({ 'paymentBreakdown.paymentIntentId': 1 });
 // Compound indexes for paginated status-filtered queries (enterprise scale)
 transactionSchema.index({ buyer: 1, status: 1, createdAt: -1 });
 transactionSchema.index({ seller: 1, status: 1, createdAt: -1 });

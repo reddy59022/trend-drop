@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { isValidObjectId } = require('../utils/validators');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const Auction = require('../models/Auction');
@@ -308,6 +309,9 @@ router.get('/my', auth, async (req, res) => {
 
 router.get('/:id', optionalAuth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid listing ID' });
+    }
     const listing = await Listing.findById(req.params.id)
       .populate('seller', 'name avatar bio location closetName followers following')
       .populate('comments.user', 'name avatar');

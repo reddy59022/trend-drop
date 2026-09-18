@@ -9,7 +9,8 @@ const {
   isWebhookSignatureRequired,
   getWebhookSecret,
 } = require('../config/payments');
-const { clawbackSellerEarnings, debitPendingAllowNegative } = require('../utils/balances');
+const { clawbackSellerEarnings, reverseEscrowHold, debitPendingAllowNegative } = require('../utils/balances');
+const { increment } = require('../utils/metrics');
 
 // Stripe webhook endpoint - handles chargeback events
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -38,10 +39,12 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
 
     const verification = verifyStripeWebhookEvent(stripe, req.body, sig);
     if (!verification.verified) {
+      increment('trenddrop_webhook_events_total', { event_type: 'unknown', result: 'rejected' });
       console.error('Webhook signature verification failed:', verification.reason);
       return res.status(400).send(`Webhook Error: ${verification.reason}`);
     }
     event = verification.event;
+    increment('trenddrop_webhook_events_total', { event_type: event.type, result: 'received' });
 
     // Handle chargeback events
     switch (event.type) {
@@ -89,6 +92,8 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
               });
               await seller.save();
             }
+          } else {
+            increment('trenddrop_webhook_retries_total', { event_type: 'charge.dispute.created' });
           }
         }
         break;
@@ -202,6 +207,8 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
           'stripePaymentIntentId': charge.payment_intent,
         });
         if (transaction && transaction.status !== 'refunded') {
+          const wasReleased = transaction.status === 'completed'
+            || transaction.payout?.status === 'completed';
           // REVENUE INTEGRITY (round 25): a refund issued outside the platform
           // (Stripe dashboard, manual support action) previously only flipped
           // the status — the seller kept their earnings, the listing stayed
@@ -222,10 +229,22 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
 
           const sellerEarnings = transaction.paymentBreakdown?.sellerEarnings || 0;
           if (sellerEarnings > 0) {
-            await clawbackSellerEarnings(transaction.seller, sellerEarnings);
+            // A provider refund can arrive before OR after escrow release.
+            // Reverse only the ledger that actually contains this sale's
+            // earnings: pending escrow before completion, available-first
+            // clawback after payout release. Using the wrong side either takes
+            // unrelated seller funds or leaves the seller overpaid.
+            if (wasReleased) {
+              await clawbackSellerEarnings(transaction.seller, sellerEarnings);
+            } else {
+              await reverseEscrowHold(transaction.seller, sellerEarnings);
+            }
           }
+          const restoredQuantity = Number.isInteger(transaction.quantity) && transaction.quantity > 0
+            ? transaction.quantity
+            : 1;
           await Listing.findByIdAndUpdate(transaction.listing, {
-            $inc: { quantity: 1, quantitySold: -1 },
+            $inc: { quantity: restoredQuantity, quantitySold: -restoredQuantity },
             $set: { sold: false, available: true },
           }).catch((e) => console.error('charge.refunded inventory restore:', e.message));
 
@@ -239,6 +258,8 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
             });
             await seller.save();
           }
+        } else if (transaction) {
+          increment('trenddrop_webhook_retries_total', { event_type: 'charge.refunded' });
         }
         break;
       }
@@ -249,6 +270,7 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
 
     res.json({ received: true });
   } catch (error) {
+    increment('trenddrop_webhook_events_total', { event_type: event?.type || 'unknown', result: 'failed' });
     console.error('Webhook error:', error);
     res.status(500).json({ message: 'Webhook handler error' });
   }

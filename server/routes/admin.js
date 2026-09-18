@@ -381,6 +381,9 @@ router.get('/transactions', async (req, res) => {
 // POST /api/admin/transactions/:id/refund - Force refund (admin)
 router.post('/transactions/:id/refund', async (req, res) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid transaction ID' });
+    }
     const txn = await Transaction.findById(req.params.id);
     if (!txn) return res.status(404).json({ message: 'Transaction not found' });
     if (txn.status === 'refunded') return res.status(400).json({ message: 'Already refunded' });
@@ -410,9 +413,11 @@ router.post('/transactions/:id/refund', async (req, res) => {
       await seller.save();
     }
 
-    // Restore inventory
+    // Restore the exact quantity sold. Restoring one unit for a bulk
+    // transaction strands inventory and leaves quantitySold inconsistent.
+    const restoredQuantity = Number.isInteger(txn.quantity) && txn.quantity > 0 ? txn.quantity : 1;
     await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: 1, quantitySold: -1 },
+      $inc: { quantity: restoredQuantity, quantitySold: -restoredQuantity },
       $set: { sold: false, available: true },
     });
 

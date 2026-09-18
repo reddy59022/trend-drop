@@ -14,6 +14,7 @@ describe('malformed resource ID contracts', () => {
     ['GET', '/api/wishlist/check/not-an-object-id'],
     ['PUT', '/api/admin/reports/not-an-object-id/status'],
     ['GET', '/api/pricehistory/not-an-object-id'],
+    ['GET', '/api/listings/not-an-object-id'],
     ['POST', '/api/payouts/process/not-an-object-id'],
     ['POST', '/api/listings/not-an-object-id/boost'],
     ['POST', '/api/listings/not-an-object-id/deactivate-boost'],

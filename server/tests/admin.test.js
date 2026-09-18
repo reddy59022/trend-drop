@@ -216,6 +216,52 @@ describe('Admin Transaction Management', () => {
   });
 });
 
+describe('Admin Refund Integrity', () => {
+  test('AD.19 force refund restores the transaction quantity, not just one unit', async () => {
+    const listing = await Listing.create({
+      seller: adminId,
+      title: `Admin refund quantity ${TEST_RUN_ID}`,
+      description: 'quantity refund regression',
+      price: 50,
+      category: 'Women',
+      condition: 'Good',
+      images: ['https://example.com/refund.jpg'],
+      quantity: 0,
+      quantitySold: 3,
+      sold: true,
+      available: false,
+    });
+    testListingIds.push(listing._id);
+    await User.findByIdAndUpdate(adminId, { $set: { 'balance.pending': 100 } });
+    const txn = await Transaction.create({
+      listing: listing._id,
+      buyer: userId,
+      seller: adminId,
+      quantity: 3,
+      itemPrice: 50,
+      paymentBreakdown: {
+        subtotal: 150,
+        totalPaid: 157.5,
+        sellerEarnings: 138,
+        platformFee: 12,
+      },
+      payout: { status: 'pending' },
+      status: 'paid',
+    });
+
+    const r = await request(app)
+      .post(`/api/admin/transactions/${txn._id}/refund`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(r.status).toBe(200);
+
+    const restored = await Listing.findById(listing._id);
+    expect(restored.quantity).toBe(3);
+    expect(restored.quantitySold).toBe(0);
+    expect(restored.available).toBe(true);
+    expect(restored.sold).toBe(false);
+  });
+});
+
 describe('Admin Auto-Suspend', () => {
   test('AD.18 Auto-suspend users with 3+ strikes', async () => {
     // Create user with 3 strikes

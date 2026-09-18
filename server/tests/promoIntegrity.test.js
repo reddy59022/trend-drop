@@ -79,6 +79,18 @@ describe('PI — promo usage enforcement', () => {
     expect(fresh.usageCount).toBe(1);
   });
 
+  test('PI.1b concurrent /use requests consume a limited code only once', async () => {
+    const promo = (await createPromo({ code: 'PI1RACE', discountType: 'fixed', discountValue: 5, usageLimit: 1 })).body;
+    const results = await Promise.all(Array.from({ length: 10 }, () => request(app)
+      .post(`/api/promos/${promo._id}/use`)
+      .set('Authorization', 'Bearer ' + buyerToken)));
+
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(results.filter((r) => r.status === 400)).toHaveLength(9);
+    const fresh = await Promo.findById(promo._id).lean();
+    expect(fresh.usageCount).toBe(1);
+  });
+
   test('PI.2 /use rejects expired and inactive codes', async () => {
     const expired = (await createPromo({
       code: 'PI2EXPIRED', discountType: 'percentage', discountValue: 10,

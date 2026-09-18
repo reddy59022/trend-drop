@@ -1,3 +1,5 @@
+const { increment } = require('../utils/metrics');
+
 // === STRIPE-ONLY PAYMENT CONFIGURATION ===
 // All payments, payouts, and refunds go through Stripe.
 // Implements Auth-Only + Capture pattern:
@@ -436,6 +438,7 @@ const issueRefund = async (paymentIntentId, amount) => {
       global.__mockPaymentIntents[paymentIntentId].status = 'refunded';
     }
     if (!global.__mockRefunds) global.__mockRefunds = {};
+    increment('trenddrop_refunds_total', { source: 'payment_config', status: 'succeeded' });
     global.__mockRefunds[paymentIntentId] = {
       id: 're_mock_' + Date.now(),
       amount: amount !== undefined ? Math.round(amount * 100) : undefined,
@@ -451,7 +454,14 @@ const issueRefund = async (paymentIntentId, amount) => {
   }
   const refundParams = { payment_intent: paymentIntentId };
   if (amount) refundParams.amount = Math.round(amount * 100);
-  return stripe.refunds.create(refundParams);
+  try {
+    const result = await stripe.refunds.create(refundParams);
+    increment('trenddrop_refunds_total', { source: 'payment_config', status: 'succeeded' });
+    return result;
+  } catch (error) {
+    increment('trenddrop_refunds_total', { source: 'payment_config', status: 'failed' });
+    throw error;
+  }
 };
 
 // Process seller payout – real Stripe Connect if account ID exists, otherwise simulated.
@@ -470,6 +480,7 @@ const processSellerPayout = async (sellerId, amount, currency, payoutMethod) => 
       stripeAccount: accountId,
       idempotencyKey,
     });
+    increment('trenddrop_payouts_total', { operation: 'provider_payout', status: payout.status || 'unknown' });
     return {
       id: payout.id,
       amount,
@@ -480,6 +491,7 @@ const processSellerPayout = async (sellerId, amount, currency, payoutMethod) => 
     };
   }
   // Fallback simulation (MVP)
+  increment('trenddrop_payouts_total', { operation: 'provider_payout', status: 'paid' });
   return {
     id: `payout_sim_${Date.now()}`,
     amount,

@@ -177,6 +177,51 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(disputeNotes.length).toBe(1);
     });
 
+    it('WH.7 provider refund reverses escrow without taking unrelated available funds and restores full quantity', async () => {
+      tx.stripePaymentIntentId = 'pi_refund_123';
+      tx.quantity = 3;
+      tx.paymentBreakdown.sellerEarnings = 45;
+      await tx.save();
+
+      await User.updateOne({ _id: seller._id }, { $set: { 'balance.pending': 100, 'balance.available': 80 } });
+      await Listing.updateOne({ _id: listing._id }, {
+        $set: { quantity: 0, quantitySold: 3, sold: true, available: false },
+      });
+
+      const res = await postWebhook({
+        type: 'charge.refunded',
+        data: { object: { payment_intent: 'pi_refund_123' } },
+      });
+      expect(res.status).toBe(200);
+
+      const sellerAfter = await User.findById(seller._id);
+      expect(sellerAfter.balance.available).toBe(80);
+      expect(sellerAfter.balance.pending).toBe(55);
+      const listingAfter = await Listing.findById(listing._id);
+      expect(listingAfter.quantity).toBe(3);
+      expect(listingAfter.quantitySold).toBe(0);
+      expect(listingAfter.available).toBe(true);
+      expect(listingAfter.sold).toBe(false);
+    });
+
+    it('WH.8 provider refund after release claws back available seller earnings', async () => {
+      tx.stripePaymentIntentId = 'pi_refund_released';
+      tx.status = 'completed';
+      tx.payout.status = 'completed';
+      await tx.save();
+      await User.updateOne({ _id: seller._id }, { $set: { 'balance.pending': 100, 'balance.available': 80 } });
+
+      const res = await postWebhook({
+        type: 'charge.refunded',
+        data: { object: { payment_intent: 'pi_refund_released' } },
+      });
+      expect(res.status).toBe(200);
+
+      const sellerAfter = await User.findById(seller._id);
+      expect(sellerAfter.balance.available).toBe(35);
+      expect(sellerAfter.balance.pending).toBe(100);
+    });
+
     it('WH.5 "lost" re-delivery debits the seller exactly once', async () => {
       // Setup: transaction must have stripePaymentIntentId AND existing disputeInfo
       tx.stripePaymentIntentId = 'pi_test_123';

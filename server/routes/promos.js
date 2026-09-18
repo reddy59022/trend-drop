@@ -288,10 +288,22 @@ router.post('/:id/use', auth, async (req, res) => {
       return res.status(400).json({ message: 'Promo code usage limit reached' });
     }
 
-    promo.usageCount += 1;
-    await promo.save();
+    // Claim the usage slot atomically. The read-then-save sequence allowed
+    // concurrent checkouts to all observe the same remaining slot and exceed
+    // the seller's campaign budget (discounts funded by the platform).
+    const usageFilter = promo.usageLimit > 0
+      ? { _id: promo._id, usageCount: { $lt: promo.usageLimit } }
+      : { _id: promo._id };
+    const claimed = await Promo.findOneAndUpdate(
+      usageFilter,
+      { $inc: { usageCount: 1 } },
+      { new: true }
+    );
+    if (!claimed) {
+      return res.status(400).json({ message: 'Promo code usage limit reached' });
+    }
 
-    res.json({ message: 'Promo code used', usageCount: promo.usageCount });
+    res.json({ message: 'Promo code used', usageCount: claimed.usageCount });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

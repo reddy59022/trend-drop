@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 // Mongoose is needed for the health‑check endpoint.
 const mongoose = require('mongoose');
+const { render: renderMetrics } = require('./utils/metrics');
 // Load environment variables from .env ONLY in non-production, non-test environments.
 // This prevents the local development NODE_ENV=development setting from overriding
 // the production value set by Render.
@@ -309,6 +310,35 @@ app.use(require('./routes/wellKnown'));
 // ---------------------------------------------------------------------------
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Prometheus scrapes this endpoint. It contains only bounded operational
+// counters and process uptime; no user, payment-intent, or seller identifiers.
+app.get('/metrics', (req, res) => {
+  res.type('text/plain; version=0.0.4; charset=utf-8');
+  res.send(renderMetrics());
+});
+
+const checkMongoReadiness = async () => {
+  if (mongoose.connection.readyState !== 1 || !mongoose.connection.db) {
+    return { ok: false, message: 'MongoDB not connected' };
+  }
+  try {
+    await mongoose.connection.db.admin().ping();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: error.message };
+  }
+};
+
+// Liveness (`/health`) intentionally stays process-only. Deployments should
+// use `/readyz` to decide whether this instance can safely receive traffic.
+app.get('/readyz', async (req, res) => {
+  const mongo = await checkMongoReadiness();
+  if (!mongo.ok) {
+    return res.status(503).json({ status: 'not_ready', mongo: 'disconnected', message: mongo.message });
+  }
+  return res.json({ status: 'ready', mongo: 'connected', uptime: process.uptime() });
 });
 
 app.get('/health/mongo', async (req, res) => {

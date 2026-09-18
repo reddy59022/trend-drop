@@ -130,6 +130,60 @@ describe('TDD R35 — payment quantity input is finite and integral', () => {
   });
 });
 
+describe('TDD R37 — legacy batch authorization rejects invalid quantities', () => {
+  test.each([null, 0, -1, 0.5, '2', 'lots', {}, [], true])(
+    'rejects quantity %j before creating a payment intent', async (quantity) => {
+      const seller = await makeUser('PI batch seller', `pi_batch_seller_${Date.now()}_${Math.random()}@test.com`);
+      const buyer = await makeUser('PI batch buyer', `pi_batch_buyer_${Date.now()}_${Math.random()}@test.com`);
+      const listing = await makeListing(seller.user, 100);
+      const item = { listingId: listing._id.toString(), quantity };
+
+      const intentsBefore = new Set(Object.keys(global.__mockPaymentIntents || {}));
+      const res = await request(app).post('/api/transactions/batch')
+        .set('Authorization', `Bearer ${buyer.token}`)
+        .send({ items: [item], shippingAddress: { ...US }, buyerCountry: 'US' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/quantity/i);
+      const newIntents = Object.keys(global.__mockPaymentIntents || {})
+        .filter((id) => !intentsBefore.has(id));
+      expect(newIntents).toEqual([]);
+    },
+  );
+
+  test('defaults an omitted quantity to one and returns a finite total', async () => {
+    const seller = await makeUser('PI omitted batch seller', `pi_omitted_batch_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI omitted batch buyer', `pi_omitted_batch_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100);
+
+    const res = await request(app).post('/api/transactions/batch')
+      .set('Authorization', `Bearer ${buyer.token}`)
+      .send({ items: [{ listingId: listing._id.toString() }], shippingAddress: { ...US }, buyerCountry: 'US' });
+
+    expect(res.status).toBe(200);
+    expect(Number.isFinite(res.body.totalAmount)).toBe(true);
+    expect(res.body.totalAmount).toBeGreaterThan(0);
+  });
+
+  test('accepts a positive integer quantity and returns a finite total', async () => {
+    const seller = await makeUser('PI valid batch seller', `pi_valid_batch_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI valid batch buyer', `pi_valid_batch_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100);
+
+    const res = await request(app).post('/api/transactions/batch')
+      .set('Authorization', `Bearer ${buyer.token}`)
+      .send({
+        items: [{ listingId: listing._id.toString(), quantity: 2 }],
+        shippingAddress: { ...US },
+        buyerCountry: 'US',
+      });
+
+    expect(res.status).toBe(200);
+    expect(Number.isFinite(res.body.totalAmount)).toBe(true);
+    expect(res.body.totalAmount).toBeGreaterThan(0);
+  });
+});
+
 describe('ZD23 — confirm-batch rollback restores the FULL purchased quantity', () => {
   test('a failed batch with qty=3 puts every unit back', async () => {
     const seller = await makeUser('PI1', `pi1_${Date.now()}@test.com`);

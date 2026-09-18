@@ -112,9 +112,22 @@ router.post('/batch', auth, async (req, res) => {
     const breakdowns = [];
 
     for (const item of items) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return res.status(400).json({ message: 'Each item must be an object with a valid quantity' });
+      }
+      if (!isValidObjectId(item.listingId)) {
+        return res.status(400).json({ message: 'Invalid listingId' });
+      }
+      // Keep legacy clients that omit quantity working, but reject malformed
+      // values before they can produce a negative or non-finite authorization.
+      const quantity = item.quantity === undefined ? 1 : item.quantity;
+      if (typeof quantity !== 'number' || !Number.isFinite(quantity)
+        || !Number.isInteger(quantity) || quantity < 1) {
+        return res.status(400).json({ message: 'quantity must be a positive integer' });
+      }
       const listing = await Listing.findById(item.listingId);
       if (!listing) throw new Error(`Listing ${item.listingId} not found`);
-      if (!listing.available || listing.sold || listing.quantity < item.quantity) {
+      if (!listing.available || listing.sold || listing.quantity < quantity) {
         throw new Error(`Item "${listing.title}" is no longer available`);
       }
 
@@ -124,7 +137,7 @@ router.post('/batch', auth, async (req, res) => {
       const weightKg = listing.weight || 0.5;
 
       const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, weightKg);
-      const itemTotal = breakdown.buyer.totalPaid * item.quantity;
+      const itemTotal = breakdown.buyer.totalPaid * quantity;
       totalAmount += itemTotal;
       breakdowns.push(breakdown);
     }
