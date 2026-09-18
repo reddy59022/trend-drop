@@ -87,16 +87,33 @@ jobs:
         id: jest
         working-directory: server
         env:
-          # Bound Jest's V8 heap (default would be ~3.5GB on the 7GB runner).
-          # Together with the mongod WiredTiger cache cap set in
-          # jest.globalSetup.js this keeps the whole job well below the memory
-          # pressure threshold where the runner's oom daemon kills the job with
-          # SIGTERM (exit code 143) mid-suite.
-          NODE_OPTIONS: "--max-old-space-size=2048"
+          # Safety net only: with the 4-shard split below, per-process heap
+          # peaks well under 1GB. The cap makes any future runaway fail fast
+          # with a clear V8 OOM message inside this step instead of pushing
+          # the runner into memory pressure (runner oom daemon -> SIGTERM ->
+          # bare "exit code 143" with no logs).
+          NODE_OPTIONS: "--max-old-space-size=3072"
         run: |
           set -o pipefail
-          npm run test:ci 2>&1 | tee /tmp/jest.log
-          echo "summary=$(grep -E '^Tests:' /tmp/jest.log | tail -1)" >> "$GITHUB_OUTPUT"
+          rm -f /tmp/jest.log
+          fail=0
+          # Heap across a single --runInBand process grows with every suite
+          # (~12-15MB/file of accumulated state: per-file Express apps,
+          # Mongoose instances, global mock stores) and reaches ~2GB by suite
+          # 151. That is what used to OOM the runner mid-suite. Sharding into
+          # 4 SEQUENTIAL fresh processes bounds each process to ~600MB while
+          # keeping --runInBand (serial) DB isolation inside every shard.
+          for i in 1 2 3 4; do
+            echo "::group::Server tests — shard $i/4"
+            NODE_ENV=test npx jest --runInBand --forceExit --shard=$i/4 2>&1 | tee -a /tmp/jest.log || fail=1
+            echo "::endgroup::"
+          done
+          {
+            echo "summary<<EOF_SUMMARY"
+            grep -E '^Tests:' /tmp/jest.log | sed 's/^Tests: *//' | paste -sd' | ' -
+            echo "EOF_SUMMARY"
+          } >> "$GITHUB_OUTPUT"
+          exit $fail
 
       - name: Client unit tests (react-scripts, CI mode)
         working-directory: client
