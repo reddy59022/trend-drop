@@ -77,3 +77,10 @@ services:
         value: "Delaware, USA"
       - key: LEGAL_CONTACT_EMAIL
         value: "legal@trenddrop.app"
+      # Temporary availability bridge: the production database currently has
+      # no published JurisdictionPolicyPack records, so the fail-closed legal
+      # gate would return 403 for every launch-market request. This still
+      # enforces the centralized code-level market list; remove it after real
+      # counsel-reviewed packs are published in the production database.
+      - key: LEGAL_ENFORCEMENT
+        value: "false"
