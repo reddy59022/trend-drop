@@ -4,9 +4,22 @@ import { isNative, platform } from '../services/native';
 
 const AuthContext = createContext(null);
 
+// Safari private mode and restricted WebViews can throw even on reads from
+// localStorage. Authentication must degrade to logged-out state, not crash
+// the entire application before the login screen can render.
+const readStoredToken = () => {
+  try { return localStorage.getItem('token'); } catch { return null; }
+};
+const storeToken = (value) => {
+  try { localStorage.setItem('token', value); } catch { /* best effort */ }
+};
+const clearStoredToken = () => {
+  try { localStorage.removeItem('token'); } catch { /* best effort */ }
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(readStoredToken);
   const [loading, setLoading] = useState(true);
 
   const loadUser = useCallback(async () => {
@@ -15,7 +28,7 @@ export const AuthProvider = ({ children }) => {
         const res = await api.get('/auth/me');
         setUser(res.data);
       } catch (error) {
-        localStorage.removeItem('token');
+        clearStoredToken();
         setToken(null);
         setUser(null);
       }
@@ -27,12 +40,17 @@ export const AuthProvider = ({ children }) => {
     loadUser();
   }, [loadUser]);
 
+  const setAuthenticatedSession = useCallback((session) => {
+    if (!session?.token || !session?.user) throw new Error('Invalid authentication session');
+    storeToken(session.token);
+    setToken(session.token);
+    setUser(session.user);
+    return session;
+  }, []);
+
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
-    localStorage.setItem('token', res.data.token);
-    setToken(res.data.token);
-    setUser(res.data.user);
-    return res.data;
+    return setAuthenticatedSession(res.data);
   };
 
   const register = async (formData) => {
@@ -47,7 +65,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    clearStoredToken();
     setToken(null);
     setUser(null);
   };
@@ -93,7 +111,7 @@ export const AuthProvider = ({ children }) => {
   // to /login (a hard redirect would hit a non-existent WebView path).
   useEffect(() => {
     const onUnauthorized = () => {
-      localStorage.removeItem('token');
+      clearStoredToken();
       setToken(null);
       setUser(null);
     };
@@ -121,7 +139,7 @@ export const AuthProvider = ({ children }) => {
   // so we must exchange the SDK-produced token here — never navigate away.
   const exchangeOAuthToken = async (url, payload) => {
     const res = await api.post(url, payload);
-    localStorage.setItem('token', res.data.token);
+    storeToken(res.data.token);
     setToken(res.data.token);
     setUser(res.data.user);
     return res.data;
@@ -210,7 +228,14 @@ export const AuthProvider = ({ children }) => {
     if (isNative()) {
       const redirectUri = process.env.REACT_APP_NATIVE_REDIRECT_URI || 'trenddrop://oauth-callback';
       const scope = encodeURIComponent('openid email profile');
-      const nonce = Math.random().toString(36).slice(2);
+      // OAuth nonces must be unpredictable. Math.random() is not suitable for
+      // binding an ID token to this login attempt and could enable replay.
+      const nonceBytes = new Uint8Array(16);
+      if (!window.crypto?.getRandomValues) {
+        throw new Error('Secure random number generation is unavailable');
+      }
+      window.crypto.getRandomValues(nonceBytes);
+      const nonce = Array.from(nonceBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
       const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=id_token token&scope=${scope}&nonce=${nonce}`;
       const idToken = await openNativeOAuth(url, 'google');
       const { email, name } = decodeJwtPayload(idToken);
@@ -370,6 +395,7 @@ export const AuthProvider = ({ children }) => {
         loginWithApple,
         loginWithFacebook,
         registerPushToken,
+        setAuthenticatedSession,
       }}
     >
       {children}

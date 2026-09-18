@@ -5,6 +5,13 @@ import { Capacitor } from '@capacitor/core';
 const isNativePlatform = () =>
   typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform?.();
 
+const readToken = () => {
+  try { return localStorage.getItem('token'); } catch { return null; }
+};
+const removeToken = () => {
+  try { localStorage.removeItem('token'); } catch { /* restricted storage */ }
+};
+
 // Determine the API base URL based on platform
 const getBaseURL = () => {
   // 1) Explicit build-time override — set REACT_APP_API_URL at build time
@@ -71,7 +78,7 @@ api.interceptors.request.use((config) => {
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = readToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -85,7 +92,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
+      removeToken();
       // Broadcast so React (AuthContext) can clear state and reroute.
       window.dispatchEvent(new Event('auth-unauthorized'));
       // On web, hard redirect. On native, React Router handles it to avoid

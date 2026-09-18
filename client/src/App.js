@@ -164,7 +164,8 @@ function App() {
   useEffect(() => {
     if (loading || typeof window === 'undefined' || !window.location) return;
     if (window.location.pathname === '/unavailable') return;
-    const stored = localStorage.getItem('td_region_country');
+    let stored = null;
+    try { stored = localStorage.getItem('td_region_country'); } catch { /* restricted storage */ }
     const country = (user && user.country) || stored;
     if (!country) return;
     const countryKey = String(country).toUpperCase();

@@ -272,6 +272,56 @@ describe('Guest Checkout', () => {
     }
   });
 
+  test('GC.7b concurrent last-unit claims cannot create an orphan successful purchase', async () => {
+    const singleListing = await Listing.create({
+      title: 'Single Unit Guest Item',
+      description: 'Only one unit exists',
+      price: 100,
+      category: 'Men',
+      condition: 'New with tags',
+      seller: sellerId,
+      available: true,
+      sold: false,
+      quantity: 1,
+      quantitySold: 0,
+      shipsFrom: 'US',
+      weight: 0.5,
+    });
+    const address = {
+      fullName: 'Concurrent Guest',
+      street1: '123 St',
+      city: 'City',
+      state: 'ST',
+      postalCode: '12345',
+      country: 'US',
+    };
+    const [first, second] = await Promise.all([
+      request(app).post('/api/transactions/guest').send({
+        paymentIntentId: authorizedPaymentIntent(),
+        listingId: singleListing._id,
+        buyerEmail: `guest_race_1_${Date.now()}@example.com`,
+        buyerName: 'Race Guest 1',
+        shippingAddress: address,
+        buyerCountry: 'US',
+      }),
+      request(app).post('/api/transactions/guest').send({
+        paymentIntentId: authorizedPaymentIntent(),
+        listingId: singleListing._id,
+        buyerEmail: `guest_race_2_${Date.now()}@example.com`,
+        buyerName: 'Race Guest 2',
+        shippingAddress: address,
+        buyerCountry: 'US',
+      }),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual([201, 409]);
+    const storedListing = await Listing.findById(singleListing._id);
+    expect(storedListing.quantity).toBe(0);
+    expect(storedListing.sold).toBe(true);
+    expect(storedListing.available).toBe(false);
+    expect(await Transaction.countDocuments({ listing: singleListing._id })).toBe(1);
+  });
+
   test('GC.8 Guest buyer record is created and can be retrieved', async () => {
     // Create a fresh listing to avoid stock depletion from earlier tests
     const freshListingRes = await request(app)

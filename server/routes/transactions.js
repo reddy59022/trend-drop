@@ -8,7 +8,7 @@ const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
 const { isValidObjectId } = require('../utils/validators');
 const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
-const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding, verifyIntentAmount } = require('../config/payments');
+const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding, verifyIntentAmount, releaseAuthorization } = require('../config/payments');
 const { boostConfig } = require('../config/boost');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
@@ -320,18 +320,35 @@ router.post('/guest', async (req, res) => {
     });
 
     // Atomic inventory update
-    const wasLastOne = listing.quantity === 1;
-    await Listing.findOneAndUpdate(
-      { _id: listingId, quantity: { $gte: 1 } },
-      { 
-        $inc: { quantity: -1, quantitySold: 1 },
-        $set: {
-          available: listing.quantity > 1,
-          sold: wasLastOne,
-        }
-      },
+    const inventoryClaim = await Listing.findOneAndUpdate(
+      { _id: listingId, quantity: { $gte: 1 }, sold: { $ne: true } },
+      [
+        {
+          $set: {
+            quantity: { $subtract: [{ $ifNull: ['$quantity', 0] }, 1] },
+            quantitySold: { $add: [{ $ifNull: ['$quantitySold', 0] }, 1] },
+          },
+        },
+        {
+          $set: {
+            available: { $gt: ['$quantity', 0] },
+            sold: { $eq: ['$quantity', 0] },
+          },
+        },
+      ],
       { new: true }
     );
+    if (!inventoryClaim) {
+      // The payment was authorized and a transaction document was staged, but
+      // another buyer claimed the last unit before this atomic update. Remove
+      // the orphan and release the authorization; never report a successful
+      // purchase or credit the seller without inventory.
+      await Transaction.deleteOne({ _id: transaction._id });
+      try { await releaseAuthorization(gate.pi.id); } catch (releaseError) {
+        console.error('Failed to release guest checkout authorization:', releaseError.message);
+      }
+      return res.status(409).json({ message: 'Listing sold out while completing checkout' });
+    }
 
     // Item-level boost fee ledger (this listing only)
     await recordBoostFeeOwed(listing._id, boostFee, 1);

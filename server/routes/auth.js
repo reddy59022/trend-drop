@@ -64,6 +64,17 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
     if (typeof name !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
       return res.status(400).json({ message: 'Name, email, and password must be strings' });
     }
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedName = name.trim();
+    if (!normalizedName || normalizedName.length > 50) {
+      return res.status(400).json({ message: 'Name must be between 1 and 50 characters' });
+    }
+    // Reject malformed addresses before creating a pending account. Without
+    // this, invalid emails could consume verification records forever and
+    // produce undeliverable accounts.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || normalizedEmail.length > 254) {
+      return res.status(400).json({ message: 'A valid email address is required' });
+    }
     if (password.length < 8) {
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
     }
@@ -80,7 +91,7 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
     }
 
     // Check if user exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({ message: 'An account with this email already exists' });
     }
@@ -88,7 +99,7 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
     // A pending (unverified) registration with this email may already exist
     // (e.g. the user registered but never clicked the link). Resend instead
     // of silently failing on the unique index.
-    const existingPending = await PendingUser.findOne({ email: email.toLowerCase() });
+    const existingPending = await PendingUser.findOne({ email: normalizedEmail });
     if (existingPending) {
       const verificationToken = crypto.randomBytes(32).toString('hex');
       existingPending.verificationToken = verificationToken;
@@ -133,8 +144,8 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
 
     // Create a pending user (not yet persisted to main User collection)
     const pending = await PendingUser.create({
-      name,
-      email: email.toLowerCase(),
+      name: normalizedName,
+      email: normalizedEmail,
       password,
       avatar,
       country,
@@ -202,25 +213,54 @@ async function handleVerification(token, res) {
     return res.status(400).json({ message: 'A valid verification token is required' });
   }
   // Try pending user first
-  const pending = await PendingUser.findOne({
-    verificationToken: token,
-    verificationTokenExpires: { $gt: new Date() },
-  });
+  // Atomically claim the pending registration. Without this, two clicks on
+  // the same verification link could both read the pending row and race into
+  // User.create(), producing a 500 for one request and ambiguous account state.
+  const pending = await PendingUser.findOneAndUpdate(
+    {
+      verificationToken: token,
+      verificationTokenExpires: { $gt: new Date() },
+    },
+    {
+      $set: {
+        verificationToken: null,
+        verificationTokenExpires: new Date(0),
+      },
+    },
+    { new: false },
+  );
   if (pending) {
-    const user = await User.create({
-      name: pending.name,
-      email: pending.email,
-      password: pending.password,
-      avatar: pending.avatar,
-      emailVerified: true,
-      authProvider: 'email',
-    });
-    await PendingUser.deleteOne({ _id: pending._id });
-    const jwtToken = generateToken(user);
-    return res.json({
-      message: 'Email verified successfully! You can now login.',
-      ...userResponse(user, jwtToken),
-    });
+    try {
+      const user = await User.create({
+        name: pending.name,
+        email: pending.email,
+        password: pending.password,
+        avatar: pending.avatar,
+        country: pending.country || 'US',
+        emailVerified: true,
+        authProvider: 'email',
+      });
+      await PendingUser.deleteOne({ _id: pending._id });
+      const jwtToken = generateToken(user);
+      return res.json({
+        message: 'Email verified successfully! You can now login.',
+        ...userResponse(user, jwtToken),
+      });
+    } catch (error) {
+      // Restore the claim if account creation failed for a transient reason;
+      // the user can safely retry verification instead of losing registration.
+      await PendingUser.updateOne(
+        { _id: pending._id },
+        {
+          $set: {
+            verificationToken: token,
+            verificationTokenExpires: pending.verificationTokenExpires,
+            expiresAt: pending.expiresAt,
+          },
+        },
+      );
+      throw error;
+    }
   }
   // Fallback to existing users
   const user = await User.findOne({

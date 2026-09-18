@@ -24,7 +24,16 @@ import { setAuth, setThemeStore, setCartStore, setConfirm, resetTestState, reset
 
 import VerifyEmail from '../VerifyEmail';
 
-beforeEach(() => { resetTestState(); resetApiMock(api); setAuth(null); setThemeStore(); setCartStore(); setConfirm(); jest.useRealTimers(); });
+beforeEach(() => {
+  resetTestState();
+  resetApiMock(api);
+  const auth = setAuth(null);
+  auth.setAuthenticatedSession = jest.fn();
+  setThemeStore();
+  setCartStore();
+  setConfirm();
+  jest.useRealTimers();
+});
 
 describe('VerifyEmail page', () => {
   test('shows verifying state then success when the token verifies', async () => {
@@ -33,6 +42,7 @@ describe('VerifyEmail page', () => {
     expect(screen.getByText('Verifying Email')).toBeInTheDocument();
     expect(await screen.findByText('Verified!')).toBeInTheDocument();
     expect(api.post).toHaveBeenCalledWith('/auth/verify-email', { token: 'abc' });
+    expect(globalThis.__tdAuth.setAuthenticatedSession).toHaveBeenCalledWith({ token: 'tok', user: { email: 'a@b.com' } });
   });
 
   test('missing token shows verification-failed guidance', async () => {

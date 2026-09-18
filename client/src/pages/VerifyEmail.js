@@ -8,7 +8,7 @@ import { FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 const VerifyEmail = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { login: authLogin } = useAuth();
+  const { setAuthenticatedSession } = useAuth();
   const [status, setStatus] = useState('verifying');
   const [message, setMessage] = useState('Verifying your email...');
 
@@ -22,9 +22,8 @@ const VerifyEmail = () => {
     const verify = async () => {
       try {
         const res = await api.post('/auth/verify-email', { token });
-        if (res.data.token) {
-          localStorage.setItem('token', res.data.token);
-          authLogin(res.data.user.email, '');
+        if (res.data.token && res.data.user) {
+          setAuthenticatedSession(res.data);
           toast.success('Email verified! Welcome to AURAVEST!');
           setStatus('success');
           setMessage('Email verified successfully!');
