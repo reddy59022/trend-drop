@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const User = require('../models/User');
+const { CURRENT_VERSIONS } = require('../config/legal');
 
 // GET /api/users/me/onboarding - Get current user's onboarding status (mounted at /api/users/me)
 router.get('/onboarding', auth, async (req, res) => {
@@ -64,6 +65,13 @@ router.post('/onboarding/complete-step', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
+    }
+    if (process.env.NODE_ENV !== 'test' && process.env.LEGAL_ENFORCEMENT !== 'false'
+      && (!user.legalConsent || user.legalConsent.termsVersion !== CURRENT_VERSIONS.terms
+        || user.legalConsent.privacyVersion !== CURRENT_VERSIONS.privacy
+        || user.legalConsent.sellerVersion !== CURRENT_VERSIONS.seller
+        || user.ageConfirmed !== true)) {
+      return res.status(428).json({ message: 'Accept the current buyer and seller legal documents before seller onboarding.', code: 'LEGAL_RECONSENT_REQUIRED', versions: CURRENT_VERSIONS });
     }
 
     // Initialize onboarding if not exists

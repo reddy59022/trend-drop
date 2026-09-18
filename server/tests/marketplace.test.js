@@ -1,7 +1,8 @@
 /**
  * Marketplace availability / supported-country gating (Feature 1).
  *
- * The app is currently available in the USA and European countries only.
+ * The initial rollout boundary is the USA, all configured European countries,
+ * Australia, Canada, India, and Japan; each requires a published legal pack.
  * Users outside these markets must see an enterprise-standard "not available
  * in your area" message and must not be able to use the marketplace.
  */
@@ -36,7 +37,7 @@ afterAll(async () => {
 });
 
 describe('Marketplace availability (Feature 1 - USA + Europe)', () => {
-  test('MP.1 GET /api/marketplace/countries lists US + European markets with currency', async () => {
+  test('MP.1 GET /api/marketplace/countries lists rollout markets with currency', async () => {
     const res = await request(app).get('/api/marketplace/countries');
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -46,10 +47,8 @@ describe('Marketplace availability (Feature 1 - USA + Europe)', () => {
     expect(codes).toContain('DE');
     expect(codes).toContain('FR');
     expect(codes).toEqual(expect.arrayContaining(['IT', 'ES', 'NL', 'BE', 'PT', 'IE', 'SE', 'CH', 'PL']));
-    expect(codes).not.toContain('IN');
+    expect(codes).toEqual(expect.arrayContaining(['AU', 'CA', 'IN', 'JP']));
     expect(codes).not.toContain('BR');
-    expect(codes).not.toContain('JP');
-    expect(codes).not.toContain('AU');
     res.body.forEach((c) => {
       expect(c.code).toBeTruthy();
       expect(c.name).toBeTruthy();
@@ -57,8 +56,8 @@ describe('Marketplace availability (Feature 1 - USA + Europe)', () => {
     });
   });
 
-  test('MP.2 GET /api/marketplace/status reports supported=true for US + European countries', async () => {
-    for (const country of ['US', 'GB', 'DE', 'FR', 'IT', 'ES', 'NL']) {
+  test('MP.2 GET /api/marketplace/status reports supported=true for rollout countries', async () => {
+    for (const country of ['US', 'GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'AU', 'CA', 'IN', 'JP']) {
       const res = await request(app).get(`/api/marketplace/status?country=${country}`);
       expect(res.status).toBe(200);
       expect(res.body.country).toBe(country);
@@ -67,7 +66,7 @@ describe('Marketplace availability (Feature 1 - USA + Europe)', () => {
   });
 
   test('MP.3 GET /api/marketplace/status reports supported=false + message for unsupported countries', async () => {
-    for (const country of ['IN', 'BR', 'JP', 'AU', 'CN', 'MX']) {
+    for (const country of ['BR', 'CN', 'MX', 'KR']) {
       const res = await request(app).get(`/api/marketplace/status?country=${country}`);
       expect(res.status).toBe(200);
       expect(res.body.country).toBe(country);
@@ -80,7 +79,7 @@ describe('Marketplace availability (Feature 1 - USA + Europe)', () => {
   test('MP.4 Registration from an unsupported country is rejected (400)', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ name: 'Unsupported Region User', email: mkEmail('unsupported'), password: 'password123', country: 'IN' });
+      .send({ name: 'Unsupported Region User', email: mkEmail('unsupported'), password: 'password123', country: 'BR' });
     expect(res.status).toBe(400);
     expect(res.body.message.toLowerCase()).toContain('area');
   });
@@ -88,7 +87,7 @@ describe('Marketplace availability (Feature 1 - USA + Europe)', () => {
   test('MP.5 Registration from a supported country succeeds (201) and stores country', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ name: 'London Seller', email: mkEmail('london'), password: 'password123', country: 'GB' });
+      .send({ name: 'London Seller', email: mkEmail('london'), password: 'password123', country: 'GB', termsVersion: '2026-09-18.1', privacyVersion: '2026-09-18.1', termsAccepted: true, privacyAccepted: true, ageConfirmed: true });
     expect(res.status).toBe(201);
     expect(res.body.userId).toBeTruthy();
     const pending = await PendingUser.findById(res.body.userId);
@@ -101,7 +100,7 @@ describe('Marketplace availability (Feature 1 - USA + Europe)', () => {
   test('MP.6 Authenticated user whose country is unsupported is blocked from marketplace APIs (403)', async () => {
     const blockedUser = await User.create({
       name: 'Blocked', email: mkEmail('blocked'), password: 'password123',
-      emailVerified: true, country: 'IN', currency: 'INR',
+      emailVerified: true, country: 'BR', currency: 'BRL',
     });
     testUserIds.push(blockedUser._id);
     const token = jwt.sign({ id: blockedUser._id }, JWT_SECRET, { expiresIn: '30d' });
@@ -126,7 +125,7 @@ describe('Marketplace availability (Feature 1 - USA + Europe)', () => {
     });
     testListingIds.push(listing._id);
 
-    const blocked = await request(app).get('/api/listings?limit=5').set('X-Country-Code', 'IN');
+    const blocked = await request(app).get('/api/listings?limit=5').set('X-Country-Code', 'BR');
     expect(blocked.status).toBe(403);
     expect(blocked.body.supported).toBe(false);
 

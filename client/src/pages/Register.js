@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
+import api from '../services/api';
+import { countries } from '../utils/helpers';
 import { FaUser, FaEnvelope, FaLock, FaEye, FaEyeSlash, FaCamera, FaCheck } from 'react-icons/fa';
 
 const Register = () => {
@@ -13,10 +15,23 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [country, setCountry] = useState('US');
+  const [legalVersions, setLegalVersions] = useState({ terms: '', privacy: '' });
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
 
   useEffect(() => {
     if (user) navigate('/');
   }, [user, navigate]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.resolve(api.get('/legal/documents'))
+      .then((res) => { if (active && res?.data?.versions) setLegalVersions({ terms: res.data.versions.terms, privacy: res.data.versions.privacy }); })
+      .catch(() => { if (active) toast.error('Legal documents could not be loaded. Please try again.'); });
+    return () => { active = false; };
+  }, []);
 
   const handleAvatarChange = (e) => {
     const file = e.target.files[0];
@@ -59,6 +74,10 @@ const Register = () => {
       toast.error('Passwords do not match');
       return;
     }
+    if (!legalVersions.terms || !legalVersions.privacy || !acceptedTerms || !acceptedPrivacy || !ageConfirmed) {
+      toast.error('Please review and accept the current legal documents and confirm your age.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -66,6 +85,12 @@ const Register = () => {
       fd.append('name', formData.name);
       fd.append('email', formData.email);
       fd.append('password', formData.password);
+      fd.append('country', country);
+      fd.append('termsVersion', legalVersions.terms);
+      fd.append('privacyVersion', legalVersions.privacy);
+      fd.append('termsAccepted', 'true');
+      fd.append('privacyAccepted', 'true');
+      fd.append('ageConfirmed', 'true');
       if (avatar) fd.append('avatar', avatar);
 
       const data = await register(fd);
@@ -177,6 +202,18 @@ const Register = () => {
             {formData.confirmPassword && formData.password !== formData.confirmPassword && (
               <span className="form-error">Passwords do not match</span>
             )}
+          </div>
+
+          <div className="form-group" style={{ marginTop: 16 }}>
+            <label className="form-label">Country</label>
+            <select className="form-input" value={country} onChange={(e) => setCountry(e.target.value)}>
+              {countries.map((item) => <option key={item.code} value={item.code}>{item.flag} {item.name}</option>)}
+            </select>
+          </div>
+          <div className="glass-card" style={{ padding: 14, margin: '16px 0', fontSize: 13 }}>
+            <label style={{ display: 'block', marginBottom: 10 }}><input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />{' '}I agree to the <Link to="/legal/terms" target="_blank" rel="noreferrer">Terms of Service</Link> (version {legalVersions.terms || 'loading'})</label>
+            <label style={{ display: 'block', marginBottom: 10 }}><input type="checkbox" checked={acceptedPrivacy} onChange={(e) => setAcceptedPrivacy(e.target.checked)} />{' '}I acknowledge the <Link to="/legal/privacy" target="_blank" rel="noreferrer">Privacy Notice</Link> (version {legalVersions.privacy || 'loading'})</label>
+            <label style={{ display: 'block' }}><input type="checkbox" checked={ageConfirmed} onChange={(e) => setAgeConfirmed(e.target.checked)} />{' '}I confirm I meet the minimum age requirement for this service in my country.</label>
           </div>
 
           <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading}>

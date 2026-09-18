@@ -105,6 +105,25 @@ api.interceptors.response.use(
   }
 );
 
+// Legal documents and consent. Documents are public; acceptance is authenticated.
+export const getLegalDocuments = (country) => api.get(`/legal/documents${country ? `?country=${encodeURIComponent(country)}` : ''}`);
+export const getLegalDocument = (type, country) => api.get(`/legal/documents/${type}${country ? `?country=${encodeURIComponent(country)}` : ''}`);
+export const getLegalConsentStatus = () => api.get('/legal/consent-status');
+export const acceptLegalDocuments = (data) => api.post('/legal/accept', data);
+export const listLegalPolicyPacks = (params) => api.get('/admin/legal/policy-packs', { params });
+export const listLegalPolicyTargets = () => api.get('/admin/legal/policy-targets');
+export const getLegalPolicyReadiness = () => api.get('/admin/legal/readiness');
+export const bootstrapLegalPolicyTargets = (version) => api.post('/admin/legal/policy-packs/bootstrap-targets', { version });
+export const getLegalPolicyEvents = (id) => api.get(`/admin/legal/policy-packs/${id}/events`);
+export const updateLegalPolicyTranslations = (id, documents) => api.put(`/admin/legal/policy-packs/${id}/translations`, { documents });
+export const signOffLegalPolicyLanguage = (id, language, attestation) => api.post(`/admin/legal/policy-packs/${id}/signoffs`, { language, attestation });
+export const createLegalPolicyPack = (data) => api.post('/admin/legal/policy-packs', data);
+export const submitLegalPolicyPack = (id) => api.post(`/admin/legal/policy-packs/${id}/submit`);
+export const approveLegalPolicyPack = (id) => api.post(`/admin/legal/policy-packs/${id}/approve`);
+export const rejectLegalPolicyPack = (id, reason) => api.post(`/admin/legal/policy-packs/${id}/reject`, { reason });
+export const publishLegalPolicyPack = (id) => api.post(`/admin/legal/policy-packs/${id}/publish`);
+export const rollbackLegalPolicyPack = (id, data) => api.post(`/admin/legal/policy-packs/${id}/rollback`, data);
+
 // ====== New Feature APIs ======
 
 // Client-side ID validation prevents malformed route parameters from reaching

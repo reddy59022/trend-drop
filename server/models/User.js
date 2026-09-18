@@ -19,6 +19,17 @@ const userSchema = new mongoose.Schema({
     type: String,
     minlength: 6,
   },
+  // Immutable legal versions accepted by this account. Detailed audit records
+  // live in LegalAcceptance; these fields make current-session enforcement O(1).
+  legalConsent: {
+    termsVersion: { type: String, default: null },
+    privacyVersion: { type: String, default: null },
+    buyerVersion: { type: String, default: null },
+    sellerVersion: { type: String, default: null },
+    acceptedAt: { type: Date, default: null },
+    country: { type: String, default: null, uppercase: true, maxlength: 2 },
+  },
+  ageConfirmed: { type: Boolean, default: false },
   // Email verification
   emailVerified: {
     type: Boolean,
@@ -49,7 +60,7 @@ const userSchema = new mongoose.Schema({
    },
   role: {
     type: String,
-    enum: ['user', 'admin', 'moderator', 'suspended'],
+    enum: ['user', 'admin', 'moderator', 'legal_counsel', 'suspended'],
     default: 'user',
   },
   authProvider: {

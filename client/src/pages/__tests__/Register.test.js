@@ -24,7 +24,7 @@ import { setAuth, setThemeStore, setCartStore, setConfirm, resetTestState, reset
 
 import Register from '../Register';
 
-beforeEach(() => { resetTestState(); resetApiMock(api); setAuth(null); setThemeStore(); setCartStore(); setConfirm(); });
+beforeEach(() => { resetTestState(); resetApiMock(api); api.get.mockResolvedValue({ data: { versions: { terms: '2026-09-18.1', privacy: '2026-09-18.1' } } }); setAuth(null); setThemeStore(); setCartStore(); setConfirm(); });
 
 describe('Register page', () => {
   test('renders registration form fields', () => {
@@ -75,6 +75,8 @@ describe('Register page', () => {
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'a@b.com' } });
     fireEvent.change(screen.getByPlaceholderText('Min 8 characters'), { target: { value: 'password123' } });
     fireEvent.change(screen.getByPlaceholderText('Repeat your password'), { target: { value: 'password123' } });
+    await waitFor(() => expect(screen.getAllByText(/version 2026-09-18\.1/).length).toBeGreaterThan(1));
+    screen.getAllByRole('checkbox').forEach((checkbox) => fireEvent.click(checkbox));
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
     await waitFor(() => expect(auth.register).toHaveBeenCalled());
     const fd = auth.register.mock.calls[0][0];

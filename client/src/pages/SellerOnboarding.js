@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
+import api, { acceptLegalDocuments } from '../services/api';
 import { toast } from 'react-toastify';
+import { Link } from 'react-router-dom';
 import { FaUser, FaTag, FaTruck, FaCreditCard, FaBook, FaCheckCircle, FaArrowRight, FaArrowLeft, FaSpinner } from 'react-icons/fa';
 
 const STEPS = [
@@ -22,10 +23,15 @@ const SellerOnboarding = () => {
   const [tips, setTips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
+  const [sellerVersion, setSellerVersion] = useState('');
+  const [sellerAccepted, setSellerAccepted] = useState(false);
 
   useEffect(() => {
     fetchOnboarding();
     fetchTips();
+    Promise.resolve(api.get('/legal/documents'))
+      .then((res) => setSellerVersion(res?.data?.versions?.seller || ''))
+      .catch(() => {});
   }, []);
 
   const fetchOnboarding = async () => {
@@ -49,6 +55,10 @@ const SellerOnboarding = () => {
   };
 
   const completeStep = async (stepKey) => {
+    if (!sellerAccepted || !sellerVersion) {
+      toast.error('Please review and accept the Seller Rules and Payouts before continuing.');
+      return;
+    }
     setCompleting(true);
     try {
       const res = await api.post('/users/me/onboarding/complete-step', { step: stepKey });
@@ -58,6 +68,16 @@ const SellerOnboarding = () => {
       toast.error(error.response?.data?.message || 'Failed to complete step');
     } finally {
       setCompleting(false);
+    }
+  };
+
+  const acceptSellerRules = async () => {
+    if (!sellerAccepted || !sellerVersion) return;
+    try {
+      await acceptLegalDocuments({ termsVersion: user?.legalConsent?.termsVersion, privacyVersion: user?.legalConsent?.privacyVersion, sellerVersion, ageConfirmed: true });
+      toast.success('Seller rules accepted');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not record seller agreement');
     }
   };
 
@@ -108,6 +128,12 @@ const SellerOnboarding = () => {
         <div className="onboarding-header">
           <h1>Welcome to AURAVEST, {user?.name?.split(' ')[0]}!</h1>
           <p className="subtitle">Let's get you set up as a seller</p>
+          <p style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>Selling is subject to the <Link to="/legal/seller">Seller Rules and Payouts</Link>, <Link to="/legal/terms">Terms of Service</Link>, and applicable country laws.</p>
+        </div>
+
+        <div className="glass-card" style={{ padding: 16, marginBottom: 20 }}>
+          <label style={{ display: 'block', fontSize: 13 }}><input type="checkbox" checked={sellerAccepted} onChange={(e) => setSellerAccepted(e.target.checked)} /> I have reviewed and agree to the <Link to="/legal/seller" target="_blank" rel="noreferrer">Seller Rules and Payouts</Link> (version {sellerVersion || 'loading'}).</label>
+          <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 10 }} disabled={!sellerAccepted || !sellerVersion} onClick={acceptSellerRules}>Record seller agreement</button>
         </div>
 
         {/* Progress Bar */}

@@ -560,6 +560,10 @@ const Cart = () => {
                   })}
                 </div>
 
+                <p style={{ fontSize: 12, color: 'var(--td-text-tertiary)', marginBottom: 12 }}>
+                  By continuing, you agree to the <a href="/legal/terms" target="_blank" rel="noreferrer">Terms of Service</a> and acknowledge the <a href="/legal/buyer" target="_blank" rel="noreferrer">Buyer Rules and Returns</a>. Your country’s mandatory consumer rights still apply.
+                </p>
+
                 {stripePromise ? (
                   <Elements stripe={stripePromise}>
                     <StripeCheckoutForm

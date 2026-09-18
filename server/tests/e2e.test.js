@@ -71,7 +71,7 @@ afterAll(async () => {
 
 describe('RULE 1: Auth', () => {
   test('1a Register pending user', async () => {
-    const r = await request(app).post('/api/auth/register').field('name', 'A').field('email', mkEmail('reg')).field('password', PASS);
+    const r = await request(app).post('/api/auth/register').field('name', 'A').field('email', mkEmail('reg')).field('password', PASS).field('termsVersion', '2026-09-18.1').field('privacyVersion', '2026-09-18.1').field('termsAccepted', 'true').field('privacyAccepted', 'true').field('ageConfirmed', 'true');
     expect(r.status).toBe(201); expect(r.body.userId).toBeDefined();
   });
   test('1b Rejects <8 char password', async () => {
@@ -79,8 +79,8 @@ describe('RULE 1: Auth', () => {
     expect(r.status).toBe(400);
   });
   test('1c Duplicate email re-sends verification', async () => {
-    const e = mkEmail('dup'); await request(app).post('/api/auth/register').field('name', 'C').field('email', e).field('password', PASS);
-    const r = await request(app).post('/api/auth/register').field('name', 'D').field('email', e).field('password', PASS);
+    const e = mkEmail('dup'); await request(app).post('/api/auth/register').field('name', 'C').field('email', e).field('password', PASS).field('termsVersion', '2026-09-18.1').field('privacyVersion', '2026-09-18.1').field('termsAccepted', 'true').field('privacyAccepted', 'true').field('ageConfirmed', 'true');
+    const r = await request(app).post('/api/auth/register').field('name', 'D').field('email', e).field('password', PASS).field('termsVersion', '2026-09-18.1').field('privacyVersion', '2026-09-18.1').field('termsAccepted', 'true').field('privacyAccepted', 'true').field('ageConfirmed', 'true');
     // Re-registering an unverified (pending) email now regenerates the
     // verification token and resends the email instead of rejecting.
     expect(r.status).toBe(200);

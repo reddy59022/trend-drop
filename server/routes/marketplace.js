@@ -6,6 +6,7 @@ const {
   getCurrencyForCountry,
   BLOCKED_REGION_MESSAGE,
 } = require('../config/marketplace');
+const { isCountryPolicyPublished } = require('../config/legalRuntime');
 
 // GET /api/marketplace/countries - Supported markets (USA + Europe)
 router.get('/countries', (req, res) => {
@@ -31,7 +32,7 @@ router.get('/countries', (req, res) => {
 // conflict (anti-spoof). Native iOS/Android apps just call this over HTTPS;
 // they may optionally send X-Country-Code (SIM/locale) which is treated the
 // same as ?country=. No device permissions, no native modules required.
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
     const { detectCountry } = require('../config/geo');
     const detected = detectCountry(req);
@@ -41,7 +42,7 @@ router.get('/status', (req, res) => {
     const ipEvidence = detected && detected.country
       && ['client-hint', 'ip-unresolved', 'unknown', 'error'].indexOf(detected.source) === -1;
     const country = (ipEvidence ? detected.country : (hinted || detected.country || 'US'));
-    const supported = isCountrySupported(country);
+    const supported = await isCountryPolicyPublished(country);
     res.json({
       country,
       currency: getCurrencyForCountry(country),

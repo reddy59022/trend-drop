@@ -8,6 +8,9 @@ const upload = require('../middleware/upload');
 const { auth } = require('../middleware/auth');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../config/email');
 const { getJwtSecret } = require('../config/security');
+const { CURRENT_VERSIONS, requiredConsentTypes } = require('../config/legal');
+const LegalAcceptance = require('../models/LegalAcceptance');
+const { isCountryPolicyPublished } = require('../config/legalRuntime');
 
 // Helper: Generate JWT + user response
 // Always signs with the SAME secret the auth middleware verifies with
@@ -40,6 +43,8 @@ const userResponse = (user, token) => ({
     emailVerified: user.emailVerified,
     authProvider: user.authProvider,
     googleId: user.googleId,
+    legalConsent: user.legalConsent,
+    ageConfirmed: user.ageConfirmed,
     isVerified: user.isVerified,
     socialLinks: user.socialLinks,
     store: user.store,
@@ -52,7 +57,8 @@ const userResponse = (user, token) => ({
 // ============================================================
 router.post('/register', upload.single('avatar'), async (req, res) => {
   try {
-    const { name, email, password, country: requestedCountry } = req.body;
+    const { name, email, password, country: requestedCountry,
+      termsVersion, privacyVersion, termsAccepted, privacyAccepted, ageConfirmed } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email, and password are required' });
@@ -81,12 +87,21 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
 
     // Feature 1 — market availability: only USA + European countries may
     // register. Default to 'US' when the client does not send a country.
-    const { isCountrySupported } = require('../config/marketplace');
     const country = requestedCountry ? String(requestedCountry).toUpperCase() : 'US';
-    if (!isCountrySupported(country)) {
+    if (!(await isCountryPolicyPublished(country))) {
       return res.status(400).json({
-        message: "TrendDrop isn't available in your area yet. Currently supporting the United States and European countries.",
+        message: "TrendDrop isn't available in your area yet. This country is awaiting legal and operational approval.",
         code: 'REGION_NOT_SUPPORTED',
+      });
+    }
+
+    const accepted = (value) => value === true || value === 'true' || value === 'on';
+    if (termsVersion !== CURRENT_VERSIONS.terms || privacyVersion !== CURRENT_VERSIONS.privacy
+      || !accepted(termsAccepted) || !accepted(privacyAccepted) || !accepted(ageConfirmed)) {
+      return res.status(400).json({
+        message: 'You must accept the current Terms of Service and Privacy Notice and confirm the age requirement.',
+        code: 'LEGAL_CONSENT_REQUIRED',
+        required: { termsVersion: CURRENT_VERSIONS.terms, privacyVersion: CURRENT_VERSIONS.privacy },
       });
     }
 
@@ -149,6 +164,12 @@ router.post('/register', upload.single('avatar'), async (req, res) => {
       password,
       avatar,
       country,
+      legalConsent: {
+        termsVersion: CURRENT_VERSIONS.terms,
+        privacyVersion: CURRENT_VERSIONS.privacy,
+        acceptedAt: new Date(),
+        ageConfirmed: true,
+      },
       verificationToken,
       verificationTokenExpires,
       expiresAt: verificationTokenExpires,
@@ -237,10 +258,30 @@ async function handleVerification(token, res) {
         password: pending.password,
         avatar: pending.avatar,
         country: pending.country || 'US',
+        legalConsent: {
+          ...(pending.legalConsent || {}),
+          termsVersion: pending.legalConsent?.termsVersion || CURRENT_VERSIONS.terms,
+          privacyVersion: pending.legalConsent?.privacyVersion || CURRENT_VERSIONS.privacy,
+          acceptedAt: pending.legalConsent?.acceptedAt || new Date(),
+          country: pending.country || 'US',
+        },
+        ageConfirmed: pending.legalConsent?.ageConfirmed === true,
         emailVerified: true,
         authProvider: 'email',
       });
       await PendingUser.deleteOne({ _id: pending._id });
+      await LegalAcceptance.create({
+        user: user._id,
+        country: pending.country || 'US',
+        documents: [
+          { type: 'terms', version: pending.legalConsent?.termsVersion || CURRENT_VERSIONS.terms },
+          { type: 'privacy', version: pending.legalConsent?.privacyVersion || CURRENT_VERSIONS.privacy },
+        ],
+        purpose: 'account',
+        acceptedAt: pending.legalConsent?.acceptedAt || new Date(),
+        ipHash: '',
+        userAgent: '',
+      });
       const jwtToken = generateToken(user);
       return res.json({
         message: 'Email verified successfully! You can now login.',
@@ -797,6 +838,8 @@ router.get('/me', auth, async (req, res) => {
       isVerified: user.isVerified,
       socialLinks: user.socialLinks,
       store: user.store,
+      legalConsent: user.legalConsent,
+      ageConfirmed: user.ageConfirmed,
     });
   } catch (error) {
     console.error(error);

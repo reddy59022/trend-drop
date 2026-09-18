@@ -79,10 +79,11 @@ const Footer = () => {
             <h4>Support</h4>
             <Link to="/settings">Help Center</Link>
             <Link to="/settings">Report a Problem</Link>
-            <Link to="/settings">Privacy Policy</Link>
-            <Link to="/settings">Terms of Service</Link>
-            <Link to="/settings">Shipping Info</Link>
-            <Link to="/settings">Returns & Refunds</Link>
+            <Link to="/legal/privacy">Privacy Notice</Link>
+            <Link to="/legal/terms">Terms of Service</Link>
+            <Link to="/legal/cookies">Cookie Notice</Link>
+            <Link to="/legal/buyer">Returns & Refunds</Link>
+            <Link to="/legal/seller">Seller Rules</Link>
           </div>
         </div>
 

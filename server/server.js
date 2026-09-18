@@ -9,6 +9,8 @@ const fs = require('fs');
 // Mongoose is needed for the health‑check endpoint.
 const mongoose = require('mongoose');
 const { render: renderMetrics } = require('./utils/metrics');
+const { assertProductionLegalConfig } = require('./config/legal');
+assertProductionLegalConfig();
 // Load environment variables from .env ONLY in non-production, non-test environments.
 // This prevents the local development NODE_ENV=development setting from overriding
 // the production value set by Render.
@@ -178,16 +180,21 @@ app.use('/api', assertObjectId);
 // render the block screen), and public feature config.
 // ===========================================================================
 const { requireSupportedRegion } = require('./middleware/marketAccess');
+const { requireCurrentLegal } = require('./middleware/legalConsent');
 app.use('/api', (req, res, next) => {
   if (
     req.path.startsWith('/auth') ||
     req.path.startsWith('/marketplace') ||
-    req.path.startsWith('/config')
+    req.path.startsWith('/config') ||
+    req.path.startsWith('/legal')
   ) {
     return next();
   }
   return requireSupportedRegion(req, res, next);
 });
+// Authenticated sessions must accept the current legal versions before using
+// protected API capabilities; public browsing and legal routes remain open.
+app.use('/api', requireCurrentLegal);
 
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
@@ -196,6 +203,9 @@ app.use('/api/marketplace', require('./routes/marketplace'));
 // Public feature flags (Feature 2) — never region-gated so blocked-region
 // clients can still read what features they would get.
 app.use('/api/config', require('./routes/features'));
+// Public, versioned legal documents must remain reachable before login and
+// from unsupported-region screens; acceptance endpoints remain authenticated.
+app.use('/api/legal', require('./routes/legal'));
 // Bulk listing management routes MUST be mounted before main listings route to avoid ID conflict
 app.use('/api/listings', require('./routes/bulkListings'));
 app.use('/api/listings', require('./routes/listings'));
@@ -220,6 +230,9 @@ app.use('/api/boost', require('./routes/boost'));
 // Shop Boost routes (Feature 3 — boost whole shop toggle)
 app.use('/api/shop-boost', require('./routes/shopBoost'));
 // Admin routes (user management, platform oversight)
+// Legal counsel policy-pack lifecycle must be mounted before the broader admin
+// router, whose adminAuth middleware would reject legal_counsel users.
+app.use('/api/admin/legal', require('./routes/legalAdmin'));
 app.use('/api/admin', require('./routes/admin'));
 // Saved search routes
 app.use('/api/saved-searches', require('./routes/savedSearch'));

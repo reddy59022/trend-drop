@@ -23,6 +23,11 @@ const validBody = (overrides = {}) => ({
   email: emailFor('user'),
   password,
   country: 'US',
+  termsVersion: '2026-09-18.1',
+  privacyVersion: '2026-09-18.1',
+  termsAccepted: 'true',
+  privacyAccepted: 'true',
+  ageConfirmed: 'true',
   ...overrides,
 });
 
@@ -116,14 +121,12 @@ describe('Global signup and verification contract', () => {
     expect(pending.country).toBe('GB');
   });
 
-  test('SG.12 rejects unsupported India registrations', async () => {
-    const res = await register(validBody({ email: emailFor('in'), country: 'IN' }));
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('REGION_NOT_SUPPORTED');
+  test('SG.12 accepts India within the initial policy-pack rollout boundary', async () => {
+    expect((await register(validBody({ email: emailFor('in'), country: 'IN' }))).status).toBe(201);
   });
 
-  test('SG.13 rejects unsupported Australia registrations under the current market policy', async () => {
-    expect((await register(validBody({ email: emailFor('au'), country: 'AU' }))).status).toBe(400);
+  test('SG.13 accepts Australia within the initial policy-pack rollout boundary', async () => {
+    expect((await register(validBody({ email: emailFor('au'), country: 'AU' }))).status).toBe(201);
   });
 
   test('SG.14 defaults an omitted country to US', async () => {

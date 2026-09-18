@@ -16,8 +16,9 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { getJwtSecret } = require('../config/security');
-const { isCountrySupported, BLOCKED_REGION_MESSAGE } = require('../config/marketplace');
+const { BLOCKED_REGION_MESSAGE } = require('../config/marketplace');
 const { detectCountry } = require('../config/geo');
+const { isCountryPolicyPublished } = require('../config/legalRuntime');
 
 // Lightweight country lookup for the Bearer token (when present). Runs
 // BEFORE route-level auth so the region gate applies uniformly, including
@@ -71,7 +72,7 @@ const requireSupportedRegion = async (req, res, next) => {
     // reuse it (platform-fee?country=, shipping-estimate?country=) and doing
     // so 403'd unsupported-market lookups on public endpoints.
     const country = await resolveRequestCountry(req);
-    if (country && !isCountrySupported(country)) {
+    if (country && !(await isCountryPolicyPublished(country))) {
       return res.status(403).json({
         supported: false,
         country,

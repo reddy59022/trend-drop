@@ -19,6 +19,16 @@ const PendingUserSchema = new mongoose.Schema({
   // Country selected at registration (Feature 1: market availability).
   // Propagated to the User document on email verification.
   country: { type: String, default: 'US', maxlength: 2 },
+  // Consent is captured before an account is created and carried through
+  // verification so the final User has an auditable acceptance boundary.
+  legalConsent: {
+    termsVersion: { type: String, default: null },
+    privacyVersion: { type: String, default: null },
+    buyerVersion: { type: String, default: null },
+    sellerVersion: { type: String, default: null },
+    acceptedAt: { type: Date, default: null },
+    ageConfirmed: { type: Boolean, default: false },
+  },
 }, { timestamps: true });
 
 // Hash the password whenever it is set/changed on a PendingUser document.

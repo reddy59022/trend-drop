@@ -342,6 +342,7 @@ const Admin = () => {
                                 >
                                   <option value="user">user</option>
                                   <option value="moderator">moderator</option>
+                                  <option value="legal_counsel">legal_counsel</option>
                                   <option value="admin">admin</option>
                                 </select>
                                 {u.role !== 'suspended' ? (
