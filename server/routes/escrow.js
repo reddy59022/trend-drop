@@ -91,6 +91,42 @@ router.post('/initiate', auth, async (req, res) => {
   }
 });
 
+// Claim the release atomically. Exactly one confirmation request may win this
+// transition; the winner alone is allowed to credit the seller.
+const claimEscrowRelease = (transactionId) => Transaction.findOneAndUpdate(
+  {
+    _id: transactionId,
+    'escrow.status': 'active',
+    'escrow.releaseConditions.buyerConfirmed': true,
+    'escrow.releaseConditions.sellerConfirmed': true,
+  },
+  { $set: { 'escrow.status': 'released', 'escrow.releasedAt': new Date() } },
+  { new: true },
+);
+
+const creditReleasedEscrow = async (transaction) => {
+  const sellerEarnings = transaction.paymentBreakdown?.sellerEarnings || 0;
+  const seller = await User.findById(transaction.seller);
+  if (!seller) return;
+  const reserveAmount = Math.round(sellerEarnings * 0.10 * 100) / 100;
+  const availableAmount = sellerEarnings - reserveAmount;
+  seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
+  seller.balance.available = (seller.balance.available || 0) + availableAmount;
+  seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
+  seller.balance.reserve = (seller.balance.reserve || 0) + reserveAmount;
+  seller.balance.reserveReleaseDate = seller.balance.reserveReleaseDate || [];
+  seller.balance.reserveReleaseDate.push({
+    amount: reserveAmount,
+    releaseDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+    transactionId: transaction._id,
+  });
+  seller.notifications.unshift({
+    type: 'sale', listing: transaction.listing, transaction: transaction._id,
+    message: `Escrow released! ${availableAmount} ${transaction.currency} added to your account. ${reserveAmount} ${transaction.currency} held in reserve.`,
+  });
+  await seller.save();
+};
+
 // POST /api/escrow/confirm-buyer - Buyer confirms satisfaction with item
 router.post('/confirm-buyer', auth, async (req, res) => {
   try {
@@ -115,50 +151,22 @@ router.post('/confirm-buyer', auth, async (req, res) => {
       return res.status(400).json({ message: 'Escrow not active for this transaction' });
     }
     
-    transaction.escrow.releaseConditions.buyerConfirmed = true;
-    
-    // Check if both parties confirmed - release funds
-    if (transaction.escrow.releaseConditions.sellerConfirmed) {
-      transaction.escrow.status = 'released';
-      transaction.escrow.releasedAt = new Date();
-      
-      // Release to seller (with normal platform fee and reserve)
-      const sellerEarnings = transaction.paymentBreakdown?.sellerEarnings || 0;
-      const seller = await User.findById(transaction.seller);
-      if (seller) {
-        const reserveAmount = Math.round(sellerEarnings * 0.10 * 100) / 100;
-        const availableAmount = sellerEarnings - reserveAmount;
-        
-        seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-        seller.balance.available = (seller.balance.available || 0) + availableAmount;
-        seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
-        
-        if (!seller.balance.reserve) seller.balance.reserve = 0;
-        if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
-        seller.balance.reserve += reserveAmount;
-        seller.balance.reserveReleaseDate.push({
-          amount: reserveAmount,
-          releaseDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-          transactionId: transaction._id,
-        });
-        
-        seller.notifications.unshift({
-          type: 'sale',
-          listing: transaction.listing,
-          transaction: transaction._id,
-          message: `Escrow released! ${availableAmount} ${transaction.currency} added to your account. ${reserveAmount} ${transaction.currency} held in reserve.`,
-        });
-        await seller.save();
-      }
-    }
-    
-    await transaction.save();
-    
+    const updated = await Transaction.findOneAndUpdate(
+      { _id: transaction._id, 'escrow.status': 'active' },
+      { $set: { 'escrow.releaseConditions.buyerConfirmed': true } },
+      { new: true },
+    );
+    if (!updated) return res.status(400).json({ message: 'Escrow is already being settled or has completed' });
+
+    const released = await claimEscrowRelease(transaction._id);
+    if (released) await creditReleasedEscrow(released);
+    const responseTransaction = released || updated;
+
     res.json({
-      message: transaction.escrow.status === 'released' 
-        ? 'Both parties confirmed. Escrow released to seller.' 
+      message: responseTransaction.escrow.status === 'released'
+        ? 'Both parties confirmed. Escrow released to seller.'
         : 'Buyer confirmation recorded. Waiting for seller confirmation.',
-      transaction,
+      transaction: responseTransaction,
     });
   } catch (error) {
     console.error('Escrow buyer confirm error:', error);
@@ -190,50 +198,22 @@ router.post('/confirm-seller', auth, async (req, res) => {
       return res.status(400).json({ message: 'Escrow not active for this transaction' });
     }
     
-    transaction.escrow.releaseConditions.sellerConfirmed = true;
-    
-    // Check if both parties confirmed - release funds
-    if (transaction.escrow.releaseConditions.buyerConfirmed) {
-      transaction.escrow.status = 'released';
-      transaction.escrow.releasedAt = new Date();
-      
-      // Release to seller
-      const sellerEarnings = transaction.paymentBreakdown?.sellerEarnings || 0;
-      const seller = await User.findById(transaction.seller);
-      if (seller) {
-        const reserveAmount = Math.round(sellerEarnings * 0.10 * 100) / 100;
-        const availableAmount = sellerEarnings - reserveAmount;
-        
-        seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-        seller.balance.available = (seller.balance.available || 0) + availableAmount;
-        seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
-        
-        if (!seller.balance.reserve) seller.balance.reserve = 0;
-        if (!seller.balance.reserveReleaseDate) seller.balance.reserveReleaseDate = [];
-        seller.balance.reserve += reserveAmount;
-        seller.balance.reserveReleaseDate.push({
-          amount: reserveAmount,
-          releaseDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-          transactionId: transaction._id,
-        });
-        
-        seller.notifications.unshift({
-          type: 'sale',
-          listing: transaction.listing,
-          transaction: transaction._id,
-          message: `Escrow released! ${availableAmount} ${transaction.currency} added to your account. ${reserveAmount} ${transaction.currency} held in reserve.`,
-        });
-        await seller.save();
-      }
-    }
-    
-    await transaction.save();
-    
+    const updated = await Transaction.findOneAndUpdate(
+      { _id: transaction._id, 'escrow.status': 'active' },
+      { $set: { 'escrow.releaseConditions.sellerConfirmed': true } },
+      { new: true },
+    );
+    if (!updated) return res.status(400).json({ message: 'Escrow is already being settled or has completed' });
+
+    const released = await claimEscrowRelease(transaction._id);
+    if (released) await creditReleasedEscrow(released);
+    const responseTransaction = released || updated;
+
     res.json({
-      message: transaction.escrow.status === 'released' 
-        ? 'Both parties confirmed. Escrow released to seller.' 
+      message: responseTransaction.escrow.status === 'released'
+        ? 'Both parties confirmed. Escrow released to seller.'
         : 'Seller confirmation recorded. Waiting for buyer confirmation.',
-      transaction,
+      transaction: responseTransaction,
     });
   } catch (error) {
     console.error('Escrow seller confirm error:', error);

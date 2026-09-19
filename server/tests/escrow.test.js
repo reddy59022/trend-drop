@@ -246,6 +246,31 @@ describe('Escrow Service', () => {
     });
   });
 
+  describe('Escrow release idempotency', () => {
+    it('releases seller funds exactly once when both confirmations race', async () => {
+      await Transaction.findByIdAndUpdate(transactionId, {
+        escrow: {
+          status: 'active', amount: 600, initiatedAt: new Date(),
+          releaseConditions: { buyerConfirmed: false, sellerConfirmed: false, inspectionPeriodDays: 7 },
+        },
+      });
+
+      const [buyerResponse, sellerResponse] = await Promise.all([
+        request(app).post('/api/escrow/confirm-buyer')
+          .set('Authorization', `Bearer ${buyerToken}`).send({ transactionId }),
+        request(app).post('/api/escrow/confirm-seller')
+          .set('Authorization', `Bearer ${sellerToken}`).send({ transactionId }),
+      ]);
+
+      expect([buyerResponse.status, sellerResponse.status]).toEqual(expect.arrayContaining([200]));
+      const after = await Transaction.findById(transactionId).lean();
+      const seller = await User.findById(sellerId).lean();
+      expect(after.escrow.status).toBe('released');
+      expect(seller.balance.available).toBe(1486); // 540 less 10% reserve, once
+      expect(seller.balance.totalEarned).toBe(540);
+    });
+  });
+
   describe('POST /api/escrow/dispute', () => {
     it('ESCROW.12 should require reason', async () => {
       await Transaction.findByIdAndUpdate(transactionId, {
