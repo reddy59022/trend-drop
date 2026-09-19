@@ -370,6 +370,14 @@ router.post('/auto-create', auth, async (req, res) => {
       return res.status(400).json({ message: 'Transaction must be completed' });
     }
 
+    // A payout record is a seller-owned financial action. The old auto-create
+    // endpoint authenticated the caller but never checked transaction.seller,
+    // allowing a buyer to create payout records for another seller's sale.
+    const autoCreateSellerId = transaction.seller?._id || transaction.seller;
+    if (String(autoCreateSellerId) !== String(req.user._id) && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only the seller or an admin can create this payout' });
+    }
+
     // Check if payout already exists
     const existingPayout = await Payout.findOne({ transaction: transaction._id });
     if (existingPayout) {

@@ -139,14 +139,28 @@ jobs:
           CI: "false"
         run: npm run build
 
-      - name: Install Playwright chromium
+      - name: Install Playwright Chromium and system dependencies
         run: npx playwright install --with-deps chromium
 
-      - name: E2E tests (Playwright, headless)
+      - name: Verify Playwright Chromium launches
+        run: |
+          node - <<'NODE'
+          const { chromium } = require('@playwright/test');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            await browser.close();
+            console.log('Playwright Chromium launch succeeded');
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: E2E tests (Playwright, complete in-memory suite)
         id: e2e
         run: |
           set -o pipefail
-          npx playwright test 2>&1 | tee /tmp/e2e.log
+          npm run test:e2e 2>&1 | tee /tmp/e2e.log
           echo "summary=$(grep -E '[0-9]+ (passed|failed)' /tmp/e2e.log | tail -1)" >> "$GITHUB_OUTPUT"
 
       - name: Post test summary

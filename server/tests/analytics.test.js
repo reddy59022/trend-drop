@@ -44,6 +44,25 @@ beforeAll(async () => {
     listing: testListing._id, itemPrice: 999,
     paymentBreakdown: { subtotal: 999, sellerEarnings: 999, totalPaid: 999 },
   });
+
+  // These terminal loss states must never be reported as seller revenue.
+  await Transaction.create([
+    {
+      seller: user._id, buyer: user._id, amount: 777, status: 'returned',
+      listing: testListing._id, itemPrice: 777,
+      paymentBreakdown: { subtotal: 777, sellerEarnings: 777, totalPaid: 777 },
+    },
+    {
+      seller: user._id, buyer: user._id, amount: 888, status: 'chargeback_lost',
+      listing: testListing._id, itemPrice: 888,
+      paymentBreakdown: { subtotal: 888, sellerEarnings: 888, totalPaid: 888 },
+    },
+    {
+      seller: user._id, buyer: user._id, amount: 666, status: 'disputed',
+      listing: testListing._id, itemPrice: 666,
+      paymentBreakdown: { subtotal: 666, sellerEarnings: 666, totalPaid: 666 },
+    },
+  ]);
 });
 
 afterAll(async () => {
@@ -67,6 +86,7 @@ describe('v50.0 Advanced Analytics Dashboard', () => {
     expect(res.status).toBe(200);
     expect(res.body.totalListings).toBeDefined();
     expect(res.body.totalRevenue).toBe(85);
+    expect(res.body.netRevenue).toBe(85);
     expect(res.body.totalTransactions).toBe(1);
   });
 
@@ -95,6 +115,7 @@ describe('v50.0 Advanced Analytics Dashboard', () => {
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body[0].amount).toBe(100);
   });
 
   test('v50.6 - Should get inventory analytics', async () => {
@@ -113,5 +134,22 @@ describe('v50.0 Advanced Analytics Dashboard', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.predictedSales).toBeDefined();
+  });
+
+  test('v50.8 - normalizes non-USD seller revenue to the reporting currency', async () => {
+    const jpyTransaction = await Transaction.create({
+      seller: user._id, buyer: user._id, amount: 14950, currency: 'JPY', status: 'completed',
+      listing: testListing._id, itemPrice: 14950,
+      paymentBreakdown: { subtotal: 14950, sellerEarnings: 14950, totalPaid: 14950 },
+    });
+
+    const res = await request(app)
+      .get('/api/analytics/dashboard')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.reportingCurrency).toBe('USD');
+    expect(res.body.totalRevenue).toBeCloseTo(85 + 100, 2);
+    await Transaction.findByIdAndDelete(jpyTransaction._id);
   });
 });

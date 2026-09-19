@@ -10,6 +10,7 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Report = require('../models/Report');
+const authorizedPaymentIntent = require('./helpers/authorizedPayment');
 
 const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
@@ -232,14 +233,15 @@ describe('Admin Refund Integrity', () => {
     });
     testListingIds.push(listing._id);
     await User.findByIdAndUpdate(adminId, { $set: { 'balance.pending': 100 } });
+    const paymentIntentId = authorizedPaymentIntent('succeeded');
     const txn = await Transaction.create({
       listing: listing._id,
       buyer: userId,
       seller: adminId,
       quantity: 1,
       itemPrice: 50,
-      paymentBreakdown: { subtotal: 50, totalPaid: 57.5, sellerEarnings: 46, platformFee: 4 },
-      payout: { status: 'pending' },
+      paymentBreakdown: { subtotal: 50, totalPaid: 57.5, sellerEarnings: 46, platformFee: 4, paymentIntentId },
+      payout: { status: 'pending', transactionId: paymentIntentId },
       status: 'paid',
     });
 
@@ -253,6 +255,26 @@ describe('Admin Refund Integrity', () => {
     expect(restored.quantity).toBe(1);
     expect(restored.quantitySold).toBe(0);
     expect((await User.findById(adminId)).balance.pending).toBe(54);
+  });
+
+  test('AD.21 missing provider reference fails closed without local refund', async () => {
+    const listing = await Listing.create({
+      seller: adminId, title: `Admin missing provider ${TEST_RUN_ID}`, description: 'provider safety',
+      price: 20, category: 'Women', condition: 'Good', quantity: 0, quantitySold: 1,
+      sold: true, available: false,
+    });
+    testListingIds.push(listing._id);
+    await User.findByIdAndUpdate(adminId, { $set: { 'balance.pending': 18 } });
+    const txn = await Transaction.create({
+      listing: listing._id, buyer: userId, seller: adminId, quantity: 1, itemPrice: 20,
+      paymentBreakdown: { subtotal: 20, totalPaid: 22, sellerEarnings: 18, platformFee: 2 },
+      payout: { status: 'pending' }, status: 'paid',
+    });
+    const r = await request(app).post(`/api/admin/transactions/${txn._id}/refund`).set('Authorization', `Bearer ${adminToken}`);
+    expect(r.status).toBe(502);
+    expect((await Transaction.findById(txn._id)).status).toBe('paid');
+    expect((await Listing.findById(listing._id)).quantity).toBe(0);
+    expect((await User.findById(adminId)).balance.pending).toBe(18);
   });
 
   test('AD.19 force refund restores the transaction quantity, not just one unit', async () => {
@@ -271,6 +293,7 @@ describe('Admin Refund Integrity', () => {
     });
     testListingIds.push(listing._id);
     await User.findByIdAndUpdate(adminId, { $set: { 'balance.pending': 100 } });
+    const paymentIntentId = authorizedPaymentIntent('succeeded');
     const txn = await Transaction.create({
       listing: listing._id,
       buyer: userId,
@@ -282,8 +305,9 @@ describe('Admin Refund Integrity', () => {
         totalPaid: 157.5,
         sellerEarnings: 138,
         platformFee: 12,
+        paymentIntentId,
       },
-      payout: { status: 'pending' },
+      payout: { status: 'pending', transactionId: paymentIntentId },
       status: 'paid',
     });
 

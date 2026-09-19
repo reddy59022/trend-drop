@@ -296,15 +296,16 @@ describe('R32 — cart → order placement', () => {
     // the promo must be auditable from the order
     expect(String(txn.promoId || '')).toBe(String(promo._id));
 
-    // The discount is NOT baked into the per-line totalPaid (the transaction
-    // records the item + shipping + protection it fulfilled); it is applied to
-    // the amount the buyer is actually CHARGED. That is the number that must
-    // prove the promo worked.
+    // The transaction ledger records the same discounted total that was
+    // authorized and captured. The original item subtotal and discount are
+    // retained separately for auditability.
     const lineTotal = ROUND(txn.paymentBreakdown.totalPaid);
-    expect(lineTotal).toBeGreaterThan(70); // 70 + shipping + protection
+    expect(txn.paymentBreakdown.originalSubtotal).toBe(70);
+    expect(txn.paymentBreakdown.discountAmount).toBe(5);
+    expect(lineTotal).toBeGreaterThan(70); // discounted item + shipping + protection
     const { paymentIntentId } = res.body.transactions[0].paymentBreakdown;
     const authorized = Number(global.__mockPaymentIntents[paymentIntentId].amount) / 100;
-    expect(ROUND(authorized)).toBe(ROUND(lineTotal - 5));
+    expect(ROUND(authorized)).toBe(lineTotal);
   });
 
   test('R32.9 an over-authorized intent captures ONLY the order total', async () => {

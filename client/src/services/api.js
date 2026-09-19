@@ -143,8 +143,10 @@ export const getRatingsBySeller = (sellerId) => withValidResourceId(sellerId, 's
 export const getRatingsByListing = (listingId) => withValidResourceId(listingId, 'listing', () => api.get(`/ratings/listing/${listingId}`));
 
 // Notifications (client helpers for user notification endpoints)
-export const getUserNotifications = (userId) => withValidResourceId(userId, 'user', () => api.get(`/users/${userId}/notifications`));
-export const markAllNotificationsRead = (userId) => withValidResourceId(userId, 'user', () => api.put(`/users/${userId}/notifications/read`));
+// Notifications are scoped to the authenticated user by the server; using a
+// user-id subroute was a dead client/server contract (no such users route).
+export const getUserNotifications = (userId) => withValidResourceId(userId, 'user', () => api.get('/notifications'));
+export const markAllNotificationsRead = (userId) => withValidResourceId(userId, 'user', () => api.put('/notifications/read'));
 
 // Messages
 export const startConversation = (data) => api.post('/messages', data);

@@ -11,6 +11,8 @@ const Report = require('../models/Report');
 const Offer = require('../models/Offer');
 const SellerBadge = require('../models/SellerBadge');
 const { clawbackSellerEarnings } = require('../utils/balances');
+const { findPaymentIntent, retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
+const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
 
 // All admin routes require auth + adminAuth
 router.use(auth, adminAuth);
@@ -400,27 +402,29 @@ router.post('/transactions/:id/refund', async (req, res) => {
     if (!claimedTxn) return res.status(400).json({ message: 'Refund is already being processed or has completed' });
     txn = claimedTxn;
 
-    // Issue refund via Stripe
-    const { issueRefund, releaseAuthorization } = require('../config/payments');
-    const paymentIntentId = txn.payout?.transactionId || txn.paymentBreakdown?.paymentIntentId;
-    
-    if (paymentIntentId) {
-      try {
-        const { retrievePaymentIntent } = require('../config/payments');
-        const pi = await retrievePaymentIntent(paymentIntentId);
-        if (pi.status === 'succeeded') {
-          await issueRefund(paymentIntentId);
-        } else if (pi.status === 'requires_capture') {
-          await releaseAuthorization(paymentIntentId);
-        }
-      } catch (stripeErr) {
-        console.error('Stripe refund error:', stripeErr.message);
-        // Do not mark the transaction refunded or claw back seller funds when
-        // the provider did not accept the refund. Clear the claim so the admin
-        // can safely retry.
-        await Transaction.updateOne({ _id: txn._id, refundProcessing: true }, { $set: { refundProcessing: false } });
-        return res.status(502).json({ message: 'Refund could not be processed. No ledger changes were made.' });
+    // Issue refund via the provider. A missing/unknown provider reference is
+    // a finance reconciliation failure, never permission to perform a local
+    // "free refund" that leaves the platform funding the buyer.
+    const paymentIntentId = txn.payout?.transactionId || txn.paymentBreakdown?.paymentIntentId || txn.stripePaymentIntentId;
+    try {
+      if (!paymentIntentId) throw new Error('Payment provider reference is missing');
+      const storedIntent = await findPaymentIntent(paymentIntentId);
+      if (!storedIntent) throw new Error('Payment provider reference was not found');
+      const pi = await retrievePaymentIntent(paymentIntentId);
+      if (pi.status === 'succeeded') {
+        await issueRefund(paymentIntentId);
+      } else if (pi.status === 'requires_capture') {
+        await releaseAuthorization(paymentIntentId);
+      } else if (!['canceled', 'cancelled', 'refunded'].includes(pi.status)) {
+        throw new Error(`Payment provider returned non-settleable status: ${pi.status}`);
       }
+    } catch (stripeErr) {
+      console.error('Stripe refund error:', stripeErr.message);
+      // Do not mark the transaction refunded or claw back seller funds when
+      // the provider did not accept the refund. Clear the claim so the admin
+      // can safely retry.
+      await Transaction.updateOne({ _id: txn._id, refundProcessing: true }, { $set: { refundProcessing: false } });
+      return res.status(502).json({ message: 'Refund could not be processed. No ledger changes were made.' });
     }
 
     // Remove seller earnings atomically so a refund cannot overwrite a
@@ -430,6 +434,8 @@ router.post('/transactions/:id/refund', async (req, res) => {
     // Restore the exact quantity sold. Restoring one unit for a bulk
     // transaction strands inventory and leaves quantitySold inconsistent.
     const restoredQuantity = Number.isInteger(txn.quantity) && txn.quantity > 0 ? txn.quantity : 1;
+    await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+    await markPayoutRefunded(txn);
     await Listing.findByIdAndUpdate(txn.listing, {
       $inc: { quantity: restoredQuantity, quantitySold: -restoredQuantity },
       $set: { sold: false, available: true },
@@ -445,6 +451,7 @@ router.post('/transactions/:id/refund', async (req, res) => {
       refundAmount: txn.paymentBreakdown?.totalPaid || 0,
     };
     await txn.save();
+    await syncOrderFromTransaction(txn, 'refunded', txn.paymentBreakdown?.totalPaid || 0);
 
     res.json({ message: 'Admin refund processed', transaction: txn });
   } catch (error) {

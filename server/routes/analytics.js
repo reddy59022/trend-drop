@@ -4,8 +4,31 @@ const { auth } = require('../middleware/auth');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Subscription = require('../models/Subscription');
+const { currencies } = require('../config/currencies');
 
-const NON_REVENUE_STATUSES = ['cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled', 'refunded'];
+// Analytics aggregates are reported in USD so a JPY/EUR sale cannot be
+// mistaken for the same numeric amount of dollars. Rates are quoted per USD.
+const toUsdCents = (amount, currency = 'USD') => {
+  const value = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
+  const rate = currencies[currency]?.rate || 1;
+  return Math.round((value / rate) * 100);
+};
+const fromUsdCents = (cents) => Math.round(cents) / 100;
+
+// Only settled sales are revenue. Returns, disputes, chargebacks, and every
+// cancellation state are excluded so a seller cannot report money that was
+// later unwound or is still at risk.
+const NON_REVENUE_STATUSES = [
+  'cancelled',
+  'cancelled_by_buyer',
+  'cancelled_by_seller',
+  'auto_cancelled',
+  'refunded',
+  'returned',
+  'disputed',
+  'chargeback_open',
+  'chargeback_lost',
+];
 
 // GET /api/analytics/dashboard - Get seller analytics dashboard
 router.get('/dashboard', auth, async (req, res) => {
@@ -19,12 +42,19 @@ router.get('/dashboard', auth, async (req, res) => {
     const soldListings = listings.filter(l => l.status === 'sold').length;
     
     // Calculate revenue
-    const totalRevenue = transactions.reduce(
-      (sum, t) => sum + (t.paymentBreakdown?.sellerEarnings ?? t.amount ?? 0),
+    // `totalRevenue` is seller net earnings. It is already net of the
+    // platform fee, so applying the fee a second time would under-report the
+    // seller and misstate platform economics.
+    const totalRevenue = fromUsdCents(transactions.reduce(
+      (cents, t) => cents + toUsdCents(t.paymentBreakdown?.sellerEarnings ?? t.amount ?? 0, t.currency),
       0
-    );
-    
-    // Get subscription for fee calculation
+    ));
+    const platformRevenue = fromUsdCents(transactions.reduce(
+      (cents, t) => cents + toUsdCents(t.paymentBreakdown?.platformFee ?? 0, t.currency),
+      0
+    ));
+
+    // Get subscription for display/configuration compatibility.
     const subscription = await Subscription.findOne({ seller: req.user._id, status: 'active' });
     const platformFee = subscription?.features?.reducedFees ? 0.05 : 0.08;
     
@@ -33,8 +63,11 @@ router.get('/dashboard', auth, async (req, res) => {
       activeListings,
       soldListings,
       totalRevenue,
+      reportingCurrency: 'USD',
       platformFeePercent: platformFee * 100,
-      netRevenue: totalRevenue * (1 - platformFee),
+      // Seller earnings are already net; never subtract the platform fee twice.
+      netRevenue: totalRevenue,
+      platformRevenue,
       totalTransactions: transactions.length,
       recentTransactions: transactions.slice(0, 5),
       inventoryForecast: Math.max(0, activeListings - soldListings),
@@ -55,7 +88,9 @@ router.get('/sales', auth, async (req, res) => {
     
     const salesData = transactions.map(t => ({
       date: t.createdAt,
-      amount: t.amount,
+      // Legacy transactions may not have `amount`; use the authoritative
+      // item subtotal before falling back to the legacy field.
+      amount: t.paymentBreakdown?.subtotal ?? t.itemPrice ?? t.amount ?? 0,
       status: t.status,
     }));
     
@@ -122,7 +157,10 @@ router.get('/analytics/overview', auth, async (req, res) => {
     const listings = await Listing.find({ seller: req.user._id });
 
     const paidTxns = transactions.filter(t => !NON_REVENUE_STATUSES.includes(t.status));
-    const totalRevenue = paidTxns.reduce((sum, t) => sum + (t.paymentBreakdown?.sellerEarnings || t.amount || 0), 0);
+    const totalRevenue = fromUsdCents(paidTxns.reduce(
+      (cents, t) => cents + toUsdCents(t.paymentBreakdown?.sellerEarnings || t.amount || 0, t.currency),
+      0
+    ));
     const totalSales = paidTxns.length;
     const totalViews = listings.reduce((sum, l) => sum + (l.views || 0), 0);
     const conversionRate = totalViews > 0 ? (totalSales / totalViews) * 100 : 0;
@@ -134,6 +172,7 @@ router.get('/analytics/overview', auth, async (req, res) => {
     res.json({
       overview: {
         totalRevenue,
+        reportingCurrency: 'USD',
         totalSales,
         avgOrderValue: totalSales > 0 ? totalRevenue / totalSales : 0,
         totalViews,
@@ -171,11 +210,14 @@ router.get('/analytics/revenue', auth, async (req, res) => {
     transactions.forEach(t => {
       const key = t.createdAt.toISOString().slice(0, 10);
       if (!buckets[key]) buckets[key] = { date: key, revenue: 0, sales: 0 };
-      buckets[key].revenue += t.paymentBreakdown?.sellerEarnings || t.amount || 0;
+      buckets[key].revenue = fromUsdCents(
+        toUsdCents(buckets[key].revenue, 'USD')
+        + toUsdCents(t.paymentBreakdown?.sellerEarnings || t.amount || 0, t.currency)
+      );
       buckets[key].sales += 1;
     });
 
-    res.json({ revenue: Object.values(buckets) });
+    res.json({ reportingCurrency: 'USD', revenue: Object.values(buckets) });
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch revenue data' });
   }
