@@ -348,7 +348,11 @@ router.put('/:id/ship', auth, async (req, res) => {
       return res.status(400).json({ message: 'Return must be approved before shipping' });
     }
     returnRequest.status = 'shipped';
-    returnRequest.trackingNumber = req.body.trackingNumber || '';
+    // A buyer using the prepaid label may not send a tracking number back;
+    // the generated carrier number is authoritative and must be propagated
+    // to the transaction so the return cron can poll it.
+    returnRequest.trackingNumber = req.body.trackingNumber || returnRequest.returnTrackingNumber || '';
+    returnRequest.trackingStatus = 'picked_up';
     await returnRequest.save();
     // Sync to Transaction lifecycle
     const txn = await Transaction.findById(returnRequest.transaction);

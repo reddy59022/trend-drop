@@ -172,17 +172,27 @@ const transactionSchema = new mongoose.Schema({
   },
   // Return details
   returnDetails: {
+    returnId: { type: mongoose.Schema.Types.ObjectId, ref: 'Return', default: null },
     requestedAt: Date,
     deadline: Date,
     acceptedAt: Date,
+    approvedAt: Date,
     returnShipDeadline: Date,
+    shippedAt: Date,
+    buyerShippedAt: Date,
+    deliveredAt: Date,
     receivedAt: Date,
     reason: String,
+    description: String,
     condition: String,
     buyerPackingProof: [String],
     sellerInspectionProof: [String],
     inspectionNotes: String,
     trackingNumber: String,
+    autoRefunded: { type: Boolean, default: false },
+    autoRefundedAt: Date,
+    refundAmount: Number,
+    autoRefundReason: String,
   },
   // Dispute info (internal platform dispute)
   dispute: {

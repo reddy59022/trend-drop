@@ -20,7 +20,10 @@ const Return = require('../models/Return');
 const Offer = require('../models/Offer');
 
 const { orderStates, timeWindows } = require('./orderLifecycle');
-const { releaseSellerEarnings } = require('../utils/balances');
+const { releaseSellerEarnings, clawbackSellerEarnings } = require('../utils/balances');
+const { retrievePaymentIntent, findPaymentIntent, issueRefund, releaseAuthorization } = require('./payments');
+const { trackingStatuses, simulateTrackingUpdate } = require('./shipping');
+const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
 
 // ──────────────────────────────────────────────
 // JOB 1: Auto-Expire Listings (Every 6 hours)
@@ -57,8 +60,93 @@ async function expireListings() {
 // ──────────────────────────────────────────────
 // Moves buyer_confirmed → completed after 3 days
 // Also moves delivered → buyer_confirmed after 3 days
+//
+// No-shipment standard: a seller has 7 calendar days from payment to obtain
+// carrier acceptance. A label/QR code alone is not shipment proof. At the
+// deadline the platform atomically cancels the unshipped transaction, voids
+// the label, releases any uncaptured authorization or fully refunds a capture,
+// restores inventory, and claws back only the seller amount actually credited.
+async function autoCancelUnshippedOrders(now = Date.now()) {
+  const deadline = new Date(now - timeWindows.SELLER_SHIPMENT_DEADLINE);
+  const candidates = await Transaction.find({
+    status: { $in: [orderStates.PAID, orderStates.PROCESSING] },
+    createdAt: { $lte: deadline },
+    'shipping.actualDelivery': { $exists: false },
+  });
+  let cancelled = 0;
+
+  for (const candidate of candidates) {
+    // Claim before contacting the provider or mutating inventory. A seller
+    // shipping concurrently can only win if the transaction is still paid.
+    const claimed = await Transaction.findOneAndUpdate(
+      { _id: candidate._id, status: { $in: [orderStates.PAID, orderStates.PROCESSING] } },
+      { $set: { status: orderStates.AUTO_CANCELLED } },
+      { new: true },
+    );
+    if (!claimed) continue;
+
+    const paymentIntentId = claimed.payout?.transactionId || claimed.paymentBreakdown?.paymentIntentId || claimed.stripePaymentIntentId;
+    try {
+      if (!paymentIntentId) throw new Error('Missing payment provider reference; cancellation requires manual finance reconciliation');
+      // Strict lookup: retrievePaymentIntent intentionally fabricates a
+      // succeeded mock for legacy callers, but a money-moving cancellation
+      // must fail closed when the provider reference is unknown.
+      const storedIntent = await findPaymentIntent(paymentIntentId);
+      if (!storedIntent) throw new Error('Payment provider reference was not found');
+      const intent = await retrievePaymentIntent(paymentIntentId);
+      if (intent.status === 'requires_capture') await releaseAuthorization(paymentIntentId);
+      else if (intent.status === 'succeeded') await issueRefund(paymentIntentId, claimed.paymentBreakdown?.totalPaid || 0);
+      else if (!['canceled', 'cancelled', 'refunded'].includes(intent.status)) {
+        throw new Error(`Payment provider returned non-refundable status: ${intent.status}`);
+      }
+
+      // Label creation is not shipment. Void it so a cancelled order cannot
+      // later be printed or handed to a carrier under the old authorization.
+      claimed.shipping = {
+        ...claimed.shipping,
+        voided: Boolean(claimed.shipping?.labelCreated || claimed.shipping?.trackingNumber),
+        voidedAt: claimed.shipping?.labelCreated || claimed.shipping?.trackingNumber ? new Date() : claimed.shipping?.voidedAt,
+        labelCreated: false,
+      };
+      claimed.cancellation = {
+        cancelledBy: 'system',
+        reason: 'Seller did not obtain carrier acceptance within 7 calendar days',
+        cancelledAt: new Date(now),
+        refundAmount: Math.round((claimed.paymentBreakdown?.totalPaid || 0) * 100) / 100,
+      };
+      claimed.payout.status = 'refunded';
+
+      await Listing.findByIdAndUpdate(claimed.listing, {
+        $inc: { quantity: claimed.quantity || 1, quantitySold: -(claimed.quantity || 1) },
+        $set: { sold: false, available: true },
+      });
+      await Payout.updateMany({ transaction: claimed._id, status: { $ne: 'refunded' } }, { $set: { status: 'refunded', refundedAt: new Date(now) } });
+
+      const sellerEarnings = Math.round((claimed.paymentBreakdown?.sellerEarnings || 0) * 100) / 100;
+      if (sellerEarnings > 0) {
+        await User.updateOne({ _id: claimed.seller }, [
+          { $set: { 'balance.pending': { $max: [0, { $subtract: [{ $ifNull: ['$balance.pending', 0] }, sellerEarnings] }] }, 'balance.totalEarned': { $max: [0, { $subtract: [{ $ifNull: ['$balance.totalEarned', 0] }, sellerEarnings] }] } } },
+        ]);
+      }
+      await claimed.save();
+      const { reverseBoostFeeOwed, syncOrderFromTransaction } = require('../routes/orderLifecycle');
+      await reverseBoostFeeOwed(claimed.listing, claimed.paymentBreakdown?.boostFee || 0);
+      await syncOrderFromTransaction(claimed, 'refunded', claimed.paymentBreakdown?.totalPaid || 0);
+      cancelled++;
+    } catch (error) {
+      // Provider failure must never leave a local cancellation that claims a
+      // refund happened. Return to the original fulfillment state for retry;
+      // inventory and balances have not been touched before this point.
+      await Transaction.updateOne({ _id: claimed._id, status: orderStates.AUTO_CANCELLED }, { $set: { status: candidate.status } });
+      console.error(`[CRON] Failed to auto-cancel unshipped transaction ${claimed._id}:`, error.message);
+    }
+  }
+  return cancelled;
+}
+
 async function autoProcessOrders() {
   try {
+    await autoCancelUnshippedOrders();
     const now = Date.now();
     let completed = 0;
     let confirmed = 0;
@@ -279,10 +367,139 @@ async function releaseReserves() {
 // ──────────────────────────────────────────────
 // JOB 5: Auto-Process Return Requests (Every hour)
 // ──────────────────────────────────────────────
+// Return settlement is deliberately centralized here. Carrier delivery is
+// treated as proof that the buyer returned the item; no seller action is
+// required to release the buyer's refund. Every monetary mutation is behind
+// the transaction returnProcessing claim, so overlapping cron runs settle once.
+async function settleDeliveredReturn(txn, returnRequest, now) {
+  const priorStatus = txn.status;
+  const claimed = await Transaction.findOneAndUpdate(
+    { _id: txn._id, status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] }, returnProcessing: { $ne: true } },
+    { $set: { status: orderStates.RETURN_DELIVERED, returnProcessing: true } },
+    { new: true },
+  );
+  if (!claimed) return false;
+
+  try {
+    const paymentIntentId = claimed.payout?.transactionId || claimed.paymentBreakdown?.paymentIntentId || claimed.stripePaymentIntentId;
+    if (!paymentIntentId) throw new Error('Missing payment provider reference');
+    const storedIntent = await findPaymentIntent(paymentIntentId);
+    if (!storedIntent) throw new Error('Payment provider reference was not found');
+    const intent = await retrievePaymentIntent(paymentIntentId);
+    const responsibility = returnRequest.returnShippingResponsibility || 'seller';
+    const totalPaid = claimed.paymentBreakdown?.totalPaid || 0;
+    const itemPrice = claimed.itemPrice || claimed.paymentBreakdown?.subtotal || 0;
+    const refundAmount = Math.round((responsibility === 'buyer' ? itemPrice : totalPaid) * 100) / 100;
+
+    if (!returnRequest.providerRefunded) {
+      if (intent.status === 'requires_capture') await releaseAuthorization(paymentIntentId);
+      else if (intent.status === 'succeeded') await issueRefund(paymentIntentId, responsibility === 'buyer' ? refundAmount : undefined);
+      else if (!['canceled', 'cancelled', 'refunded'].includes(intent.status)) throw new Error(`Non-settleable provider status: ${intent.status}`);
+      returnRequest.providerRefunded = true;
+      await returnRequest.save();
+    }
+
+    if (!returnRequest.inventoryRestored) {
+      await Listing.findByIdAndUpdate(claimed.listing, {
+        $inc: { quantity: claimed.quantity || 1, quantitySold: -(claimed.quantity || 1) },
+        $set: { sold: false, available: true },
+      });
+      returnRequest.inventoryRestored = true;
+      await returnRequest.save();
+    }
+    if (!returnRequest.boostReversed) {
+      await reverseBoostFeeOwed(claimed.listing, claimed.paymentBreakdown?.boostFee || 0);
+      returnRequest.boostReversed = true;
+      await returnRequest.save();
+    }
+    if (!returnRequest.payoutMarkedRefunded) {
+      await markPayoutRefunded(claimed);
+      returnRequest.payoutMarkedRefunded = true;
+      await returnRequest.save();
+    }
+    if (!returnRequest.sellerLedgerClawedBack && claimed.paymentBreakdown?.sellerEarnings > 0) {
+      await clawbackSellerEarnings(claimed.seller, claimed.paymentBreakdown.sellerEarnings);
+      returnRequest.sellerLedgerClawedBack = true;
+      await returnRequest.save();
+    }
+
+    returnRequest.status = 'refunded';
+    returnRequest.refundAmount = refundAmount;
+    returnRequest.deliveredAt = returnRequest.deliveredAt || new Date(now);
+    returnRequest.trackingStatus = 'delivered';
+    await returnRequest.save();
+
+    claimed.status = orderStates.REFUNDED;
+    claimed.returnProcessing = false;
+    claimed.returnDetails = { ...claimed.returnDetails, receivedAt: returnRequest.deliveredAt, autoRefunded: true, autoRefundedAt: new Date(now), refundAmount };
+    claimed.payout = { status: 'refunded', processedAt: new Date(now) };
+    await claimed.save();
+    const { syncOrderFromTransaction } = require('../routes/orderLifecycle');
+    await syncOrderFromTransaction(claimed, orderStates.REFUNDED, refundAmount);
+    return true;
+  } catch (error) {
+    await Transaction.updateOne(
+      { _id: claimed._id, status: orderStates.RETURN_DELIVERED, returnProcessing: true },
+      { $set: { status: orderStates.RETURN_DELIVERED, returnProcessing: false } },
+    );
+    console.error(`[CRON] Return settlement failed for ${claimed._id}:`, error.message);
+    return false;
+  }
+}
+
+async function autoProcessReturnTracking(now = Date.now()) {
+  const transactions = await Transaction.find({
+    status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] },
+    'returnDetails.trackingNumber': { $nin: ['', null] },
+    'payout.status': { $ne: 'refunded' },
+  });
+  let updated = 0;
+  let settled = 0;
+  const labels = new Map(trackingStatuses.map((s) => [s.code, s]));
+
+  for (const txn of transactions) {
+    const returnRequest = txn.returnDetails?.returnId ? await Return.findById(txn.returnDetails.returnId) : null;
+    if (!returnRequest || returnRequest.status === 'refunded') continue;
+    const shippedAt = txn.returnDetails?.buyerShippedAt ? new Date(txn.returnDetails.buyerShippedAt).getTime() : now;
+    const daysSinceShipment = Math.max(0, Math.floor((now - shippedAt) / (24 * 60 * 60 * 1000)));
+    const current = returnRequest.trackingStatus || 'picked_up';
+    const next = simulateTrackingUpdate(current, daysSinceShipment);
+    if (next !== current) {
+      const currentIndex = trackingStatuses.findIndex((s) => s.code === current);
+      const nextIndex = trackingStatuses.findIndex((s) => s.code === next);
+      returnRequest.trackingStatus = next;
+      returnRequest.trackingHistory = returnRequest.trackingHistory || [];
+      // A polling interval can skip several carrier events. Backfill every
+      // ordered milestone so return tracking has the same complete timeline
+      // as outbound order tracking instead of jumping label_created → delivered.
+      for (let i = Math.max(0, currentIndex + 1); i <= nextIndex; i += 1) {
+        const milestone = trackingStatuses[i];
+        if (!milestone || milestone.sortOrder < 0) continue;
+        returnRequest.trackingHistory.push({ status: milestone.code, label: milestone.label, description: milestone.description, timestamp: new Date(now), location: 'Carrier polling' });
+      }
+      if (next === 'delivered') {
+        returnRequest.status = 'delivered';
+        returnRequest.deliveredAt = new Date(now);
+        txn.returnDetails = { ...txn.returnDetails, deliveredAt: new Date(now) };
+        await txn.save();
+      } else if (next === 'in_transit' || next === 'out_for_delivery') {
+        returnRequest.status = next;
+      }
+      await returnRequest.save();
+      updated++;
+    }
+    if (next === 'delivered' || returnRequest.status === 'delivered') {
+      if (await settleDeliveredReturn(txn, returnRequest, now)) settled++;
+    }
+  }
+  return { updated, settled };
+}
+
 // 5a. Auto-reject returns where seller hasn't responded after 3 days
 // 5b. Auto-refund where buyer hasn't shipped return after 7 days of acceptance
 async function autoProcessReturns() {
   try {
+    const tracking = await autoProcessReturnTracking();
     const now = Date.now();
     let autoRejected = 0;
     let autoRefunded = 0;
@@ -362,8 +579,8 @@ async function autoProcessReturns() {
       }
     }
 
-    if (autoRejected > 0 || autoRefunded > 0) {
-      console.log(`[CRON] Auto-processed returns: ${autoRejected} rejected, ${autoRefunded} expired`);
+    if (tracking.updated || tracking.settled || autoRejected > 0 || autoRefunded > 0) {
+      console.log(`[CRON] Auto-processed returns: ${tracking.updated} tracking updates, ${tracking.settled} settled, ${autoRejected} rejected, ${autoRefunded} expired`);
     }
 
     // 5c. Auto-refund: return_in_transit + seller never confirms return
@@ -373,6 +590,11 @@ async function autoProcessReturns() {
     const inTransitReturns = await Transaction.find({
       status: orderStates.RETURN_IN_TRANSIT,
       'payout.status': { $ne: 'refunded' },
+      // New return records are settled by autoProcessReturnTracking above,
+      // which has the atomic claim and step markers. Keep this legacy fallback
+      // limited to pre-returnId transactions so the two jobs cannot double
+      // restock or refund the same order.
+      'returnDetails.returnId': { $exists: false },
     });
 
     for (const txn of inTransitReturns) {
@@ -679,8 +901,11 @@ function initCronJobs() {
 module.exports = {
   initCronJobs,
   expireListings,
+  autoCancelUnshippedOrders,
   autoProcessOrders,
   autoProcessReturns,
+  autoProcessReturnTracking,
+  settleDeliveredReturn,
   releaseReserves,
   cleanExpiredTokens,
   activateAuctions,

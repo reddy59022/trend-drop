@@ -8,6 +8,7 @@ const orderStates = {
   PROCESSING: 'processing',
   CANCELLED_BY_BUYER: 'cancelled_by_buyer',
   CANCELLED_BY_SELLER: 'cancelled_by_seller',
+  AUTO_CANCELLED: 'auto_cancelled',
   SHIPPED: 'shipped',
   IN_TRANSIT: 'in_transit',
   OUT_FOR_DELIVERY: 'out_for_delivery',
@@ -60,6 +61,8 @@ const timeWindows = {
   AUTO_COMPLETE: 3 * 24 * 60 * 60 * 1000,             // Auto-complete 3 days after confirm
   PAYOUT_HOLD_FROM_DELIVERY: 5 * 24 * 60 * 60 * 1000, // CRITICAL: Hold funds 5 days from delivery (return window)
   CANCELLATION_WINDOW: 24 * 60 * 60 * 1000,           // 24h cancel window
+  SELLER_SHIPMENT_DEADLINE: 7 * 24 * 60 * 60 * 1000,   // World-standard no-shipment cancellation deadline
+  SELLER_SHIPMENT_WARNING: 5 * 24 * 60 * 60 * 1000,   // Buyer/seller warning threshold
   NEW_SELLER_HOLD: 14 * 24 * 60 * 60 * 1000,          // New seller: hold first 5 sales for 14 days
   NEW_SELLER_THRESHOLD: 5,                              // First 5 sales subject to hold
   SELLER_RESERVE_PERCENT: 0.10,                         // 10% rolling reserve

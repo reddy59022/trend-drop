@@ -289,9 +289,10 @@ router.post('/:id/ship', auth, async (req, res) => {
       shippedCount = syncRes.modifiedCount ?? syncRes.nModified ?? 0;
       const cancelGuard = await Transaction.countDocuments({
         _id: { $in: shipment.items },
-        status: { $in: ['cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'refunded'] },
+        status: { $in: ['cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled', 'refunded'] },
       });
       if (cancelGuard > 0) {
+
         // Another party cancelled (part of) this shipment while we were
         // shipping — refuse the dispatch so money and goods never diverge.
         if (shippedCount > 0) {
@@ -300,6 +301,14 @@ router.post('/:id/ship', auth, async (req, res) => {
             { $set: { status: 'paid' } }
           );
         }
+        // The order document was touched before the guarded transaction
+        // update. Roll that shipment mutation back as well, otherwise the UI
+        // would report a dispatched parcel after the money was refunded.
+        shipment.status = 'cancelled';
+        shipment.shippedAt = null;
+        shipment.trackingNumber = '';
+        shipment.carrier = '';
+        await order.save();
         return res.status(409).json({
           message: 'This shipment was cancelled while dispatching. Order not shipped.',
         });

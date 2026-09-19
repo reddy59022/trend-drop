@@ -41,7 +41,7 @@ const returnSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'denied', 'shipped', 'received', 'refunded', 'completed', 'disputed'],
+    enum: ['pending', 'approved', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'received', 'denied', 'refunded', 'completed', 'disputed'],
     default: 'pending',
   },
   refundAmount: {
@@ -71,6 +71,26 @@ const returnSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  trackingStatus: {
+    type: String,
+    default: 'label_created',
+  },
+  trackingHistory: [{
+    status: String,
+    label: String,
+    description: String,
+    timestamp: { type: Date, default: Date.now },
+    location: String,
+  }],
+  deliveredAt: {
+    type: Date,
+    default: null,
+  },
+  inventoryRestored: { type: Boolean, default: false },
+  boostReversed: { type: Boolean, default: false },
+  payoutMarkedRefunded: { type: Boolean, default: false },
+  sellerLedgerClawedBack: { type: Boolean, default: false },
+  providerRefunded: { type: Boolean, default: false },
   labelCarrier: {
     type: String,
     default: '',

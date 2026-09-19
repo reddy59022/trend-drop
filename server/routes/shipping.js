@@ -6,6 +6,7 @@ const { carriers, calculateShipping, generateLabel, trackingStatuses, simulateTr
 const { currencies, convertPrice, formatPrice } = require('../config/currencies');
 const { countries, getCountry } = require('../config/countries');
 const Transaction = require('../models/Transaction');
+const Return = require('../models/Return');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const { isValidObjectId } = require('../utils/validators');
@@ -682,45 +683,87 @@ router.post('/tracking-event', async (req, res) => {
     if (!req.get('x-tracking-secret') || req.get('x-tracking-secret') !== secret) {
       return res.status(403).json({ message: 'Invalid tracking webhook secret' });
     }
-    const { transactionId, status, trackingNumber, timestamp, location, description } = req.body;
-    if (!transactionId || !status || !isValidObjectId(transactionId)) {
-      return res.status(400).json({ message: 'transactionId and status are required' });
+    const { transactionId, returnId, status, trackingNumber, timestamp, location, description } = req.body;
+    if ((!transactionId && !returnId) || !status) {
+      return res.status(400).json({ message: 'transactionId or returnId and status are required' });
     }
-    const txn = await Transaction.findById(transactionId);
-    if (!txn) return res.status(404).json({ message: 'Transaction not found' });
 
     const statusOrder = trackingStatuses.filter(s => s.sortOrder >= 0).sort((a, b) => a.sortOrder - b.sortOrder);
     const eventIndex = statusOrder.findIndex(s => s.code === status);
-    if (eventIndex === -1) {
-      return res.status(400).json({ message: `Invalid tracking status: ${status}` });
+    if (eventIndex === -1) return res.status(400).json({ message: `Invalid tracking status: ${status}` });
+
+    // Return labels use the same carrier status vocabulary as outbound orders.
+    // Persist every missing intermediate step when a carrier sends a jump
+    // event (for example, delivered without earlier webhook deliveries), so
+    // the buyer and seller see a complete, ordered timeline.
+    if (returnId) {
+      if (!isValidObjectId(returnId)) return res.status(400).json({ message: 'Invalid returnId' });
+      const returnRequest = await Return.findById(returnId);
+      if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
+      if (returnRequest.status === 'denied') {
+        return res.status(400).json({ message: 'Cannot update tracking for denied return' });
+      }
+      if (['refunded', 'completed'].includes(returnRequest.status)) {
+        return res.json({ message: 'Return tracking already settled', status: returnRequest.trackingStatus, returnId: returnRequest._id, alreadySettled: true });
+      }
+      const txn = await Transaction.findById(returnRequest.transaction);
+      if (!txn) return res.status(404).json({ message: 'Transaction not found' });
+      const currentIndex = statusOrder.findIndex((s) => s.code === (returnRequest.trackingStatus || 'label_created'));
+      const eventTime = timestamp ? new Date(timestamp) : new Date();
+      const append = (code) => {
+        const meta = trackingStatuses.find((s) => s.code === code);
+        returnRequest.trackingHistory.push({
+          status: code,
+          label: meta?.label || code,
+          description: description || meta?.description || '',
+          timestamp: eventTime,
+          location: location || null,
+        });
+      };
+      returnRequest.trackingHistory = returnRequest.trackingHistory || [];
+      if (eventIndex > currentIndex) {
+        for (let i = Math.max(0, currentIndex + 1); i <= eventIndex; i += 1) append(statusOrder[i].code);
+        returnRequest.trackingStatus = status;
+      } else {
+        // Duplicate/out-of-order carrier events are retained for audit, but
+        // never regress the canonical progress state.
+        append(status);
+      }
+      returnRequest.trackingNumber = trackingNumber || returnRequest.trackingNumber || returnRequest.returnTrackingNumber;
+      if (status === 'delivered' && eventIndex >= currentIndex) {
+        returnRequest.status = 'delivered';
+        returnRequest.deliveredAt = eventTime;
+        txn.returnDetails = { ...txn.returnDetails, deliveredAt: eventTime };
+      } else if (eventIndex > currentIndex && status === 'out_for_delivery') {
+        returnRequest.status = 'out_for_delivery';
+      } else if (eventIndex > currentIndex && ['in_transit', 'in_transit_local'].includes(status)) {
+        returnRequest.status = 'in_transit';
+      }
+      await returnRequest.save();
+      if (trackingNumber) txn.returnDetails.trackingNumber = trackingNumber;
+      await txn.save();
+      if (status === 'delivered' && eventIndex >= currentIndex) {
+        const { settleDeliveredReturn } = require('../config/cron');
+        await settleDeliveredReturn(txn, returnRequest, eventTime.getTime());
+      }
+      return res.json({ message: `Return tracking event '${status}' recorded`, status, returnId: returnRequest._id, transactionId: txn._id, trackingHistory: returnRequest.trackingHistory });
     }
 
-    // Current tracking position (label_created is the pre-dispatch position).
+    if (!isValidObjectId(transactionId)) return res.status(400).json({ message: 'Invalid transactionId' });
+    const txn = await Transaction.findById(transactionId);
+    if (!txn) return res.status(404).json({ message: 'Transaction not found' });
     const currentTracking = txn.status === 'shipped' ? 'picked_up' : txn.status;
     const currentIndex = statusOrder.findIndex(s => s.code === currentTracking);
-
-    // Append the event to history (carriers legitimately post duplicate events).
     txn.shipping.trackingHistory = txn.shipping.trackingHistory || [];
-    txn.shipping.trackingHistory.push({
-      status,
-      label: trackingStatuses.find(s => s.code === status)?.label || status,
-      description: description || trackingStatuses.find(s => s.code === status)?.description || '',
-      timestamp: timestamp ? new Date(timestamp) : new Date(),
-      location: location || null,
-    });
+    txn.shipping.trackingHistory.push({ status, label: trackingStatuses.find(s => s.code === status)?.label || status, description: description || trackingStatuses.find(s => s.code === status)?.description || '', timestamp: timestamp ? new Date(timestamp) : new Date(), location: location || null });
     txn.shipping.trackingHistory = txn.shipping.trackingHistory.slice(-50);
-
-    // Advance the transaction status only when the event moves it forward.
     if (currentIndex === -1 || eventIndex >= currentIndex) {
       if (status === 'delivered') {
         txn.status = 'delivered';
         txn.shipping.actualDelivery = timestamp ? new Date(timestamp) : new Date();
-      } else if (txn.status !== 'delivered' && ['in_transit', 'in_transit_local', 'out_for_delivery'].includes(status)) {
-        txn.status = status;
-      }
+      } else if (txn.status !== 'delivered' && ['in_transit', 'in_transit_local', 'out_for_delivery'].includes(status)) txn.status = status;
       if (trackingNumber) txn.shipping.trackingNumber = trackingNumber;
     }
-
     await txn.save();
     res.json({ message: `Tracking event '${status}' recorded`, status, transactionId: txn._id });
   } catch (error) {

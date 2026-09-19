@@ -190,6 +190,25 @@ describe('Returns & Refund Management', () => {
     expect(res.body.trackingNumber).toBe('RET1Z123456789');
   });
 
+  test('RET.8a - prepaid return label tracking is propagated when buyer omits a number', async () => {
+    const created = await request(app)
+      .post('/api/returns')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ transactionId, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
+    const approved = await request(app)
+      .put(`/api/returns/${created.body._id}/approve`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    expect(approved.body.returnTrackingNumber).toBeTruthy();
+    const shipped = await request(app)
+      .put(`/api/returns/${created.body._id}/ship`)
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({});
+    expect(shipped.status).toBe(200);
+    expect(shipped.body.trackingNumber).toBe(approved.body.returnTrackingNumber);
+    const txn = await Transaction.findById(transactionId);
+    expect(txn.returnDetails.trackingNumber).toBe(approved.body.returnTrackingNumber);
+  });
+
   test('RET.9 - Seller should confirm return received and process refund', async () => {
     const created = await request(app)
       .post('/api/returns')

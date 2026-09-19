@@ -21,6 +21,7 @@ const app = require('../server');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
+const Return = require('../models/Return');
 const { orderStates } = require('../config/orderLifecycle');
 
 const SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
@@ -31,6 +32,7 @@ const mkEmail = (p) => `${p}_${RUN}@test.com`;
 let seller, buyer, buyerToken;
 const testUserIds = [];
 const testListingIds = [];
+const testReturnIds = [];
 
 async function mkUser(name, p) {
   const u = await User.create({
@@ -95,6 +97,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Transaction.deleteMany({ $or: [{ buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] });
+  await Return.deleteMany({ _id: { $in: testReturnIds } });
   await Listing.deleteMany({ _id: { $in: testListingIds } });
   await User.deleteMany({ _id: { $in: testUserIds } });
 });
@@ -109,6 +112,38 @@ describe('TW · Tracking webhook advances a shipment to delivered', () => {
     expect(after.shipping.actualDelivery).toBeTruthy();
     expect(after.shipping.trackingHistory.length).toBeGreaterThanOrEqual(1);
     expect(after.shipping.trackingHistory[after.shipping.trackingHistory.length - 1].status).toBe('delivered');
+  });
+
+  test('TW.R1 return tracking records every ordered step and settles on delivery', async () => {
+    const txn = await mkShippedTxn({ status: orderStates.RETURN_IN_TRANSIT });
+    const paymentIntentId = txn.payout.transactionId;
+    global.__mockPaymentIntents = global.__mockPaymentIntents || {};
+    global.__mockRefunds = global.__mockRefunds || {};
+    global.__mockPaymentIntents[paymentIntentId] = { id: paymentIntentId, status: 'succeeded', amount: 5750 };
+    const returnRequest = await Return.create({
+      transaction: txn._id, buyer: buyer._id, seller: seller._id, listing: txn.listing,
+      reason: 'Defective', refundAmount: 57.5, returnShippingResponsibility: 'seller',
+      status: 'shipped', trackingNumber: txn.returnDetails?.trackingNumber || 'RET-TW',
+      returnTrackingNumber: 'RET-TW', trackingStatus: 'label_created',
+    });
+    testReturnIds.push(returnRequest._id);
+    txn.returnDetails = { ...txn.returnDetails, returnId: returnRequest._id, trackingNumber: 'RET-TW', buyerShippedAt: new Date() };
+    await txn.save();
+
+    for (const status of ['picked_up', 'in_transit', 'in_transit_local', 'out_for_delivery']) {
+      const res = await webhook(null, status, { returnId: returnRequest._id, trackingNumber: 'RET-TW' });
+      expect(res.status).toBe(200);
+    }
+    const delivered = await webhook(null, 'delivered', { returnId: returnRequest._id, trackingNumber: 'RET-TW' });
+    expect(delivered.status).toBe(200);
+
+    const freshReturn = await Return.findById(returnRequest._id);
+    const freshTxn = await Transaction.findById(txn._id);
+    expect(freshReturn.status).toBe('refunded');
+    expect(freshReturn.trackingHistory.map((event) => event.status)).toEqual([
+      'picked_up', 'in_transit', 'in_transit_local', 'out_for_delivery', 'delivered',
+    ]);
+    expect(freshTxn.status).toBe('refunded');
   });
 
   test('TW.2 stepwise in_transit then delivered', async () => {
