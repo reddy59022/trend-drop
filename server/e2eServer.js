@@ -228,23 +228,21 @@ async function main() {
   // --- Seller badges ---
   await SellerBadge.create({
     userId: seller._id,
-    badges: ['starter', 'verified'],
     tier: 'silver',
-    tierPoints: 500,
-    totalEarnings: 5000,
-    totalSales: 25,
-    totalReviews: 18,
+    salesCount: 25,
     avgRating: 4.8,
+    responseRate: 0.95,
+    returnRate: 0.02,
+    isVerified: true,
+    benefits: { reducedFees: true, prioritySupport: true, featuredListings: false },
   });
   await SellerBadge.create({
     userId: seller2._id,
-    badges: ['starter'],
     tier: 'bronze',
-    tierPoints: 100,
-    totalEarnings: 800,
-    totalSales: 4,
-    totalReviews: 2,
+    salesCount: 4,
     avgRating: 4.5,
+    responseRate: 0.8,
+    returnRate: 0.1,
   });
 
   // --- Transactions (completed sales, so payouts/badges have real data) ---

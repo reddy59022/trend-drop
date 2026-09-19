@@ -93,7 +93,6 @@ router.put('/update-stats', auth, async (req, res) => {
     badge.benefits.featuredListings = false;
 
     // Calculate tier
-    const tiers = SellerBadge.TIERS;
     if (badge.avgRating >= 4.8 && badge.salesCount >= 200 && badge.returnRate <= 0.02) {
       badge.tier = 'platinum';
       badge.benefits.featuredListings = true;

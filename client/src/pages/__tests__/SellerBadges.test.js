@@ -60,6 +60,56 @@ describe('SellerBadges page', () => {
     });
   });
 
+  test('renders every badge value from the API, including a zero average rating', async () => {
+    getMySellerBadge.mockResolvedValue({ data: { badge: {
+      tier: 'gold', isVerified: true, verificationRequested: false,
+      salesCount: 42, avgRating: 0, responseRate: 0.875, returnRate: 0.035,
+      benefits: { reducedFees: true, prioritySupport: true, featuredListings: true },
+    } } });
+
+    renderPage(<SellerBadges />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Gold')).toBeInTheDocument();
+      expect(screen.getByText('42')).toBeInTheDocument();
+      expect(screen.getByText('0.0')).toBeInTheDocument();
+      expect(screen.getByText('87.5%')).toBeInTheDocument();
+      expect(screen.getByText('3.5%')).toBeInTheDocument();
+    });
+  });
+
+  test('does not display malformed or missing metrics as real values', async () => {
+    getMySellerBadge.mockResolvedValue({ data: { badge: {
+      tier: 'silver', isVerified: false, verificationRequested: false,
+      salesCount: null, avgRating: 6, responseRate: -0.2, returnRate: 2,
+      benefits: { reducedFees: false, prioritySupport: false, featuredListings: false },
+    } } });
+
+    renderPage(<SellerBadges />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('—')).toHaveLength(3);
+      expect(screen.getByText('2.0%')).toBeInTheDocument();
+    });
+  });
+
+  test('normalizes legacy percentage rates without changing the displayed values', async () => {
+    getMySellerBadge.mockResolvedValue({ data: { badge: {
+      tier: 'silver', isVerified: false, verificationRequested: false,
+      totalSales: 18, averageRating: '4.6', responseRate: 95, returnRate: 2,
+      benefits: { reducedFees: false, prioritySupport: false, featuredListings: false },
+    } } });
+
+    renderPage(<SellerBadges />);
+
+    await waitFor(() => {
+      expect(screen.getByText('18')).toBeInTheDocument();
+      expect(screen.getByText('4.6')).toBeInTheDocument();
+      expect(screen.getByText('95%')).toBeInTheDocument();
+      expect(screen.getByText('2.0%')).toBeInTheDocument();
+    });
+  });
+
   test('renders normalized response rate as a percentage', async () => {
     getMySellerBadge.mockResolvedValue({ data: { badge: {
       tier: 'silver', isVerified: false, verificationRequested: false,
@@ -85,6 +135,45 @@ describe('SellerBadges page', () => {
       expect(screen.getByText('0%')).toBeInTheDocument();
       expect(screen.getByText('0.0%')).toBeInTheDocument();
     });
+  });
+
+  test('rejects fractional sales counts before sending stats to the API', async () => {
+    getMySellerBadge.mockResolvedValue({ data: { badge: {
+      tier: 'bronze', isVerified: false, verificationRequested: false,
+      salesCount: 1, avgRating: 4, responseRate: 0.5, returnRate: 0.1,
+      benefits: { reducedFees: false, prioritySupport: false, featuredListings: false },
+    } } });
+
+    renderPage(<SellerBadges />);
+    const salesInput = await screen.findByLabelText('Sales Count');
+    fireEvent.change(salesInput, { target: { value: '1.5' } });
+    fireEvent.click(screen.getByRole('button', { name: /Recalculate Tier/i }));
+
+    expect(updateSellerBadgeStats).not.toHaveBeenCalled();
+  });
+
+  test('does not submit duplicate stats updates while one is pending', async () => {
+    getMySellerBadge.mockResolvedValue({ data: { badge: {
+      tier: 'bronze', isVerified: false, verificationRequested: false,
+      salesCount: 0, avgRating: 0, responseRate: 0, returnRate: 0,
+      benefits: { reducedFees: false, prioritySupport: false, featuredListings: false },
+    } } });
+    updateSellerBadgeStats.mockImplementation(() => new Promise(() => {}));
+
+    renderPage(<SellerBadges />);
+    const button = await screen.findByRole('button', { name: /Recalculate Tier/i });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    expect(updateSellerBadgeStats).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows a recoverable error when the badge cannot be loaded', async () => {
+    getMySellerBadge.mockRejectedValue(new Error('boom'));
+
+    renderPage(<SellerBadges />);
+
+    await waitFor(() => expect(screen.getByText(/Unable to load seller badge/i)).toBeInTheDocument());
   });
 
   test('does not submit duplicate verification requests while one is pending', async () => {

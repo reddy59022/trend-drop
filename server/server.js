@@ -147,7 +147,6 @@ const PUBLIC_CACHE_PATHS = [
   '/size-guides',
   '/shipping',
   '/pricehistory',
-  '/seller-badges',
   '/seller-communities',
   '/brands',
   '/colors',
