@@ -9,7 +9,10 @@ const User = require('./models/User');
 const { getJwtSecret } = require('./config/security');
 
 let io = null;
-let userSocketMap = new Map(); // userId -> socketId
+// A user can have multiple active sessions (for example web + mobile). Keep
+// every socket id so disconnecting one session cannot mark the user offline
+// while another session is still connected.
+let userSocketMap = new Map(); // userId -> Set<socketId>
 
 /**
  * Initialize WebSocket server
@@ -24,6 +27,7 @@ function initializeWebSocket(server) {
     'http://10.0.2.2:8100',      // Android emulator
     'http://127.0.0.1:8100',     // iOS simulator
     'capacitor://localhost',     // Native iOS WebView
+    'https://localhost',          // Android WebView release origin
     'https://trend-drop.onrender.com',
   ];
   if (process.env.CLIENT_URL) {
@@ -70,8 +74,11 @@ function initializeWebSocket(server) {
   io.on('connection', (socket) => {
     const userId = socket.user._id.toString();
     
-    // Map user to socket
-    userSocketMap.set(userId, socket.id);
+    // Map user to every active socket. Do not overwrite another device's
+    // session: online presence is user-level, not connection-level.
+    const sockets = userSocketMap.get(userId) || new Set();
+    sockets.add(socket.id);
+    userSocketMap.set(userId, sockets);
     
     // Join user's personal room
     socket.join(`user:${userId}`);
@@ -209,12 +216,17 @@ function initializeWebSocket(server) {
 
     // Disconnect
     socket.on('disconnect', () => {
-      userSocketMap.delete(userId);
+      const sockets = userSocketMap.get(userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          userSocketMap.delete(userId);
+          // Broadcast offline only after the user's final session closes.
+          socket.broadcast.emit('user:offline', { userId, online: false });
+        }
+      }
       socket.leave(`user:${userId}`);
-      
-      // Broadcast offline status
-      socket.broadcast.emit('user:offline', { userId, online: false });
-      
+
       console.log(`User disconnected: ${socket.user.email} (${userId})`);
     });
   });

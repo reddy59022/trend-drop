@@ -164,4 +164,46 @@ describe('v47.0 Live Shopping Events', () => {
     
     expect(res.status).toBe(200);
   });
+
+  test('v47.13 - Joining twice is idempotent even when the event is full', async () => {
+    const storedEvent = await LiveEvent.findById(testEvent._id);
+    storedEvent.status = 'live';
+    storedEvent.maxViewers = 1;
+    storedEvent.viewers = [buyer._id];
+    storedEvent.viewCount = 1;
+    await storedEvent.save();
+
+    const res = await request(app)
+      .post(`/api/live-events/${testEvent._id}/join`)
+      .set('Authorization', `Bearer ${buyerToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.viewers).toBe(1);
+  });
+
+  test('v47.14 - Live-event purchase rejects listings not included in the event', async () => {
+    const unrelatedListing = await Listing.create({
+      title: 'Unscheduled live item',
+      description: 'Must not receive an event discount',
+      price: 50,
+      category: 'Women',
+      condition: 'Good',
+      seller: user._id,
+      quantity: 1,
+      available: true,
+      sold: false,
+    });
+    const storedEvent = await LiveEvent.findById(testEvent._id);
+    storedEvent.status = 'live';
+    await storedEvent.save();
+
+    const res = await request(app)
+      .post(`/api/live-events/${testEvent._id}/purchase`)
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ listingId: unrelatedListing._id });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/not part of this event/i);
+    await Listing.findByIdAndDelete(unrelatedListing._id);
+  });
 });

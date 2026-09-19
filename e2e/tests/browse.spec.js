@@ -48,4 +48,10 @@ test.describe('Browse & discovery', () => {
     await page.goto('/listing/000000000000000000000000');
     await expect(page.getByText(/not found|doesn.t exist|unavailable/i).first()).toBeVisible({ timeout: 15_000 });
   });
+
+  test('Malformed collection IDs are rejected as client errors', async ({ page }) => {
+    const response = await page.request.get('/api/collections/not-an-object-id');
+    expect(response.status()).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ param: 'id' });
+  });
 });

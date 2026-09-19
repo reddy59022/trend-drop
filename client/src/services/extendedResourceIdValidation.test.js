@@ -14,6 +14,8 @@ import {
   getBulkOffers, shareOfferToLikers, updatePromo, deletePromo, usePromo,
   fileInsuranceClaim, refundShippingInsurance,
   getAuction, placeBid, endAuction, cancelAuction,
+  getSellerCollections, getCollection, updateCollection,
+  addToListingToCollection, removeListingFromCollection, deleteCollection,
 } from './api';
 
 const api = axios.create.mock.results[0].value;
@@ -41,6 +43,12 @@ const cases = [
   ['placeBid', () => placeBid(invalid, 10)],
   ['endAuction', () => endAuction(invalid)],
   ['cancelAuction', () => cancelAuction(invalid)],
+  ['getSellerCollections', () => getSellerCollections(invalid)],
+  ['getCollection', () => getCollection(invalid)],
+  ['updateCollection', () => updateCollection(invalid, {})],
+  ['addToListingToCollection', () => addToListingToCollection(invalid, {})],
+  ['removeListingFromCollection', () => removeListingFromCollection(invalid, invalid)],
+  ['deleteCollection', () => deleteCollection(invalid)],
 ];
 
 describe('extended client resource ID validation', () => {

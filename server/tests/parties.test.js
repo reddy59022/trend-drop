@@ -215,7 +215,30 @@ describe('v37.0 Social Sharing & Parties', () => {
     expect(res.body.pagination.limit).toBe(10);
   });
 
-  test('v37.12 - Should require auth for party creation', async () => {
+  test('v37.12 - Should not allow party updates to transfer ownership or alter status', async () => {
+    const createRes = await request(app)
+      .post('/api/parties')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({
+        title: 'Protected Party',
+        category: 'Women',
+        startTime: new Date(Date.now() + 60 * 60 * 1000),
+        endTime: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+    const partyId = createRes.body.party._id;
+
+    const res = await request(app)
+      .put(`/api/parties/${partyId}`)
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({ hostId: buyer._id, status: 'cancelled', title: 'Still mine' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.party.hostId.toString()).toBe(seller._id.toString());
+    expect(res.body.party.status).toBe('scheduled');
+    expect(res.body.party.title).toBe('Still mine');
+  });
+
+  test('v37.13 - Should require auth for party creation', async () => {
     const res = await request(app)
       .post('/api/parties')
       .send({

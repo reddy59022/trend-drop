@@ -8,7 +8,9 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 
 let user;
+let outsider;
 let userToken;
+let outsiderToken;
 let testCommunity;
 
 beforeAll(async () => {
@@ -25,6 +27,12 @@ beforeAll(async () => {
   });
 
   userToken = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+  outsider = await User.create({
+    name: 'Community Outsider', email: `${seedBase}outsider@test.com`, password: 'password123',
+    country: 'US', currency: 'USD', emailVerified: true, authProvider: 'email',
+    shippingAddress: { fullName: 'Outsider', street1: '456 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' },
+  });
+  outsiderToken = jwt.sign({ id: outsider._id }, JWT_SECRET, { expiresIn: '30d' });
 
   testCommunity = await SellerCommunity.create({
     name: 'Test Community',
@@ -37,6 +45,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (user) await User.findByIdAndDelete(user._id);
+  if (outsider) await User.findByIdAndDelete(outsider._id);
   await SellerCommunity.deleteMany({});
   await mongoose.connection.close();
 });
@@ -75,7 +84,24 @@ describe('v55.0 Social Seller Communities', () => {
     expect(res.body.name).toBe('Test Community');
   });
 
-  test('v55.5 - Should join community', async () => {
+  test('v55.5 - Should deny private community details to non-members', async () => {
+    const privateCommunity = await SellerCommunity.create({
+      name: 'Private Seller Group',
+      description: 'Members only',
+      isPrivate: true,
+      inviteCode: 'SECRET123',
+      members: [user._id],
+      moderators: [user._id],
+    });
+
+    const res = await request(app)
+      .get(`/api/seller-communities/${privateCommunity._id}`)
+      .set('Authorization', `Bearer ${outsiderToken}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  test('v55.6 - Should join community', async () => {
     const res = await request(app)
       .post(`/api/seller-communities/${testCommunity._id}/join`)
       .set('Authorization', `Bearer ${userToken}`)
@@ -85,7 +111,7 @@ describe('v55.0 Social Seller Communities', () => {
     expect(res.body.members).toBeDefined();
   });
 
-  test('v55.6 - Should create challenge', async () => {
+  test('v55.7 - Should create challenge', async () => {
     const res = await request(app)
       .post(`/api/seller-communities/${testCommunity._id}/challenges`)
       .set('Authorization', `Bearer ${userToken}`)
@@ -95,7 +121,7 @@ describe('v55.0 Social Seller Communities', () => {
     expect(res.body.challenges).toBeDefined();
   });
 
-  test('v55.7 - Should award achievement', async () => {
+  test('v55.8 - Should award achievement', async () => {
     const res = await request(app)
       .post(`/api/seller-communities/${testCommunity._id}/achievements`)
       .set('Authorization', `Bearer ${userToken}`)
@@ -105,7 +131,7 @@ describe('v55.0 Social Seller Communities', () => {
     expect(res.body.achievements).toBeDefined();
   });
 
-  test('v55.8 - Should get leaderboard', async () => {
+  test('v55.9 - Should get leaderboard', async () => {
     const res = await request(app)
       .get(`/api/seller-communities/${testCommunity._id}/leaderboard`)
       .set('Authorization', `Bearer ${userToken}`);

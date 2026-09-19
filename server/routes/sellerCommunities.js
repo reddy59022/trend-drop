@@ -61,6 +61,9 @@ router.get('/:id', auth, async (req, res) => {
     if (!community) {
       return res.status(404).json({ message: 'Community not found' });
     }
+    if (community.isPrivate && !community.members.some(member => member._id.toString() === req.user._id.toString())) {
+      return res.status(403).json({ message: 'You are not a member of this private community' });
+    }
 
     res.json(community);
   } catch (error) {

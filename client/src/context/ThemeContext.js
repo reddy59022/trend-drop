@@ -68,11 +68,9 @@ export const ThemeProvider = ({ children }) => {
     }
     if (!decision.apiNeeded) return undefined;
     let cancelled = false;
-            detectGeo(api).then((detected) => {
-      console.log('[DBG] theme .then detected=', JSON.stringify(detected), 'decision=', JSON.stringify({detectCountry: decision.detectCountry, detectCurrency: decision.detectCurrency, apiNeeded: decision.apiNeeded, localCurrency: decision.localCurrency}));
-      if (cancelled || !detected) { console.log('[DBG] .then early-return cancelled=', cancelled, 'detected=', detected); return; } // failure keeps the USD default
+    detectGeo(api).then((detected) => {
+      if (cancelled || !detected) return; // failure keeps the USD default
       if (decision.detectCountry && detected.country) {
-        console.log('[DBG] setCountryState reached, calling with', detected.country, 'cancelled=', cancelled);
         setCountryState(detected.country);
         setCountrySource(AUTO_SOURCE);
         persistPreference(STORAGE_KEYS.country, detected.country, AUTO_SOURCE);

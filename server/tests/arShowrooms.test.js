@@ -11,6 +11,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 let user, otherUser;
 let userToken;
 let testListing;
+let otherListing;
 let testShowroom;
 
 beforeAll(async () => {
@@ -45,12 +46,23 @@ beforeAll(async () => {
     quantity: 1,
     status: 'active',
   });
+  otherListing = await Listing.create({
+    title: 'Another Seller Item',
+    description: 'Must not be added to another seller showroom',
+    price: 80,
+    category: 'Home',
+    condition: 'Good',
+    seller: otherUser._id,
+    quantity: 1,
+    status: 'active',
+  });
 });
 
 afterAll(async () => {
   if (user) await User.findByIdAndDelete(user._id);
   if (otherUser) await User.findByIdAndDelete(otherUser._id);
   if (testListing) await Listing.findByIdAndDelete(testListing._id);
+  if (otherListing) await Listing.findByIdAndDelete(otherListing._id);
   if (testShowroom) await ARShowroom.findByIdAndDelete(testShowroom._id);
   await mongoose.connection.close();
 });
@@ -107,13 +119,22 @@ describe('v48.0 AR Showrooms', () => {
     expect(res.status).toBe(403);
   });
 
-  test('v48.6 - Should get seller showrooms', async () => {
+  test('v48.6 - Should reject adding another seller listing', async () => {
+    const res = await request(app)
+      .post(`/api/ar-showrooms/${testShowroom._id}/items`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ listingId: otherListing._id });
+
+    expect(res.status).toBe(403);
+  });
+
+  test('v48.7 - Should get seller showrooms', async () => {
     const res = await request(app).get(`/api/ar-showrooms/seller/${user._id}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  test('v48.7 - Should update showroom', async () => {
+  test('v48.8 - Should update showroom', async () => {
     const res = await request(app)
       .put(`/api/ar-showrooms/${testShowroom._id}`)
       .set('Authorization', `Bearer ${userToken}`)
@@ -123,7 +144,7 @@ describe('v48.0 AR Showrooms', () => {
     expect(res.body.description).toBe('Updated description');
   });
 
-  test('v48.8 - Should require authentication for creating showrooms', async () => {
+  test('v48.9 - Should require authentication for creating showrooms', async () => {
     const res = await request(app)
       .post('/api/ar-showrooms')
       .send({ name: 'Test' });
@@ -131,13 +152,13 @@ describe('v48.0 AR Showrooms', () => {
     expect(res.status).toBe(401);
   });
 
-  test('v48.9 - Should return 404 for non-existent showroom', async () => {
+  test('v48.10 - Should return 404 for non-existent showroom', async () => {
     const fakeId = new mongoose.Types.ObjectId();
     const res = await request(app).get(`/api/ar-showrooms/${fakeId}`);
     expect(res.status).toBe(404);
   });
 
-  test('v48.10 - Should delete showroom', async () => {
+  test('v48.11 - Should delete showroom', async () => {
     const res = await request(app)
       .delete(`/api/ar-showrooms/${testShowroom._id}`)
       .set('Authorization', `Bearer ${userToken}`);
@@ -146,7 +167,7 @@ describe('v48.0 AR Showrooms', () => {
     testShowroom = null; // Prevent double cleanup
   });
 
-  test('v48.11 - Should like a showroom', async () => {
+  test('v48.12 - Should like a showroom', async () => {
     const showroom = await ARShowroom.create({
       seller: user._id,
       name: 'Test Showroom',

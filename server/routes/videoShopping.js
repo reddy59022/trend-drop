@@ -46,6 +46,9 @@ router.post('/upload', auth, async (req, res) => {
     if (!listing) {
       return res.status(404).json({ message: 'Listing not found' });
     }
+    if (listing.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'You can only create videos for your own listings' });
+    }
 
     const video = await Video.create({
       listing: listingId,

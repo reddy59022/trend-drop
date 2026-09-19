@@ -85,6 +85,8 @@ const assertObjectId = (req, res, next) => {
     [/^\/payouts\/process\/([^/]+)/, 'transactionId'],
     [/^\/listings\/([^/]+)\/(?:boost|deactivate-boost)/, 'id'],
     [/^\/saved-searches\/([^/]+)/, 'id'],
+    [/^\/collections\/seller\/([^/]+)/, 'sellerId'],
+    [/^\/collections\/([^/]+)/, 'id'],
     [/^\/offers\/bulk\/([^/]+)/, 'listingId'],
     [/^\/offer-sharing\/(?:to-likers)\/([^/]+)/, 'listingId'],
     [/^\/offer-sharing\/share\/([^/]+)/, 'offerId'],

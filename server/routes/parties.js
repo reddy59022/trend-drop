@@ -61,6 +61,20 @@ router.post('/', auth, async (req, res) => {
       title, description, coverImage, category,
       startTime, endTime, discountPercent, listingIds
     } = req.body;
+
+    if (listingIds !== undefined && !Array.isArray(listingIds)) {
+      return res.status(400).json({ message: 'listingIds must be an array' });
+    }
+    const ids = listingIds || [];
+    if (!ids.every(id => mongoose.Types.ObjectId.isValid(String(id)))) {
+      return res.status(400).json({ message: 'listingIds must contain valid listing ids' });
+    }
+    if (ids.length > 0) {
+      const listings = await Listing.find({ _id: { $in: ids }, seller: req.user._id }).select('_id');
+      if (listings.length !== new Set(ids.map(String)).size) {
+        return res.status(403).json({ message: 'All party listings must belong to you' });
+      }
+    }
     
     const party = new Party({
       hostId: req.user._id,
@@ -73,7 +87,7 @@ router.post('/', auth, async (req, res) => {
       startTime,
       endTime,
       discountPercent,
-      listingIds: listingIds || [],
+      listingIds: ids,
     });
     
     await party.save();
@@ -97,8 +111,12 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
     
-    const updates = req.body;
-    Object.assign(party, updates);
+    const allowedFields = ['title', 'description', 'coverImage', 'category', 'startTime', 'endTime', 'discountPercent'];
+    for (const field of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        party[field] = req.body[field];
+      }
+    }
     await party.save();
     
     res.json({ party });

@@ -9,8 +9,11 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 
 let user;
+let otherUser;
 let userToken;
+let otherUserToken;
 let testListing;
+let otherListing;
 let testVideo;
 
 beforeAll(async () => {
@@ -27,10 +30,21 @@ beforeAll(async () => {
   });
 
   userToken = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+  otherUser = await User.create({
+    name: 'Other Video Seller', email: `${seedBase}other@test.com`, password: 'password123',
+    country: 'US', currency: 'USD', emailVerified: true, authProvider: 'email',
+    shippingAddress: { fullName: 'Other', street1: '456 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' },
+  });
+  otherUserToken = jwt.sign({ id: otherUser._id }, JWT_SECRET, { expiresIn: '30d' });
 
   testListing = await Listing.create({
     title: 'Video Item', description: 'Test', price: 50, category: 'Women',
     condition: 'New with tags', images: ['https://example.com/video.jpg'], seller: user._id, quantity: 1, status: 'active',
+  });
+
+  otherListing = await Listing.create({
+    title: 'Other Seller Video Item', description: 'Other seller item', price: 60, category: 'Women',
+    condition: 'Good', seller: otherUser._id, quantity: 1, status: 'active',
   });
 
   testVideo = await Video.create({
@@ -47,7 +61,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (user) await User.findByIdAndDelete(user._id);
+  if (otherUser) await User.findByIdAndDelete(otherUser._id);
   if (testListing) await Listing.findByIdAndDelete(testListing._id);
+  if (otherListing) await Listing.findByIdAndDelete(otherListing._id);
   await Video.deleteMany({});
   await mongoose.connection.close();
 });
@@ -90,7 +106,20 @@ describe('v54.0 Video Shopping Integration', () => {
     expect(res.body.videoUrl).toBeDefined();
   });
 
-  test('v54.5 - Should get single video and increment views', async () => {
+  test('v54.5 - Should reject videos for another seller listing', async () => {
+    const res = await request(app)
+      .post('/api/video-shopping/upload')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        listingId: otherListing._id,
+        videoUrl: 'https://example.com/unauthorized.mp4',
+        duration: 20,
+      });
+
+    expect(res.status).toBe(403);
+  });
+
+  test('v54.6 - Should get single video and increment views', async () => {
     const initialViews = testVideo.analytics.views;
     const res = await request(app)
       .get(`/api/video-shopping/${testVideo._id}`)
@@ -100,7 +129,7 @@ describe('v54.0 Video Shopping Integration', () => {
     expect(res.body.videoUrl).toBeDefined();
   });
 
-  test('v54.6 - Should update video', async () => {
+  test('v54.7 - Should update video', async () => {
     const res = await request(app)
       .put(`/api/video-shopping/${testVideo._id}`)
       .set('Authorization', `Bearer ${userToken}`)
@@ -110,7 +139,7 @@ describe('v54.0 Video Shopping Integration', () => {
     expect(res.body.title).toBe('Updated Title');
   });
 
-  test('v54.7 - Should like video', async () => {
+  test('v54.8 - Should like video', async () => {
     const res = await request(app)
       .post(`/api/video-shopping/${testVideo._id}/like`)
       .set('Authorization', `Bearer ${userToken}`);
@@ -119,7 +148,7 @@ describe('v54.0 Video Shopping Integration', () => {
     expect(res.body.likes).toBeDefined();
   });
 
-  test('v54.8 - Should share video', async () => {
+  test('v54.9 - Should share video', async () => {
     const res = await request(app)
       .post(`/api/video-shopping/${testVideo._id}/share`)
       .set('Authorization', `Bearer ${userToken}`);

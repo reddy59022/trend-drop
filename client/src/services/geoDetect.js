@@ -149,10 +149,8 @@ export const detectGeo = async (apiInstance) => {
     try {
       // NO country hint: the server must resolve the visitor's IP itself
       // (works for web, iOS and Android — the request originates on-device).
-      console.log('[DBG] detectGeo calling api.get, inflight was:', inflight);
       const res = await apiInstance.get('/marketplace/status');
       const extracted = extractGeo(res && res.data);
-      console.log('[DBG] detectGeo result:', JSON.stringify(extracted));
       return extracted;
     } catch (e) {
       return null; // caller keeps its defaults — never crash the shell

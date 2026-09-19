@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const LiveEvent = require('../models/LiveEvent');
@@ -133,12 +134,18 @@ router.post('/:id/join', auth, async (req, res) => {
       return res.status(404).json({ message: 'Event not found' });
     }
     
+    // Joining an event is idempotent. Check membership before capacity so a
+    // reconnecting viewer is not rejected just because the room is now full.
+    const alreadyJoined = event.viewers.some(viewer => viewer.toString() === req.user._id.toString());
+    if (alreadyJoined) {
+      return res.json({ viewers: event.viewers.length, viewCount: event.viewCount });
+    }
+
     if (event.viewers.length >= event.maxViewers) {
       return res.status(400).json({ message: 'Event is at max capacity' });
     }
     
-    // Check if user already joined
-    if (!event.viewers.includes(req.user._id)) {
+    if (!alreadyJoined) {
       event.viewers.push(req.user._id);
       event.viewCount = (event.viewers.length || 0) + 1;
       await event.save();
@@ -172,6 +179,10 @@ router.post('/:id/leave', auth, async (req, res) => {
 router.post('/:id/purchase', auth, async (req, res) => {
   try {
     const { listingId } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(String(listingId))) {
+      return res.status(400).json({ message: 'Invalid listingId' });
+    }
+
     const event = await LiveEvent.findById(req.params.id);
     
     if (!event) {
@@ -185,6 +196,11 @@ router.post('/:id/purchase', auth, async (req, res) => {
     const listing = await Listing.findById(listingId);
     if (!listing) {
       return res.status(404).json({ message: 'Listing not found' });
+    }
+
+    const isEventListing = event.listings.some(eventListing => eventListing.toString() === listingId.toString());
+    if (!isEventListing) {
+      return res.status(400).json({ message: 'Listing is not part of this event' });
     }
     
     // Apply discount

@@ -217,12 +217,12 @@ export const deleteSavedSearch = (id) => withValidResourceId(id, 'saved search',
 
 // ====== Collections / Storefront ======
 export const createCollection = (data) => api.post('/collections', data);
-export const getSellerCollections = (sellerId) => api.get(`/collections/seller/${sellerId}`);
-export const getCollection = (id) => api.get(`/collections/${id}`);
-export const updateCollection = (id, data) => api.put(`/collections/${id}`, data);
-export const addToListingToCollection = (id, data) => api.post(`/collections/${id}/listings`, data);
-export const removeListingFromCollection = (id, listingId) => api.delete(`/collections/${id}/listings/${listingId}`);
-export const deleteCollection = (id) => api.delete(`/collections/${id}`);
+export const getSellerCollections = (sellerId) => withValidResourceId(sellerId, 'seller', () => api.get(`/collections/seller/${sellerId}`));
+export const getCollection = (id) => withValidResourceId(id, 'collection', () => api.get(`/collections/${id}`));
+export const updateCollection = (id, data) => withValidResourceId(id, 'collection', () => api.put(`/collections/${id}`, data));
+export const addToListingToCollection = (id, data) => withValidResourceId(id, 'collection', () => api.post(`/collections/${id}/listings`, data));
+export const removeListingFromCollection = (id, listingId) => withValidResourceId(id, 'collection', () => withValidResourceId(listingId, 'listing', () => api.delete(`/collections/${id}/listings/${listingId}`)));
+export const deleteCollection = (id) => withValidResourceId(id, 'collection', () => api.delete(`/collections/${id}`));
 
 // ====== Admin Panel ======
 export const getAdminDashboard = () => api.get('/admin/dashboard');

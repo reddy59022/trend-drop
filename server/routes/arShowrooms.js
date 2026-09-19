@@ -108,10 +108,14 @@ router.post('/:id/items', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to modify this showroom' });
     }
     
-    // Verify listing exists
+    // Verify listing exists and belongs to the showroom owner. A seller must
+    // not be able to showcase another seller's inventory in their storefront.
     const listing = await Listing.findById(listingId);
     if (!listing) {
       return res.status(404).json({ message: 'Listing not found' });
+    }
+    if (listing.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'You can only add your own listings' });
     }
     
     showroom.items.push({

@@ -5,7 +5,7 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../server');
-const { initializeWebSocket, getIO, sendNotificationToUser, sendMessageNotification, isUserOnline, getOnlineUsers, broadcastToAll } = require('../websocket');
+const { initializeWebSocket, getIO, sendNotificationToUser, sendMessageNotification, isUserOnline, getOnlineUsers, broadcastToAll, userSocketMap } = require('../websocket');
 const { io: ioClient } = require('socket.io-client');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
@@ -75,6 +75,7 @@ describe('WebSocket Real-Time Notifications', () => {
   });
 
   beforeEach((done) => {
+    userSocketMap.clear();
     server = http.createServer(app);
     server.listen(() => {
       initializeWebSocket(server);
@@ -183,5 +184,23 @@ describe('WebSocket Real-Time Notifications', () => {
       broadcastToAll('broadcast:test', { message: 'hello' });
     });
     expect(broadcast.message).toBe('hello');
+  });
+
+  test('WS.12 a user remains online while another device is connected', async () => {
+    const first = await connectSocket(user1Token);
+    const second = await connectSocket(user1Token);
+    socket1 = first;
+    socket2 = second;
+    const waitForDisconnect = (socket) => new Promise((resolve) => {
+      socket.once('disconnect', () => setTimeout(resolve, 50));
+      socket.disconnect();
+    });
+
+    expect(isUserOnline(user1Id.toString())).toBe(true);
+    await waitForDisconnect(first);
+
+    expect(isUserOnline(user1Id.toString())).toBe(true);
+    await waitForDisconnect(second);
+    expect(isUserOnline(user1Id.toString())).toBe(false);
   });
 });
