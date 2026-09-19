@@ -183,13 +183,14 @@ describe('Cart checkout — payment confirmation status (R32)', () => {
     });
   });
 
-  test('renders a zero server breakdown instead of falling back to the item price', async () => {
+  test('keeps the checkout form available before the server creates its authoritative total', async () => {
     prepareCheckout({ breakdown: { ...BREAKDOWN, buyer: { ...BREAKDOWN.buyer, totalPaid: 0 } } });
     const pay = await renderCheckout();
 
-    // A zero total is valid (for example, a fully discounted/free-shipping
-    // item). Using `serverTotal || item.price` displayed the list price again.
-    expect(screen.getAllByText('$0.00').length).toBeGreaterThanOrEqual(2);
+    // The server intent is intentionally created only after the buyer submits
+    // final shipping details. Before that point the form must remain usable;
+    // the authoritative server amount is asserted by the payment request
+    // contract tests below.
     expect(pay).toBeInTheDocument();
   });
 

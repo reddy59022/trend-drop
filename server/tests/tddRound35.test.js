@@ -142,7 +142,7 @@ describe('R35 — capture never exceeds the authorized amount', () => {
     // The transaction and the order agree with what was captured.
     const txn = await Transaction.findOne({ listing: listing._id }).lean();
     expect(txn).toBeTruthy();
-    const charged = ROUND(txn.paymentBreakdown.totalPaid) - ROUND(80 * 0.10);
+    const charged = ROUND(txn.paymentBreakdown.totalPaid);
     expect(ROUND(state.amount_captured / 100)).toBe(ROUND(charged));
     expect(ROUND(res.body.orders[0].totals.total)).toBe(ROUND(charged));
   });
@@ -217,7 +217,7 @@ describe('R35 — capture never exceeds the authorized amount', () => {
     expect(state.amount_captured).toBeLessThan(authorized); // recomputed, lower total
 
     const txn = await Transaction.findOne({ listing: listing._id }).lean();
-    const expected = ROUND(ROUND(txn.paymentBreakdown.totalPaid) - 10);
+    const expected = ROUND(txn.paymentBreakdown.totalPaid);
     expect(ROUND(state.amount_captured / 100)).toBe(expected);
     expect(ROUND(res.body.orders[0].totals.total)).toBe(expected);
   });
@@ -269,6 +269,93 @@ describe('R35 — capture never exceeds the authorized amount', () => {
     expect(state.amount_captured).toBeLessThanOrEqual(state.amount); // THE INVARIANT
     expect(state.amount_captured).toBe(state.amount);                // exact, no drift
     expect(ROUND(res.body.orders[0].totals.discounts)).toBe(ROUND(ci.body.bundleDiscount));
+  });
+
+  test('R35.8 multi-seller discounts stay with their owning sellers', async () => {
+    const sellerB = await User.create({
+      name: 'R35 Seller B', email: `r35_seller_b_${Date.now()}@test.com`, password: 'password123',
+      emailVerified: true, country: 'US', currency: 'USD', authProvider: 'email',
+      shippingAddress: { ...SHIPPING, fullName: 'R35 Seller B' },
+      balance: { available: 0, pending: 0, totalEarned: 0, totalPaidOut: 0, currency: 'USD' },
+    });
+    cleanup.userIds.push(sellerB._id);
+    const sellerBToken = tokenFor(sellerB._id);
+    const listingA = await makeListing(80, 2, 'R35 Seller A Promo Item');
+    const listingB = await Listing.create({
+      seller: sellerB._id, title: 'R35 Seller B Bundle Item', description: 'r35', price: 50,
+      category: 'Men', condition: 'New with tags', quantity: 3, quantitySold: 0,
+      available: true, sold: false, status: 'active', shipsFrom: 'US', currency: 'USD', weight: 1,
+    });
+    cleanup.listingIds.push(listingB._id);
+
+    const promo = await makePromo({
+      code: `R35OWNER${Date.now() % 100000}`, discountType: 'percentage',
+      discountValue: 10, usageLimit: 5, isActive: true,
+    });
+    const bundle = await request(app).post('/api/offers/bundle')
+      .set('Authorization', 'Bearer ' + sellerBToken)
+      .send({ name: `R35 owner bundle ${Date.now() % 100000}`, minQuantity: 2, discountPercent: 10 });
+    expect(bundle.status).toBe(201);
+
+    const items = [
+      { listingId: String(listingA._id), quantity: 1 },
+      { listingId: String(listingB._id), quantity: 2 },
+    ];
+    const ci = await createIntent(items, promo.code);
+    expect(ci.status).toBe(200);
+    await authorize(ci.body.paymentIntentId);
+    const res = await confirmBatch(ci.body.paymentIntentId, items);
+    expect(res.status).toBe(201);
+
+    const txns = await Transaction.find({ 'paymentBreakdown.paymentIntentId': ci.body.paymentIntentId }).lean();
+    expect(txns).toHaveLength(2);
+    const a = txns.find((t) => String(t.seller) === String(seller._id));
+    const b = txns.find((t) => String(t.seller) === String(sellerB._id));
+    expect(a.paymentBreakdown.discountAmount).toBe(8); // seller A's 10% promo
+    expect(b.paymentBreakdown.discountAmount).toBe(10); // seller B's 10% bundle
+    expect(a.paymentBreakdown.originalSubtotal).toBe(80);
+    expect(b.paymentBreakdown.originalSubtotal).toBe(100);
+    expect(a.paymentBreakdown.sellerEarnings).toBe(66.24); // (80 - 8) - 8%
+    expect(b.paymentBreakdown.sellerEarnings).toBe(82.80); // (100 - 10) - 8%
+
+    const order = res.body.orders[0];
+    expect(order.totals.discounts).toBe(18);
+    expect(order.totals.total).toBe(ROUND(a.paymentBreakdown.totalPaid + b.paymentBreakdown.totalPaid));
+  });
+
+  test('R35.9 seller-funded discounts reconcile the captured amount, payout, and ledger', async () => {
+    const promo = await makePromo({
+      code: `R35LEDGER${Date.now() % 100000}`, discountType: 'percentage',
+      discountValue: 10, usageLimit: 5, isActive: true,
+    });
+    const listing = await makeListing(80, 2, 'R35 Discount Ledger Item');
+    const ci = await createIntent([{ listingId: String(listing._id), quantity: 1 }], promo.code);
+    expect(ci.status).toBe(200);
+    const discount = ROUND(80 * 0.10);
+    const originalLineTotal = ROUND(ci.body.breakdowns[0].buyer.totalPaid);
+    const authorized = intentState(ci.body.paymentIntentId).amount;
+    expect(ROUND(authorized / 100)).toBe(ROUND(originalLineTotal - discount));
+    await authorize(ci.body.paymentIntentId);
+
+    const res = await confirmBatch(ci.body.paymentIntentId, [{ listingId: String(listing._id), quantity: 1 }]);
+    expect(res.status).toBe(201);
+
+    const txn = await Transaction.findOne({ listing: listing._id }).lean();
+    const payout = await Payout.findOne({ transaction: txn._id }).lean();
+    const order = res.body.orders[0];
+    const discountedSubtotal = ROUND(80 - discount);
+    const expectedFee = ROUND(discountedSubtotal * 0.08);
+    const expectedSellerNet = ROUND(discountedSubtotal - expectedFee);
+
+    // The captured amount and buyer-visible transaction must agree.
+    expect(ROUND(txn.paymentBreakdown.totalPaid)).toBe(ROUND(originalLineTotal - discount));
+    expect(txn.paymentBreakdown.discountAmount).toBe(discount);
+    expect(txn.paymentBreakdown.subtotal).toBe(discountedSubtotal);
+    expect(ROUND(txn.paymentBreakdown.platformFee)).toBe(expectedFee);
+    expect(ROUND(txn.paymentBreakdown.sellerEarnings)).toBe(expectedSellerNet);
+    expect(payout.payoutAmount).toBe(expectedSellerNet);
+    expect(ROUND(order.totals.total)).toBe(ROUND(authorized / 100));
+    expect(intentState(ci.body.paymentIntentId).amount_captured).toBe(authorized);
   });
 
   test('R35.7 a discount larger than the recomputed total never captures the whole hold', async () => {

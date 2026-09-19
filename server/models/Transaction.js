@@ -50,6 +50,11 @@ const transactionSchema = new mongoose.Schema({
   paymentBreakdown: {
     // What the buyer pays
     subtotal: { type: Number, required: true },
+    // Original item subtotal before seller-funded promo/bundle discounts.
+    // `subtotal` is the amount actually charged for the item line; keeping
+    // both values lets orders, refunds, payouts, and dashboards reconcile.
+    originalSubtotal: { type: Number, default: 0 },
+    discountAmount: { type: Number, default: 0, min: 0 },
     shippingCost: { type: Number, default: 0 },
     buyerProtectionFee: { type: Number, default: 0 },
     buyerProtectionPercent: { type: Number, default: 5 },

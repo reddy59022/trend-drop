@@ -311,6 +311,7 @@ router.post('/create-intent', auth, async (req, res) => {
 
     // ===== Bundle Discount Application =====
     let bundleDiscountTotal = 0;
+    const bundleDiscountBySeller = {};
     const sellerGroups = {};
     itemData.forEach(d => {
       const sellerKey = d.seller._id.toString();
@@ -330,7 +331,10 @@ router.post('/create-intent', auth, async (req, res) => {
         if (eligibleQuantity >= rule.minQuantity) {
           const eligibleSubtotal = eligibleItems.reduce((sum, d) => sum + (d.salePrice * d.quantity), 0);
           const discount = eligibleSubtotal * (rule.discountPercent / 100);
-          bundleDiscountTotal += Math.round(discount * 100) / 100;
+          const roundedDiscount = Math.round(discount * 100) / 100;
+          bundleDiscountTotal += roundedDiscount;
+          const sellerKey = String(group.seller._id);
+          bundleDiscountBySeller[sellerKey] = Math.round(((bundleDiscountBySeller[sellerKey] || 0) + roundedDiscount) * 100) / 100;
         }
       }
     }
@@ -346,8 +350,10 @@ router.post('/create-intent', auth, async (req, res) => {
       sellerIds: [...new Set(itemData.map(d => d.seller._id.toString()))].join(','),
       totalItems: itemData.length.toString(),
       appliedPromoId: appliedPromo?._id?.toString() || '',
+      promoSellerId: appliedPromo?.seller?.toString() || '',
       promoDiscount: promoDiscount.toString(),
       bundleDiscount: bundleDiscountTotal.toString(),
+      bundleDiscountBySeller: JSON.stringify(bundleDiscountBySeller),
     };
 
     const paymentIntent = await authorizePaymentIntent(
@@ -591,7 +597,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
 
       orderPlans.push({
         listing, seller, sellerCountry, toCountry, salePrice, breakdown, label,
-        offer, isNegotiated,
+        offer, isNegotiated, combinedWeight,
         qty, itemSubtotal, platformFeeTotal, protectionTotal,
         sellerEarningsTotal, shippingCostTotal, totalPaidTotal,
       });
@@ -616,6 +622,55 @@ router.post('/confirm-batch', auth, async (req, res) => {
 
     const batchMetaDiscount = (Number(paymentIntent.metadata?.promoDiscount) || 0)
       + (Number(paymentIntent.metadata?.bundleDiscount) || 0);
+
+    // Discounts are seller-funded. Preserve ownership while allocating in
+    // integer cents: a seller's promo/bundle discount may never reduce a
+    // different seller's payout. Each source is allocated only to its eligible
+    // seller lines; any cent remainder stays on the final eligible line.
+    let bundleDiscountBySeller = {};
+    try {
+      bundleDiscountBySeller = JSON.parse(paymentIntent.metadata?.bundleDiscountBySeller || '{}');
+    } catch (e) { bundleDiscountBySeller = {}; }
+    const sources = [];
+    const promoSellerId = paymentIntent.metadata?.promoSellerId;
+    if (Number(paymentIntent.metadata?.promoDiscount) > 0 && promoSellerId) {
+      sources.push({
+        amount: Number(paymentIntent.metadata.promoDiscount),
+        candidates: orderPlans.filter((p) => String(p.seller._id) === String(promoSellerId)),
+      });
+    }
+    for (const [sellerId, amount] of Object.entries(bundleDiscountBySeller)) {
+      if (Number(amount) > 0) {
+        sources.push({
+          amount: Number(amount),
+          candidates: orderPlans.filter((p) => String(p.seller._id) === String(sellerId)),
+        });
+      }
+    }
+    // Legacy intents did not carry ownership metadata. Keep their historical
+    // behavior, but real create-intent payloads always use the scoped sources.
+    if (sources.length === 0 && batchMetaDiscount > 0) {
+      sources.push({ amount: batchMetaDiscount, candidates: orderPlans });
+    }
+    for (const source of sources) {
+      const candidates = source.candidates.length ? source.candidates : orderPlans;
+      const availableCents = candidates.reduce(
+        (sum, p) => sum + Math.max(0, Math.round((p.itemSubtotal - (p.discountAmount || 0)) * 100)),
+        0,
+      );
+      let remaining = Math.min(Math.max(0, Math.round(source.amount * 100)), availableCents);
+      const totalCandidateCents = candidates.reduce((sum, p) => sum + Math.round(p.itemSubtotal * 100), 0);
+      candidates.forEach((plan, index) => {
+        const capacity = Math.max(0, Math.round((plan.itemSubtotal - (plan.discountAmount || 0)) * 100));
+        const share = index === candidates.length - 1
+          ? Math.min(remaining, capacity)
+          : Math.min(remaining, Math.round(source.amount * 100 * Math.round(plan.itemSubtotal * 100) / Math.max(1, totalCandidateCents)), capacity);
+        plan.discountAmount = Math.round(((plan.discountAmount || 0) + share / 100) * 100) / 100;
+        remaining -= share;
+      });
+    }
+    const discountCents = orderPlans.reduce((sum, p) => sum + Math.round((p.discountAmount || 0) * 100), 0);
+
     const plannedTotal = orderPlans.reduce(
       (sum, p) => Math.round((sum + p.totalPaidTotal) * 100) / 100,
       0
@@ -627,7 +682,8 @@ router.post('/confirm-batch', auth, async (req, res) => {
     // intents always carry amount>0, so the revenue guard still holds live.
     const authorizedCents = Number(paymentIntent.amount);
     if (Number.isFinite(authorizedCents) && authorizedCents > 0) {
-      const expectedCaptureCents = Math.round((plannedTotal - batchMetaDiscount) * 100);
+      const allocatedDiscountCents = discountCents;
+      const expectedCaptureCents = Math.round(plannedTotal * 100) - allocatedDiscountCents;
       // One-sided: an authorization BELOW the order total can never be
       // captured for the full amount (the platform would fund the gap).
       if (authorizedCents < expectedCaptureCents) {
@@ -693,8 +749,18 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // the buyer was authorized, the "payment confirmed, order failed"
       // symptom. For an unchanged cart this captures exactly the authorized
       // amount; a trimmed cart captures proportionally less.
-      const discountedCents = Math.round((plannedTotal - batchMetaDiscount) * 100);
-      const plannedCents = Math.round(plannedTotal * 100);
+      // Use the same per-line discount allocation that will be written to the
+      // transaction ledger. Recomputing from raw metadata can diverge after a
+      // price/quantity change or cent rounding and would capture an amount
+      // different from the receipts and payouts below.
+      const discountedCents = orderPlans.reduce(
+        (sum, p) => sum + Math.round((p.totalPaidTotal - (p.discountAmount || 0)) * 100),
+        0,
+      );
+      const plannedCents = orderPlans.reduce(
+        (sum, p) => sum + Math.round(p.totalPaidTotal * 100),
+        0,
+      );
       const authorizedCents = Number(paymentIntent.amount) || 0;
       // A discount can exceed the recomputed plan when a listing price changes
       // between authorization and capture. Stripe cannot capture ≤ 0, so floor
@@ -712,13 +778,22 @@ router.post('/confirm-batch', auth, async (req, res) => {
     // ========== PHASE 3: Commit all writes ==========
     for (const plan of orderPlans) {
       const { listing, seller, toCountry, salePrice, breakdown, label, offer, isNegotiated } = plan;
+      const discountAmount = plan.discountAmount || 0;
+      const discountedSubtotal = Math.round((plan.itemSubtotal - discountAmount) * 100) / 100;
+      const discountedUnitPrice = Math.round((discountedSubtotal / plan.qty) * 100) / 100;
+      const discountedBreakdown = discountAmount > 0
+        ? calculatePaymentBreakdown(discountedUnitPrice, plan.sellerCountry, plan.toCountry, plan.combinedWeight || listing.weight || 0.5)
+        : breakdown;
+      const platformFeeTotal = Math.round(discountedBreakdown.seller.platformFee * plan.qty * 100) / 100;
+      const sellerEarningsBeforeBoost = Math.round((discountedSubtotal - platformFeeTotal) * 100) / 100;
 
-      // Deduct boost fee if item is boosted (flat % of sale price, scale by qty; charged only upon successful sale)
-      const boostFee = Math.round(getBoostFee(listing, plan.salePrice) * plan.qty * 100) / 100;
-      const sellerEarningsWithBoost = Math.round((plan.sellerEarningsTotal - boostFee) * 100) / 100;
+      // Boost fees are also based on the discounted sale price so the seller
+      // and platform never record a fee on money the buyer did not pay.
+      const boostFee = Math.round(getBoostFee(listing, discountedUnitPrice) * plan.qty * 100) / 100;
+      const sellerEarningsWithBoost = Math.round((sellerEarningsBeforeBoost - boostFee) * 100) / 100;
 
       // Item-level boost fee ledger (this listing only)
-      await recordBoostFeeOwed(listing._id, getBoostFee(listing, plan.salePrice), plan.qty);
+      await recordBoostFeeOwed(listing._id, getBoostFee(listing, discountedUnitPrice), plan.qty);
 
       const appliedPromoId = paymentIntent.metadata?.appliedPromoId
         ? paymentIntent.metadata.appliedPromoId
@@ -729,17 +804,19 @@ router.post('/confirm-batch', auth, async (req, res) => {
         buyer: req.user._id,
         seller: listing.seller,
         quantity: plan.qty,
-        itemPrice: plan.itemSubtotal,
+        itemPrice: discountedSubtotal,
         currency: listing.currency || 'USD',
         promoId: appliedPromoId,
         paymentBreakdown: {
-          subtotal: plan.itemSubtotal,
+          subtotal: discountedSubtotal,
+          originalSubtotal: plan.itemSubtotal,
+          discountAmount,
           shippingCost: plan.shippingCostTotal,
           buyerProtectionFee: plan.protectionTotal,
           buyerProtectionPercent: breakdown.buyer.buyerProtectionPercent,
           tax: 0,
-          totalPaid: plan.totalPaidTotal,
-          platformFee: plan.platformFeeTotal,
+          totalPaid: Math.round((plan.totalPaidTotal - discountAmount) * 100) / 100,
+          platformFee: platformFeeTotal,
           platformFeePercent: breakdown.seller.platformFeePercent,
           shippingPayout: plan.shippingCostTotal,
           sellerEarnings: sellerEarningsWithBoost,
@@ -837,9 +914,9 @@ router.post('/confirm-batch', auth, async (req, res) => {
         seller: listing.seller,
         transaction: txn._id,
         listing: listing._id,
-        salePrice: plan.itemSubtotal,
-        commissionRate: breakdown.seller.platformFeePercent / 100,
-        commissionAmount: plan.platformFeeTotal,
+        salePrice: discountedSubtotal,
+        commissionRate: discountedBreakdown.seller.platformFeePercent / 100,
+        commissionAmount: platformFeeTotal,
         payoutAmount: sellerEarningsWithBoost,
         status: 'pending',
         // ZERO-LEAKAGE IDEMPOTENCY: store the payment intent so confirm-batch
@@ -974,7 +1051,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
             transaction: t._id,
             seller: t.seller._id || group.seller._id,
             title: l.title || '',
-            price: t.itemPrice || 0,
+            price: t.paymentBreakdown?.originalSubtotal || t.itemPrice || 0,
             quantity: t.quantity || 1,
             currency: t.currency || 'USD',
             image: (l.images && l.images[0]) || '',
@@ -982,7 +1059,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
             size: l.size || '',
             brand: l.brand || '',
           });
-          subtotalTotal += t.itemPrice || 0;
+          subtotalTotal += t.paymentBreakdown?.originalSubtotal || t.itemPrice || 0;
           protectionTotal += t.paymentBreakdown?.buyerProtectionFee || 0;
         }
         shippingTotal += chargedShipping;

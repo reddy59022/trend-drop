@@ -10,6 +10,23 @@ import { formatPrice, convertAmount } from '../utils/helpers';
 import StripeCheckoutForm from '../components/StripeCheckoutForm';
 import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaPercent, FaBoxes } from 'react-icons/fa';
 
+// Keep the client summary aligned with create-intent/confirm-batch: item and
+// protection fees scale with quantity, but shipping is one combined-weight
+// charge per listing line. The server remains authoritative at capture time.
+export const calculateCartDisplayLine = (breakdown, quantity = 1) => {
+  const qty = Number.isInteger(quantity) && quantity > 0 ? quantity : 1;
+  const buyer = breakdown?.buyer || {};
+  const itemPrice = Number(buyer.itemPrice) || 0;
+  const shippingCost = Number(buyer.shippingCost) || 0;
+  const protectionFee = Number(buyer.buyerProtectionFee) || 0;
+  return {
+    itemPrice: itemPrice * qty,
+    shippingCost,
+    protectionFee: protectionFee * qty,
+    total: Math.round((itemPrice * qty + shippingCost + protectionFee * qty) * 100) / 100,
+  };
+};
+
 const Cart = () => {
   const navigate = useNavigate();
   const { cart, removeFromCart, updateQuantity, clearCart } = useCart();
@@ -182,14 +199,9 @@ const Cart = () => {
           shippingAddress: shippingInfo,
         });
 
-        // Use promo code if applied (mark usage)
-        if (appliedPromo) {
-          try {
-            await api.post(`/promos/${appliedPromo._id}/use`);
-          } catch (e) {
-            console.error('Failed to mark promo used:', e);
-          }
-        }
+        // confirm-batch atomically claims the promo usage before capture.
+        // Do not call /promos/:id/use here: doing so consumes two uses for one
+        // checkout and can exhaust seller promotions early.
 
         clearCart();
         setShowForm(false);
@@ -250,7 +262,10 @@ const Cart = () => {
             itemPrice: item.price,
             fromCountry: item.sellerCountry || 'US',
             toCountry: shippingInfo.country || 'US',
-            weightKg: item.weight || 0.5,
+            // The API's shipping calculation is weight-based and charged once
+            // per listing line, so calculate the preview using the combined
+            // quantity weight rather than multiplying a one-unit shipment.
+            weightKg: (item.weight || 0.5) * normalizeQuantity(item.quantity),
           });
           breakdowns[item.listingId] = res.data;
         } catch (e) {
@@ -301,13 +316,23 @@ const Cart = () => {
     const toPreferred = (value) => convertAmount(value, itemCurrency, preferred);
 
     if (bd && bd.buyer) {
-      group.subtotal += toPreferred(bd.buyer.itemPrice * item.quantity);
-      group.shipping += toPreferred(bd.buyer.shippingCost * item.quantity);
-      group.protection += toPreferred(bd.buyer.buyerProtectionFee * item.quantity);
-      group.total += toPreferred(bd.buyer.totalPaid * item.quantity);
+      const line = calculateCartDisplayLine(bd, normalizeQuantity(item.quantity));
+      group.subtotal += toPreferred(line.itemPrice);
+      group.shipping += toPreferred(line.shippingCost);
+      group.protection += toPreferred(line.protectionFee);
+      group.total += toPreferred(line.total);
     } else {
-      group.subtotal += toPreferred(item.price * item.quantity);
-      group.total += toPreferred(item.price * item.quantity);
+      // Keep a deterministic preview when the optional breakdown request is
+      // unavailable (the payment endpoint remains authoritative).
+      const qty = normalizeQuantity(item.quantity);
+      const fallbackProtection = Math.round((Number(item.price) || 0) * 0.05 * 100) / 100;
+      const fallbackLine = calculateCartDisplayLine({
+        buyer: { itemPrice: Number(item.price) || 0, shippingCost: 3.99, buyerProtectionFee: fallbackProtection },
+      }, qty);
+      group.subtotal += toPreferred(fallbackLine.itemPrice);
+      group.shipping += toPreferred(fallbackLine.shippingCost);
+      group.protection += toPreferred(fallbackLine.protectionFee);
+      group.total += toPreferred(fallbackLine.total);
     }
   });
   const sellerPackages = Object.values(sellerGroups);
@@ -332,6 +357,10 @@ const Cart = () => {
   const displayTotal = totalDiscountPreferred > 0
     ? Math.max(0, grandTotal - totalDiscountPreferred)
     : grandTotal;
+  // Once the server creates the intent, its USD amount is authoritative for
+  // both the summary and the Stripe form. Never fall back to the client
+  // estimate after a valid zero-valued server total arrives.
+  const authoritativeDisplayTotal = serverTotalAmount != null ? serverTotalAmount : displayTotal;
 
   return (
     <div className="page-container">
@@ -428,7 +457,7 @@ const Cart = () => {
                         try {
                           const res = await validatePromo({
                             code: promoCode,
-                            items: cart.map(i => ({ listingId: i.listingId, quantity: i.quantity }))
+                            items: cart.map(i => ({ listingId: i.listingId, quantity: normalizeQuantity(i.quantity) }))
                           });
                           if (res.data.valid) {
                             setAppliedPromo(res.data.promo);
@@ -503,7 +532,7 @@ const Cart = () => {
                 <div style={{ borderTop: '1px solid var(--td-border)', margin: '4px 0', paddingTop: 12 }}>
                   <div className="flex-between">
                     <span style={{ fontWeight: 700, fontSize: 16 }}>Total</span>
-                    <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(displayTotal, currency || 'USD')}</span>
+                    <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(authoritativeDisplayTotal, serverTotalAmount != null ? 'USD' : (currency || 'USD'))}</span>
                   </div>
                 </div>
               </div>

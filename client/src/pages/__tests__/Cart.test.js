@@ -66,7 +66,9 @@ describe('Cart page', () => {
     } });
     renderPage(<Cart />);
 
-    await waitFor(() => expect(screen.getByText('$102.98')).toBeInTheDocument());
+    // Combined-weight shipping is charged once per listing line, not once
+    // per unit: $100 items + $3.99 shipping + $5 protection − $10 discount.
+    await waitFor(() => expect(screen.getByText('$98.99')).toBeInTheDocument());
   });
 
   test('promo apply flow calls validatePromo', async () => {
