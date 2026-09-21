@@ -109,6 +109,18 @@ router.get('/', (req, res) => {
   res.json(categories);
 });
 
+// GET /api/size-guides/recommendations - Get user's size recommendations
+// Keep this before /:category so "recommendations" is not treated as a category.
+router.get('/recommendations', auth, async (req, res) => {
+  try {
+    // In a real implementation, this would fetch from a user measurements collection
+    // For now, return empty - user would submit measurements via POST
+    res.json({ recommendedSize: null, confidenceScore: 0 });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch recommendations' });
+  }
+});
+
 // GET /api/size-guides/:category - Get size guide for a specific category
 router.get('/:category', (req, res) => {
   const { category } = req.params;
@@ -151,17 +163,6 @@ router.get('/suggestions/:category/:size', (req, res) => {
     measurements: sizeData,
     guide: guide.description,
   });
-});
-
-// GET /api/size-guides/recommendations - Get user's size recommendations
-router.get('/recommendations', auth, async (req, res) => {
-  try {
-    // In a real implementation, this would fetch from a user measurements collection
-    // For now, return empty - user would submit measurements via POST
-    res.json({ recommendedSize: null, confidenceScore: 0 });
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch recommendations' });
-  }
 });
 
 // POST /api/size-guides/recommendations - Save user measurements and get recommendations

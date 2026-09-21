@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaVideo, FaUpload, FaPlay, FaHeart, FaShare, FaChartLine, FaPlus, FaFilm, FaEye } from 'react-icons/fa';
+import { FaVideo, FaUpload, FaHeart, FaShare, FaChartLine, FaPlus, FaFilm, FaEye } from 'react-icons/fa';
 import api from '../services/api';
 
 const VideoShopping = () => {
@@ -28,8 +28,10 @@ const VideoShopping = () => {
         api.get('/video-shopping'),
         api.get('/users/me/listings')
       ]);
-      setVideos(videosRes.data || []);
-      setUserListings(listingsRes.data || []);
+      setVideos(Array.isArray(videosRes.data) ? videosRes.data : (videosRes.data?.videos || []));
+      // `/users/me/listings` returns `{ listings }`; normalize it here so the
+      // upload form always receives an array and cannot crash on `.map()`.
+      setUserListings(Array.isArray(listingsRes.data) ? listingsRes.data : (listingsRes.data?.listings || []));
     } catch (error) {
       console.error('Error fetching video data:', error);
     } finally {
@@ -136,7 +138,7 @@ const VideoShopping = () => {
                 <div style={{ 
                   background: 'var(--td-primary)', 
                   aspectRatio: '16/9', 
-                  borderRadius: 'var(--td-radius-lg',
+                  borderRadius: 'var(--td-radius-lg)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaGavel, FaClock, FaDollarSign, FaVideo, FaMicrophone, FaArrowLeft, FaInfoCircle, FaBroadcastTower, FaPlayCircle, FaStopCircle, FaEye, FaExclamationTriangle, FaImage } from 'react-icons/fa';
+import { FaGavel, FaClock, FaDollarSign, FaVideo, FaArrowLeft, FaInfoCircle, FaBroadcastTower, FaPlayCircle, FaStopCircle, FaEye, FaExclamationTriangle, FaImage } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
@@ -186,15 +186,6 @@ const CreateAuction = () => {
     }
   };
 
-  const stopLiveStream = async (auctionId) => {
-    try {
-      await api.post(`/auctions/${auctionId}/stream/stop`);
-      toast.success('Live stream ended');
-    } catch (error) {
-      console.error('Error stopping live stream:', error);
-    }
-  };
-
   const togglePreview = () => {
     setShowPreview(!showPreview);
   };
@@ -203,12 +194,6 @@ const CreateAuction = () => {
   const formatForInput = (date) => {
     const offset = date.getTimezoneOffset() * 60000;
     return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-  };
-
-  const formatDateTime = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleString();
   };
 
   const handleChange = (e) => {

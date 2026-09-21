@@ -69,6 +69,26 @@ describe('Collection CRUD', () => {
     expect(r.status).toBe(200);
     expect(r.body.name).toBe('Winter Picks');
   });
+
+  test('COL.4a Update rejects a non-string name with a client error', async () => {
+    const r = await request(app).put(`/api/collections/${collectionId}`).set('Authorization', `Bearer ${sellerToken}`).send({ name: { hacked: true } });
+    expect(r.status).toBe(400);
+  });
+
+  test('COL.4b Update rejects an overlong description with a client error', async () => {
+    const r = await request(app).put(`/api/collections/${collectionId}`).set('Authorization', `Bearer ${sellerToken}`).send({ description: 'x'.repeat(501) });
+    expect(r.status).toBe(400);
+  });
+
+  test('COL.4c Update rejects a non-boolean visibility flag with a client error', async () => {
+    const r = await request(app).put(`/api/collections/${collectionId}`).set('Authorization', `Bearer ${sellerToken}`).send({ isActive: 'yes' });
+    expect(r.status).toBe(400);
+  });
+
+  test('COL.4d Update rejects a non-numeric sort order with a client error', async () => {
+    const r = await request(app).put(`/api/collections/${collectionId}`).set('Authorization', `Bearer ${sellerToken}`).send({ sortOrder: 'first' });
+    expect(r.status).toBe(400);
+  });
 });
 
 describe('Collection Listings', () => {

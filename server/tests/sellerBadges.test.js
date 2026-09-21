@@ -51,7 +51,31 @@ describe('v39.0 Verified Badges & Seller Levels', () => {
     expect(res.body.badge.verificationRequested).toBe(true);
   });
 
-  test('v39.3 - Should update stats and calculate tier', async () => {
+  test('v39.3 - A pending request revokes stale verification state instead of self-approving', async () => {
+    await SellerBadge.findOneAndUpdate(
+      { userId: user._id },
+      {
+        isVerified: true,
+        verifiedAt: new Date(),
+        verificationRequested: false,
+        benefits: { reducedFees: true, prioritySupport: true, featuredListings: true },
+      },
+      { new: true }
+    );
+
+    const res = await request(app)
+      .put('/api/seller-badges/verify')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.badge.isVerified).toBe(false);
+    expect(res.body.badge.verificationRequested).toBe(true);
+    expect(res.body.badge.verifiedAt).toBeFalsy();
+    expect(res.body.badge.benefits.reducedFees).toBe(false);
+    expect(res.body.badge.benefits.prioritySupport).toBe(false);
+  });
+
+  test('v39.4 - Should update stats and calculate tier', async () => {
     const res = await request(app)
       .put('/api/seller-badges/update-stats')
       .set('Authorization', `Bearer ${userToken}`)

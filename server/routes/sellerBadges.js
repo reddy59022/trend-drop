@@ -58,7 +58,17 @@ router.put('/verify', auth, async (req, res) => {
     // themselves reduced fees/priority benefits. Admin review must set the
     // authoritative verification fields separately.
     badge.verificationRequested = true;
-    
+    // A request is a pending state, never an approval. Clear any stale
+    // verification fields/benefits so a seller cannot retain admin-only
+    // privileges after submitting a new request.
+    badge.isVerified = false;
+    badge.verifiedAt = undefined;
+    badge.verificationReviewedAt = undefined;
+    badge.verificationReviewedBy = undefined;
+    badge.verificationRejectionReason = '';
+    badge.benefits.reducedFees = false;
+    badge.benefits.prioritySupport = false;
+
     await badge.save();
     
     res.json({ badge });

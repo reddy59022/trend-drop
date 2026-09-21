@@ -20,15 +20,15 @@ const Notifications = () => {
 
   const fetchNotifications = async () => {
     try {
-      const res = await api.get(`/users/${user.id || user._id}/notifications`);
-      setNotifications(res.data || []);
+      const res = await api.get('/notifications');
+      setNotifications(Array.isArray(res.data) ? res.data : (res.data?.notifications || []));
     } catch (error) { console.error(error); }
     setLoading(false);
   };
 
   const markAllRead = async () => {
     try {
-      await api.put(`/users/${user.id || user._id}/notifications/read`);
+      await api.put('/notifications/read');
       setNotifications(notifications.map(n => ({ ...n, read: true })));
       toast.success('All notifications marked as read');
     } catch (error) { toast.error('Failed to mark as read'); }

@@ -99,13 +99,15 @@ const CurrencyScope = ({ children }) => {
 };
 
 const NativeAppLifecycle = () => {
-  const { handleOAuthCallback } = useAuth();
-
   useEffect(() => {
     const handleUrl = (url) => {
       if (!url) return;
       if (isOAuthCallbackUrl(url)) {
-        handleOAuthCallback(url);
+        // AuthContext owns the native OAuth exchange: it opens the provider
+        // with the system browser and awaits this event for the token
+        // (see openNativeOAuth). Do NOT also call into the context here —
+        // dispatching the event IS the handoff, and anything thrown before
+        // this line stops the event from ever reaching that listener.
         window.dispatchEvent(new CustomEvent('oauth-callback', { detail: { url: String(url) } }));
         return;
       }
@@ -119,10 +121,8 @@ const NativeAppLifecycle = () => {
       }
     };
 
-    let capApp;
     let listenerCleanup = () => {};
     import('@capacitor/app').then(({ App }) => {
-      capApp = App;
       // Keep the returned handle so the deep-link listener is removed on
       // unmount (avoids duplicate appUrlOpen handlers accumulating on
       // iOS/Android when the provider re-mounts).

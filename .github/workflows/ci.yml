@@ -131,12 +131,14 @@ jobs:
 
       - name: Client production build
         working-directory: client
-        # CI=false for build only: keeps CI=true (non-watch) for tests, but lets
-        # pre-existing ESLint warning debt (unused imports, exhaustive-deps in
-        # ~25 files) not fail the gate. Build still validates compilation.
-        # TODO: clear the warning debt in a dedicated cleanup story, then re-enable CI=true.
+        # CI=true promotes ESLint warnings to build errors, making this step a
+        # real lint gate as well as a compile check. The previous warning debt
+        # (unused imports/vars + exhaustive-deps across ~45 source files) has
+        # been cleared, so the workflow-level CI=true now applies here too.
+        # Pinned explicitly so the gate keeps working even if a build step is
+        # ever copied somewhere without the workflow env.
         env:
-          CI: "false"
+          CI: "true"
         run: npm run build
 
       - name: Install Playwright Chromium and system dependencies

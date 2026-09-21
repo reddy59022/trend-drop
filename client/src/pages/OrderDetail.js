@@ -6,10 +6,9 @@ import { formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import {
   FaArrowLeft, FaTruck, FaShieldAlt, FaCheckCircle, FaTimesCircle,
-  FaClock, FaBoxOpen, FaExclamationTriangle, FaUndo, FaFileInvoiceDollar,
-  FaSpinner, FaStar, FaRegStar, FaLock, FaHandshake, FaFileContract, FaCopy
+  FaClock, FaExclamationTriangle, FaUndo, FaFileInvoiceDollar,
+  FaSpinner, FaStar, FaLock, FaHandshake
 } from 'react-icons/fa';
-import { copyText as copyTextNative } from '../services/native';
 
 const StatusBadge = ({ status }) => {
   const statusConfig = {
@@ -87,11 +86,6 @@ const PromptModal = ({ title, placeholder, onConfirm, onCancel, value, setValue,
   );
 };
 
-// Clipboard copy — delegates to the Capacitor-safe helper in
-// services/native.js (navigator.clipboard with hidden-textarea
-// execCommand fallback for iOS/Android WebViews).
-const copyText = (text) => copyTextNative(text);
-
 const OrderDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -99,11 +93,9 @@ const OrderDetail = () => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
-  const [returnReason, setReturnReason] = useState('');
   const [insurancePolicies, setInsurancePolicies] = useState([]);
   const [escrowLoading, setEscrowLoading] = useState(false);
   const [insuranceLoading, setInsuranceLoading] = useState(false);
-  const [copiedTracking, setCopiedTracking] = useState(false);
   // In-page prompt state (replaces window.prompt — blocked on native WebView)
   const [prompt, setPrompt] = useState(null);
   const [promptValue, setPromptValue] = useState('');
@@ -271,7 +263,7 @@ const OrderDetail = () => {
   const handlePurchaseInsurance = async (coverageType = 'standard') => {
     setInsuranceLoading(true);
     try {
-      const res = await api.post('/shipping-insurance/purchase', { transactionId: primaryTransactionId, coverageType });
+      await api.post('/shipping-insurance/purchase', { transactionId: primaryTransactionId, coverageType });
       toast.success('Shipping insurance purchased!');
       await refreshOrder();
       fetchInsurance();
@@ -304,12 +296,6 @@ const OrderDetail = () => {
       },
       'Continue'
     );
-  };
-
-  const copyTracking = (tracking) => {
-    copyText(tracking);
-    setCopiedTracking(true);
-    setTimeout(() => setCopiedTracking(false), 2000);
   };
 
   const handleAction = async (action, data = {}) => {

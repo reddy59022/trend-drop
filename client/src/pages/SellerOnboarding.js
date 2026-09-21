@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import api, { acceptLegalDocuments } from '../services/api';
 import { toast } from 'react-toastify';
 import { Link } from 'react-router-dom';
-import { FaUser, FaTag, FaTruck, FaCreditCard, FaBook, FaCheckCircle, FaArrowRight, FaArrowLeft, FaSpinner } from 'react-icons/fa';
+import { FaUser, FaTag, FaTruck, FaCreditCard, FaBook, FaCheckCircle, FaArrowRight, FaSpinner } from 'react-icons/fa';
 
 const STEPS = [
   { key: 'profileSetup', title: 'Profile Setup', description: 'Add a photo and bio so buyers trust you', icon: FaUser },

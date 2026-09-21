@@ -1,16 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
-import { formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import { FaCalendarAlt, FaUsers, FaShare, FaClock, FaTag, FaHeart, FaSearch, FaPlus } from 'react-icons/fa';
 
 const Parties = () => {
   const { user } = useAuth();
-  const { currency } = useTheme();
-  const navigate = useNavigate();
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -26,11 +22,9 @@ const Parties = () => {
 
   const categories = ['All', 'Women', 'Men', 'Kids', 'Electronics', 'Home', 'Beauty', 'Accessories'];
 
-  useEffect(() => {
-    fetchParties();
-  }, [selectedCategory]);
-
-  const fetchParties = async () => {
+  // Declared before the effect that uses it (stable while selectedCategory is
+  // unchanged), so the effect still fires on the same trigger as before.
+  const fetchParties = useCallback(async () => {
     try {
       const url = selectedCategory === 'All'
         ? '/parties'
@@ -41,12 +35,16 @@ const Parties = () => {
       toast.error('Failed to load parties');
     }
     setLoading(false);
-  };
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    fetchParties();
+  }, [selectedCategory, fetchParties]);
 
   const handleCreateParty = async (e) => {
     e.preventDefault();
     try {
-      const res = await api.post('/parties', {
+      await api.post('/parties', {
         ...newParty,
         startTime: new Date(newParty.startTime),
         endTime: new Date(newParty.endTime),

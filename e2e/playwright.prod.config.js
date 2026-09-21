@@ -16,8 +16,10 @@ module.exports = defineConfig({
   fullyParallel: false,
   workers: 1,           // serial: scenario order matters (listings → cart → checkout → lifecycle)
   retries: process.env.CI ? 1 : 0,
-  reporter: [['list'], ['html', { outputFolder: 'e2e/reports/prod', open: 'never' }]],
-  outputDir: 'e2e/test-results/prod',
+  // Config-relative (see playwright.inmem.config.js): "./reports/…" lands in
+  // e2e/reports/…, which .gitignore already excludes.
+  reporter: [['list'], ['html', { outputFolder: './reports/prod', open: 'never' }]],
+  outputDir: './test-results/prod',
 
   use: {
     baseURL: BASE_URL,

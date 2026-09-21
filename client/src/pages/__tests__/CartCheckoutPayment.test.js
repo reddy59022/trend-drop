@@ -27,7 +27,7 @@ jest.mock('socket.io-client', () => {
 
 import api, { validatePromo, applyBundleDiscount } from '../../services/api';
 import { loadStripe } from '@stripe/stripe-js';
-import { resetTestState, resetApiMock, setAuth, setThemeStore, setCartStore, setConfirm, authUser } from '../../test-utils';
+import { resetTestState, resetApiMock, setAuth, setThemeStore, setCartStore, setConfirm, authUser, routerFuture } from '../../test-utils';
 
 import Cart from '../Cart';
 
@@ -105,7 +105,7 @@ beforeEach(() => {
 
 const renderCheckout = async () => {
   render(
-    <MemoryRouter>
+    <MemoryRouter future={routerFuture}>
       <Cart />
     </MemoryRouter>
   );

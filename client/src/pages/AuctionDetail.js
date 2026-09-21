@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { FaGavel, FaClock, FaUser, FaArrowLeft, FaVideo, FaBroadcastTower, FaEye, FaExclamationTriangle, FaDollarSign, FaTrophy, FaComment, FaVideoSlash } from 'react-icons/fa';
+import { FaGavel, FaClock, FaArrowLeft, FaVideo, FaBroadcastTower, FaEye, FaTrophy, FaComment, FaVideoSlash } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -39,20 +39,23 @@ const AuctionDetail = () => {
   // Critical fix: videoRef.current is null at the moment setIsStreaming(true) is called
   // because the <video> element isn't rendered yet. This effect runs AFTER render.
   useEffect(() => {
-    if (localStream && videoRef.current) {
-      videoRef.current.srcObject = localStream;
-      videoRef.current.play()
+    // Snapshot the node once: videoRef.current may point at a different element
+    // (or null) by the time the cleanup below runs.
+    const videoEl = videoRef.current;
+    if (localStream && videoEl) {
+      videoEl.srcObject = localStream;
+      videoEl.play()
         .then(() => console.log('Local video stream playing'))
         .catch(err => {
           console.error('Error playing local video:', err);
           // Retry with muted autoplay (some browsers require it)
-          videoRef.current.muted = true;
-          videoRef.current.play().catch(e => console.error('Retry play failed:', e));
+          videoEl.muted = true;
+          videoEl.play().catch(e => console.error('Retry play failed:', e));
         });
     }
     return () => {
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
+      if (videoEl) {
+        videoEl.srcObject = null;
       }
     };
   }, [localStream, isStreaming]);

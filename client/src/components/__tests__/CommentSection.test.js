@@ -8,7 +8,7 @@ jest.mock('../../context/AuthContext', () => ({ __esModule: true, useAuth: () =>
 jest.mock('../../context/ConfirmContext', () => ({ __esModule: true, useConfirm: () => globalThis.__tdConfirm, ConfirmProvider: ({ children }) => <>{children}</> }));
 
 import api from '../../services/api';
-import { setAuth, setConfirm, resetTestState, resetApiMock, renderPage, authUser } from '../../test-utils';
+import { setAuth, setConfirm, resetTestState, resetApiMock, renderPage, authUser, routerFuture } from '../../test-utils';
 
 import CommentSection from '../CommentSection';
 
@@ -21,13 +21,13 @@ const seed = [{ _id: 's1', text: 'Existing', userId: { name: 'Bob' }, createdAt:
 
 describe('CommentSection', () => {
   test('renders seeded comments and a comment form', () => {
-    render(<MemoryRouter><CommentSection listingId="lid1" comments={seed} onCommentsUpdate={() => {}} /></MemoryRouter>);
+    render(<MemoryRouter future={routerFuture}><CommentSection listingId="lid1" comments={seed} onCommentsUpdate={() => {}} /></MemoryRouter>);
     expect(screen.getByText('Existing')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Add a comment...')).toBeInTheDocument();
   });
   test('submitting a comment posts the text and calls onCommentsUpdate', async () => {
     const onCommentsUpdate = jest.fn();
-    render(<MemoryRouter><CommentSection listingId="lid1" comments={[]} onCommentsUpdate={onCommentsUpdate} /></MemoryRouter>);
+    render(<MemoryRouter future={routerFuture}><CommentSection listingId="lid1" comments={[]} onCommentsUpdate={onCommentsUpdate} /></MemoryRouter>);
     fireEvent.change(screen.getByPlaceholderText('Add a comment...'), { target: { value: 'Hi!' } });
     fireEvent.submit(screen.getByTestId('comment-form'));
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/comments/lid1', { text: 'Hi!' }));

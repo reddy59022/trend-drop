@@ -9,6 +9,7 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { routerFuture } from '../../test-utils';
 
 jest.mock('../../context/ThemeContext', () => ({
   __esModule: true,
@@ -49,7 +50,7 @@ const baseTheme = (overrides = {}) => ({
 const renderNavbar = (theme) => {
   globalThis.__tdThemeMock = baseTheme(theme);
   return render(
-    <MemoryRouter>
+    <MemoryRouter future={routerFuture}>
       <Navbar />
     </MemoryRouter>
   );

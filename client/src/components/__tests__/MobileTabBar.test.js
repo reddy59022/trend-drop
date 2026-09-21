@@ -5,14 +5,14 @@ import { MemoryRouter } from 'react-router-dom';
 
 jest.mock('../../context/AuthContext', () => ({ __esModule: true, useAuth: () => globalThis.__tdAuth }));
 jest.mock('../../services/api');
-import { setAuth, resetTestState, authUser } from '../../test-utils';
+import { setAuth, resetTestState, authUser, routerFuture } from '../../test-utils';
 import MobileTabBar from '../MobileTabBar';
 
 beforeEach(() => { resetTestState(); setAuth(authUser()); });
 
 describe('MobileTabBar', () => {
   test('authenticated users see Home, Feed, Sell, Trends, Messages, Profile', () => {
-    render(<MemoryRouter><MobileTabBar /></MemoryRouter>);
+    render(<MemoryRouter future={routerFuture}><MobileTabBar /></MemoryRouter>);
     expect(screen.getByText('Home')).toBeInTheDocument();
     expect(screen.getByText('Feed')).toBeInTheDocument();
     expect(screen.getByText('Trends')).toBeInTheDocument();
@@ -23,7 +23,7 @@ describe('MobileTabBar', () => {
   });
   test('guest users see Home, Feed, Login aria-labels only', () => {
     setAuth(null);
-    render(<MemoryRouter><MobileTabBar /></MemoryRouter>);
+    render(<MemoryRouter future={routerFuture}><MobileTabBar /></MemoryRouter>);
     expect(screen.getByLabelText('Home')).toBeInTheDocument();
     expect(screen.getByLabelText('Feed')).toBeInTheDocument();
     expect(screen.getByLabelText('Login')).toBeInTheDocument();
@@ -31,7 +31,7 @@ describe('MobileTabBar', () => {
     expect(screen.queryByText('Messages')).not.toBeInTheDocument();
   });
   test('each tab is a link with an aria-label', () => {
-    render(<MemoryRouter><MobileTabBar /></MemoryRouter>);
+    render(<MemoryRouter future={routerFuture}><MobileTabBar /></MemoryRouter>);
     expect(screen.getByLabelText('Home').closest('a')).toHaveAttribute('href', '/');
     expect(screen.getByLabelText('Feed').closest('a')).toHaveAttribute('href', '/feed');
   });

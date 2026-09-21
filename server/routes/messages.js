@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Message = require('../models/Message');
 const Offer = require('../models/Offer');
+const Listing = require('../models/Listing');
 const { auth } = require('../middleware/auth');
 const pushService = require('../services/pushService');
 const { isValidObjectId } = require('../utils/validators');
@@ -22,8 +23,23 @@ router.post('/', auth, async (req, res) => {
     if (!isValidObjectId(targetUserId)) {
       return res.status(400).json({ message: 'Invalid recipient' });
     }
-    if (listingId && !isValidObjectId(listingId)) {
-      return res.status(400).json({ message: 'Invalid listingId' });
+    // Message documents are listing-scoped, so a missing or malformed listing
+    // must be rejected before the create/save path can surface a Mongoose
+    // validation error as a 500.
+    if (!listingId || !isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Valid listingId is required' });
+    }
+    const listing = await Listing.findById(listingId).select('seller');
+    if (!listing) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+    const listingSellerId = listing.seller.toString();
+    const senderId = req.user._id.toString();
+    // Buyers may only start a thread with the listing owner. The owner may
+    // reply to any existing participant, so seller-originated replies are not
+    // rejected merely because the recipient is not the listing seller.
+    if (senderId !== listingSellerId && targetUserId.toString() !== listingSellerId) {
+      return res.status(400).json({ message: 'Recipient must be the listing seller' });
     }
     let conversation = await Message.findOne({
       participants: { $all: [req.user._id, targetUserId] },

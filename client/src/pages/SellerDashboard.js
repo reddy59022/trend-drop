@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { getPayoutDashboard, getCommissionInfo, getRatingsBySeller, getBundleRules, createBundleRule, updateBundleRule, deleteBundleRule, getPromos, createPromo, updatePromo, deletePromo, sendOfferToLikers, getBulkOffers } from '../services/api';
+import { getPayoutDashboard, getCommissionInfo, getRatingsBySeller, getBundleRules, createBundleRule, updateBundleRule, deleteBundleRule, getPromos, createPromo, updatePromo, deletePromo, sendOfferToLikers } from '../services/api';
 import api from '../services/api';
 import StarRating from '../components/StarRating';
 import ShopBoostCard from '../components/ShopBoostCard';
 import { formatPrice } from '../utils/helpers';
 import { useTheme } from '../context/ThemeContext';
-import { FaStore, FaDollarSign, FaChartLine, FaHistory, FaRocket, FaQuestionCircle, FaTags, FaBoxes, FaBullhorn, FaTrash, FaPlus, FaEdit, FaTimes, FaCheckCircle, FaSpinner, FaExchangeAlt, FaToggleOn, FaToggleOff } from 'react-icons/fa';
+import { FaStore, FaDollarSign, FaChartLine, FaHistory, FaRocket, FaQuestionCircle, FaTags, FaBoxes, FaBullhorn, FaTrash, FaPlus, FaEdit, FaCheckCircle, FaSpinner, FaExchangeAlt, FaToggleOn, FaToggleOff } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 
 const SellerDashboard = () => {
@@ -647,7 +647,7 @@ const SellerDashboard = () => {
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--td-radius-full)', background: isEnabled ? 'var(--td-success)' : 'var(--td-surface-tertiary)', color: isEnabled ? '#fff' : 'var(--td-text-tertiary)', whiteSpace: 'nowrap' }}>
                       {isEnabled ? 'ON' : 'OFF'}
                     </span>
-                    <Link to={'/sell/edit/' + l._id} className="btn btn-outline btn-sm" style={{ fontSize: 11 }}>Configure</Link>
+                    <Link to={'/listing/' + l._id + '/edit'} className="btn btn-outline btn-sm" style={{ fontSize: 11 }}>Configure</Link>
                   </div>
                 );
               })}

@@ -68,6 +68,15 @@ describe('v40.0 Size Recommendation System', () => {
     expect(res.status).toBe(401);
   });
 
+  test('v40.5a - Should serve the authenticated recommendations endpoint', async () => {
+    const res = await request(app)
+      .get('/api/size-guides/recommendations')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ recommendedSize: null, confidenceScore: 0 });
+  });
+
   test('v40.6 - Should calculate XS for small measurements', async () => {
     const res = await request(app)
       .post('/api/size-guides/recommendations')

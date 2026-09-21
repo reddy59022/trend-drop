@@ -385,7 +385,7 @@ router.post('/:id/close', auth, async (req, res) => {
 
     // Idempotency: an auction can only be closed once — a replay must never
     // mint a second winner transaction for the same auction.
-    if (auction.status === 'closed') {
+    if (auction.status === 'closed' && auction.closeFinalized !== false) {
       return res.status(400).json({ message: 'Auction already closed' });
     }
     if (auction.status === 'cancelled') {
@@ -413,6 +413,7 @@ router.post('/:id/close', auth, async (req, res) => {
     auction.winningBid = winningBid;
     auction.winningCurrency = winningCurrency;
     auction.status = 'closed';
+    auction.closeFinalized = true;
     
     // Stop any active stream
     if (auction.streamInfo) {

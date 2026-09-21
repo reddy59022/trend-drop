@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { FaUpload, FaDownload, FaEdit, FaTrash, FaRocket, FaSpinner, FaCheckCircle, FaExclamationTriangle, FaFileCsv, FaTags, FaDollarSign, FaBox, FaUndo } from 'react-icons/fa';
+import { Link } from 'react-router-dom';
+import { FaUpload, FaDownload, FaEdit, FaTrash, FaRocket, FaSpinner, FaFileCsv, FaDollarSign, FaBox } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import api from '../services/api';
 import { useConfirm } from '../context/ConfirmContext';
@@ -13,9 +13,7 @@ const BulkListingManager = () => {
   const [loading, setLoading] = useState(true);
   const [csvFile, setCsvFile] = useState(null);
   const [bulkPrice, setBulkPrice] = useState('');
-  const [bulkDiscount, setBulkDiscount] = useState('');
   const [operationLoading, setOperationLoading] = useState(false);
-  const navigate = useNavigate();
 
   useEffect(() => {
     fetchListings();

@@ -7,7 +7,6 @@ import {
   FaPlusCircle, 
   FaEnvelope, 
   FaUser,
-  FaHeart,
   FaFire,
 } from 'react-icons/fa';
 

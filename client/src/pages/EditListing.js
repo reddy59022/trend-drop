@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle, FaArrowLeft, FaPlay, FaYoutube, FaInstagram, FaLink, FaRocket } from 'react-icons/fa';
+import { FaCamera, FaTimes, FaImage, FaSpinner, FaCheckCircle, FaArrowLeft, FaPlay, FaRocket } from 'react-icons/fa';
 import imageCompression from 'browser-image-compression';
 import { countries, formatPrice } from '../utils/helpers';
 import { useTheme } from '../context/ThemeContext';
@@ -78,19 +78,10 @@ const EditListing = () => {
     status: 'active',
   });
 
-  const steps = [
-    { id: 'photos', label: 'Photos', icon: FaCamera },
-    { id: 'details', label: 'Details', icon: FaInfoCircle },
-    { id: 'shipping', label: 'Shipping', icon: FaTruck },
-    { id: 'pricing', label: 'Pricing', icon: FaDollarSign },
-    { id: 'boost', label: 'Boost', icon: FaRocket },
-  ];
-
-  useEffect(() => {
-    fetchListing();
-  }, [id]);
-
-  const fetchListing = async () => {
+  // Declared before the effect that uses it. It is keyed to `id`/`user`/
+  // `navigate`, so it keeps a stable identity between renders and the effect
+  // below fires on the same trigger as before.
+  const fetchListing = useCallback(async () => {
     try {
       const res = await api.get(`/listings/${id}`);
       const listingData = res.data.listing;
@@ -153,7 +144,11 @@ const EditListing = () => {
       navigate('/');
     }
     setLoading(false);
-  };
+  }, [id, user, navigate]);
+
+  useEffect(() => {
+    fetchListing();
+  }, [id, fetchListing]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -241,7 +236,7 @@ const EditListing = () => {
         if (formData[key] !== undefined) data.append(key, formData[key]);
       });
 
-      const res = await api.put(`/listings/${id}`, data, {
+      await api.put(`/listings/${id}`, data, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       

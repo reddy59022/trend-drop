@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FaFire, FaChartLine, FaSync, FaClock, FaEye, FaRetweet, FaComment, FaHeart } from 'react-icons/fa';
 import api from '../services/api';
-import ListingCard from '../components/ListingCard';
 
 const Trends = () => {
   const [trends, setTrends] = useState([]);
@@ -9,11 +8,10 @@ const Trends = () => {
   const [timeframe, setTimeframe] = useState('week');
   const [activeTab, setActiveTab] = useState('all');
 
-  useEffect(() => {
-    fetchTrends();
-  }, [timeframe, activeTab]);
-
-  const fetchTrends = async () => {
+  // Declared before the effect that uses it (and stable while timeframe/
+  // activeTab are unchanged), so the effect still refetches on exactly the same
+  // triggers as before.
+  const fetchTrends = useCallback(async () => {
     setLoading(true);
     try {
       const endpoint = activeTab === 'viral' ? '/trends/viral' : '/trends';
@@ -24,7 +22,11 @@ const Trends = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [timeframe, activeTab]);
+
+  useEffect(() => {
+    fetchTrends();
+  }, [timeframe, activeTab, fetchTrends]);
 
   const refreshTrends = async () => {
     try {

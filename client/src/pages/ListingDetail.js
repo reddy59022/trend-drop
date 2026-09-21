@@ -1,7 +1,7 @@
 import { defaultAvatar, formatPrice, formatPriceRaw, getConditionColor, normalizeComment } from "../utils/helpers";
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment, FaBolt, FaExchangeAlt, FaArrowUp } from 'react-icons/fa';
+import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment, FaBolt, FaExchangeAlt } from 'react-icons/fa';
 import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';

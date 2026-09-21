@@ -106,6 +106,9 @@ router.post('/:listingId', auth, async (req, res) => {
       if (!parent) {
         return res.status(404).json({ message: 'Parent comment not found' });
       }
+      if (parent.listingId.toString() !== listingId.toString()) {
+        return res.status(400).json({ message: 'Parent comment belongs to a different listing' });
+      }
     }
     
     const comment = await Comment.create({

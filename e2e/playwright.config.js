@@ -27,8 +27,10 @@ module.exports = defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  reporter: [['list'], ['html', { outputFolder: 'e2e/reports/e2e', open: 'never' }]],
-  outputDir: 'e2e/test-results/e2e',
+  // Config-relative (see playwright.inmem.config.js): "./reports/…" lands in
+  // e2e/reports/…, which .gitignore already excludes.
+  reporter: [['list'], ['html', { outputFolder: './reports/e2e', open: 'never' }]],
+  outputDir: './test-results/e2e',
 
   // Spin up the in-memory app BEFORE the first test and tear it down after the
   // last. The server seeds its own data on startup, so no separate setup step

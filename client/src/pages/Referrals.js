@@ -35,7 +35,6 @@ const Referrals = () => {
       setStats(statsRes.data.stats);
       setSettings(settingsRes.data);
       if (statsRes.data.stats.code) {
-        const link = `${window.location.origin}/register?ref=${statsRes.data.stats.code}`;
         setShareText(`Join me on AURAVEST and get $${statsRes.data.stats.rewardAmount || 10} off your first purchase! Use my code: ${statsRes.data.stats.code} 🛍️✨`);
       }
     } catch (error) {
@@ -49,7 +48,6 @@ const Referrals = () => {
       const res = await api.post('/referrals/generate');
       setReferral(res.data.referral);
       setStats(prev => ({ ...prev, code: res.data.referral.code, status: 'active', rewardAmount: res.data.referral.rewardAmount }));
-      const link = `${window.location.origin}/register?ref=${res.data.referral.code}`;
       setShareText(`Join me on AURAVEST and get $${res.data.referral.rewardAmount} off your first purchase! Use my code: ${res.data.referral.code} 🛍️✨`);
       toast.success('Your referral code has been generated!');
     } catch (error) {

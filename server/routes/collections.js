@@ -90,11 +90,42 @@ router.put('/:id', auth, async (req, res) => {
     }
 
     const { name, description, image, isActive, sortOrder, listings } = req.body;
-    if (name !== undefined) collection.name = name;
-    if (description !== undefined) collection.description = description;
-    if (image !== undefined) collection.image = image;
-    if (isActive !== undefined) collection.isActive = isActive;
-    if (sortOrder !== undefined) collection.sortOrder = sortOrder;
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ message: 'Collection name must be a non-empty string' });
+      }
+      if (name.trim().length > 100) {
+        return res.status(400).json({ message: 'Collection name must be at most 100 characters' });
+      }
+      collection.name = name;
+    }
+    if (description !== undefined) {
+      if (description !== null && typeof description !== 'string') {
+        return res.status(400).json({ message: 'description must be a string' });
+      }
+      if (typeof description === 'string' && description.length > 500) {
+        return res.status(400).json({ message: 'description must be at most 500 characters' });
+      }
+      collection.description = description;
+    }
+    if (image !== undefined) {
+      if (image !== null && typeof image !== 'string') {
+        return res.status(400).json({ message: 'image must be a string' });
+      }
+      collection.image = image;
+    }
+    if (isActive !== undefined) {
+      if (typeof isActive !== 'boolean') {
+        return res.status(400).json({ message: 'isActive must be a boolean' });
+      }
+      collection.isActive = isActive;
+    }
+    if (sortOrder !== undefined) {
+      if (typeof sortOrder !== 'number' || !Number.isFinite(sortOrder)) {
+        return res.status(400).json({ message: 'sortOrder must be a finite number' });
+      }
+      collection.sortOrder = sortOrder;
+    }
     if (listings !== undefined) {
       if (!Array.isArray(listings)) {
         return res.status(400).json({ message: 'Listings must be an array of listing ids' });

@@ -20,20 +20,61 @@ router.get('/preferences', auth, async (req, res) => {
 // PUT /api/mobile/preferences - Update user's mobile preferences
 router.put('/preferences', auth, async (req, res) => {
   try {
-    const { pushNotifications, location, quickActions, biometric } = req.body;
-    
+    let { pushNotifications, location, quickActions, biometric, deviceInfo } = req.body;
+
+    // Preserve the original API's shorthand flags used by older mobile clients.
+    // They mean "enabled" and should be normalized before strict validation.
+    if (typeof pushNotifications === 'boolean') pushNotifications = { enabled: pushNotifications };
+    if (typeof biometric === 'boolean') biometric = { enabled: biometric };
+
+    const sections = [
+      ['pushNotifications', pushNotifications, {
+        enabled: 'boolean', priceDrop: 'boolean', messages: 'boolean', offers: 'boolean', orderUpdates: 'boolean',
+      }],
+      ['location', location, { country: 'string', region: 'string', useForShipping: 'boolean' }],
+      ['quickActions', quickActions, { cameraSell: 'boolean', quickMessage: 'boolean', barcodeScan: 'boolean' }],
+      ['biometric', biometric, { enabled: 'boolean', type: 'biometricType' }],
+      ['deviceInfo', deviceInfo, { platform: 'platform', version: 'string', appVersion: 'string' }],
+    ];
+    const allowedBiometricTypes = ['touch', 'face', 'none'];
+    const allowedPlatforms = ['iOS', 'Android', 'Web'];
+
+    for (const [sectionName, section, fields] of sections) {
+      if (section === undefined) continue;
+      if (section === null || typeof section !== 'object' || Array.isArray(section)) {
+        return res.status(400).json({ message: `${sectionName} must be an object` });
+      }
+      for (const [field, expectedType] of Object.entries(fields)) {
+        if (section[field] === undefined) continue;
+        const value = section[field];
+        if (expectedType === 'boolean' && typeof value !== 'boolean') {
+          return res.status(400).json({ message: `${sectionName}.${field} must be a boolean` });
+        }
+        if (expectedType === 'string' && typeof value !== 'string') {
+          return res.status(400).json({ message: `${sectionName}.${field} must be a string` });
+        }
+        if (expectedType === 'biometricType' && !allowedBiometricTypes.includes(value)) {
+          return res.status(400).json({ message: `${sectionName}.${field} must be one of ${allowedBiometricTypes.join(', ')}` });
+        }
+        if (expectedType === 'platform' && !allowedPlatforms.includes(value)) {
+          return res.status(400).json({ message: `${sectionName}.${field} must be one of ${allowedPlatforms.join(', ')}` });
+        }
+      }
+    }
+
+    const update = { userId: req.user._id };
+    if (pushNotifications !== undefined) update.pushNotifications = pushNotifications;
+    if (location !== undefined) update.location = location;
+    if (quickActions !== undefined) update.quickActions = quickActions;
+    if (biometric !== undefined) update.biometric = biometric;
+    if (deviceInfo !== undefined) update.deviceInfo = deviceInfo;
+
     const prefs = await MobilePreferences.findOneAndUpdate(
       { userId: req.user._id },
-      { 
-        pushNotifications, 
-        location, 
-        quickActions, 
-        biometric,
-        deviceInfo: req.body.deviceInfo,
-      },
+      update,
       { new: true, upsert: true }
     );
-    
+
     res.json(prefs);
   } catch (error) {
     res.status(500).json({ message: 'Failed to update preferences' });
@@ -110,6 +151,9 @@ router.delete('/push-token', auth, async (req, res) => {
     if (!token) {
       return res.status(400).json({ message: 'Push token is required' });
     }
+    if (typeof token !== 'string') {
+      return res.status(400).json({ message: 'Push token must be a string' });
+    }
     await pushService.unregisterDevice(req.user._id, token);
     res.json({ message: 'Push token unregistered' });
   } catch (error) {
@@ -127,6 +171,9 @@ router.post('/barcode-lookup', auth, async (req, res) => {
     
     if (!barcode) {
       return res.status(400).json({ message: 'Barcode is required' });
+    }
+    if (typeof barcode !== 'string' || !/^\d{8,32}$/.test(barcode)) {
+      return res.status(400).json({ message: 'Barcode must be an 8-32 digit string' });
     }
     
     // In a real implementation, this would look up product info from an API

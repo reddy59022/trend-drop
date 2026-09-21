@@ -762,7 +762,9 @@ async function closeAuctions() {
         endTime: { $lte: now },
       },
       {
-        $set: { status: 'closed' },
+        // Leave closeFinalized false so the seller/admin close endpoint can
+        // finish winner selection, listing state, and transaction creation.
+        $set: { status: 'closed', closeFinalized: false },
       }
     );
     if (result.modifiedCount > 0) {

@@ -22,8 +22,11 @@ module.exports = defineConfig({
   fullyParallel: false,
   workers: 1,           // serial: scenario order matters (listings → cart → checkout → lifecycle)
   retries: 0,
-  reporter: [['list'], ['html', { outputFolder: 'e2e/reports/inmem', open: 'never' }]],
-  outputDir: 'e2e/test-results/inmem',
+  // Paths in a Playwright config resolve relative to THIS file's directory, not
+  // the CWD. Prefixing with "e2e/" therefore produced e2e/e2e/reports/…, which
+  // is why the generated HTML reports used to be committed to the repo.
+  reporter: [['list'], ['html', { outputFolder: './reports/inmem', open: 'never' }]],
+  outputDir: './test-results/inmem',
 
   webServer: {
     command: `node ${path.resolve(__dirname, '../server/e2eServer.js')}`,

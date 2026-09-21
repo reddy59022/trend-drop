@@ -2,6 +2,7 @@ import '@testing-library/jest-dom';
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
+import { routerFuture } from '../../test-utils';
 
 const TestAuthContext = createContext(null);
 const TestApiContext = createContext(null);
@@ -86,7 +87,7 @@ describe('ChatModal Functionality', () => {
 
   const renderModal = (props = {}, user = mockUser, api = mockApi) =>
     render(
-      <BrowserRouter>
+      <BrowserRouter future={routerFuture}>
         <TestAuthContext.Provider value={{ user }}>
           <TestApiContext.Provider value={api}>
             <ChatModal isOpen={true} onClose={jest.fn()} listing={mockListing} seller={mockSeller} {...props} />

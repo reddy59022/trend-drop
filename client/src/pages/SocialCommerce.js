@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
-import { FaShareAlt, FaInstagram, FaTiktok, FaPinterest, FaSnapchat, FaFacebook, FaPlus, FaSync, FaCog, FaTrash, FaChartBar, FaStore } from 'react-icons/fa';
+import { FaShareAlt, FaInstagram, FaTiktok, FaPinterest, FaSnapchat, FaFacebook, FaPlus, FaSync, FaTrash } from 'react-icons/fa';
 import api from '../services/api';
 
 const SocialCommerce = () => {

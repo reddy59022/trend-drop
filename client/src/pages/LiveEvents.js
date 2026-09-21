@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { FaVideo, FaCalendarAlt, FaUsers, FaTag, FaPlay, FaClock, FaChartBar, FaPlus } from 'react-icons/fa';
@@ -27,15 +27,9 @@ const LiveEvents = () => {
     maxViewers: 100,
   });
 
-  useEffect(() => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-    fetchData();
-  }, [user, navigate, activeTab]);
-
-  const fetchData = async () => {
+  // Declared before the effect that uses it (and stable while user/activeTab
+  // are unchanged), so the effect still fires on the same triggers as before.
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       if (activeTab === 'upcoming') {
@@ -53,7 +47,15 @@ const LiveEvents = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, activeTab]);
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    fetchData();
+  }, [user, navigate, activeTab, fetchData]);
 
   const handleCreateEvent = async (e) => {
     e.preventDefault();

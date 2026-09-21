@@ -99,6 +99,13 @@ describe('SellerDashboard page', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Auto Respond/i }));
     expect(await screen.findByText('Vintage Denim Jacket')).toBeInTheDocument();
   });
+  test('auto respond listing configuration links to the routed edit page', async () => {
+    renderPage(<SellerDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: /Auto Respond/i }));
+    const configureLink = await screen.findByRole('link', { name: 'Configure' });
+    expect(configureLink).toHaveAttribute('href', '/listing/listing123/edit');
+  });
+
   test('auto respond empty state when the seller has no listings', async () => {
     api.get.mockResolvedValue({ data: { listings: [] } });
     renderPage(<SellerDashboard />);

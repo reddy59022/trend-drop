@@ -72,9 +72,22 @@ const assertObjectId = (req, res, next) => {
     [/^\/ratings\/seller\/([^/]+)/, 'sellerId'],
     [/^\/ratings\/listing\/([^/]+)/, 'listingId'],
     [/^\/users\/([^/]+)\/(?:notifications)/, 'userId'],
+    [/^\/users\/(?!search(?:\/|$)|me(?:\/|$)|feed(?:\/|$))([^/]+)/, 'id'],
     [/^\/messages\/conversation\/([^/]+)/, 'userId'],
     [/^\/messages\/read\/([^/]+)/, 'conversationId'],
     [/^\/messages\/(?!conversations(?:\/|$))([^/]+)/, 'conversationId'],
+    [/^\/parties\/([^/]+)/, 'id'],
+    [/^\/live-events\/stats\/([^/]+)/, 'hostId'],
+    [/^\/live-events\/(?!upcoming(?:\/|$)|stats(?:\/|$))([^/]+)/, 'id'],
+    [/^\/seller-communities\/([^/]+)/, 'id'],
+    [/^\/ar-showrooms\/seller\/([^/]+)/, 'sellerId'],
+    [/^\/ar-showrooms\/(?!seller(?:\/|$))([^/]+)/, 'id'],
+    [/^\/virtual-try-on\/(?!settings(?:\/|$)|status(?:\/|$)|session(?:\/|$))([^/]+)/, 'listingId'],
+    [/^\/social-commerce\/(?!available(?:\/|$)|connect(?:\/|$))([^/]+)/, 'id'],
+    [/^\/inventory\/(?!sync(?:\/|$)|alerts(?:\/|$))([^/]+)/, 'id'],
+    [/^\/seller-badges\/(?!me(?:\/|$)|verify(?:\/|$)|update-stats(?:\/|$))([^/]+)/, 'userId'],
+    [/^\/video-shopping\/analytics\/([^/]+)/, 'id'],
+    [/^\/video-shopping\/(?!public(?:\/|$)|upload(?:\/|$)|analytics(?:\/|$))([^/]+)/, 'id'],
     [/^\/wishlist\/(?:check\/)?([^/]+)/, 'listingId'],
     [/^\/admin\/users\/([^/]+)/, 'id'],
     [/^\/admin\/reports\/([^/]+)/, 'id'],
@@ -82,16 +95,26 @@ const assertObjectId = (req, res, next) => {
     [/^\/admin\/transactions\/([^/]+)/, 'id'],
     [/^\/admin\/seller-badges\/(?!pending(?:\/|$))([^/]+)/, 'userId'],
     [/^\/pricehistory\/([^/]+)/, 'listingId'],
+    [/^\/listings\/user\/([^/]+)/, 'userId'],
+    [/^\/listings\/(?!search(?:\/|$)|user(?:\/|$)|my(?:\/|$)|bulk(?:-|\/|$))([^/]+)/, 'id'],
+    [/^\/comments\/(?!trending(?:\/|$)|hashtag(?:\/|$))([^/]+)/, 'id'],
+    [/^\/recently-viewed\/(?!clear(?:\/|$))([^/]+)/, 'listingId'],
     [/^\/payouts\/process\/([^/]+)/, 'transactionId'],
     [/^\/listings\/([^/]+)\/(?:boost|deactivate-boost)/, 'id'],
     [/^\/saved-searches\/([^/]+)/, 'id'],
     [/^\/collections\/seller\/([^/]+)/, 'sellerId'],
     [/^\/collections\/([^/]+)/, 'id'],
+    [/^\/offers\/listing\/([^/]+)/, 'listingId'],
     [/^\/offers\/bulk\/([^/]+)/, 'listingId'],
+    [/^\/offers\/bundle\/(?!apply(?:\/|$))([^/]+)/, 'id'],
+    [/^\/offers\/(?!listing(?:\/|$)|bulk(?:\/|$)|bundle(?:\/|$)|to-likers(?:\/|$)|sent(?:\/|$)|received(?:\/|$))([^/]+)/, 'offerId'],
     [/^\/offer-sharing\/(?:to-likers)\/([^/]+)/, 'listingId'],
     [/^\/offer-sharing\/share\/([^/]+)/, 'offerId'],
     [/^\/promos\/(?!validate(?:\/|$))([^/]+)/, 'id'],
     [/^\/auctions\/([^/]+)/, 'id'],
+    [/^\/transactions\/offer\/([^/]+)/, 'offerId'],
+    [/^\/transactions\/(?!batch(?:\/|$)|guest(?:\/|$)|offer(?:\/|$))([^/]+)/, 'transactionId'],
+    [/^\/shop-boost\/status\/([^/]+)/, 'sellerId'],
     [/^\/shipping-insurance\/([^/]+)\/(?:claim|refund)/, 'id'],
   ];
 
@@ -105,7 +128,8 @@ const assertObjectId = (req, res, next) => {
     if (!/Id$|^id$/i.test(key)) continue;
     if (MAGIC_PARAM_VALUES.has(String(value).toLowerCase())) continue;
     if (!isValidObjectId(value)) {
-      return res.status(400).json({ message: `Invalid ${key}` , param: key });
+      const label = key === 'id' ? 'ID' : key.replace(/Id$/, ' ID');
+      return res.status(400).json({ message: `Invalid ${label}`, param: key });
     }
   }
   next();

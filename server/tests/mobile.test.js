@@ -57,6 +57,35 @@ describe('v42.0 Enhanced Mobile Experience', () => {
     expect(res.body.location.country).toBe('CA');
   });
 
+  test('v42.2legacy - Should support legacy boolean preference flags', async () => {
+    const res = await request(app)
+      .put('/api/mobile/preferences')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ pushNotifications: true, biometric: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.pushNotifications.enabled).toBe(true);
+    expect(res.body.biometric.enabled).toBe(true);
+  });
+
+  test('v42.2a - Should reject malformed preference sections', async () => {
+    const res = await request(app)
+      .put('/api/mobile/preferences')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ pushNotifications: [] });
+
+    expect(res.status).toBe(400);
+  });
+
+  test('v42.2b - Should reject invalid biometric preference values', async () => {
+    const res = await request(app)
+      .put('/api/mobile/preferences')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ biometric: { enabled: true, type: 'voice' } });
+
+    expect(res.status).toBe(400);
+  });
+
   test('v42.3 - Should get shipping estimate for domestic', async () => {
     const res = await request(app)
       .get('/api/mobile/shipping-estimate?country=US&weight=1');
@@ -128,5 +157,25 @@ describe('v42.0 Enhanced Mobile Experience', () => {
       .send({});
     
     expect(res.status).toBe(400);
+  });
+
+  test('v42.10a - Should reject malformed push token on unregister', async () => {
+    const res = await request(app)
+      .delete('/api/mobile/push-token')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ token: {} });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/string/i);
+  });
+
+  test('v42.10b - Should reject non-digit barcode values', async () => {
+    const res = await request(app)
+      .post('/api/mobile/barcode-lookup')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ barcode: 123456789012 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/barcode/i);
   });
 });

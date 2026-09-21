@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
@@ -21,15 +21,9 @@ const ARShowrooms = () => {
     tags: [],
   });
 
-  useEffect(() => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-    fetchData();
-  }, [user, navigate, activeTab]);
-
-  const fetchData = async () => {
+  // Declared before the effect that uses it (and stable while user/activeTab
+  // are unchanged), so the effect still fires on the same triggers as before.
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       if (activeTab === 'my') {
@@ -44,7 +38,15 @@ const ARShowrooms = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, activeTab]);
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    fetchData();
+  }, [user, navigate, activeTab, fetchData]);
 
   const handleCreateShowroom = async (e) => {
     e.preventDefault();

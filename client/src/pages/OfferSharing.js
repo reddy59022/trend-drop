@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
-import { FaUsers, FaShare, FaGift, FaTrash, FaEdit, FaTimes, FaPlus, FaTag, FaUserFriends } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+import { FaUsers, FaShare, FaGift } from 'react-icons/fa';
 import { getOfferSharingStats, shareOfferToLikers, createBundleOffer } from '../services/api';
 import api from '../services/api';
 import { toast } from 'react-toastify';
@@ -17,7 +17,9 @@ const OfferSharing = () => {
   const [selectedListing, setSelectedListing] = useState(null);
   const [selectedListings, setSelectedListings] = useState([]);
   const [shareData, setShareData] = useState({ discountValue: 10, discountType: 'percentage' });
-  const [bundleData, setBundleData] = useState({ buyerId: '', discountPercent: 10 });
+  // Not editable in the current UI, so a plain object is enough — useState
+  // would only add a setter that is never called.
+  const bundleData = { buyerId: '', discountPercent: 10 };
 
   useEffect(() => {
     if (!user) {
@@ -64,7 +66,7 @@ const OfferSharing = () => {
   const handleCreateBundle = async () => {
     if (selectedListings.length < 2) return;
     try {
-      const res = await createBundleOffer({
+      await createBundleOffer({
         listingIds: selectedListings,
         buyerId: bundleData.buyerId,
       });

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaRobot, FaHeart, FaSave, FaPlus, FaTrash, FaCalendarAlt, FaShoppingBag, FaMagic } from 'react-icons/fa';
-import { getAIPreferences, updateAIPreferences, getAIRecommendations, generateAIRecommendations, getAITrends, getUserOutfits, createOutfit } from '../services/api';
+import { FaRobot, FaHeart, FaPlus, FaTrash, FaCalendarAlt, FaMagic } from 'react-icons/fa';
+import { updateAIPreferences, getAIRecommendations, generateAIRecommendations, getAITrends, getUserOutfits, createOutfit } from '../services/api';
 import ListingCard from '../components/ListingCard';
 import { toast } from 'react-toastify';
 import { formatPrice } from '../utils/helpers';
@@ -23,15 +23,10 @@ const AIStylist = () => {
   const [outfitModalOpen, setOutfitModalOpen] = useState(false);
   const [outfitName, setOutfitName] = useState('');
 
-  useEffect(() => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-    fetchData();
-  }, [user, navigate, activeTab]);
-
-  const fetchData = async () => {
+  // Declared before the effect that uses it (and stable while activeTab is
+  // unchanged), so the effect still refetches exactly when the user switches
+  // tabs.
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       if (activeTab === 'recommendations') {
@@ -49,7 +44,15 @@ const AIStylist = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    fetchData();
+  }, [user, navigate, activeTab, fetchData]);
 
   const handleGenerateRecommendations = async () => {
     try {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -34,8 +34,9 @@ const VirtualTryOn = () => {
   const [nativePhoto, setNativePhoto] = useState(null); // File from native camera for upload/save
   const [cameraError, setCameraError] = useState(null); // 'denied' | 'nodevice' | 'busy' | null
   // Heuristic availability: null = unknown (assume available, let getUserMedia decide),
-  // true = devices seen, false = user has no camera hardware at all.
-  const [cameraAvailable, setCameraAvailable] = useState(null);
+  // true = devices seen, false = user has no camera hardware at all. Only the
+  // setter is read back through cameraError today, so the value is not bound.
+  const [, setCameraAvailable] = useState(null);
   const [settings, setSettings] = useState(null);
   const streamRef = useRef(null);
 
@@ -53,6 +54,21 @@ const VirtualTryOn = () => {
       }
     } catch { /* best-effort hint only */ }
   };
+
+  // Declared before the effect that uses it. It takes the id as an argument, so
+  // it holds no reactive state of its own and can be listed safely as a
+  // dependency.
+  const fetchListing = useCallback(async (id) => {
+    try {
+      const res = await api.get(`/listings/${id}`);
+      // Server wraps in { listing, similar } — ListingDetail uses
+      // res.data.listing; this page previously stored the wrapper itself.
+      setListing(res.data?.listing || res.data);
+    } catch (error) {
+      toast.error('Listing not found');
+      navigate('/');
+    }
+  }, [navigate]);
 
   useEffect(() => {
     fetchSettings();
@@ -77,7 +93,7 @@ const VirtualTryOn = () => {
         }
       } catch { /* noop */ }
     };
-  }, [listingId, user]);
+  }, [listingId, user, fetchListing]);
 
   const fetchSettings = async () => {
     try {
@@ -85,18 +101,6 @@ const VirtualTryOn = () => {
       setSettings(res.data);
     } catch (error) {
       console.error('Failed to fetch settings', error);
-    }
-  };
-
-  const fetchListing = async (id) => {
-    try {
-      const res = await api.get(`/listings/${id}`);
-      // Server wraps in { listing, similar } — ListingDetail uses
-      // res.data.listing; this page previously stored the wrapper itself.
-      setListing(res.data?.listing || res.data);
-    } catch (error) {
-      toast.error('Listing not found');
-      navigate('/');
     }
   };
 

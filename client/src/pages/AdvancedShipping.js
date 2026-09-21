@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaTruck, FaPlus, FaCalculator, FaPrint, FaSearch } from 'react-icons/fa';
+import { FaTruck, FaPlus, FaCalculator, FaPrint } from 'react-icons/fa';
 import api from '../services/api';
 import { formatPrice } from '../utils/helpers';
 
@@ -11,7 +11,6 @@ const AdvancedShipping = () => {
   const [loading, setLoading] = useState(true);
   const [integrations, setIntegrations] = useState([]);
   const [rate, setRate] = useState(null);
-  const [tracking, setTracking] = useState(null);
 
   useEffect(() => {
     if (!user) {
@@ -59,15 +58,6 @@ const AdvancedShipping = () => {
       setRate(res.data);
     } catch (error) {
       console.error('Error generating label:', error);
-    }
-  };
-
-  const handleTrack = async (trackingNumber) => {
-    try {
-      const res = await api.get(`/advanced-shipping/tracking/${trackingNumber}`);
-      setTracking(res.data);
-    } catch (error) {
-      console.error('Error tracking shipment:', error);
     }
   };
 

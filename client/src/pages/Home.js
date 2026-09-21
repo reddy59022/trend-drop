@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { FaSearch, FaCamera, FaHeart, FaUsers, FaBolt, FaShieldAlt, FaGlobeAmericas, FaGem, FaSpinner, FaExclamationTriangle, FaStore, FaTag, FaStar, FaTruck } from 'react-icons/fa';
+import { FaSearch, FaCamera, FaHeart, FaUsers, FaBolt, FaShieldAlt, FaGlobeAmericas, FaGem, FaSpinner, FaExclamationTriangle, FaTag, FaStar, FaTruck } from 'react-icons/fa';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
 

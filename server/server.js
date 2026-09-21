@@ -370,6 +370,18 @@ app.get('/health/mongo', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Unmatched /api/* requests must fail as JSON, never fall through to the SPA
+// shell. Every API router is mounted above this point, so anything arriving
+// here has no handler. Without this guard the production SPA catch-all below
+// answered such requests with `200 text/html` (the client's index.html),
+// which breaks fetch callers that expect a parseable body and silently hides
+// typo'd/removed endpoints from monitoring.
+// ---------------------------------------------------------------------------
+app.use('/api', (req, res) => {
+  res.status(404).json({ message: 'Not found' });
+});
+
 // Serve static files in production (SPA fallback)
 if (process.env.NODE_ENV === 'production') {
   // ============================================================
@@ -451,8 +463,29 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+// Body-parser error types that represent client-supplied bad input rather than
+// a server fault. Kept at module scope so the error handler stays allocation-free.
+const BODY_PARSER_ERROR_TYPES = new Set([
+  'entity.parse.failed',     // malformed JSON
+  'entity.too.large',        // payload exceeds the 2mb limit
+  'entity.verify.failed',    // failed body signature (raw-body verify hook)
+  'charset.unsupported',
+  'encoding.unsupported',
+]);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
+  // express.json/urlencoded already classified these as 4xx client errors, but
+  // this handler used to ignore that and answer 500 — so one typo in a client
+  // payload showed up as a server error in monitoring. Answer with the parser's
+  // status and log a single line WITHOUT the request body (it may carry PII or
+  // credentials).
+  if (BODY_PARSER_ERROR_TYPES.has(err.type)) {
+    const status = err.type === 'entity.too.large' ? 413 : 400;
+    console.warn(`Rejected ${req.method} ${req.originalUrl}: ${err.type}`);
+    return res.status(status).json({ message: 'Invalid request body' });
+  }
+
   console.error(err.stack);
 
   if (err.name === 'MulterError') {

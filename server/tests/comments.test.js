@@ -186,4 +186,34 @@ describe('v43.0 Community Features', () => {
     
     expect(res.status).toBe(404);
   });
+
+  test('v43.11 - Should reject a parent comment from another listing', async () => {
+    const otherListing = await Listing.create({
+      title: 'Other Comment Listing',
+      description: 'Separate listing for thread isolation',
+      price: 40,
+      category: 'Women',
+      condition: 'Good',
+      seller: seller._id,
+      quantity: 1,
+      status: 'active',
+    });
+    const parent = await Comment.create({
+      listingId: otherListing._id,
+      userId: user._id,
+      text: 'Parent on another listing',
+    });
+
+    const res = await request(app)
+      .post(`/api/comments/${testListing._id}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ text: 'Cross-listing reply', parentId: parent._id });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/different listing/i);
+    expect(await Comment.countDocuments({ listingId: testListing._id, parentId: parent._id })).toBe(0);
+
+    await Comment.deleteOne({ _id: parent._id });
+    await Listing.deleteOne({ _id: otherListing._id });
+  });
 });

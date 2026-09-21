@@ -1,24 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaDollarSign, FaEye, FaTag, FaStar, FaPercentage, FaShoppingBag, FaSpinner } from 'react-icons/fa';
+import { FaDollarSign, FaEye, FaTag, FaStar, FaPercentage, FaShoppingBag } from 'react-icons/fa';
 
 const SellerAnalytics = () => {
-  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [revenueData, setRevenueData] = useState([]);
   const [topListings, setTopListings] = useState([]);
   const [period, setPeriod] = useState('30d');
 
-  useEffect(() => {
-    fetchOverview();
-    fetchRevenue();
-    fetchTopListings();
-  }, [period]);
-
-  const fetchOverview = async () => {
+  // Declared before the effect that uses them. All three are keyed to `period`
+  // only, so they stay stable between period changes and the effect below fires
+  // on the same trigger as before.
+  const fetchOverview = useCallback(async () => {
     try {
       const res = await api.get(`/users/me/analytics/overview?period=${period}`);
       setOverview(res.data.overview);
@@ -27,25 +22,31 @@ const SellerAnalytics = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [period]);
 
-  const fetchRevenue = async () => {
+  const fetchRevenue = useCallback(async () => {
     try {
       const res = await api.get(`/users/me/analytics/revenue?period=${period}`);
       setRevenueData(res.data.revenue || []);
     } catch (error) {
       console.error('Failed to load revenue data:', error);
     }
-  };
+  }, [period]);
 
-  const fetchTopListings = async () => {
+  const fetchTopListings = useCallback(async () => {
     try {
       const res = await api.get(`/users/me/analytics/top-listings?period=${period}`);
       setTopListings(res.data.topListings || []);
     } catch (error) {
       console.error('Failed to load top listings:', error);
     }
-  };
+  }, [period]);
+
+  useEffect(() => {
+    fetchOverview();
+    fetchRevenue();
+    fetchTopListings();
+  }, [period, fetchOverview, fetchRevenue, fetchTopListings]);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {

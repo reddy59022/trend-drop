@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
@@ -8,7 +8,7 @@ import { toast } from 'react-toastify';
 import api, { validatePromo, applyBundleDiscount } from '../services/api';
 import { formatPrice, convertAmount } from '../utils/helpers';
 import StripeCheckoutForm from '../components/StripeCheckoutForm';
-import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaPercent, FaBoxes } from 'react-icons/fa';
+import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaBoxes } from 'react-icons/fa';
 
 // Keep the client summary aligned with create-intent/confirm-batch: item and
 // protection fees scale with quantity, but shipping is one combined-weight
@@ -238,7 +238,9 @@ const Cart = () => {
 
   const [itemBreakdowns, setItemBreakdowns] = useState({});
 
-  const fetchBundleDiscounts = async () => {
+  // Keyed to the cart contents, matching the effect that calls it below, so the
+  // effect still re-runs on exactly the same trigger as before.
+  const fetchBundleDiscounts = useCallback(async () => {
     if (cart.length === 0) return;
     try {
       const res = await applyBundleDiscount({
@@ -251,7 +253,7 @@ const Cart = () => {
     } catch (e) {
       // Bundle discounts may not be configured - this is non-critical
     }
-  };
+  }, [cart]);
 
   useEffect(() => {
     const fetchBreakdowns = async () => {
@@ -287,7 +289,7 @@ const Cart = () => {
       fetchBreakdowns();
       fetchBundleDiscounts();
     }
-  }, [cart, shippingInfo.country]);
+  }, [cart, shippingInfo.country, fetchBundleDiscounts]);
 
   // Group cart items by seller for package display
   const sellerGroups = {};

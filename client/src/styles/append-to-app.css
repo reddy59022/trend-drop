@@ -1380,7 +1380,10 @@
   border-radius: var(--td-radius-xxl);
   box-shadow: var(--td-shadow-xl), 0 20px 40px rgba(76, 29, 149, 0.2);
   z-index: var(--td-z-navbar);
-  display: flex;
+  /* Desktop stays hidden (display: none above). The dock is only revealed by
+     the max-width: 768px media query — a second display declaration here
+     would win by source order and float the bar over desktop content,
+     intercepting clicks on whatever sits underneath it. */
   align-items: center;
   justify-content: space-around;
   padding: 0 var(--td-space-sm);

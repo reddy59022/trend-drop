@@ -39,6 +39,15 @@ const auctionSchema = new mongoose.Schema({
     enum: ['scheduled', 'active', 'closed', 'cancelled'],
     default: 'scheduled',
   },
+  // Cron may mark an auction closed before the winner/order finalization
+  // endpoint runs. Keep that intermediate state distinguishable from a
+  // fully finalized close so the endpoint can safely complete it.
+  closeFinalized: {
+    type: Boolean,
+    // Existing closed auctions predate this field and are already finalized.
+    // Cron explicitly writes false for its intermediate state.
+    default: true,
+  },
   bids: [{
     bidder: {
       type: mongoose.Schema.Types.ObjectId,

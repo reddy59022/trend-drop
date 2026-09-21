@@ -38,4 +38,29 @@ describe('SavedSearches page', () => {
     renderPage(<SavedSearches />);
     expect(await screen.findByText('No saved searches')).toBeInTheDocument();
   });
+  test('submits the backend notification frequency field when creating a search', async () => {
+    api.getSavedSearches.mockResolvedValue({ data: [] });
+    api.saveSearch.mockResolvedValue({ data: { _id: 's2' } });
+    renderPage(<SavedSearches />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /New Search/ }));
+    fireEvent.change(screen.getByPlaceholderText("Search name (e.g., 'Nike Air Max under $100')"), { target: { value: 'Weekly shoes' } });
+    fireEvent.change(screen.getByPlaceholderText('Search query'), { target: { value: 'shoes' } });
+    fireEvent.change(screen.getByDisplayValue('Daily'), { target: { value: 'weekly' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Search/ }));
+
+    await waitFor(() => expect(api.saveSearch).toHaveBeenCalledWith({
+      name: 'Weekly shoes',
+      query: 'shoes',
+      filters: {},
+      notifyFrequency: 'weekly',
+    }));
+  });
+  test('renders the server notification frequency field', async () => {
+    api.getSavedSearches.mockResolvedValue({ data: [{ _id: 's3', name: 'Weekly shoes', query: 'shoes', notifyFrequency: 'weekly' }] });
+    api.getSavedSearchResults.mockResolvedValue({ data: { listings: [] } });
+    renderPage(<SavedSearches />);
+
+    expect(await screen.findByText('Weekly')).toBeInTheDocument();
+  });
 });

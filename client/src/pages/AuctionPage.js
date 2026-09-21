@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { FaGavel, FaPlus, FaUser, FaTag, FaEye } from 'react-icons/fa';
@@ -15,11 +15,9 @@ const AuctionPage = () => {
   const [activeTab, setActiveTab] = useState('active');
   const [bidAmount, setBidAmount] = useState({});
 
-  useEffect(() => {
-    fetchAuctions();
-  }, [activeTab]);
-
-  const fetchAuctions = async () => {
+  // Declared before the effect that uses it (and stable while activeTab is
+  // unchanged), so the effect still fires on the same trigger as before.
+  const fetchAuctions = useCallback(async () => {
     setLoading(true);
     try {
       // Fetch all auctions for the current tab
@@ -30,7 +28,11 @@ const AuctionPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab]);
+
+  useEffect(() => {
+    fetchAuctions();
+  }, [activeTab, fetchAuctions]);
   
   const isMyAuction = (auction) => {
     return user && String(auction.seller?._id) === String(user._id);

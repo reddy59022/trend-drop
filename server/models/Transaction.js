@@ -14,6 +14,14 @@ const transactionSchema = new mongoose.Schema({
     ref: 'Listing',
     required: true,
   },
+  // Optional link for auction-created transactions. Without this field
+  // Mongoose strict mode silently discarded the auction id during close,
+  // making winner orders impossible to reconcile back to their auction.
+  auction: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Auction',
+    default: null,
+  },
   buyer: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

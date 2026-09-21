@@ -7,6 +7,7 @@ const Transaction = require('../models/Transaction');
 const Auction = require('../models/Auction');
 const jwt = require('jsonwebtoken');
 const { getJwtSecret } = require('../config/security');
+const { closeAuctions } = require('../config/cron');
 
 const JWT_SECRET = getJwtSecret();
 const US = { fullName: 'T', street1: '1 St', city: 'NYC', state: 'NY', postalCode: '10001', country: 'US' };
@@ -162,6 +163,37 @@ describe('ZD4 — auction close is idempotent', () => {
     expect(JSON.stringify(c2.body)).toMatch(/already|closed/i);
     const countAfterSecond = await Transaction.countDocuments({ auction: auction._id });
     expect(countAfterSecond).toBe(countAfterFirst);
+  }, 30000);
+});
+
+describe('ZD4b — auction auto-close must preserve finalization', () => {
+  test('auto-closing an expired auction leaves winner finalization available', async () => {
+    const seller = await makeUser('ZDAucAutoSeller', `zdaucauto_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('ZDAucAutoBuyer', `zdaucauto_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 80);
+    const auction = await Auction.create({
+      listing: listing._id,
+      seller: seller.user._id,
+      startTime: new Date(Date.now() - 7200 * 1000),
+      endTime: new Date(Date.now() - 3600 * 1000),
+      reservePrice: 10,
+      currency: 'USD',
+      currentBid: 45,
+      status: 'active',
+      bids: [{ bidder: buyer.user._id, amount: 45, currency: 'USD' }],
+    });
+
+    await closeAuctions();
+    const autoClosed = await Auction.findById(auction._id);
+    expect(autoClosed.status).toBe('closed');
+    expect(autoClosed.closeFinalized).toBe(false);
+
+    const finalized = await request(app).post(`/api/auctions/${auction._id}/close`)
+      .set('Authorization', 'Bearer ' + seller.token).send({});
+    expect(finalized.status).toBe(200);
+    expect(finalized.body.auction.winner._id || finalized.body.auction.winner).toBeTruthy();
+    expect(finalized.body.transaction.status).toBe('pending');
+    expect(await Transaction.countDocuments({ auction: auction._id })).toBe(1);
   }, 30000);
 });
 

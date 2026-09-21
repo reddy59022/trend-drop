@@ -72,7 +72,7 @@ const SavedSearches = () => {
         name: form.name,
         query: form.query,
         filters: form.filters,
-        notificationFrequency: form.notificationFrequency,
+        notifyFrequency: form.notificationFrequency,
       });
       setForm({ name: '', query: '', filters: {}, notificationFrequency: 'daily' });
       setShowCreateForm(false);
@@ -87,7 +87,7 @@ const SavedSearches = () => {
     try {
       await updateSavedSearch(id, {
         name: form.name,
-        notificationFrequency: form.notificationFrequency,
+        notifyFrequency: form.notificationFrequency,
       });
       setEditingId(null);
       setForm({ name: '', query: '', filters: {}, notificationFrequency: 'daily' });
@@ -120,7 +120,7 @@ const SavedSearches = () => {
       name: s.name || '',
       query: s.query || '',
       filters: s.filters || {},
-      notificationFrequency: s.notificationFrequency || 'daily',
+      notificationFrequency: s.notifyFrequency || s.notificationFrequency || 'daily',
     });
   };
 
@@ -219,7 +219,7 @@ const SavedSearches = () => {
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
                     <FaBell size={10} />
-                    {freqOptions.find(f => f.value === s.notificationFrequency)?.label || s.notificationFrequency}
+                    {freqOptions.find(f => f.value === (s.notifyFrequency || s.notificationFrequency))?.label || (s.notifyFrequency || s.notificationFrequency)}
                   </div>
                   {editingId !== s._id && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>

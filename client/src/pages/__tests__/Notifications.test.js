@@ -32,17 +32,24 @@ describe('Notifications page', () => {
     renderPage(<Notifications />);
     expect(screen.getByText('Sign in to view your notifications')).toBeInTheDocument();
   });
-  test('renders the empty state when there are no notifications', async () => {
-    api.get.mockResolvedValue({ data: [] });
+  test('renders the empty state when the API returns its notification envelope', async () => {
+    api.get.mockResolvedValue({ data: { notifications: [], unreadCount: 0, total: 0, totalPages: 0, currentPage: 1 } });
     renderPage(<Notifications />);
     expect(await screen.findByText('No notifications yet')).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith('/notifications');
   });
-  test('renders notifications with unread badge and marks all read', async () => {
-    api.get.mockResolvedValue({ data: [{ _id: 'n1', type: 'like', message: 'Bob liked your jacket', read: false, createdAt: new Date().toISOString(), from: { _id: 'bob', avatar: '' } }] });
-    api.put.mockResolvedValue({ data: {} });
+  test('renders notifications with unread badge and marks all read through the mounted routes', async () => {
+    api.get.mockResolvedValue({ data: {
+      notifications: [{ _id: 'n1', type: 'like', message: 'Bob liked your jacket', read: false, createdAt: new Date().toISOString(), from: { _id: 'bob', avatar: '' } }],
+      unreadCount: 1,
+      total: 1,
+      totalPages: 1,
+      currentPage: 1,
+    } });
+    api.put.mockResolvedValue({ data: { unreadCount: 0 } });
     renderPage(<Notifications />);
     expect(await screen.findByText('Bob liked your jacket')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Mark All Read/ }));
-    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/users/user123/notifications/read'));
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/notifications/read'));
   });
 });

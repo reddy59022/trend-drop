@@ -144,11 +144,27 @@ describe('TD-2.3 push event hooks', () => {
     });
     testUserIds.push(stranger._id);
 
-    // Buyer messages the stranger (recipient has no registered devices).
+    // Use a listing owned by the sender so this remains a valid conversation
+    // request while the recipient has no registered devices.
+    const buyerListing = await Listing.create({
+      seller: buyer._id,
+      title: 'Buyer-owned Push Test Item',
+      description: 'Test listing for no-device push events',
+      category: 'Electronics',
+      condition: 'New with tags',
+      price: 100,
+      currency: 'USD',
+      available: true,
+      quantity: 5,
+      shipsFrom: 'US',
+      weight: 1,
+    });
+    testListingIds.push(buyerListing._id);
+
     const res = await request(app)
       .post('/api/messages')
       .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ listingId: listing._id, sellerId: stranger._id, text: 'Hi stranger' });
+      .send({ listingId: buyerListing._id, sellerId: stranger._id, text: 'Hi stranger' });
 
     expect(res.status).toBe(201);
     expect(transports.sendApns).not.toHaveBeenCalled();

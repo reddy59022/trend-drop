@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaChartLine, FaFire, FaBell, FaSync, FaRobot, FaLightbulb } from 'react-icons/fa';
+import { FaFire, FaBell, FaSync, FaRobot, FaLightbulb } from 'react-icons/fa';
 import api from '../services/api';
 
 const TrendForecast = () => {
@@ -9,7 +9,10 @@ const TrendForecast = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [forecasts, setForecasts] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(null);
+  // Only the setter is used: the "View Details" button below has no destination
+  // view yet, so the selected category is never rendered. Keep the hook bound so
+  // the button stays wired for when that view lands.
+  const [, setSelectedCategory] = useState(null);
   const [timeframe, setTimeframe] = useState('weekly');
   const [alerts, setAlerts] = useState([]);
 

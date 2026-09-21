@@ -5,14 +5,14 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 jest.mock('../../context/AuthContext', () => ({ __esModule: true, useAuth: () => globalThis.__tdAuth }));
 jest.mock('../../services/api');
-import { setAuth, resetTestState, authUser } from '../../test-utils';
+import { setAuth, resetTestState, authUser, routerFuture } from '../../test-utils';
 import ProtectedRoute from '../ProtectedRoute';
 
 beforeEach(() => { resetTestState(); setAuth(null); });
 
 describe('ProtectedRoute', () => {
   const renderRoute = (role) => render(
-    <MemoryRouter initialEntries={['/secret']}>
+    <MemoryRouter initialEntries={['/secret']} future={routerFuture}>
       <Routes>
         <Route path="/secret" element={<ProtectedRoute requiredRole={role}><div data-testid="child">secret</div></ProtectedRoute>} />
         <Route path="/login" element={<div data-testid="login">login</div>} />

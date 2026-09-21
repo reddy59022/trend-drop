@@ -13,7 +13,7 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 const generateToken = (userId) => jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '30d' });
 
-let sellerToken, sellerId, buyerToken, buyerId, listingId;
+let sellerToken, sellerId, buyerToken, buyerId, otherUserId, listingId;
 const TEST_RUN_ID = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
 const testUserIds = [];
@@ -29,6 +29,9 @@ beforeAll(async () => {
 
   const buyer = await User.create({ name: 'MsgBuyer', email: `msgb_${TEST_RUN_ID}@test.com`, password: 'password123', emailVerified: true, authProvider: 'email' });
   testUserIds.push(buyer._id); buyerId = buyer._id; buyerToken = generateToken(buyer._id);
+
+  const otherUser = await User.create({ name: 'MsgOther', email: `msgo_${TEST_RUN_ID}@test.com`, password: 'password123', emailVerified: true, authProvider: 'email' });
+  testUserIds.push(otherUser._id); otherUserId = otherUser._id;
 
   const listing = await Listing.create({ seller: sellerId, title: 'Msg Test', description: 'Desc', price: 100, category: 'Men', condition: 'New with tags', available: true, quantity: 5, shipsFrom: 'US', weight: 1 });
   testListingIds.push(listing._id); listingId = listing._id;
@@ -47,6 +50,31 @@ describe('Messages', () => {
     expect(r.status).toBe(201);
     expect(r.body.participants).toBeDefined();
     testMessageIds.push(r.body._id);
+  });
+
+  test('MSG.1a missing listingId is rejected before persistence', async () => {
+    const r = await request(app).post('/api/messages')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ sellerId, text: 'A listing is required for a conversation' });
+    expect(r.status).toBe(400);
+    expect(r.body.message).toMatch(/listingId/i);
+  });
+
+  test('MSG.1b ghost listingId is rejected without creating a conversation', async () => {
+    const before = await Message.countDocuments({ participants: { $all: [buyerId, sellerId] } });
+    const r = await request(app).post('/api/messages')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ sellerId, listingId: new mongoose.Types.ObjectId(), text: 'Ghost listing' });
+    expect(r.status).toBe(404);
+    expect(await Message.countDocuments({ participants: { $all: [buyerId, sellerId] } })).toBe(before);
+  });
+
+  test('MSG.1c recipient must own the conversation listing', async () => {
+    const r = await request(app).post('/api/messages')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ sellerId: otherUserId, listingId, text: 'Wrong recipient' });
+    expect(r.status).toBe(400);
+    expect(r.body.message).toMatch(/listing seller/i);
   });
 
   test('MSG.2 Cannot message self', async () => {
