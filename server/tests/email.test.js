@@ -62,6 +62,23 @@ describe('Email module (TD-1.3)', () => {
       await flushAsync();
       expect(mockSend).not.toHaveBeenCalled();
     });
+
+    it('EM.2b E2E mode skips even when a placeholder key is configured', async () => {
+      process.env.BREVO_API_KEY = 'xkeysib-placeholder';
+      process.env.E2E_IN_MEMORY = '1';
+      jest.resetModules();
+      email = require('../config/email');
+
+      const result = await email.sendVerificationEmail('e2e@example.com', 'E2E', 'tok-e2e');
+      expect(result).toEqual({ emailSent: false, skipped: true });
+      await flushAsync();
+      expect(mockSend).not.toHaveBeenCalled();
+
+      delete process.env.E2E_IN_MEMORY;
+      delete process.env.BREVO_API_KEY;
+      jest.resetModules();
+      email = require('../config/email');
+    });
   });
 
   describe('Keyed mode (BREVO_API_KEY set)', () => {
@@ -88,6 +105,14 @@ describe('Email module (TD-1.3)', () => {
       expect(sent.to).toEqual([{ email: 'buyer@example.com', name: 'Buyer' }]);
       expect(sent.htmlContent).toContain('https://app.trenddrop.example/verify-email?token=tok-abc');
       expect(sent.htmlContent).toContain('Buyer');
+    });
+
+    it('EM.3b escapes user-controlled names before embedding them in HTML', async () => {
+      await email.sendVerificationEmail('buyer@example.com', '<img src=x onerror=alert(1)>', 'tok-safe');
+      await flushAsync();
+      const sent = mockSend.mock.calls[0][0];
+      expect(sent.htmlContent).not.toContain('<img src=x onerror=alert(1)>');
+      expect(sent.htmlContent).toContain('&lt;img src=x onerror=alert(1)&gt;');
     });
 
     it('EM.4 sends a password reset email with a tokenized link and 1-hour expiry note', async () => {

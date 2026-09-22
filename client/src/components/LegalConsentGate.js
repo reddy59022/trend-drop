@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getLegalConsentStatus, acceptLegalDocuments } from '../services/api';
 
-const PUBLIC_PATHS = ['/legal', '/login', '/register', '/verify-email', '/forgot-password', '/unavailable'];
+const PUBLIC_PATHS = ['/legal', '/login', '/register', '/verify-email', '/forgot-password', '/reset-password', '/unavailable'];
 
 export default function LegalConsentGate() {
   const { user } = useAuth();

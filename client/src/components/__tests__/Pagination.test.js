@@ -12,6 +12,10 @@ describe('Pagination', () => {
     const { container } = render(<MemoryRouter future={routerFuture}><Pagination currentPage={1} totalPages={1} onPageChange={() => {}} /></MemoryRouter>);
     expect(container.firstChild).toBeNull();
   });
+  test('returns null when totalPages is missing from an incomplete API response', () => {
+    const { container } = render(<MemoryRouter future={routerFuture}><Pagination currentPage={1} totalPages={undefined} onPageChange={() => {}} /></MemoryRouter>);
+    expect(container.firstChild).toBeNull();
+  });
   test('previous button is disabled on the first page', () => {
     render(<MemoryRouter future={routerFuture}><Pagination currentPage={1} totalPages={5} onPageChange={() => {}} /></MemoryRouter>);
     expect(screen.getByLabelText('Previous page')).toBeDisabled();

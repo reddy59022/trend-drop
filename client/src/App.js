@@ -33,6 +33,7 @@ const Wishlist = lazy(() => import('./pages/Wishlist'));
 const Messages = lazy(() => import('./pages/Messages'));
 const Reviews = lazy(() => import('./pages/Reviews'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const SellerDashboard = lazy(() => import('./pages/SellerDashboard'));
 const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'));
 const SellerAnalytics = lazy(() => import('./pages/SellerAnalytics'));
@@ -217,6 +218,7 @@ function App() {
 
                 <Route path="/reviews/:sellerId" element={<Reviews />} />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/verify-email" element={<VerifyEmailPage />} />
                 <Route path="/legal" element={<LegalCenterPage />} />
                 <Route path="/legal/:type" element={<LegalDocumentPage />} />

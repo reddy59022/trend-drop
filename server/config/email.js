@@ -14,7 +14,21 @@ const SENDER_NAME = 'TrendDrop';
 // so a missing env var never produces 'undefined/verify-email' links.
 const BASE_URL = (process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+}[character]));
+
 const hasApiKey = () => {
+  // The in-memory E2E harness sets placeholder credentials so production
+  // configuration validation can run. Those credentials must never turn into
+  // an outbound provider request.
+  if (process.env.E2E_IN_MEMORY === '1') {
+    return false;
+  }
   if (BREVO_API_KEY) return true;
   console.warn('[email] BREVO_API_KEY is not set — skipping outbound email (no network call made).');
   return false;
@@ -26,6 +40,8 @@ const hasApiKey = () => {
 const sendVerificationEmail = (email, name, token) => {
   if (!hasApiKey()) return Promise.resolve({ emailSent: false, skipped: true });
   const verificationUrl = `${BASE_URL}/verify-email?token=${token}`;
+  const safeName = escapeHtml(name);
+  const safeVerificationUrl = escapeHtml(verificationUrl);
 
   const sendPromise = (async () => {
     const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
@@ -40,12 +56,12 @@ const sendVerificationEmail = (email, name, token) => {
             <h1 style="color:#fff; margin:0; font-size:24px;">Welcome to TrendDrop! 🎉</h1>
           </div>
           <div style="background:#fff; padding:30px; border-radius:0 0 12px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-            <p style="font-size:16px; color:#333;">Hi <strong>${name}</strong>,</p>
+            <p style="font-size:16px; color:#333;">Hi <strong>${safeName}</strong>,</p>
             <p style="font-size:16px; color:#555; line-height:1.6;">
               Thanks for signing up! Please verify your email address to start buying and selling on TrendDrop.
             </p>
             <div style="text-align:center; margin:30px 0;">
-              <a href="${verificationUrl}" 
+              <a href="${safeVerificationUrl}"
                  style="background:linear-gradient(135deg, #FF4D6D, #FF8FA3); color:#fff; padding:14px 40px; 
                         text-decoration:none; border-radius:8px; font-size:16px; font-weight:600; display:inline-block;">
                 Verify Email Address
@@ -53,7 +69,7 @@ const sendVerificationEmail = (email, name, token) => {
             </div>
             <p style="font-size:14px; color:#888;">
               Or copy this link: <br>
-              <span style="color:#FF4D6D;">${verificationUrl}</span>
+              <span style="color:#FF4D6D;">${safeVerificationUrl}</span>
             </p>
             <p style="font-size:14px; color:#888; margin-top:20px;">
               This link expires in 24 hours.
@@ -89,6 +105,8 @@ const sendVerificationEmail = (email, name, token) => {
 const sendPasswordResetEmail = (email, name, token) => {
   if (!hasApiKey()) return Promise.resolve({ emailSent: false, skipped: true });
   const resetUrl = `${BASE_URL}/reset-password?token=${token}`;
+  const safeName = escapeHtml(name);
+  const safeResetUrl = escapeHtml(resetUrl);
 
   const sendPromise = (async () => {
     const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
@@ -102,10 +120,10 @@ const sendPasswordResetEmail = (email, name, token) => {
             <h1 style="color:#fff; margin:0; font-size:20px;">Password Reset</h1>
           </div>
           <div style="padding:30px;">
-            <p>Hi <strong>${name}</strong>,</p>
+            <p>Hi <strong>${safeName}</strong>,</p>
             <p>Click the button below to reset your password. This link expires in 1 hour.</p>
             <div style="text-align:center; margin:25px 0;">
-              <a href="${resetUrl}" style="background:#FF4D6D; color:#fff; padding:12px 35px; text-decoration:none; border-radius:8px; font-size:16px; display:inline-block;">
+              <a href="${safeResetUrl}" style="background:#FF4D6D; color:#fff; padding:12px 35px; text-decoration:none; border-radius:8px; font-size:16px; display:inline-block;">
                 Reset Password
               </a>
             </div>

@@ -22,6 +22,13 @@ describe('normalizeDeepLinkUrl', () => {
     expect(u.searchParams.get('tab')).toBe('offers');
   });
 
+  it('normalizes custom-scheme URLs with an explicit leading slash', () => {
+    const u = normalizeDeepLinkUrl('trenddrop:///listing/abc123?tab=offers');
+    expect(u).not.toBeNull();
+    expect(u.pathname).toBe('/listing/abc123');
+    expect(u.searchParams.get('tab')).toBe('offers');
+  });
+
   it('normalizes oauth callback scheme URLs', () => {
     const u = normalizeDeepLinkUrl('trenddrop://oauth-callback?token=xyz');
     expect(u.pathname).toBe('/oauth-callback');
@@ -33,10 +40,11 @@ describe('normalizeDeepLinkUrl', () => {
     expect(u.pathname).toBe('/messages');
   });
 
-  it('returns null for garbage input', () => {
+  it('returns null for garbage and unsupported schemes', () => {
     expect(normalizeDeepLinkUrl('')).toBeNull();
     expect(normalizeDeepLinkUrl(null)).toBeNull();
     expect(normalizeDeepLinkUrl('not a url at all')).toBeNull();
+    expect(normalizeDeepLinkUrl('javascript://listing/abc123')).toBeNull();
   });
 });
 
@@ -51,10 +59,11 @@ describe('isOAuthCallbackUrl', () => {
     expect(isOAuthCallbackUrl('trenddrop://callback?id_token=abc')).toBe(true);
   });
 
-  it('rejects plain listing/order deep links', () => {
+  it('rejects plain listing/order deep links and untrusted OAuth origins', () => {
     expect(isOAuthCallbackUrl('trenddrop://listing/abc123')).toBe(false);
     expect(isOAuthCallbackUrl('https://trend-drop.app/listing/abc123')).toBe(false);
     expect(isOAuthCallbackUrl('https://trend-drop.app/orders/xyz')).toBe(false);
+    expect(isOAuthCallbackUrl('https://evil.example/oauth-callback?token=stolen')).toBe(false);
   });
 
   it('rejects empty input', () => {
@@ -72,6 +81,7 @@ describe('deepLinkPath', () => {
   it('extracts path from custom-scheme links', () => {
     expect(deepLinkPath('trenddrop://orders/ord_987')).toBe('/orders/ord_987');
     expect(deepLinkPath('trenddrop://messages')).toBe('/messages');
+    expect(deepLinkPath('trenddrop:///messages')).toBe('/messages');
   });
 
   it('returns "/" for bare home links', () => {

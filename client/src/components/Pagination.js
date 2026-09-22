@@ -2,25 +2,33 @@ import React from 'react';
 import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 
 const Pagination = ({ currentPage, totalPages, onPageChange }) => {
-  if (totalPages <= 1) return null;
+  const pageCount = Number(totalPages);
+  const activePage = Number(currentPage);
+
+  // API responses can be partial while a search is loading or when a legacy
+  // endpoint omits pagination metadata. Never render controls with an
+  // "undefined" page; wait until the contract is complete instead.
+  if (!Number.isInteger(pageCount) || pageCount <= 1 || !Number.isInteger(activePage) || activePage < 1) {
+    return null;
+  }
 
   const getPageNumbers = () => {
     const pages = [];
     const maxVisible = 5;
 
-    if (totalPages <= maxVisible) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    if (pageCount <= maxVisible) {
+      for (let i = 1; i <= pageCount; i++) pages.push(i);
     } else {
       pages.push(1);
-      if (currentPage > 3) pages.push('...');
+      if (activePage > 3) pages.push('...');
       
-      const start = Math.max(2, currentPage - 1);
-      const end = Math.min(totalPages - 1, currentPage + 1);
+      const start = Math.max(2, activePage - 1);
+      const end = Math.min(pageCount - 1, activePage + 1);
       
       for (let i = start; i <= end; i++) pages.push(i);
       
-      if (currentPage < totalPages - 2) pages.push('...');
-      pages.push(totalPages);
+      if (activePage < pageCount - 2) pages.push('...');
+      pages.push(pageCount);
     }
     return pages;
   };
@@ -29,8 +37,8 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
     <nav className="pagination" aria-label="Pagination">
       <button
         className="btn btn-sm btn-outline"
-        onClick={() => onPageChange(currentPage - 1)}
-        disabled={currentPage <= 1}
+        onClick={() => onPageChange(activePage - 1)}
+        disabled={activePage <= 1}
         aria-label="Previous page"
       >
         <FaChevronLeft size={12} />
@@ -42,14 +50,14 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
         ) : (
           <button
             key={page}
-            className={`btn btn-sm ${page === currentPage ? 'btn-primary' : 'btn-ghost'}`}
+            className={`btn btn-sm ${page === activePage ? 'btn-primary' : 'btn-ghost'}`}
             onClick={() => onPageChange(page)}
             style={{
               minWidth: 36,
-              fontWeight: page === currentPage ? 700 : 500,
+              fontWeight: page === activePage ? 700 : 500,
             }}
             aria-label={`Page ${page}`}
-            aria-current={page === currentPage ? 'page' : undefined}
+            aria-current={page === activePage ? 'page' : undefined}
           >
             {page}
           </button>
@@ -58,8 +66,8 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
 
       <button
         className="btn btn-sm btn-outline"
-        onClick={() => onPageChange(currentPage + 1)}
-        disabled={currentPage >= totalPages}
+        onClick={() => onPageChange(activePage + 1)}
+        disabled={activePage >= pageCount}
         aria-label="Next page"
       >
         <FaChevronRight size={12} />

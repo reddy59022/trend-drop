@@ -17,11 +17,17 @@ export function normalizeDeepLinkUrl(rawUrl) {
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(str)) {
       const parsed = new URL(str);
       if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        if (parsed.protocol !== 'trenddrop:') return null;
         // Custom scheme: host holds the first path segment.
         const host = parsed.host || '';
         const rest = parsed.pathname === '/' ? '' : parsed.pathname;
         const query = parsed.search || '';
-        return new URL(`https://trenddrop.local/${host}${rest}${query}`);
+        // Both trenddrop://listing/123 and trenddrop:///listing/123 are
+        // emitted by native link handlers. In the three-slash form URL
+        // parsing leaves the route entirely in pathname, so do not add an
+        // extra slash or the router will receive //listing/123.
+        const route = host ? `/${host}${rest}` : rest;
+        return new URL(`https://trenddrop.local${route || '/'}${query}`);
       }
       return parsed;
     }
@@ -37,14 +43,18 @@ export function normalizeDeepLinkUrl(rawUrl) {
 // Returns true when the URL looks like an OAuth redirect carrying tokens
 // (Google identity platform or Apple). Also matches the legacy
 // 'oauth-callback' marker for backwards compatibility.
+const TRUSTED_OAUTH_HOSTS = new Set([
+  'trenddrop.local',
+  'trend-drop.app',
+  'trend-drop.onrender.com',
+]);
+
 export function isOAuthCallbackUrl(rawUrl) {
   if (!rawUrl) return false;
-  const str = String(rawUrl);
-  if (str.includes('oauth-callback')) return true;
-  const parsed = normalizeDeepLinkUrl(str);
-  if (!parsed) return false;
+  const parsed = normalizeDeepLinkUrl(rawUrl);
+  if (!parsed || !TRUSTED_OAUTH_HOSTS.has(parsed.hostname.toLowerCase())) return false;
   const path = parsed.pathname.replace(/\/+$/, '');
-  if (path.endsWith('/callback') || path.endsWith('/oauth')) return true;
+  if (path.endsWith('/oauth-callback') || path.endsWith('/callback') || path.endsWith('/oauth')) return true;
   return Boolean(parsed.searchParams.get('token') || parsed.searchParams.get('id_token'));
 }
 
