@@ -95,6 +95,12 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4096"
         run: npm run test:mutation
 
+      - name: Client revenue mutation testing
+        working-directory: client
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+        run: npm run test:mutation
+
       # Keep the focused quality-gate reports available when either gate fails.
       # `always()` also uploads reports produced before a later CI step fails.
       - name: Upload critical coverage report
@@ -117,6 +123,17 @@ jobs:
           path: |
             server/reports/mutation/mutation.html
             server/reports/mutation/mutation.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload client revenue mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-revenue-mutation-report
+          path: |
+            client/reports/mutation-client/mutation.html
+            client/reports/mutation-client/mutation.json
           if-no-files-found: warn
           retention-days: 14
 

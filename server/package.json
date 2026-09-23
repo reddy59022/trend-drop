@@ -9,7 +9,7 @@
     "seed": "node seed.js",
     "test": "NODE_ENV=test node scripts/run-jest-shards.js",
     "test:coverage": "NODE_ENV=test jest --runInBand --forceExit --coverage",
-    "test:coverage:critical": "NODE_OPTIONS=--max-old-space-size=4096 NODE_ENV=test jest --runInBand --forceExit --config=jest.critical.config.js tests/paymentIntegrity.test.js tests/paymentsRollback.test.js tests/tddRound32.test.js tests/tddRound34.test.js tests/paymentInternationalGate.test.js tests/paymentCurrency.test.js tests/zeroDefect2.test.js tests/authSignup.test.js tests/socialLogin.test.js",
+    "test:coverage:critical": "NODE_OPTIONS=--max-old-space-size=4096 NODE_ENV=test jest --runInBand --forceExit --config=jest.critical.config.js tests/paymentIntegrity.test.js tests/paymentsRollback.test.js tests/tddRound32.test.js tests/tddRound34.test.js tests/paymentInternationalGate.test.js tests/paymentCurrency.test.js tests/zeroDefect2.test.js tests/authSignup.test.js tests/socialLogin.test.js tests/criticalRules.test.js tests/revenueInvariants.test.js",
     "test:mutation": "NODE_ENV=test npx stryker run stryker.config.json",
     "test:mutation:dry": "NODE_ENV=test npx stryker run --dryRunOnly stryker.config.json",
     "test:ci": "NODE_ENV=test node scripts/run-jest-shards.js"

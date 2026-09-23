@@ -1,4 +1,10 @@
 const { increment } = require('../utils/metrics');
+const {
+  roundMoney,
+  calculateBuyerTotal,
+  calculateSellerNet,
+  calculatePlatformNet,
+} = require('../criticalRules');
 
 // === STRIPE-ONLY PAYMENT CONFIGURATION ===
 // All payments, payouts, and refunds go through Stripe.
@@ -63,27 +69,27 @@ const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg =
   const shippingCost = shippingResult.cost;
   const platformFeePercent = sellerCommission.platformFee;
   const buyerProtectionPercent = buyerCommission.buyerProtection;
-  const platformFee = Math.round(itemPrice * (platformFeePercent / 100) * 100) / 100;
-  const buyerProtectionFee = Math.round(itemPrice * (buyerProtectionPercent / 100) * 100) / 100;
+  const platformFee = roundMoney(itemPrice * (platformFeePercent / 100));
+  const buyerProtectionFee = roundMoney(itemPrice * (buyerProtectionPercent / 100));
   const clampedPlatformFee = Math.max(sellerCommission.minFee, Math.min(platformFee, sellerCommission.maxFee));
-  const totalPaid = Math.round((itemPrice + shippingCost + buyerProtectionFee) * 100) / 100;
-  const sellerEarnings = Math.round((itemPrice - clampedPlatformFee) * 100) / 100;
+  const totalPaid = calculateBuyerTotal(itemPrice, shippingCost, buyerProtectionFee);
+  const sellerEarnings = calculateSellerNet(itemPrice, clampedPlatformFee);
   const buyerCountry = ['US', 'CA'].includes(toCountry) ? 'US' :
     ['GB'].includes(toCountry) ? 'GB' :
     ['DE', 'FR', 'IT', 'ES', 'NL'].includes(toCountry) ? 'EU' :
     ['AU'].includes(toCountry) ? 'AU' :
     ['JP'].includes(toCountry) ? 'JP' : 'default';
   const sf = stripeFees[buyerCountry] || stripeFees.default;
-  const stripeFee = Math.round((totalPaid * sf.percent / 100 + sf.fixed) * 100) / 100;
+  const stripeFee = roundMoney(totalPaid * sf.percent / 100 + sf.fixed);
   
   // Currency exchange rate locking: store the rate used at calculation time
-  const buyerChargeAmount = Math.round(totalPaid * exchangeRate * 100) / 100;
-  const sellerSettlementAmount = Math.round(sellerEarnings * exchangeRate * 100) / 100;
+  const buyerChargeAmount = roundMoney(totalPaid * exchangeRate);
+  const sellerSettlementAmount = roundMoney(sellerEarnings * exchangeRate);
   
   return {
     buyer: { itemPrice, shippingCost, buyerProtectionFee, buyerProtectionPercent, totalPaid, buyerChargeAmount, exchangeRate },
     seller: { itemPrice, platformFee: clampedPlatformFee, platformFeePercent, shippingPayout: shippingCost, sellerEarnings, sellerSettlementAmount },
-    platform: { commission: clampedPlatformFee, stripeFee, buyerProtectionFee, netRevenue: Math.round((clampedPlatformFee + buyerProtectionFee - stripeFee) * 100) / 100 },
+    platform: { commission: clampedPlatformFee, stripeFee, buyerProtectionFee, netRevenue: calculatePlatformNet(clampedPlatformFee, buyerProtectionFee, stripeFee) },
     fromCountry, toCountry,
     sellerCurrency: sellerCommission.currency,
     buyerCurrency: buyerCommission.currency,

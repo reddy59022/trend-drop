@@ -7,25 +7,14 @@ import { useTheme } from '../context/ThemeContext';
 import { toast } from 'react-toastify';
 import api, { validatePromo, applyBundleDiscount } from '../services/api';
 import { formatPrice, convertAmount } from '../utils/helpers';
+import { calculateBuyerLine } from '../services/revenueRules';
 import StripeCheckoutForm from '../components/StripeCheckoutForm';
 import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaBoxes } from 'react-icons/fa';
 
 // Keep the client summary aligned with create-intent/confirm-batch: item and
 // protection fees scale with quantity, but shipping is one combined-weight
 // charge per listing line. The server remains authoritative at capture time.
-export const calculateCartDisplayLine = (breakdown, quantity = 1) => {
-  const qty = Number.isInteger(quantity) && quantity > 0 ? quantity : 1;
-  const buyer = breakdown?.buyer || {};
-  const itemPrice = Number(buyer.itemPrice) || 0;
-  const shippingCost = Number(buyer.shippingCost) || 0;
-  const protectionFee = Number(buyer.buyerProtectionFee) || 0;
-  return {
-    itemPrice: itemPrice * qty,
-    shippingCost,
-    protectionFee: protectionFee * qty,
-    total: Math.round((itemPrice * qty + shippingCost + protectionFee * qty) * 100) / 100,
-  };
-};
+export const calculateCartDisplayLine = calculateBuyerLine;
 
 const Cart = () => {
   const navigate = useNavigate();

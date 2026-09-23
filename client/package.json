@@ -39,6 +39,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test --passWithNoTests",
+    "test:mutation": "../server/node_modules/.bin/stryker run stryker.config.json",
     "eject": "react-scripts eject",
     "cap:init": "npx cap init TrendDrop com.trenddrop.app --web-dir build",
     "cap:add:android": "npx cap add android",

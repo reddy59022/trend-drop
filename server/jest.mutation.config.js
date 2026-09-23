@@ -5,5 +5,6 @@ module.exports = {
   collectCoverage: false,
   testMatch: [
     '<rootDir>/tests/criticalRules.test.js',
+    '<rootDir>/tests/revenueInvariants.test.js',
   ],
 };

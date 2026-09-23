@@ -1,17 +1,11 @@
 {
   "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/api/core/src/config/config-schema.json",
-  "testRunner": "jest",
-  "jest": {
-    "projectType": "custom",
-    "configFile": "./jest.mutation.config.js",
-    "enableFindRelatedTests": false
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "npx react-scripts test src/services/revenueRules.test.js --watchAll=false --runInBand"
   },
   "mutate": [
-    "criticalRules.js"
-  ],
-  "testFiles": [
-    "tests/criticalRules.test.js",
-    "tests/revenueInvariants.test.js"
+    "src/services/revenueRules.js"
   ],
   "coverageAnalysis": "perTest",
   "concurrency": 1,
@@ -31,9 +25,9 @@
     ]
   },
   "ignorePatterns": [
+    "build/**",
     "coverage/**",
-    "reports/**",
-    "uploads/**"
+    "reports/**"
   ],
   "reporters": [
     "clear-text",
@@ -41,10 +35,10 @@
     "html"
   ],
   "jsonReporter": {
-    "fileName": "reports/mutation/mutation.json"
+    "fileName": "reports/mutation-client/mutation.json"
   },
   "htmlReporter": {
-    "fileName": "reports/mutation/mutation.html"
+    "fileName": "reports/mutation-client/mutation.html"
   },
   "thresholds": {
     "high": 100,

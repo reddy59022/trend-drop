@@ -7,6 +7,7 @@ module.exports = {
     'routes/payments.js',
     'routes/inventory.js',
     'middleware/auth.js',
+    'criticalRules.js',
   ],
   coverageDirectory: 'coverage/critical',
   coverageReporters: ['text', 'text-summary', 'json-summary', 'lcov'],
@@ -34,6 +35,12 @@ module.exports = {
       branches: 40,
       functions: 100,
       lines: 70,
+    },
+    './criticalRules.js': {
+      statements: 95,
+      branches: 90,
+      functions: 100,
+      lines: 95,
     },
   },
 };
