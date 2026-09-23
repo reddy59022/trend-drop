@@ -1,13 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- TrendDrop unified app icon: gradient background with initials -->
+<!-- TrendDrop app icon — aurora gradient, bold "T" monogram, champagne-gold drop ("the drop"). -->
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4A90E2"/>
-      <stop offset="100%" stop-color="#9013FE"/>
+    <linearGradient id="td-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6C3BFF"/>
+      <stop offset="52%" stop-color="#8B5CFF"/>
+      <stop offset="100%" stop-color="#FF6BC1"/>
     </linearGradient>
+    <linearGradient id="td-sheen" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="70%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="td-drop" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FFB86B"/>
+    </linearGradient>
+    <radialGradient id="td-glow" cx="30%" cy="22%" r="70%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width="512" height="512" fill="url(#grad)" rx="64"/>
-  <!-- Simplified icon shape to avoid font rendering issues -->
-  <circle cx="256" cy="256" r="120" fill="#FFF" />
+
+  <!-- Aurora rounded square -->
+  <rect width="512" height="512" rx="116" fill="url(#td-bg)"/>
+  <rect width="512" height="512" rx="116" fill="url(#td-glow)"/>
+  <rect width="512" height="300" rx="116" fill="url(#td-sheen)"/>
+
+  <!-- TrendDrop "T" monogram -->
+  <g fill="#FFFFFF">
+    <rect x="146" y="150" width="220" height="62" rx="16"/>
+    <rect x="225" y="188" width="62" height="196" rx="16"/>
+  </g>
+
+  <!-- Champagne-gold drop accent ("the drop") -->
+  <path d="M388 108 C388 108 360 150 360 172 a28 28 0 0 0 56 0 C416 150 388 108 388 108 Z" fill="url(#td-drop)"/>
+  <ellipse cx="378" cy="176" rx="7" ry="10" fill="#FFFFFF" opacity="0.55" transform="rotate(-24 378 176)"/>
 </svg>
