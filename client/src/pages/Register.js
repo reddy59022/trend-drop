@@ -111,7 +111,7 @@ const Register = () => {
             <defs>
               <linearGradient id="avBrandIcon" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stopColor="#6C3BFF"/>
-                <stop offset="100%" stopColor="#FF6B81"/>
+                <stop offset="100%" stopColor="#FF6BC1"/>
               </linearGradient>
             </defs>
             <circle cx="16" cy="16" r="16" fill="url(#avBrandIcon)"/>

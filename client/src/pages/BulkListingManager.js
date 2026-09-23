@@ -127,7 +127,7 @@ const BulkListingManager = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'auravest-listings-template.csv';
+    a.download = 'trenddrop-listings-template.csv';
     a.click();
   };
 

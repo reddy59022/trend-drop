@@ -6,9 +6,9 @@ import { routerFuture } from '../../test-utils';
 import Footer from '../Footer';
 
 describe('Footer', () => {
-  test('renders the AURAVEST branding', () => {
+  test('renders the TrendDrop branding', () => {
     render(<MemoryRouter future={routerFuture}><Footer /></MemoryRouter>);
-    expect(screen.getByText('AURAVEST')).toBeInTheDocument();
+    expect(screen.getByText('TrendDrop')).toBeInTheDocument();
   });
   test('renders the footer navigation columns', () => {
     render(<MemoryRouter future={routerFuture}><Footer /></MemoryRouter>);

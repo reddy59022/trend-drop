@@ -1,5 +1,5 @@
 // =====================================================
-// AURAVEST Design System — Centralized Design Tokens
+// TrendDrop Design System — Centralized Design Tokens
 // Ultra-premium fashion ecosystem brand identity.
 // "Wear the Extraordinary"
 // =====================================================

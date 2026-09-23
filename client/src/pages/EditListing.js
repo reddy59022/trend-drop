@@ -478,7 +478,7 @@ const EditListing = () => {
                 on the listing page. */}
             <div style={{
               padding: 'var(--td-space-md)',
-              background: autoRespondEnabled ? 'rgba(255, 56, 92, 0.06)' : 'var(--td-surface)',
+              background: autoRespondEnabled ? 'rgba(108, 59, 255, 0.07)' : 'var(--td-surface)',
               borderRadius: 'var(--td-radius-sm)',
               border: `2px solid ${autoRespondEnabled ? 'var(--td-primary)' : 'var(--td-border)'}`,
               marginTop: 'var(--td-space-md)',
@@ -537,7 +537,7 @@ const EditListing = () => {
               Increase visibility and sell faster. Boost fee is deducted from your earnings when the item sells.
             </p>
             
-            <div style={{ padding: 'var(--td-space-md)', background: enableBoost ? 'rgba(255, 56, 92, 0.06)' : 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)', border: `2px solid ${enableBoost ? 'var(--td-primary)' : 'var(--td-border)'}`, marginBottom: 'var(--td-space-md)' }}>
+            <div style={{ padding: 'var(--td-space-md)', background: enableBoost ? 'rgba(108, 59, 255, 0.07)' : 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)', border: `2px solid ${enableBoost ? 'var(--td-primary)' : 'var(--td-border)'}`, marginBottom: 'var(--td-space-md)' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
                 <input type="checkbox" checked={enableBoost} onChange={(e) => setEnableBoost(e.target.checked)} style={{ accentColor: 'var(--td-primary)', width: 20, height: 20 }} />
                 <div>

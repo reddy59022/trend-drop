@@ -90,7 +90,7 @@ const Profile = () => {
     <div className="page-container">
       {/* Cover */}
       <div style={{
-        background: 'linear-gradient(135deg, var(--td-secondary) 0%, #2D2D44 50%, var(--td-primary) 100%)',
+        background: 'linear-gradient(135deg, var(--td-secondary) 0%, #1A1A33 50%, var(--td-primary) 100%)',
         borderRadius: 'var(--td-radius-xl)',
         height: 200,
         marginBottom: -60,

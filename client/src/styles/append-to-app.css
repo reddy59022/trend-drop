@@ -1,5 +1,5 @@
 /* =====================================================
-   AURAVEST — Premium Rebrand Layer
+   TrendDrop — Premium Rebrand Layer
    Appended on top of the existing component system.
    Adds rich, editorial, app-store-grade styling.
    ===================================================== */
@@ -10,7 +10,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&display=swap');
 
 /* ---- Brand Monogram ---- */
-.av-logo-mark {
+.td-logo-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -19,19 +19,19 @@
   flex-shrink: 0;
 }
 
-.av-logo-mark svg,
-.av-logo-mark .logo-icon {
+.td-logo-mark svg,
+.td-logo-mark .logo-icon {
   width: 100%;
   height: 100%;
 }
 
-@keyframes avLogoGlow {
+@keyframes tdLogoGlow {
   0%, 100% { filter: drop-shadow(0 0 6px rgba(108, 59, 255, 0.35)); }
   50% { filter: drop-shadow(0 0 14px rgba(108, 59, 255, 0.6)); }
 }
 
-.navbar-logo:hover .av-logo-mark {
-  animation: avLogoGlow 2s ease-in-out infinite;
+.navbar-logo:hover .td-logo-mark {
+  animation: tdLogoGlow 2s ease-in-out infinite;
 }
 
 /* ---- Brand Wordmark ---- */
@@ -49,7 +49,7 @@
 }
 
 /* ---- Display Serif (Editorial) ---- */
-.av-serif {
+.td-serif {
   font-family: 'Cormorant Garamond', Georgia, serif;
   font-style: italic;
   font-weight: 600;
@@ -789,7 +789,7 @@
   font-family: 'Sora', sans-serif;
 }
 
-.hero-content h1 .av-serif {
+.hero-content h1 .td-serif {
   background: linear-gradient(120deg, var(--td-accent) 0%, #FFD9A8 50%, #fff 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -2034,7 +2034,7 @@
 }
 
 .badge-error {
-  background: rgba(255, 23, 68, 0.12);
+  background: rgba(255, 77, 109, 0.12);
   color: var(--td-error);
 }
 
@@ -2491,7 +2491,7 @@
   background: linear-gradient(
     135deg,
     rgba(108, 59, 255, 0.04) 0%,
-    rgba(255, 107, 129, 0.04) 50%,
+    rgba(255, 107, 193, 0.04) 50%,
     rgba(0, 188, 212, 0.03) 100%
   );
   min-height: calc(100vh - 60px);

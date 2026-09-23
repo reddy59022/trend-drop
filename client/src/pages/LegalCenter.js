@@ -10,7 +10,7 @@ export default function LegalCenter() {
   return (
     <div className="page-container" style={{ maxWidth: 900, margin: '0 auto' }}>
       <h1 className="page-title">Legal center</h1>
-      <p>Review the rules and notices that apply to your use of AURAVEST. Country-specific mandatory rights always prevail where required by law.</p>
+      <p>Review the rules and notices that apply to your use of TrendDrop. Country-specific mandatory rights always prevail where required by law.</p>
       <div className="glass-card" style={{ padding: 24, display: 'grid', gap: 12 }}>
         {DOCUMENTS.map(([type, title]) => <Link key={type} to={`/legal/${type}`} className="btn btn-outline">{title}</Link>)}
       </div>

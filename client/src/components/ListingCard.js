@@ -125,7 +125,7 @@ const ListingCard = ({ listing }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#6C63FF',
+                color: '#6C3BFF',
                 fontSize: 24,
                 boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
                 transition: 'transform 0.2s',

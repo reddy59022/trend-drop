@@ -24,7 +24,7 @@ const VerifyEmail = () => {
         const res = await api.post('/auth/verify-email', { token });
         if (res.data.token && res.data.user) {
           setAuthenticatedSession(res.data);
-          toast.success('Email verified! Welcome to AURAVEST!');
+          toast.success('Email verified! Welcome to TrendDrop!');
           setStatus('success');
           setMessage('Email verified successfully!');
           setTimeout(() => navigate('/feed'), 2000);
@@ -71,7 +71,7 @@ const VerifyEmail = () => {
           <div style={{ animation: 'fadeInUp 0.3s ease-out' }}>
             <div style={{
               width: 72, height: 72, borderRadius: '50%',
-              background: 'rgba(255, 23, 68, 0.1)',
+              background: 'rgba(255, 77, 109, 0.12)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               margin: '0 auto 16px',
             }}>

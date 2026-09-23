@@ -795,7 +795,7 @@ const OrderDetail = () => {
               <FaShieldAlt size={14} style={{ color: 'var(--td-primary)' }} /> Buyer Protection
             </h3>
             <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--td-text-secondary)' }}>
-              Every order is covered by AURAVEST Buyer Protection. If your item doesn't arrive,
+              Every order is covered by TrendDrop Buyer Protection. If your item doesn't arrive,
               arrives damaged, or isn't as described, you're eligible for a full refund.
             </p>
             <div style={{ marginTop: 8, fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>

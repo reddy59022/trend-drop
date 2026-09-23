@@ -50,7 +50,7 @@ const Notifications = () => {
   };
 
   const getIconColor = (type) => {
-    const colors = { like: '#FF385C', comment: '#2979FF', follow: '#00BCD4', offer: '#FF9100', sale: '#00C853', share: '#6C63FF', purchase: '#00C853', shipping: '#2979FF', review: '#FFD700' };
+    const colors = { like: '#FF4D6D', comment: '#3D9BFF', follow: '#00D4FF', offer: '#FFB86B', sale: '#10D98E', share: '#6C3BFF', purchase: '#10D98E', shipping: '#3D9BFF', review: '#FFD700' };
     return colors[type] || '#8E8EA0';
   };
 

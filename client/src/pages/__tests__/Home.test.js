@@ -31,7 +31,7 @@ describe('Home page', () => {
   test('renders hero, categories, stats and CTA sections', async () => {
     api.get.mockImplementation((url) => Promise.resolve(okListings(url.includes('popular') ? [sampleListing()] : [sampleListing({ _id: 'l2', title: 'New Silk Dress' })])));
     renderPage(<Home />);
-    expect(screen.getByRole('main', { name: 'AURAVEST Home' })).toBeInTheDocument();
+    expect(screen.getByRole('main', { name: 'TrendDrop Home' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Start shopping' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Start selling' })).toBeInTheDocument();
     expect(document.querySelector('[aria-label=\'Browse Women fashion\']')).toBeInTheDocument();

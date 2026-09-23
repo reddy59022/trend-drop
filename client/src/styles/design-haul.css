@@ -1,0 +1,765 @@
+/* =====================================================
+   TrendDrop — DESIGN HAUL · FINAL ELEVATION LAYER
+   -----------------------------------------------------
+   Imported LAST (after globals → App → append-to-app →
+   responsive) so it is the final visual word. This layer
+   is PURELY VISUAL — depth, material, motion, native
+   iOS/Android feel, states, and accessibility. It never
+   changes markup, business logic, text, routes, layout
+   structure, or element visibility/interactability, so
+   every feature and every test remains intact.
+   ===================================================== */
+
+/* =====================================================
+   1. NATIVE APP SHELL (iOS / Android / Web)
+   ===================================================== */
+html {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: calc(var(--td-nav-height) + 16px);
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+  text-rendering: optimizeLegibility;
+}
+
+/* Inputs at >=16px stop iOS Safari/WebView from auto-zooming on focus.
+   Purely visual/ergonomic — no layout or behavior change. */
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select,
+  .form-input,
+  .search-input,
+  .comment-input,
+  .bid-input {
+    font-size: 16px !important;
+  }
+}
+
+/* Comfortable, iOS-HIG-style tap targets on touch devices. */
+@media (pointer: coarse) {
+  .btn,
+  .nav-icon-link,
+  .nav-link,
+  .mobile-tab-item,
+  .dropdown-item,
+  .tab {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .nav-icon-link {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .like-btn,
+  .quick-cart-btn {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* Standalone (installed) iOS/Android: keep content clear of the status bar. */
+@media (display-mode: standalone) {
+  .navbar {
+    padding-top: var(--td-safe-area-top);
+  }
+}
+
+/* Landscape notch clearance for content gutters. */
+@supports (padding: env(safe-area-inset-left)) {
+  .page-container,
+  .container,
+  .container-narrow {
+    padding-left: max(var(--td-content-padding), env(safe-area-inset-left));
+    padding-right: max(var(--td-content-padding), env(safe-area-inset-right));
+  }
+}
+
+/* Money, prices and codes stay crisp and selectable even when chrome is not. */
+.price,
+.current-price,
+.original-price,
+.listing-card-price .price,
+.listing-detail-price .current-price,
+.payout-amount {
+  font-variant-numeric: tabular-nums;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* =====================================================
+   2. LIQUID-GLASS DEPTH & MATERIAL
+   ===================================================== */
+.glass-card,
+.dashboard-card,
+.dashboard-stat-card,
+.form-section,
+.stat-item,
+.payout-card,
+.filter-sidebar {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 2px 6px -1px rgba(76, 29, 149, 0.08),
+    0 10px 30px -12px rgba(76, 29, 149, 0.18);
+}
+
+[data-theme="dark"] .glass-card,
+[data-theme="dark"] .dashboard-card,
+[data-theme="dark"] .form-section,
+[data-theme="dark"] .stat-item,
+.dark .glass-card {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 2px 6px -1px rgba(0, 0, 0, 0.5),
+    0 12px 34px -14px rgba(0, 0, 0, 0.7);
+}
+
+.listing-card,
+.offer-card,
+.transaction-card,
+.notification-item {
+  box-shadow:
+    0 1px 2px rgba(76, 29, 149, 0.06),
+    0 8px 24px -14px rgba(76, 29, 149, 0.24);
+}
+
+.listing-card:hover,
+.feature-card:hover,
+.category-card:hover,
+.dashboard-card:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 6px 14px -6px rgba(76, 29, 149, 0.22),
+    0 24px 48px -22px rgba(108, 59, 255, 0.42);
+}
+
+.navbar.scrolled {
+  box-shadow:
+    0 8px 30px -18px rgba(76, 29, 149, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.modal {
+  box-shadow:
+    0 40px 90px -30px rgba(8, 8, 26, 0.55),
+    0 0 0 1px rgba(108, 59, 255, 0.08);
+  border: 1px solid var(--td-glass-border);
+}
+
+/* Decorative glass blur orbs must never intercept taps. */
+.glass-card::before,
+.dashboard-stat-card::after,
+.payout-balance::before,
+.hero::before {
+  pointer-events: none;
+}
+
+/* =====================================================
+   3. BUTTONS — TACTILE & PREMIUM
+   ===================================================== */
+.btn {
+  position: relative;
+  will-change: transform;
+  letter-spacing: 0.1px;
+  text-rendering: optimizeLegibility;
+}
+
+.btn-primary {
+  background: var(--td-gradient-brand);
+  background-size: 160% 160%;
+  box-shadow:
+    0 6px 18px -6px rgba(108, 59, 255, 0.55),
+    0 2px 4px rgba(76, 29, 149, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.btn-primary:hover {
+  background-position: 100% 50%;
+  box-shadow:
+    0 12px 28px -8px rgba(108, 59, 255, 0.6),
+    0 4px 8px rgba(76, 29, 149, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  transition-duration: 60ms;
+}
+
+.btn-glass,
+.btn-outline {
+  backdrop-filter: blur(var(--td-blur-md));
+  -webkit-backdrop-filter: blur(var(--td-blur-md));
+}
+
+/* Luxe gold accent for premium/boost CTAs (contrast-safe dark text on gold). */
+.btn-gold,
+.boost-badge,
+.badge-accent {
+  background: var(--td-gradient-gold);
+  background-size: 160% 160%;
+  color: var(--td-secondary);
+  box-shadow:
+    0 6px 18px -8px rgba(232, 155, 60, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* =====================================================
+   4. EDITORIAL TYPE — fluid, crisp, high-contrast
+   ===================================================== */
+.hero-content h1 {
+  font-size: clamp(2.5rem, 6vw, 4.6rem);
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+.section-title {
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.page-title {
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+.stat-value,
+.dashboard-stat-value,
+.payout-balance .payout-amount,
+.listing-detail-price .current-price {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.028em;
+  background: var(--td-gradient-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.listing-card-title,
+.offer-details h4,
+.txn-details h4 {
+  text-wrap: pretty;
+}
+
+p,
+li,
+.auth-subtitle,
+.listing-detail-description p {
+  text-wrap: pretty;
+}
+
+/* =====================================================
+   5. MICRO-INTERACTIONS & MOTION
+   ===================================================== */
+.listing-card,
+.category-card,
+.feature-card,
+.stat-item,
+.dashboard-card,
+.offer-card,
+.transaction-card {
+  will-change: transform;
+}
+
+.like-btn.liked {
+  animation: heartbeat 0.45s ease-in-out;
+}
+
+/* Uniform, accessible focus ring across every interactive control. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--td-primary);
+  outline-offset: 2px;
+  border-radius: var(--td-radius-xs);
+}
+
+/* Keyboard users get a clearly visible ring even on dark/gold surfaces. */
+.btn-primary:focus-visible,
+.btn-gold:focus-visible,
+.mobile-tab-center:focus-visible {
+  outline-color: var(--td-accent);
+  outline-offset: 3px;
+}
+
+/* =====================================================
+   6. STATES — loading, empty, alerts
+   ===================================================== */
+.skeleton {
+  background:
+    linear-gradient(
+      90deg,
+      var(--td-surface-tertiary) 20%,
+      var(--td-surface-hover) 40%,
+      var(--td-surface-tertiary) 60%
+    );
+  background-size: 220% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.spinner {
+  border-top-color: var(--td-primary);
+  border-right-color: var(--td-accent);
+  animation: spin 0.75s cubic-bezier(0.55, 0.2, 0.35, 1) infinite;
+}
+
+.empty-state {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+.empty-state-icon {
+  opacity: 0.55;
+  filter: grayscale(0.15) drop-shadow(0 8px 18px rgba(108, 59, 255, 0.18));
+}
+
+/* =====================================================
+   7. FORMS — refined, autofill-safe
+   ===================================================== */
+.form-input,
+.page-container input,
+.page-container textarea,
+.page-container select,
+.search-input,
+.comment-input {
+  transition:
+    border-color var(--td-transition-fast),
+    box-shadow var(--td-transition-fast),
+    background-color var(--td-transition-fast);
+}
+
+.form-input:focus,
+.page-container input:focus,
+.page-container textarea:focus,
+.search-input:focus {
+  box-shadow: 0 0 0 4px rgba(108, 59, 255, 0.14);
+}
+
+/* Neutralize the iOS/Web autofill yellow wash so surfaces stay on-brand. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--td-text);
+  caret-color: var(--td-text);
+  transition: background-color 100000s ease-in-out 0s;
+}
+
+/* =====================================================
+   8. ACCESSIBILITY & SYSTEM PREFERENCES
+   ===================================================== */
+@media (prefers-contrast: more) {
+  .glass-card,
+  .listing-card,
+  .btn-outline,
+  .form-input,
+  .nav-link {
+    border-width: 2px;
+    border-color: var(--td-text-secondary);
+  }
+  .badge,
+  .status-pending,
+  .status-accepted,
+  .status-declined {
+    border: 1px solid currentColor;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listing-card:hover,
+  .category-card:hover,
+  .feature-card:hover,
+  .stat-item:hover,
+  .dashboard-card:hover,
+  .btn:hover,
+  .btn:active,
+  .mobile-tab-center,
+  .mobile-tab-center:hover {
+    transform: none !important;
+  }
+  .mobile-tab-center,
+  .logo-text,
+  .commission-section,
+  .hero::before {
+    animation: none !important;
+  }
+}
+
+/* High-contrast dark-mode surface separation on hairline borders. */
+[data-theme="dark"] .listing-card,
+[data-theme="dark"] .form-input,
+[data-theme="dark"] .search-input {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* =====================================================
+   9. LARGE-SCREEN REFINEMENT
+   ===================================================== */
+@media (min-width: 1280px) {
+  .listing-card:hover .listing-card-image-wrap img,
+  .listing-card:hover .listing-card-image img {
+    transform: scale(1.06);
+  }
+}
+
+/* =====================================================
+   10. DESIGN HAUL — FULL-APP MATERIAL & COMPONENTS
+   Supercharges the shared system so EVERY page (Home,
+   Listing, Cart, Checkout, Seller, Admin, Search, Auth…)
+   inherits a cohesive, luxury finish. Purely visual.
+   ===================================================== */
+
+/* ---- Signature aurora wash behind the whole app ---- */
+body {
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+.home-page .hero::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 120px;
+  background: linear-gradient(180deg, transparent, var(--td-surface));
+  pointer-events: none;
+}
+
+/* ---- Fluid editorial type scale (desktop refinement) ---- */
+.page-title {
+  font-family: var(--td-font-display);
+  font-size: clamp(1.75rem, 2.4vw + 0.7rem, 2.6rem);
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.section-title {
+  font-family: var(--td-font-display);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.section-title::after {
+  width: 64px;
+  height: 4px;
+  border-radius: 999px;
+}
+
+.hero-content h1,
+.cta-section h2 {
+  font-family: var(--td-font-display);
+  letter-spacing: -0.03em;
+}
+
+/* ---- Liquid-glass panels (frosted, with hairline + top light) ---- */
+.glass,
+.glass-card,
+.form-section,
+.dashboard-card,
+.dashboard-stat-card,
+.payout-card,
+.filter-sidebar,
+.seller-card,
+.auth-container {
+  border-radius: var(--td-radius-xl);
+  border: 1px solid var(--td-glass-border);
+  backdrop-filter: blur(var(--td-glass-blur)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--td-glass-blur)) saturate(1.2);
+}
+
+/* Subtle top highlight that reads as premium glass on both themes. */
+.glass-card::after,
+.form-section::after,
+.dashboard-card::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  pointer-events: none;
+}
+
+[data-theme="dark"] .glass-card::after,
+[data-theme="dark"] .form-section::after,
+[data-theme="dark"] .dashboard-card::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+}
+
+/* ---- Buttons — luxe, tactile, with a light sweep ---- */
+.btn {
+  border-radius: var(--td-radius-md);
+  font-weight: 650;
+  letter-spacing: 0.1px;
+  overflow: hidden;
+}
+
+.btn-primary,
+.hero-actions .btn-primary,
+.cta-section .btn-primary,
+.commission-section .btn-primary {
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(35, 12, 90, 0.28);
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -70%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  transition: left 0.6s ease;
+  pointer-events: none;
+}
+
+.btn-primary:hover::before {
+  left: 125%;
+}
+
+.btn-secondary {
+  background: var(--td-gradient-brand);
+  background-size: 160% 160%;
+}
+
+.btn-success {
+  background: linear-gradient(135deg, var(--td-success), #0BB872);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, var(--td-error), #E23A5A);
+}
+
+/* ---- Badges / chips / pills — glassy & tinted ---- */
+.badge,
+.listing-condition,
+.listing-brand,
+.offer-status,
+.txn-status,
+.compare-label {
+  border-radius: var(--td-radius-full);
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+.badge-primary,
+.badge-success,
+.badge-warning,
+.badge-error,
+.badge-info,
+.badge-accent,
+.listing-condition,
+.listing-brand {
+  border: 1px solid currentColor;
+  border-color: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+/* ---- Cards — elevated, cohesive, hover-lift + edge glow ---- */
+.listing-card,
+.category-card,
+.feature-card,
+.stat-item,
+.offer-card,
+.transaction-card,
+.notification-item,
+.dashboard-card,
+.dashboard-stat-card {
+  border-radius: var(--td-radius-lg);
+  border: 1px solid var(--td-border);
+  transition: transform var(--td-transition-spring), box-shadow var(--td-transition-spring), border-color var(--td-transition-fast);
+}
+
+.stat-value,
+.dashboard-stat-value {
+  font-family: var(--td-font-display);
+}
+
+.stat-icon {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--td-radius-full);
+  background: var(--td-gradient-brand-soft, rgba(108, 59, 255, 0.1));
+}
+
+/* ---- Forms — refined, calm, precise ---- */
+.form-input,
+.page-container input:not([type="checkbox"]):not([type="radio"]),
+.page-container textarea,
+.page-container select {
+  border-radius: var(--td-radius-md);
+  background: var(--td-surface-secondary);
+  border-color: var(--td-border);
+}
+
+.form-label {
+  letter-spacing: 0.1px;
+}
+
+select.form-input,
+.page-container select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236C3BFF' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+}
+
+/* ---- Tables — premium data surfaces ---- */
+.glass-card table,
+.page-container table,
+.admin-table {
+  border-radius: var(--td-radius-lg);
+  overflow: hidden;
+}
+
+.glass-card table th,
+.page-container table th,
+.admin-table th {
+  background: var(--td-surface-secondary);
+  color: var(--td-text-secondary);
+  border-bottom: 2px solid var(--td-border);
+}
+
+.glass-card table td,
+.page-container table td {
+  color: var(--td-text);
+}
+
+/* ---- Modals & dropdowns — deep, elevated, blurred ---- */
+.modal-overlay {
+  background: linear-gradient(180deg, rgba(8, 8, 26, 0.55), rgba(8, 8, 26, 0.72));
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+}
+
+.modal,
+.nav-dropdown-menu,
+.currency-dropdown,
+.country-dropdown,
+.lang-dropdown,
+.search-suggestions {
+  border-radius: var(--td-radius-xl);
+  border: 1px solid var(--td-glass-border);
+}
+
+.dropdown-item:hover,
+.currency-option:hover,
+.country-option:hover,
+.lang-option:hover {
+  border-radius: var(--td-radius-sm);
+}
+
+/* ---- Tabs & steppers — segmented & gradient-active ---- */
+.tabs {
+  border-radius: var(--td-radius-full);
+}
+
+.tab.active,
+.step-dot.active {
+  background: var(--td-gradient-brand);
+}
+
+/* ---- Empty & loading states — soft & branded ---- */
+.empty-state {
+  padding: var(--td-space-xxxl) var(--td-space-lg);
+}
+
+.empty-state-icon {
+  width: 108px;
+  height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--td-radius-full);
+  background: var(--td-gradient-brand-soft, rgba(108, 59, 255, 0.08));
+}
+
+/* =====================================================
+   11. INLINE-STYLE NORMALIZATION LAYER
+   Many pages set hardcoded colors/radii/shadows inline.
+   Nudge the most common containers toward the token
+   system so every page reads as one polished product.
+   (Color/material only — never layout or visibility.)
+   ===================================================== */
+.page-container div[style*="borderRadius"],
+.page-container section[style*="borderRadius"] {
+  border-color: var(--td-border);
+}
+
+.page-container [style*="background: #fff"],
+.page-container [style*="background:#fff"] {
+  background: var(--td-surface) !important;
+}
+
+.page-container [style*="backgroundColor: #fff"] {
+  background-color: var(--td-surface) !important;
+}
+
+.page-container [style*="boxShadow: 0 2px 8px"],
+.page-container [style*="box-shadow: 0 2px 8px"] {
+  box-shadow: var(--td-shadow-card) !important;
+}
+
+/* Neutral grey inline borders → token hairline */
+.page-container [style*="border: 1px solid #"],
+.page-container [style*="border: 2px solid #"] {
+  border-color: var(--td-border) !important;
+}
+
+/* Inline ad-hoc greys for secondary text → token tertiary */
+.page-container [style*="color: #666"],
+.page-container [style*="color: #888"],
+.page-container [style*="color: #999"] {
+  color: var(--td-text-tertiary) !important;
+}
+
+/* ---- Flagship listing detail polish ---- */
+.listing-detail-price .current-price {
+  background: var(--td-gradient-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.listing-detail-actions .btn {
+  border-radius: var(--td-radius-md);
+}
+
+/* ---- Auth split — glass hero card ---- */
+.auth-container {
+  box-shadow: var(--td-shadow-xl), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.auth-container h1 {
+  font-family: var(--td-font-display);
+  letter-spacing: -0.03em;
+}
+
+/* ---- Section rhythm & max readable measure ---- */
+.section {
+  padding: clamp(48px, 7vw, 96px) 0;
+}
+
+.listing-detail-description p,
+.feature-card p,
+.empty-state p {
+  line-height: 1.7;
+}
+
+/* ---- Focus & contrast reinforcement ---- */
+.btn:focus-visible,
+.size-btn:focus-visible,
+.carousel-dot:focus-visible {
+  outline: 2px solid var(--td-primary);
+  outline-offset: 2px;
+}

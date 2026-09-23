@@ -233,7 +233,7 @@ const Sell = () => {
             <button key={step.id} onClick={() => setCurrentStep(i)}
               style={{
                 flex: 1, padding: '12px 8px', borderRadius: 'var(--td-radius-sm)', border: `2px solid ${isActive ? 'var(--td-primary)' : isComplete ? 'var(--td-success)' : 'var(--td-border)'}`,
-                background: isActive ? 'rgba(255, 56, 92, 0.06)' : isComplete ? 'rgba(0, 200, 83, 0.06)' : 'var(--td-surface)',
+                background: isActive ? 'rgba(108, 59, 255, 0.07)' : isComplete ? 'rgba(0, 200, 83, 0.06)' : 'var(--td-surface)',
                 color: isActive ? 'var(--td-primary)' : isComplete ? 'var(--td-success)' : 'var(--td-text-tertiary)',
                 cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                 fontSize: 12, fontWeight: isActive ? 700 : 500, transition: 'all 0.2s',
@@ -431,7 +431,7 @@ const Sell = () => {
                 on the listing page. */}
             <div style={{
               padding: 'var(--td-space-md)',
-              background: autoRespondEnabled ? 'rgba(255, 56, 92, 0.06)' : 'var(--td-surface)',
+              background: autoRespondEnabled ? 'rgba(108, 59, 255, 0.07)' : 'var(--td-surface)',
               borderRadius: 'var(--td-radius-sm)',
               border: `2px solid ${autoRespondEnabled ? 'var(--td-primary)' : 'var(--td-border)'}`,
               marginTop: 'var(--td-space-md)',
@@ -499,7 +499,7 @@ const Sell = () => {
             {/* Enable/Disable Boost Toggle */}
             <div style={{ 
               padding: 'var(--td-space-md)', 
-              background: enableBoost ? 'rgba(255, 56, 92, 0.06)' : 'var(--td-surface)',
+              background: enableBoost ? 'rgba(108, 59, 255, 0.07)' : 'var(--td-surface)',
               borderRadius: 'var(--td-radius-sm)',
               border: `2px solid ${enableBoost ? 'var(--td-primary)' : 'var(--td-border)'}`,
               marginBottom: 'var(--td-space-md)',

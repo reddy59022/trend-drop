@@ -12,7 +12,7 @@ const Footer = () => {
           {/* Brand */}
           <div className="footer-section">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <span className="av-logo-mark" style={{ width: 28, height: 28 }}>
+              <span className="td-logo-mark" style={{ width: 28, height: 28 }}>
                 <svg viewBox="0 0 32 32" fill="none">
                   <circle cx="16" cy="16" r="16" fill="url(#footer-logo-gradient)"/>
                   <path d="M10 22V12l6-4 6 4v10H10z" fill="white" opacity="0.95"/>
@@ -26,7 +26,7 @@ const Footer = () => {
                   </defs>
                 </svg>
               </span>
-              <span className="footer-brand-name">AURAVEST</span>
+              <span className="footer-brand-name">TrendDrop</span>
             </div>
             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, lineHeight: 1.7, marginBottom: 16 }}>
               Wear the Extraordinary. The world's most beautiful fashion marketplace — curated designers, verified authenticity, and a community that lives in style.
@@ -89,7 +89,7 @@ const Footer = () => {
 
         <div className="footer-bottom">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-            <span>© {currentYear} AURAVEST. All rights reserved.</span>
+            <span>© {currentYear} TrendDrop. All rights reserved.</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ opacity: 0.5 }}>🌍 Available in 85+ countries</span>
               <span style={{ opacity: 0.5 }}>|</span>

@@ -59,7 +59,7 @@ const ReportModal = ({ listing, isOpen, onClose, onReportSubmitted }) => {
 
         <div className="modal-body">
           <div style={{ 
-            background: 'rgba(255, 23, 68, 0.06)', 
+            background: 'rgba(255, 77, 109, 0.08)', 
             borderRadius: 'var(--td-radius-sm)', 
             padding: 12, 
             marginBottom: 16,

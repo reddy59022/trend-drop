@@ -280,12 +280,12 @@ const Messages = () => {
               style={{
                 display: 'flex', gap: 12, padding: '14px 16px', alignItems: 'center',
                 cursor: 'pointer', borderBottom: i < filtered.length - 1 ? '1px solid var(--td-border-light)' : 'none',
-                background: conv.unreadCount > 0 ? 'rgba(255, 56, 92, 0.03)' : 'transparent',
+                background: conv.unreadCount > 0 ? 'rgba(108, 59, 255, 0.05)' : 'transparent',
                 transition: 'background 0.2s',
               }}
               onClick={() => handleSelectConversation(conv)}
               onMouseEnter={(e) => e.currentTarget.style.background = 'var(--td-surface-hover)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = conv.unreadCount > 0 ? 'rgba(255, 56, 92, 0.03)' : 'transparent'}
+              onMouseLeave={(e) => e.currentTarget.style.background = conv.unreadCount > 0 ? 'rgba(108, 59, 255, 0.05)' : 'transparent'}
             >
               <img src={conv.otherUser?.avatar || defaultAvatar} alt="" style={{ width: 48, height: 48, borderRadius: 'var(--td-radius-full)', objectFit: 'cover', flexShrink: 0, border: '2px solid var(--td-border)' }} />
               <div style={{ flex: 1, minWidth: 0 }}>

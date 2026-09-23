@@ -224,7 +224,7 @@ const Navbar = () => {
       <div className="navbar-container">
         {/* Logo */}
         <Link to="/" className="navbar-logo" onClick={closeAllMenus}>
-          <span className="av-logo-mark">
+          <span className="td-logo-mark">
             <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
               <circle cx="16" cy="16" r="16" fill="url(#logo-gradient)" />
               <path d="M10 22V12l6-4 6 4v10H10z" fill="white" opacity="0.95" />
@@ -238,7 +238,7 @@ const Navbar = () => {
               </defs>
             </svg>
           </span>
-          <span className="logo-text">AURAVEST</span>
+          <span className="logo-text">TrendDrop</span>
         </Link>
 
         {/* Search */}
