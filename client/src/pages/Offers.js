@@ -7,6 +7,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FaExchangeAlt, FaArrowUp, FaCheck, FaTimes, FaGavel, FaClock, FaComment } from 'react-icons/fa';
 import { io } from 'socket.io-client';
+import { getSocketBaseURL } from '../services/native';
 import CounterOfferModal from '../components/CounterOfferModal';
 
 const Offers = () => {
@@ -31,7 +32,7 @@ const Offers = () => {
     // Connect to socket for real-time updates
     const token = localStorage.getItem('token');
     if (token) {
-      const socket = io('/', {
+      const socket = io(getSocketBaseURL(), {
         auth: { token },
       });
 

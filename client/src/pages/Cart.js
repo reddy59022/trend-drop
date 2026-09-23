@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
@@ -21,6 +21,7 @@ const Cart = () => {
   const { cart, removeFromCart, updateQuantity, clearCart } = useCart();
   const { currency } = useTheme();
   const [stripePromise, setStripePromise] = useState(null);
+  const stripePromiseRef = useRef(null);
   const [showForm, setShowForm] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [shippingInfo, setShippingInfo] = useState({
@@ -51,7 +52,12 @@ const Cart = () => {
         console.log('Stripe init:', { configured, keyPrefix: key ? key.substring(0, 7) + '...' : 'not set' });
         
         if (configured && key && key.startsWith('pk_')) {
-          setStripePromise(loadStripe(key));
+          // Keep the promise in a ref as well as state so a fast tap on
+          // Proceed to Checkout can await Stripe initialization instead of
+          // failing while React schedules the state update.
+          const promise = loadStripe(key);
+          stripePromiseRef.current = promise;
+          setStripePromise(promise);
         } else {
           try {
             const statusRes = await api.get('/payments/status');
@@ -108,10 +114,25 @@ const Cart = () => {
       setPaymentLoading(false);
       return;
     }
-    if (!stripePromise) {
+    const activeStripePromise = stripePromise || stripePromiseRef.current;
+    if (!activeStripePromise) {
       toast.error('Payment system not loaded. Please refresh the page.');
       setPaymentLoading(false);
       return;
+    }
+    // A user can tap immediately after the availability check resolves while
+    // Stripe's publishable-key request is still settling. Wait for the same
+    // promise used by Elements; this preserves the flow and avoids a false
+    // "payment system not loaded" error on fast mobile taps.
+    if (!stripePromise) {
+      try {
+        await activeStripePromise;
+        setStripePromise(activeStripePromise);
+      } catch {
+        toast.error('Payment system not loaded. Please refresh the page.');
+        setPaymentLoading(false);
+        return;
+      }
     }
 
     // Show the payment form only after availability is checked. The intent is

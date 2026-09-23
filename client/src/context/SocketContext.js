@@ -1,22 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { getSocketBaseURL } from '../services/native';
 
 const SocketContext = createContext(null);
-
-const getSocketBaseURL = () => {
-  if (process.env.REACT_APP_API_URL) {
-    return process.env.REACT_APP_API_URL.replace(/\/$/, '').replace(/\/api$/, '');
-  }
-  const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.();
-  if (isNative) {
-    const isLocal =
-      window.location.protocol === 'http:' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    return isLocal ? 'http://localhost:5001' : 'https://trend-drop.onrender.com';
-  }
-  return window.location.origin;
-};
 
 export const SocketProvider = ({ children }) => {
   const { user, token } = useAuth();

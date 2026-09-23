@@ -7,6 +7,24 @@ import { StatusBar } from '@capacitor/status-bar';
 export const isNative = () => Capacitor.isNativePlatform();
 export const platform = () => (isNative() ? Capacitor.getPlatform() : 'web');
 
+// Keep every Socket.IO feature on the same backend as REST. Capacitor's
+// WebView origin is local even in release builds, so using io('/') on native
+// silently connects to the WebView instead of the deployed API.
+export const getSocketBaseURL = () => {
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL.replace(/\/$/, '').replace(/\/api$/, '');
+  }
+  if (isNative()) {
+    const isLocal = typeof window !== 'undefined' && window.location.protocol === 'http:';
+    if (isLocal && window.location.hostname === '10.0.2.2') return 'http://10.0.2.2:5001';
+    if (isLocal && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      return 'http://localhost:5001';
+    }
+    return 'https://trend-drop.onrender.com';
+  }
+  return typeof window !== 'undefined' ? window.location.origin : '';
+};
+
 /**
  * Camera permission state for Virtual Try-On and photo flows.
  * Web: uses the Permissions API where available (query only — the real

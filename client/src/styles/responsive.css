@@ -225,6 +225,56 @@ body,
    ============================================================ */
 @media (max-width: 768px) {
   /* ---------- ROOT LAYOUT ---------- */
+  /* Use an explicit two-row grid instead of flex wrapping. This keeps the
+     brand and global controls on row one and gives search a full-width row two
+     on narrow WebViews, including devices with a large safe-area inset. */
+  .navbar {
+    height: auto !important;
+    padding-top: var(--td-safe-area-top) !important;
+  }
+
+  .navbar-container {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-content: center !important;
+    align-items: center !important;
+    min-height: calc(var(--td-nav-height) + 54px);
+    height: auto !important;
+    row-gap: 8px !important;
+    column-gap: 8px !important;
+    padding: 8px 12px 10px !important;
+  }
+
+  .navbar-logo {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .navbar-global-controls {
+    flex: 0 0 auto;
+    min-width: 0;
+    margin-left: 0 !important;
+    justify-content: flex-end;
+  }
+
+  .search-form {
+    order: 3;
+    flex: 0 0 100% !important;
+    display: flex !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0;
+    margin: 0 !important;
+  }
+
+  .navbar-menu {
+    top: calc(var(--td-nav-height) + 64px) !important;
+  }
+
+  .main-content {
+    padding-top: 142px !important;
+  }
+
   .page-container {
     padding: 16px !important;
   }
@@ -408,6 +458,12 @@ body,
   /* Section padding reduction */
   .section {
     padding: 48px 0 !important;
+  }
+
+  /* Maintain WCAG-readable text on the saturated hero CTA. */
+  .hero-actions .btn-primary {
+    color: #fff !important;
+    text-shadow: 0 1px 2px rgba(35, 12, 90, 0.35);
   }
 
   /* ---------- NAVBAR / HEADER ---------- */

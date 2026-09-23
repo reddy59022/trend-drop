@@ -815,6 +815,8 @@
 
 .hero-actions .btn-primary {
   background: var(--td-gradient-brand);
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(35, 12, 90, 0.35);
   box-shadow: 0 8px 30px rgba(108, 59, 255, 0.45);
 }
 
@@ -1799,14 +1801,30 @@
    RESPONSIVE PREMIUM POLISH
    ===================================================== */
 @media (max-width: 768px) {
+  /* The header contains a second search row on phones. Let the fixed shell
+     grow with that row so content never renders underneath the search field. */
+  .navbar {
+    height: auto;
+  }
+  .navbar-container {
+    min-height: var(--td-nav-height);
+    padding-bottom: var(--td-space-sm);
+  }
   .navbar-menu {
     display: none;
+    top: calc(var(--td-nav-height) + 54px);
   }
   .menu-toggle {
     display: flex;
   }
   .search-form {
+    flex: 0 0 100%;
+    width: 100%;
+    max-width: none;
     margin: 0;
+  }
+  .main-content {
+    padding-top: 132px;
   }
   .page-container {
     padding: var(--td-space-lg) var(--td-space-md);
@@ -1827,6 +1845,16 @@
 }
 
 @media (max-width: 480px) {
+  .navbar-container {
+    gap: var(--td-space-sm);
+  }
+  .navbar-global-controls {
+    gap: 2px;
+  }
+  .navbar-global-controls .nav-icon-link {
+    width: 34px;
+    height: 34px;
+  }
   .nav-username {
     display: none;
   }

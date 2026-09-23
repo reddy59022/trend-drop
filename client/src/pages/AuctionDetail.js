@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { FaGavel, FaClock, FaArrowLeft, FaVideo, FaBroadcastTower, FaEye, FaTrophy, FaComment, FaVideoSlash } from 'react-icons/fa';
 import api from '../services/api';
+import { getSocketBaseURL } from '../services/native';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { formatPrice, formatPriceRaw } from '../utils/helpers';
@@ -106,7 +107,7 @@ const AuctionDetail = () => {
     if (socketRef.current?.connected) return socketRef.current;
     
     const token = localStorage.getItem('token');
-    const socket = io('/', {
+    const socket = io(getSocketBaseURL(), {
       auth: { token },
       transports: ['websocket', 'polling'],
     });

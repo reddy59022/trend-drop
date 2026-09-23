@@ -347,6 +347,8 @@ const Navbar = () => {
                   className="nav-dropdown-trigger user-menu-trigger"
                   onClick={() => setDropdownOpen(!dropdownOpen)}
                   aria-label="Profile menu"
+                  aria-haspopup="menu"
+                  aria-expanded={dropdownOpen}
                 >
                   <img
                     src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'U')}&background=6C3BFF&color=fff&size=68`}
@@ -439,6 +441,8 @@ const Navbar = () => {
               onClick={() => { setCountryOpen(!countryOpen); setCurrencyOpen(false); setLangOpen(false); }}
               title="Select country"
               aria-label="Select country"
+              aria-haspopup="menu"
+              aria-expanded={countryOpen}
             >
               {country ? (
                 <>
@@ -481,6 +485,8 @@ const Navbar = () => {
               onClick={() => { setCurrencyOpen(!currencyOpen); setCountryOpen(false); setLangOpen(false); }}
               title="Select currency"
               aria-label="Select currency"
+              aria-haspopup="menu"
+              aria-expanded={currencyOpen}
             >
               <FaDollarSign size={12} />
               <span style={{ fontSize: 11, fontWeight: 700 }}>{country === null ? 'USD' : currency}</span>
@@ -512,6 +518,8 @@ const Navbar = () => {
               onClick={() => { setLangOpen(!langOpen); setCurrencyOpen(false); }}
               title="Select language"
               aria-label="Select language"
+              aria-haspopup="menu"
+              aria-expanded={langOpen}
             >
               <FaGlobe size={14} />
             </button>
@@ -539,6 +547,7 @@ const Navbar = () => {
             className="menu-toggle" 
             onClick={() => setMenuOpen(!menuOpen)}
             aria-label="Toggle menu"
+            aria-expanded={menuOpen}
           >
             {menuOpen ? <FaTimes /> : <FaBars />}
           </button>

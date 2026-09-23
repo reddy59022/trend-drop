@@ -32,7 +32,9 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSCameraUsageDescription</key>
-	<string>TrendDrop uses the camera for Virtual Try-On so you can preview how clothes look on you, and to take photos of items you want to list for sale.</string>
+	<string>TrendDrop uses the camera for Virtual Try-On so you can preview how clothes look on you, take photos of items you want to list for sale, and host live auctions.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TrendDrop uses the microphone when you choose to host a live video auction.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>TrendDrop needs photo library access so you can upload photos of items you want to list for sale.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
