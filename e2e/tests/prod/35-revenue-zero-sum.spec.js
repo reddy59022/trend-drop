@@ -276,7 +276,7 @@ describeRevenue('35 · customer/seller/platform revenue invariants', () => {
     expect(cents(cancelled.data.refundAmount)).toBe(gross);
 
     const restoredSeller = await api.req('get', '/api/users/me', { token: sellerToken });
-    expect(cents(restoredSeller.data.balance.pending - before.data.balance.pending)).toBe(0);
+    expect(Math.abs(cents(restoredSeller.data.balance.pending - before.data.balance.pending))).toBe(0);
     const restoredListing = await api.req('get', `/api/listings/${paidShippingListingId}`);
     expect(restoredListing.status).toBe(200);
     expect(restoredListing.data.listing.quantity).toBe(1);
