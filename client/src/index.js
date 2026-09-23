@@ -11,6 +11,7 @@ import './App.css';
 import './styles/append-to-app.css';
 import './styles/responsive.css';
 import './styles/design-haul.css';
+import './styles/dashboard-bespoke.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
