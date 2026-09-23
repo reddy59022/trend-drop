@@ -83,6 +83,43 @@ jobs:
         working-directory: client
         run: npm ci
 
+      - name: Critical coverage thresholds (payments, inventory, authorization)
+        working-directory: server
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+        run: npm run test:coverage:critical
+
+      - name: Critical mutation testing (payments, inventory, authorization)
+        working-directory: server
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+        run: npm run test:mutation
+
+      # Keep the focused quality-gate reports available when either gate fails.
+      # `always()` also uploads reports produced before a later CI step fails.
+      - name: Upload critical coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-coverage-report
+          path: |
+            server/coverage/critical/lcov-report/
+            server/coverage/critical/coverage-summary.json
+            server/coverage/critical/lcov.info
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload critical mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-mutation-report
+          path: |
+            server/reports/mutation/mutation.html
+            server/reports/mutation/mutation.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Server tests (jest, full suite)
         id: jest
         working-directory: server

@@ -92,6 +92,29 @@ describe('Social Login - Apple & Facebook', () => {
 
       expect(res.statusCode).toBe(200);
     });
+
+    it('SOCIAL.3b rejects an Apple token with no audience when production config requires one', async () => {
+      const previousClientId = process.env.APPLE_CLIENT_ID;
+      process.env.APPLE_CLIENT_ID = 'com.trenddrop.production';
+      const email = `apple_no_audience_${Date.now()}@example.com`;
+      const appleToken = global.testJwt.signAppleIdentityToken({
+        sub: `apple_no_audience_${Date.now()}`,
+        email,
+        aud: undefined,
+      });
+
+      try {
+        const res = await request(app)
+          .post('/api/auth/apple')
+          .send({ identityToken: appleToken, email });
+
+        expect(res.statusCode).toBe(401);
+        expect(res.body.message).toMatch(/audience/i);
+      } finally {
+        if (previousClientId === undefined) delete process.env.APPLE_CLIENT_ID;
+        else process.env.APPLE_CLIENT_ID = previousClientId;
+      }
+    });
   });
 
   describe('POST /api/auth/facebook', () => {

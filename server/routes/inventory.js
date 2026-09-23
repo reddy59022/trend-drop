@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { auth } = require('../middleware/auth');
 const Inventory = require('../models/Inventory');
 const Listing = require('../models/Listing');
+const { isValidInventoryQuantity, isValidAutoReorderPatch } = require('../criticalRules');
 
 // GET /api/inventory - Get all inventory items for seller
 router.get('/', auth, async (req, res) => {
@@ -48,7 +49,7 @@ router.post('/sync', auth, async (req, res) => {
         return res.status(400).json({ message: 'Each item needs a valid listingId' });
       }
       const qty = item.quantity === undefined || item.quantity === null ? 0 : Number(item.quantity);
-      if (!Number.isFinite(qty) || qty < 0 || qty > 1000000) {
+      if (!isValidInventoryQuantity(qty)) {
         return res.status(400).json({ message: 'quantity must be a number between 0 and 1000000' });
       }
     }
@@ -118,13 +119,13 @@ router.put('/:id/auto-reorder', auth, async (req, res) => {
 
     // Hostile-input guard: quantity is a Number path ("five" threw "Cast to
     // Number failed" -> 500), enabled a Boolean path, supplier a String path.
-    if (enabled !== undefined && typeof enabled !== 'boolean') {
-      return res.status(400).json({ message: 'enabled must be a boolean' });
-    }
-    if (quantity !== undefined && (typeof quantity !== 'number' || !Number.isFinite(quantity))) {
-      return res.status(400).json({ message: 'quantity must be a number' });
-    }
-    if (supplier !== undefined && supplier !== null && typeof supplier !== 'string') {
+    if (!isValidAutoReorderPatch({ enabled, quantity, supplier })) {
+      if (enabled !== undefined && typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: 'enabled must be a boolean' });
+      }
+      if (quantity !== undefined && (typeof quantity !== 'number' || !Number.isFinite(quantity))) {
+        return res.status(400).json({ message: 'quantity must be a number' });
+      }
       return res.status(400).json({ message: 'supplier must be a string' });
     }
 

@@ -212,11 +212,17 @@ describe('Global signup and verification contract', () => {
     expect((await request(app).post('/api/auth/verify-email').send({})).status).toBe(400);
   });
 
-  test('SG.25 resends a pending verification email', async () => {
-    const pending = await createPending();
+  test('SG.25 resends a pending verification email and extends its TTL', async () => {
+    const pending = await createPending({
+      expiresAt: new Date(Date.now() - 60 * 1000),
+    });
     const res = await request(app).post('/api/auth/resend-verification').send({ email: pending.email });
     expect(res.status).toBe(200);
     expect(res.body.message).toMatch(/resent/i);
+
+    const refreshed = await PendingUser.findById(pending._id);
+    expect(refreshed.verificationTokenExpires.getTime()).toBeGreaterThan(Date.now());
+    expect(refreshed.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
   test('SG.26 blocks login before email verification', async () => {

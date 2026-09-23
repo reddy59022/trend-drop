@@ -345,8 +345,13 @@ router.post('/resend-verification', async (req, res) => {
     const pending = await PendingUser.findOne({ email: normalizedEmail });
     if (pending) {
       const verificationToken = crypto.randomBytes(32).toString('hex');
+      const verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
       pending.verificationToken = verificationToken;
-      pending.verificationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      pending.verificationTokenExpires = verificationTokenExpires;
+      // Keep the MongoDB TTL deadline aligned with the refreshed token.
+      // Otherwise a resend can issue a valid 24-hour link on a document
+      // that is still scheduled for immediate deletion.
+      pending.expiresAt = verificationTokenExpires;
       await pending.save();
 
       await sendVerificationEmail(pending.email, pending.name, verificationToken);
@@ -550,7 +555,8 @@ async function verifyAppleIdentityToken(identityToken) {
   // Audience check only when a client id is actually configured
   // (tests and local dev may sign tokens without one).
   const expectedAud = process.env.APPLE_CLIENT_ID;
-  if (expectedAud && expectedAud !== 'CHANGE_ME' && payload.aud && payload.aud !== expectedAud) {
+  if (expectedAud && expectedAud !== 'CHANGE_ME'
+    && (!payload.aud || payload.aud !== expectedAud)) {
     return { error: 'Invalid Apple token audience' };
   }
   if (!payload.sub) {

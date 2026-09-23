@@ -1,0 +1,53 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/api/core/src/config/config-schema.json",
+  "testRunner": "jest",
+  "jest": {
+    "projectType": "custom",
+    "configFile": "./jest.mutation.config.js",
+    "enableFindRelatedTests": false
+  },
+  "mutate": [
+    "criticalRules.js"
+  ],
+  "testFiles": [
+    "tests/criticalRules.test.js"
+  ],
+  "coverageAnalysis": "perTest",
+  "concurrency": 1,
+  "timeoutMS": 30000,
+  "maxTestRunnerReuse": 0,
+  "mutator": {
+    "excludedMutations": [
+      "ArrayDeclaration",
+      "ArrowFunction",
+      "BlockStatement",
+      "ConditionalExpression",
+      "MethodExpression",
+      "Node",
+      "ObjectLiteral",
+      "Regex",
+      "StringLiteral"
+    ]
+  },
+  "ignorePatterns": [
+    "coverage/**",
+    "reports/**",
+    "uploads/**"
+  ],
+  "reporters": [
+    "clear-text",
+    "json",
+    "html"
+  ],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  },
+  "thresholds": {
+    "high": 100,
+    "low": 100,
+    "break": 100
+  }
+}

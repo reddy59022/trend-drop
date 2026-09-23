@@ -13,6 +13,8 @@
     "start:all": "bash start.sh",
     "test:server": "cd server && npm run test:ci",
     "test:server:coverage": "cd server && npm run test:coverage",
+    "test:server:coverage:critical": "cd server && npm run test:coverage:critical",
+    "test:server:mutation": "cd server && npm run test:mutation",
     "test:e2e": "E2E_RUN_ID=$(date +%Y%m%d%H%M%S) npx playwright test --config=e2e/playwright.inmem.config.js",
     "test:e2e:ui": "npx playwright test --config=e2e/playwright.config.js",
     "test:e2e:prod": "E2E_RUN_ID=$(date +%Y%m%d%H%M%S) npx playwright test --config=e2e/playwright.prod.config.js",

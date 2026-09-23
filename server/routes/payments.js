@@ -33,6 +33,7 @@ const { increment } = require('../utils/metrics');
 // the seller's boost fee is never serialised into it (utils/transactionView.js).
 const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require('../utils/transactionView');
 const { boostConfig } = require('../config/boost');
+const { isValidMoneyInput, isPositiveIntegerQuantity } = require('../criticalRules');
 
 // Flat per-sale boost fee: price × tier.feePercent / 100
 // Charged ONLY upon successful sale (never upfront)
@@ -108,7 +109,7 @@ router.post('/breakdown', (req, res) => {
     const { itemPrice, fromCountry, toCountry, weightKg } = req.body;
     const parseMoneyInput = (field, value, fallback, max) => {
       if (value === undefined || value === null) return fallback;
-      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > max) {
+      if (!isValidMoneyInput(value, max)) {
         const error = new Error(`${field} must be a finite number between 0 and ${max}`);
         error.statusCode = 400;
         throw error;
@@ -159,10 +160,7 @@ router.post('/create-intent', auth, async (req, res) => {
         return res.status(400).json({ message: 'Each item must be an object with a valid quantity' });
       }
       const hasQuantity = Object.prototype.hasOwnProperty.call(item, 'quantity');
-      if (hasQuantity && (typeof item.quantity !== 'number'
-        || !Number.isFinite(item.quantity)
-        || !Number.isInteger(item.quantity)
-        || item.quantity < 1)) {
+      if (hasQuantity && !isPositiveIntegerQuantity(item.quantity)) {
         return res.status(400).json({ message: 'quantity must be a positive integer', failedItem: item.listingId });
       }
       const requestedQuantity = hasQuantity ? item.quantity : 1;
@@ -486,10 +484,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
         return releaseAuthOnFailure(res, 400, { message: 'Each item must be an object with a valid quantity' });
       }
       const hasQuantity = Object.prototype.hasOwnProperty.call(item, 'quantity');
-      if (hasQuantity && (typeof item.quantity !== 'number'
-        || !Number.isFinite(item.quantity)
-        || !Number.isInteger(item.quantity)
-        || item.quantity < 1)) {
+      if (hasQuantity && !isPositiveIntegerQuantity(item.quantity)) {
         return releaseAuthOnFailure(res, 400, { message: 'quantity must be a positive integer', failedItem: item.listingId });
       }
       const requestedQuantity = hasQuantity ? item.quantity : 1;
