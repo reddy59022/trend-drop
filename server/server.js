@@ -394,7 +394,9 @@ if (process.env.NODE_ENV === 'production') {
     const token = req.query.token;
     // NOTE: never log verification tokens or user documents (PII / credentials)
     if (!token) {
-      return res.status(400).send('Verification token is required');
+      // No token: serve the branded SPA /verify-email page (not a raw 400) so
+      // the React VerifyEmail screen explains the missing/invalid link.
+      return res.sendFile(path.join(__dirname, '../client/build/index.html'));
     }
     const PendingUser = require('./models/PendingUser');
     const User = require('./models/User');
@@ -424,7 +426,9 @@ if (process.env.NODE_ENV === 'production') {
       verificationTokenExpires: { $gt: new Date() },
     });
     if (!user) {
-      return res.status(400).send('Invalid or expired verification token');
+      // Invalid/expired: serve the branded SPA so React shows the styled
+      // "Verification Failed" state instead of a bare text error.
+      return res.sendFile(path.join(__dirname, '../client/build/index.html'));
     }
     user.emailVerified = true;
     user.verificationToken = null;

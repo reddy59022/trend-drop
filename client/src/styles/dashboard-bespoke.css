@@ -239,3 +239,8 @@ tbody tr:hover { background: color-mix(in srgb, var(--td-primary, #6C3BFF) 5%, t
   background: var(--td-surface);
   z-index: 1;
 }
+
+/* ---- Adequate tap targets (mobile ergonomics) ---- */
+footer a, .footer-grid a, .footer-link { padding-block: 5px; }
+.comment-delete { min-width: 32px; min-height: 32px; }
+.star-btn { min-width: 34px; min-height: 34px; }
