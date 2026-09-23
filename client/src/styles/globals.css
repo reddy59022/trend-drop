@@ -45,6 +45,18 @@
   --td-surface-2: #F7F5FE;
   --td-bg-secondary: #F7F5FE;
 
+  /* Derived & compatibility aliases (previously undefined → transparent bugs) */
+  --td-bg-primary: var(--td-surface);
+  --td-bg-tertiary: var(--td-surface-tertiary);
+  --td-text-primary: var(--td-text);
+  --td-overlay: rgba(8, 8, 26, 0.55);
+  --td-gradient-brand-soft: rgba(108, 59, 255, 0.10);
+  --td-info-light: rgba(61, 155, 255, 0.10);
+  --td-warning-light: rgba(255, 176, 32, 0.10);
+  --td-primary-rgb: 108, 59, 255;
+  --td-error-rgb: 255, 77, 109;
+  --td-text-tertiary-rgb: 148, 148, 184;
+
   /* Text */
   --td-text: #0D0D24;
   --td-text-secondary: #4A4A70;
@@ -166,6 +178,7 @@
     --td-text: #EDEBFF;
     --td-text-secondary: #A5A3D0;
     --td-text-tertiary: #6E6C99;
+    --td-text-tertiary-rgb: 110, 108, 153;
     --td-text-inverse: #08081A;
 
     --td-border: #24244A;
@@ -195,6 +208,7 @@
   --td-text: #EDEBFF;
   --td-text-secondary: #A5A3D0;
   --td-text-tertiary: #6E6C99;
+    --td-text-tertiary-rgb: 110, 108, 153;
   --td-text-inverse: #08081A;
   --td-border: #24244A;
   --td-border-light: #14142B;

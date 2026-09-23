@@ -197,3 +197,45 @@ tbody tr:hover { background: color-mix(in srgb, var(--td-primary, #6C3BFF) 5%, t
   .tabs { border-radius: 20px; }
   th, td { padding: 11px 12px; }
 }
+
+/* ---- Segmented tabs for BOTH .btn and .tab children (consistent rail) ---- */
+.tabs .tab {
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-weight: 700;
+  border-bottom: none;
+  margin-bottom: 0;
+  color: var(--td-text-secondary, #444);
+  background: color-mix(in srgb, var(--td-surface) 55%, transparent);
+  transition: transform 0.18s ease, background 0.25s ease, color 0.2s ease;
+}
+.tabs .tab:hover { transform: translateY(-1px); color: var(--td-text); }
+.tabs .tab.active {
+  color: #fff;
+  background: linear-gradient(135deg, #6C3BFF 0%, #8B5CFF 55%, #FF6BC1 130%);
+  border-bottom-color: transparent;
+  box-shadow: 0 10px 24px -12px rgba(108, 59, 255, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* ---- Status-filter dropdown: opaque + elevated (fixes bleed-through) ---- */
+.status-dropdown {
+  background: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-lg);
+  box-shadow: var(--td-shadow-xl), 0 0 0 4px color-mix(in srgb, var(--td-primary) 6%, transparent);
+  overflow-y: auto;
+  animation: fadeIn 0.16s ease-out;
+}
+.status-dropdown-item {
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.status-dropdown-item:hover {
+  background: color-mix(in srgb, var(--td-primary) 10%, transparent) !important;
+  color: var(--td-primary-dark) !important;
+}
+.status-dropdown-group {
+  position: sticky;
+  top: 0;
+  background: var(--td-surface);
+  z-index: 1;
+}

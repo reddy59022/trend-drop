@@ -209,36 +209,36 @@ function Transactions() {
             )}
           </button>
           {showStatusDropdown && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 100,
-              background: 'var(--td-bg-primary)', border: '1px solid var(--td-border)',
-              borderRadius: 'var(--td-radius-md)', boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-              minWidth: 260, maxHeight: 400, overflowY: 'auto',
+            <div className="status-dropdown" style={{
+              position: 'absolute', top: '100%', left: 0, marginTop: 8, zIndex: 105,
+              minWidth: 280, maxHeight: 420,
             }}>
               <div
+                className="status-dropdown-item"
                 onClick={handleClearStatusFilter}
                 style={{
                   padding: '10px 14px', cursor: 'pointer', fontSize: 14, fontWeight: 600,
                   borderBottom: '1px solid var(--td-border)',
-                  background: activeStatuses.length === 0 ? 'var(--td-primary-light)' : 'transparent',
-                  color: activeStatuses.length === 0 ? 'var(--td-primary)' : 'var(--td-text-primary)',
+                  background: activeStatuses.length === 0 ? 'rgba(var(--td-primary-rgb), 0.12)' : 'transparent',
+                  color: activeStatuses.length === 0 ? 'var(--td-primary-dark)' : 'var(--td-text-primary)',
                 }}
               >
                 ✓ All Statuses
               </div>
               {STATUS_GROUPS.map(group => (
                 <div key={group.label}>
-                  <div style={{ padding: '8px 14px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--td-text-tertiary)', letterSpacing: 0.5 }}>{group.label}</div>
+                  <div className="status-dropdown-group" style={{ padding: '8px 14px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--td-text-tertiary)', letterSpacing: 0.5 }}>{group.label}</div>
                   {group.statuses.map(status => {
                     const isActive = activeStatuses.includes(status);
                     return (
                       <div
+                        className="status-dropdown-item"
                         key={status}
                         onClick={() => handleStatusChange([status])}
                         style={{
                           padding: '8px 14px 8px 24px', cursor: 'pointer', fontSize: 13,
-                          background: isActive ? 'var(--td-primary-light)' : 'transparent',
-                          color: isActive ? 'var(--td-primary)' : 'var(--td-text-primary)',
+                          background: isActive ? 'rgba(var(--td-primary-rgb), 0.12)' : 'transparent',
+                          color: isActive ? 'var(--td-primary-dark)' : 'var(--td-text-primary)',
                           fontWeight: isActive ? 600 : 400,
                         }}
                       >
