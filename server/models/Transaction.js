@@ -201,6 +201,17 @@ const transactionSchema = new mongoose.Schema({
     autoRefundedAt: Date,
     refundAmount: Number,
     autoRefundReason: String,
+    // Seller-side audit trail. These were written by the cron and the
+    // reject-return route long before they were declared here — strict mode
+    // silently discarded them, so the "was this automatic?" evidence did not
+    // actually exist on the document.
+    rejectionReason: String,
+    autoRejected: { type: Boolean, default: false },
+    autoRejectedAt: Date,
+    // 5b: the buyer never shipped an accepted return, so the return expired and
+    // the sale stands.
+    autoExpired: { type: Boolean, default: false },
+    autoExpiredAt: Date,
   },
   // Dispute info (internal platform dispute)
   dispute: {
@@ -246,6 +257,16 @@ const transactionSchema = new mongoose.Schema({
   returnProcessing: {
     type: Boolean,
     default: false,
+  },
+  // Timestamps for the refund/return claims, used to tell a live claim from one
+  // abandoned by a dead worker. See utils/claims.js.
+  refundClaimedAt: {
+    type: Date,
+    default: null,
+  },
+  returnClaimedAt: {
+    type: Date,
+    default: null,
   },
   // Deferred seller payout for a COMPLETED order (currently the new-seller
   // hold: <14-day-old account, <5 sales). Withholding the release at

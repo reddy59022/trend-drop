@@ -482,6 +482,98 @@ describe('Failed settlement must leave the claim retryable', () => {
     expect(paid.balance.available - before.balance.available).toBe(0);
   });
 
+  test('CRS.14 admin refund reclaims a claim abandoned by a dead worker', async () => {
+    const paymentIntentId = authorizedPaymentIntent('succeeded');
+    // A crashed worker left the claim set with nobody to clear it: the buyer's
+    // refund could never be issued and no retry was possible.
+    const txn = await createTransaction(orderStates.PAID, {
+      payout: { status: 'pending', transactionId: paymentIntentId },
+      refundProcessing: true,
+      refundClaimedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    });
+
+    const res = await withTimeout(
+      request(app)
+        .post(`/api/admin/transactions/${txn._id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({}),
+      5000,
+      'admin refund',
+    );
+
+    expect(res.status).toBe(200);
+    const after = await Transaction.findById(txn._id);
+    expect(after.status).toBe(orderStates.REFUNDED);
+    expect(after.refundProcessing).toBe(false);
+  });
+
+  test('CRS.15 a live refund claim is not trampled by a concurrent worker', async () => {
+    const paymentIntentId = authorizedPaymentIntent('succeeded');
+    const txn = await createTransaction(orderStates.PAID, {
+      payout: { status: 'pending', transactionId: paymentIntentId },
+      refundProcessing: true,
+      refundClaimedAt: new Date(),
+    });
+
+    const res = await withTimeout(
+      request(app)
+        .post(`/api/admin/transactions/${txn._id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({}),
+      5000,
+      'admin refund',
+    );
+
+    expect(res.status).toBe(400);
+    const after = await Transaction.findById(txn._id);
+    expect(after.status).toBe(orderStates.PAID);
+    expect(after.refundProcessing).toBe(true);
+  });
+
+  test('CRS.16 return settlement reclaims a claim abandoned by a dead worker', async () => {
+    const txn = await createTransaction(orderStates.RETURN_IN_TRANSIT, {
+      returnProcessing: true,
+      returnClaimedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    });
+
+    const res = await withTimeout(
+      request(app)
+        .post(`/api/orders/${txn._id}/confirm-return-received`)
+        .set('Authorization', `Bearer ${sellerToken}`)
+        .send({ condition: 'Good', inspectionNotes: 'recovered after restart' }),
+      5000,
+      'confirm-return-received',
+    );
+
+    // Without the reclaim this answers 400 forever and the buyer is never
+    // refunded even though the item is back with the seller.
+    expect(res.status).toBe(200);
+    const after = await Transaction.findById(txn._id);
+    expect(after.status).toBe(orderStates.REFUNDED);
+    expect(after.returnProcessing).toBe(false);
+  });
+
+  test('CRS.17 a live return claim is not trampled by a concurrent worker', async () => {
+    const txn = await createTransaction(orderStates.RETURN_IN_TRANSIT, {
+      returnProcessing: true,
+      returnClaimedAt: new Date(),
+    });
+
+    const res = await withTimeout(
+      request(app)
+        .post(`/api/orders/${txn._id}/confirm-return-received`)
+        .set('Authorization', `Bearer ${sellerToken}`)
+        .send({ condition: 'Good' }),
+      5000,
+      'confirm-return-received',
+    );
+
+    expect(res.status).toBe(400);
+    const after = await Transaction.findById(txn._id);
+    expect(after.status).toBe(orderStates.RETURN_IN_TRANSIT);
+    expect(after.returnProcessing).toBe(true);
+  });
+
   test('CRS.6 stripe webhook answers 500 when the handler itself fails', async () => {
     jest.spyOn(Transaction, 'findOne').mockRejectedValueOnce(new Error('db unavailable'));
 

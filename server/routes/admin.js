@@ -11,6 +11,7 @@ const Report = require('../models/Report');
 const Offer = require('../models/Offer');
 const SellerBadge = require('../models/SellerBadge');
 const { clawbackSellerEarnings } = require('../utils/balances');
+const { claimTransaction } = require('../utils/claims');
 const { findPaymentIntent, retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
 
@@ -399,11 +400,12 @@ router.post('/transactions/:id/refund', async (req, res) => {
     // Claim the refund atomically before contacting the provider or changing
     // local balances. A duplicate admin click must not issue two refunds or
     // restore inventory twice.
-    const claimedTxn = await Transaction.findOneAndUpdate(
-      { _id: txn._id, status: { $ne: 'refunded' }, refundProcessing: { $ne: true } },
-      { $set: { refundProcessing: true } },
-      { new: true },
-    );
+    const claimedTxn = await claimTransaction({
+      _id: txn._id,
+      flag: 'refundProcessing',
+      claimedAt: 'refundClaimedAt',
+      extraFilter: { status: { $ne: 'refunded' } },
+    });
     if (!claimedTxn) return res.status(400).json({ message: 'Refund is already being processed or has completed' });
     txn = claimedTxn;
 

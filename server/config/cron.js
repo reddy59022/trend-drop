@@ -22,6 +22,7 @@ const Offer = require('../models/Offer');
 const { orderStates, timeWindows } = require('./orderLifecycle');
 const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings } = require('../utils/balances');
 const { claimTransaction } = require('../utils/claims');
+const { releaseSellerSettlement } = require('../utils/settlement');
 const { retrievePaymentIntent, findPaymentIntent, issueRefund, releaseAuthorization } = require('./payments');
 const { trackingStatuses, simulateTrackingUpdate } = require('./shipping');
 const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
@@ -439,11 +440,16 @@ async function releaseReserves() {
 // the transaction returnProcessing claim, so overlapping cron runs settle once.
 async function settleDeliveredReturn(txn, returnRequest, now) {
   const priorStatus = txn.status;
-  const claimed = await Transaction.findOneAndUpdate(
-    { _id: txn._id, status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] }, returnProcessing: { $ne: true } },
-    { $set: { status: orderStates.RETURN_DELIVERED, returnProcessing: true } },
-    { new: true },
-  );
+  // The claim also parks the return in `return_delivered`, so it moves the flag
+  // and the state together — and a claim abandoned by a dead worker is
+  // reclaimed instead of leaving the buyer's refund stuck forever.
+  const claimed = await claimTransaction({
+    _id: txn._id,
+    flag: 'returnProcessing',
+    claimedAt: 'returnClaimedAt',
+    extraFilter: { status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] } },
+    extraSet: { status: orderStates.RETURN_DELIVERED },
+  });
   if (!claimed) return false;
 
   try {
@@ -569,6 +575,10 @@ async function autoProcessReturns() {
     const now = Date.now();
     let autoRejected = 0;
     let autoRefunded = 0;
+    // Counted separately from `autoRefunded`: an expired return is finalized
+    // WITHOUT a refund (the buyer kept the item), and mixing the two made the
+    // run report claim refunds that never happened.
+    let autoExpired = 0;
 
     // 5a. Auto-reject: return_requested + seller no response after 3 days
     const pendingReturns = await Transaction.find({
@@ -626,27 +636,63 @@ async function autoProcessReturns() {
         : new Date(txn.updatedAt).getTime();
       
       if (now - acceptedAt >= timeWindows.RETURN_SHIP_WINDOW) {
-        // Auto-refund: buyer didn't ship in time, restore order to completed
-        txn.status = 'completed';
-        txn.returnDetails = {
-          ...txn.returnDetails,
-          autoExpired: true,
-          autoExpiredAt: new Date(),
-        };
-        
-        await txn.save();
-        // Sync linked Return doc (Returns Center path)
+        // The buyer never shipped, so the return expires and the sale stands:
+        // the seller keeps the money. Moving it is THIS job's responsibility —
+        // the completion job only watches `buyer_confirmed`, so an order that
+        // gets finalized here is never looked at again and any still-escrowed
+        // earnings would sit in `balance.pending` forever.
+        //
+        // Paying is only correct when the money is still escrowed, though: a
+        // return can also be opened on an order that already paid its seller
+        // (completed → return_requested). Three independent signals say the
+        // seller has NOT been paid yet: no release marker on the balance, no
+        // `completed` payout in the ledger, and no pending settlement hold.
         try {
-          if (txn.returnDetails?.returnId) {
-            await Return.findByIdAndUpdate(txn.returnDetails.returnId, { $set: { status: 'denied' } });
+          const sellerDoc = await User.findById(txn.seller).select('balance.settledTransactions').lean();
+          const alreadyReleased = Boolean(sellerDoc?.balance?.settledTransactions
+            ?.some((id) => String(id) === String(txn._id)));
+          const holdPending = Boolean(txn.settlementHold?.releaseAfter && !txn.settlementHold?.releasedAt);
+          const payoutCompleted = await Payout.exists({ transaction: txn._id, status: 'completed' });
+
+          if (!alreadyReleased && !holdPending && !payoutCompleted) {
+            const { paid } = await releaseSellerSettlement(txn, { now });
+            if (paid) {
+              // The sale stands, so it counts as a sale.
+              await User.updateOne({ _id: txn.seller }, { $inc: { 'stats.totalSales': 1 } });
+            }
           }
-        } catch (e) { console.error('[CRON 5b] Failed to sync Return doc:', e.message); }
-        autoRefunded++;
+
+          txn.status = 'completed';
+          txn.returnDetails = {
+            ...txn.returnDetails,
+            autoExpired: true,
+            autoExpiredAt: new Date(now),
+          };
+          await txn.save();
+          // Sync linked Return doc (Returns Center path)
+          try {
+            if (txn.returnDetails?.returnId) {
+              await Return.findByIdAndUpdate(txn.returnDetails.returnId, { $set: { status: 'denied' } });
+            }
+          } catch (e) { console.error('[CRON 5b] Failed to sync Return doc:', e.message); }
+          // Roll the finalized sale up to the consolidated Enterprise Order,
+          // exactly like the other completion paths do; without it an order
+          // whose return expired stays stuck in its return state in the
+          // order-level view. No-ops when no order references this txn.
+          try {
+            const { syncOrderFromTransaction } = require('../routes/orderLifecycle');
+            await syncOrderFromTransaction(txn, 'completed');
+          } catch (e) { console.error('[CRON 5b] Failed to sync Order doc:', e.message); }
+          autoExpired++;
+        } catch (expireError) {
+          // Keep the hour's other expiries moving; this one retries next run.
+          console.error(`[CRON 5b] Return expiry failed for ${txn._id}:`, expireError.message);
+        }
       }
     }
 
-    if (tracking.updated || tracking.settled || autoRejected > 0 || autoRefunded > 0) {
-      console.log(`[CRON] Auto-processed returns: ${tracking.updated} tracking updates, ${tracking.settled} settled, ${autoRejected} rejected, ${autoRefunded} expired`);
+    if (tracking.updated || tracking.settled || autoRejected > 0 || autoExpired > 0 || autoRefunded > 0) {
+      console.log(`[CRON] Auto-processed returns: ${tracking.updated} tracking updates, ${tracking.settled} settled, ${autoRejected} rejected, ${autoExpired} expired, ${autoRefunded} refunded`);
     }
 
     // 5c. Auto-refund: return_in_transit + seller never confirms return
@@ -760,6 +806,7 @@ async function autoProcessReturns() {
           }
         } catch (e) { console.error('[CRON 5c] Failed to sync Return doc:', e.message); }
 
+
         // Keep consolidated Enterprise Order in sync
         await syncOrderFromTransaction(txn, 'refunded');
 
@@ -768,8 +815,11 @@ async function autoProcessReturns() {
         console.error('[CRON] Auto-refund of unconfirmed return failed:', txnErr.message);
       }
     }
+
+    return { rejected: autoRejected, expired: autoExpired, refunded: autoRefunded };
   } catch (error) {
     console.error('[CRON] Error auto-processing returns:', error.message);
+    return { rejected: 0, expired: 0, refunded: 0 };
   }
 }
 
@@ -918,69 +968,14 @@ async function releaseHeldSettlements(now = Date.now()) {
       // Isolate each hold: one unreleasable row must not block every other
       // seller's matured payout (and it stays queued for the next run).
       try {
-        const seller = await User.findById(txn.seller);
-        if (!seller) {
+        const { paid, reason } = await releaseSellerSettlement(txn, { now });
+        if (reason === 'seller_missing') {
+          // Leave the hold in place: it is evidence of an unpaid sale, and the
+          // order is already `completed` so no other path will come for it.
           failed += 1;
           console.error(`[CRON] Held settlement ${txn._id} has no seller account; left for reconciliation`);
           continue;
         }
-        const sellerEarnings = Math.round((txn.paymentBreakdown?.sellerEarnings || 0) * 100) / 100;
-        if (sellerEarnings <= 0) {
-          // Nothing to pay: close the hold so it is not scanned forever.
-          await Transaction.updateOne(
-            { _id: txn._id, 'settlementHold.releasedAt': null },
-            { $set: { 'settlementHold.releasedAt': new Date(now) } },
-          );
-          continue;
-        }
-        const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
-        const availableAmount = sellerEarnings - reserveAmount;
-        const release = await releaseSellerEarnings(seller._id, {
-          earnings: sellerEarnings,
-          availableAmount,
-          reserveAmount,
-          settlementKey: txn._id,
-          reserveRelease: {
-            amount: reserveAmount,
-            releaseDate: new Date(now + timeWindows.SELLER_RESERVE_HOLD_DAYS),
-            transactionId: txn._id,
-          },
-        });
-        if (!settlementAlreadyApplied(release)) {
-          await User.updateOne(
-            { _id: seller._id },
-            {
-              $push: {
-                notifications: {
-                  $each: [{
-                    type: 'sale',
-                    listing: txn.listing,
-                    transaction: txn._id,
-                    message: `Payment of ${availableAmount} ${txn.currency} released; ${reserveAmount} ${txn.currency} held in reserve.`,
-                  }],
-                  $position: 0,
-                },
-              },
-            },
-          );
-        }
-        // The payout ledger record is normally written at completion time;
-        // upsert so a transaction that lost it still ends up accounted for.
-        await Payout.findOneAndUpdate(
-          { transaction: txn._id },
-          {
-            $set: { status: 'completed', paidAt: new Date(now) },
-            $setOnInsert: {
-              seller: txn.seller,
-              listing: txn.listing,
-              salePrice: txn.paymentBreakdown?.subtotal || txn.itemPrice || 0,
-              commissionRate: (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100,
-              commissionAmount: txn.paymentBreakdown?.platformFee || 0,
-              payoutAmount: sellerEarnings,
-            },
-          },
-          { upsert: true },
-        );
         // Stamped last: if a write above failed, the hold stays queued and the
         // next run retries it — the balance release itself is already
         // exactly-once, so a retry cannot pay the seller twice.
@@ -988,7 +983,7 @@ async function releaseHeldSettlements(now = Date.now()) {
           { _id: txn._id, 'settlementHold.releasedAt': null },
           { $set: { 'settlementHold.releasedAt': new Date(now) } },
         );
-        released += 1;
+        if (paid) released += 1;
       } catch (holdError) {
         failed += 1;
         console.error(`[CRON] Held settlement ${txn._id} failed:`, holdError.message);

@@ -135,6 +135,49 @@ describe('automated return tracking and settlement', () => {
     expect((await Return.findById(returnRequest._id)).status).toBe('refunded');
   });
 
+  test('RTC.6 reclaims a return claim abandoned by a dead worker', async () => {
+    const { txn, returnRequest, listing } = await makeReturn({ ageDays: 7 });
+    // The worker claimed the settlement, then died (deploy restart). The claim
+    // -- and the buyer's refund -- stayed stuck forever.
+    await Transaction.updateOne(
+      { _id: txn._id },
+      {
+        $set: {
+          returnProcessing: true,
+          returnClaimedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        },
+      },
+    );
+
+    const result = await autoProcessReturnTracking();
+
+    expect(result.settled).toBe(1);
+    const freshTxn = await Transaction.findById(txn._id);
+    expect(freshTxn.status).toBe('refunded');
+    expect(freshTxn.returnProcessing).toBe(false);
+    expect((await Return.findById(returnRequest._id)).status).toBe('refunded');
+    // The unwind still runs exactly once: inventory back, seller clawed back.
+    expect((await Listing.findById(listing._id)).quantity).toBe(1);
+    const sellerAfter = await User.findById(seller._id);
+    expect(sellerAfter.balance.pending).toBe(0);
+  });
+
+  test('RTC.7 a live return claim is not trampled by a concurrent worker', async () => {
+    const { txn, returnRequest } = await makeReturn({ ageDays: 7 });
+    await Transaction.updateOne(
+      { _id: txn._id },
+      { $set: { returnProcessing: true, returnClaimedAt: new Date() } },
+    );
+
+    const result = await autoProcessReturnTracking();
+
+    expect(result.settled).toBe(0);
+    const freshTxn = await Transaction.findById(txn._id);
+    expect(freshTxn.status).not.toBe('refunded');
+    expect(freshTxn.returnProcessing).toBe(true);
+    expect((await Return.findById(returnRequest._id)).status).not.toBe('refunded');
+  });
+
   test('RTC.5 missing provider reference leaves delivery visible but preserves ledger for retry', async () => {
     const { txn, returnRequest, listing } = await makeReturn({ ageDays: 7, provider: false });
     const result = await autoProcessReturnTracking();

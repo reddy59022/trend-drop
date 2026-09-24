@@ -41,6 +41,9 @@ const CLAIM_STALE_MS = 15 * 60 * 1000;
  * @param {string}   params.claimedAt      timestamp field for that flag,
  *                                         e.g. 'completionClaimedAt'
  * @param {object}   [params.extraFilter]  extra conditions the claim must satisfy
+ * @param {object}   [params.extraSet]     extra fields written with the claim,
+ *                                         so the claim and the state move
+ *                                         together in one atomic update
  * @param {number}   [params.staleMs]      override the abandonment window
  * @param {number}   [params.now]          injectable clock (tests)
  * @returns {Promise<object|null>} the claimed transaction, or null
@@ -50,6 +53,7 @@ const claimTransaction = async ({
   flag,
   claimedAt,
   extraFilter = {},
+  extraSet = {},
   staleMs = CLAIM_STALE_MS,
   now = Date.now(),
 }) => {
@@ -58,7 +62,7 @@ const claimTransaction = async ({
   // branch and turns the guard into "always claimable" — two workers would
   // then settle the same money. A loud throw here is strictly better than
   // silently double-paying.
-  for (const path of [flag, claimedAt]) {
+  for (const path of [flag, claimedAt, ...Object.keys(extraSet)]) {
     if (!Transaction.schema.paths[path]) {
       throw new Error(`claimTransaction: '${path}' is not a Transaction schema path`);
     }
@@ -77,7 +81,7 @@ const claimTransaction = async ({
         { [claimedAt]: { $not: { $gte: staleBefore } } },
       ],
     },
-    { $set: { [flag]: true, [claimedAt]: new Date(now) } },
+    { $set: { [flag]: true, [claimedAt]: new Date(now), ...extraSet } },
     { new: true },
   );
 };

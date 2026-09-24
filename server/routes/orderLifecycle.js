@@ -1237,11 +1237,12 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
       return res.status(400).json({ message: 'Cannot confirm return receipt in current status' });
     }
 
-    const claimedReturn = await Transaction.findOneAndUpdate(
-      { _id: txn._id, status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] }, returnProcessing: { $ne: true } },
-      { $set: { returnProcessing: true } },
-      { new: true },
-    );
+    const claimedReturn = await claimTransaction({
+      _id: txn._id,
+      flag: 'returnProcessing',
+      claimedAt: 'returnClaimedAt',
+      extraFilter: { status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] } },
+    });
     if (!claimedReturn) {
       return res.status(400).json({ message: 'Return settlement is already being processed or has completed' });
     }
@@ -1363,11 +1364,12 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
       return res.status(400).json({ message: 'Cannot process return in current status' });
     }
 
-    const claimedReturn = await Transaction.findOneAndUpdate(
-      { _id: txn._id, status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] }, returnProcessing: { $ne: true } },
-      { $set: { returnProcessing: true } },
-      { new: true },
-    );
+    const claimedReturn = await claimTransaction({
+      _id: txn._id,
+      flag: 'returnProcessing',
+      claimedAt: 'returnClaimedAt',
+      extraFilter: { status: { $in: [orderStates.RETURN_IN_TRANSIT, orderStates.RETURN_DELIVERED] } },
+    });
     if (!claimedReturn) {
       return res.status(400).json({ message: 'Return settlement is already being processed or has completed' });
     }
