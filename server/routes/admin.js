@@ -383,11 +383,16 @@ router.get('/transactions', async (req, res) => {
 
 // POST /api/admin/transactions/:id/refund - Force refund (admin)
 router.post('/transactions/:id/refund', async (req, res) => {
+  // Declared OUTSIDE the try: `let` is block-scoped, so a declaration inside
+  // the try block is invisible to the catch. The rollback there must be able
+  // to see the claimed transaction, or a failed settlement leaves
+  // refundProcessing=true forever and the refund can never be retried.
+  let txn;
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'Invalid transaction ID' });
     }
-    let txn = await Transaction.findById(req.params.id);
+    txn = await Transaction.findById(req.params.id);
     if (!txn) return res.status(404).json({ message: 'Transaction not found' });
     if (txn.status === 'refunded') return res.status(400).json({ message: 'Already refunded' });
 
@@ -458,7 +463,11 @@ router.post('/transactions/:id/refund', async (req, res) => {
     // If local settlement failed after the atomic claim, leave the transaction
     // retryable. Provider refunds are idempotent by payment intent in the
     // payment adapter, so an admin retry can finish reconciliation.
-    if (typeof txn !== 'undefined' && txn?.refundProcessing) {
+    // The filter below is the actual guard ($set only when the claim is still
+    // held) and is a no-op once the refund persisted. Do NOT gate on the
+    // in-memory flag: the route clears it before the final save(), so a failed
+    // save would look "already settled" and the refund could never be retried.
+    if (txn) {
       try {
         await Transaction.updateOne({ _id: txn._id, refundProcessing: true }, { $set: { refundProcessing: false } });
       } catch (restoreError) {

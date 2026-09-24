@@ -25,6 +25,10 @@ const paymentIntentMatch = (paymentIntentId) => ({
 
 // Stripe webhook endpoint - handles chargeback events
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
+  // Declared OUTSIDE the try: `let` is block-scoped, so the catch block could
+  // not read the verified event and threw a ReferenceError of its own — the
+  // request never answered, so Stripe never saw the 5xx it retries on.
+  let event = null;
   try {
     const sig = req.headers['stripe-signature'];
     
@@ -34,7 +38,6 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
     }
     
     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    let event;
 
     // Fail-closed signature verification (see config/payments.js). A missing
     // signing secret is an infrastructure problem, so we answer 500 (Stripe

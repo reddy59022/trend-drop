@@ -31,11 +31,32 @@ const round2 = (v) => {
  * Release seller earnings: pending -= earnings (floor 0),
  * available += availableAmount, totalEarned += earnings.
  * Optional reserve tracking mirrors the legacy balance.reserve fields.
+ *
+ * `settlementKey` (normally the transaction id) makes the release
+ * EXACTLY-ONCE. Completing an order is retryable — a failure in any step after
+ * the release (buyer stats, the final status write, the payout record) clears
+ * the claim so the next cron run / manual retry pays the seller. That retry
+ * used to run this pipeline a second time and credit the seller twice, i.e.
+ * the platform paid one sale twice and queued a second rolling-reserve payout.
+ *
+ * The key is written in the SAME single-document update as the balance change:
+ * the `$ne` filter makes a second attempt match nothing, and because the marker
+ * and the money move together there is no window in which the funds are out but
+ * the marker is missing (which is what made the old claim-based guard
+ * insufficient). Callers detect the no-op with settlementAlreadyApplied() and
+ * then only skip the money, never the state transition.
  */
-const releaseSellerEarnings = async (sellerId, { earnings, availableAmount, reserveAmount = 0, reserveRelease = null }) => {
+const releaseSellerEarnings = async (sellerId, { earnings, availableAmount, reserveAmount = 0, reserveRelease = null, settlementKey = null }) => {
   const earn = round2(earnings);
   const avail = round2(Math.max(0, availableAmount || 0));
   const reserve = round2(Math.max(0, reserveAmount || 0));
+  const filter = { _id: sellerId };
+  if (settlementKey) {
+    // Stored (and queried) as a string: pipeline updates are applied verbatim,
+    // so an ObjectId cast on one side only would silently never match.
+    const key = String(settlementKey);
+    filter['balance.settledTransactions'] = { $ne: key };
+  }
   const stages = [
     {
       $set: {
@@ -64,8 +85,29 @@ const releaseSellerEarnings = async (sellerId, { earnings, availableAmount, rese
       },
     });
   }
-  return User.updateOne({ _id: sellerId }, stages);
+  if (settlementKey) {
+    stages.push({
+      $set: {
+        'balance.settledTransactions': {
+          $concatArrays: [
+            { $ifNull: ['$balance.settledTransactions', []] },
+            [String(settlementKey)],
+          ],
+        },
+      },
+    });
+  }
+  return User.updateOne(filter, stages);
 };
+
+/**
+ * True when releaseSellerEarnings() applied nothing because this settlement
+ * key was already recorded for that seller — the earnings are already with
+ * them and the caller must skip the payout-side effects (reserve queue,
+ * "payment released" notification, sale counters, boost-fee collection) while
+ * still finishing the transaction's state transition.
+ */
+const settlementAlreadyApplied = (result) => !result || result.matchedCount === 0;
 
 /**
  * Credit money to a user's available balance (escrow refunds to buyers,
@@ -155,6 +197,7 @@ const withdrawAvailable = async (userId, amount, extraInc = {}) => {
 module.exports = {
   round2,
   releaseSellerEarnings,
+  settlementAlreadyApplied,
   creditAvailable,
   clawbackSellerEarnings,
   reverseEscrowHold,

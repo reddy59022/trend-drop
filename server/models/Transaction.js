@@ -234,10 +234,31 @@ const transactionSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  // When the completion claim was taken. Without it a claim abandoned by a
+  // dead worker (deploy restart, OOM kill) is indistinguishable from a live
+  // one and the order is stuck forever — see utils/claims.js, which reclaims
+  // claims older than its abandonment window.
+  completionClaimedAt: {
+    type: Date,
+    default: null,
+  },
   // Exactly-once claim for return settlement/refund processing.
   returnProcessing: {
     type: Boolean,
     default: false,
+  },
+  // Deferred seller payout for a COMPLETED order (currently the new-seller
+  // hold: <14-day-old account, <5 sales). Withholding the release at
+  // completion time is only half a feature — without a record of *when* the
+  // hold matures the money stays in `balance.pending` forever, because the
+  // order is already `completed` and its seller cannot re-run completion
+  // (`completed → completed` is not a transition). This record turns the hold
+  // into a scheduled event: `releaseHeldSettlements` pays it out once
+  // `releaseAfter` has passed and stamps `releasedAt`.
+  settlementHold: {
+    reason: { type: String, default: '' },
+    releaseAfter: { type: Date, default: null },
+    releasedAt: { type: Date, default: null },
   },
   // Cancellation info
   cancellation: {

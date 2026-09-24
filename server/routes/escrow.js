@@ -366,6 +366,9 @@ router.post('/resolve-dispute', auth, async (req, res) => {
         earnings: sellerEarnings,
         availableAmount,
         reserveAmount,
+        // Exactly-once: a retried dispute resolution (or a double-clicked
+        // resolve button) must not release the escrow a second time.
+        settlementKey: transaction._id,
         reserveRelease: {
           amount: reserveAmount,
           releaseDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),

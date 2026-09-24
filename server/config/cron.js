@@ -20,7 +20,8 @@ const Return = require('../models/Return');
 const Offer = require('../models/Offer');
 
 const { orderStates, timeWindows } = require('./orderLifecycle');
-const { releaseSellerEarnings, clawbackSellerEarnings } = require('../utils/balances');
+const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings } = require('../utils/balances');
+const { claimTransaction } = require('../utils/claims');
 const { retrievePaymentIntent, findPaymentIntent, issueRefund, releaseAuthorization } = require('./payments');
 const { trackingStatuses, simulateTrackingUpdate } = require('./shipping');
 const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
@@ -150,6 +151,7 @@ async function autoProcessOrders() {
     const now = Date.now();
     let completed = 0;
     let confirmed = 0;
+    let failed = 0;
 
     // 2a. Auto-advance delivered → buyer_confirmed after 3 days
     const deliveredOrders = await Transaction.find({
@@ -163,14 +165,20 @@ async function autoProcessOrders() {
         : new Date(txn.updatedAt).getTime();
       
       if (now - deliveryTime >= timeWindows.BUYER_CONFIRM_DELIVERY) {
-        txn.status = 'buyer_confirmed';
-        txn.buyerConfirmed = {
-          received: true,
-          confirmedAt: new Date(),
-          autoConfirmed: true,
-        };
-        await txn.save();
-        confirmed++;
+        // Isolate this shipment: a failure here must not abort the job before
+        // the fund-release phase below has run for anyone.
+        try {
+          txn.status = 'buyer_confirmed';
+          txn.buyerConfirmed = {
+            received: true,
+            confirmedAt: new Date(),
+            autoConfirmed: true,
+          };
+          await txn.save();
+          confirmed++;
+        } catch (advanceError) {
+          console.error(`[CRON] Auto-confirm failed for ${txn._id}:`, advanceError.message);
+        }
       }
     }
 
@@ -197,127 +205,177 @@ async function autoProcessOrders() {
         }
 
         // Claim before any balance, stats, or payout mutation. Overlapping cron
-        // runs must not release one transaction twice.
-        const claimed = await Transaction.findOneAndUpdate(
-          { _id: txn._id, status: 'buyer_confirmed', completionProcessing: { $ne: true } },
-          { $set: { completionProcessing: true } },
-          { new: true },
-        );
+        // runs must not release one transaction twice — and a claim abandoned
+        // by a dead worker (deploy restart mid-completion) is reclaimed instead
+        // of stranding the order forever. See utils/claims.js.
+        const claimed = await claimTransaction({
+          _id: txn._id,
+          flag: 'completionProcessing',
+          claimedAt: 'completionClaimedAt',
+          extraFilter: { status: 'buyer_confirmed' },
+        });
         if (!claimed) continue;
         txn.completionProcessing = true;
 
-        const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
-
-        // Release funds to seller with 10% rolling reserve + new seller hold
-        const seller = await User.findById(txn.seller);
-        if (!seller) {
-          await Transaction.updateOne(
-            { _id: txn._id, completionProcessing: true },
-            { $set: { completionProcessing: false } },
-          );
-          continue;
-        }
-        if (sellerEarnings > 0) {
-          const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
-          let canRelease = true;
-          
-          if (isNewSeller) {
-            const accountAge = Date.now() - new Date(seller.createdAt).getTime();
-            if (accountAge < timeWindows.NEW_SELLER_HOLD) {
-              canRelease = false;
+        // Isolate this order: a failure below must neither abort the remaining
+        // orders nor leave this one claimed forever. Without this, ONE poisoned
+        // row stops every other seller's payout on every run, because each new
+        // run walks back into the same wall.
+        //
+        // The retry this enables is safe because the release itself is
+        // exactly-once: `settlementKey: txn._id` makes a second attempt a no-op
+        // on the seller's balance, so releasing the claim can only complete the
+        // order, never pay for it twice.
+        try {
+          const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+  
+          // Release funds to seller with 10% rolling reserve + new seller hold
+          const seller = await User.findById(txn.seller);
+          if (!seller) {
+            await Transaction.updateOne(
+              { _id: txn._id, completionProcessing: true },
+              { $set: { completionProcessing: false } },
+            );
+            continue;
+          }
+          if (sellerEarnings > 0) {
+            const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
+            let canRelease = true;
+            
+            if (isNewSeller) {
+              const accountAge = Date.now() - new Date(seller.createdAt).getTime();
+              if (accountAge < timeWindows.NEW_SELLER_HOLD) {
+                canRelease = false;
+              }
+            }
+            
+            // False when an earlier attempt already moved this order's money
+            // (see releaseSellerEarnings). The sale counters and the "payment
+            // released" notice must then be skipped as well: telling a seller
+            // twice that they were paid invites a double-refund dispute, and
+            // re-incrementing totalSales can push them out of the new-seller
+            // hold early.
+            let settlementApplied = true;
+            let sellerNotification = null;
+            if (canRelease) {
+              // Use the same atomic balance helper as the manual completion path.
+              // Read-modify-save here could lose a concurrent payout/refund.
+              const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
+              const availableAmount = sellerEarnings - reserveAmount;
+              const release = await releaseSellerEarnings(seller._id, {
+                earnings: sellerEarnings,
+                availableAmount,
+                reserveAmount,
+                settlementKey: txn._id,
+                reserveRelease: {
+                  amount: reserveAmount,
+                  releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+                  transactionId: txn._id,
+                },
+              });
+              settlementApplied = !settlementAlreadyApplied(release);
+              sellerNotification = `Payment of ${availableAmount} ${txn.currency} released; ${reserveAmount} ${txn.currency} held in reserve.`;
+            } else {
+              // New seller hold - funds stay in pending. Recording WHEN the
+              // hold matures is what lets a later job pay the seller at all;
+              // the order is already completed, so nothing else revisits it.
+              txn.settlementHold = {
+                reason: 'new_seller',
+                releaseAfter: new Date(new Date(seller.createdAt).getTime() + timeWindows.NEW_SELLER_HOLD),
+                releasedAt: null,
+              };
+              console.log(`[CRON] New seller hold active for seller ${seller._id}`);
+              sellerNotification = 'Payment held: New seller hold is active.';
+            }
+  
+            if (settlementApplied) {
+              await User.updateOne(
+                { _id: seller._id },
+                {
+                  $inc: { 'stats.totalSales': 1 },
+                  $push: {
+                    notifications: {
+                      $each: [{
+                        type: 'sale',
+                        listing: txn.listing,
+                        transaction: txn._id,
+                        message: sellerNotification,
+                      }],
+                      $position: 0,
+                    },
+                  },
+                },
+              );
             }
           }
-          
-          let sellerNotification = null;
-          if (canRelease) {
-            // Use the same atomic balance helper as the manual completion path.
-            // Read-modify-save here could lose a concurrent payout/refund.
-            const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
-            const availableAmount = sellerEarnings - reserveAmount;
-            await releaseSellerEarnings(seller._id, {
-              earnings: sellerEarnings,
-              availableAmount,
-              reserveAmount,
-              reserveRelease: {
-                amount: reserveAmount,
-                releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
-                transactionId: txn._id,
-              },
-            });
-            sellerNotification = `Payment of ${availableAmount} ${txn.currency} released; ${reserveAmount} ${txn.currency} held in reserve.`;
-          } else {
-            // New seller hold - funds stay in pending.
-            console.log(`[CRON] New seller hold active for seller ${seller._id}`);
-            sellerNotification = 'Payment held: New seller hold is active.';
+  
+          // Update buyer stats
+          const buyer = await User.findById(txn.buyer);
+          if (buyer) {
+            buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
+            await buyer.save();
           }
-
-          await User.updateOne(
-            { _id: seller._id },
-            {
-              $inc: { 'stats.totalSales': 1 },
-              $push: {
-                notifications: {
-                  $each: [{
-                    type: 'sale',
-                    listing: txn.listing,
-                    transaction: txn._id,
-                    message: sellerNotification,
-                  }],
-                  $position: 0,
-                },
-              },
-            },
-          );
-        }
-
-        // Update buyer stats
-        const buyer = await User.findById(txn.buyer);
-        if (buyer) {
-          buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
-          await buyer.save();
-        }
-
-        txn.status = 'completed';
-        txn.completionProcessing = false;
-        await txn.save();
-
-        // Create payout record if not exists
-        try {
-          const existingPayout = await Payout.findOne({ transaction: txn._id });
-          if (!existingPayout) {
-            const itemPrice = txn.paymentBreakdown?.subtotal || txn.itemPrice || 0;
-            // Keep the payout ledger aligned with the checkout breakdown.
-            // Falling back to 10% here overstates seller commission and leaks
-            // 2% of every legacy/auto-completed sale whose breakdown omits the
-            // field. The platform rule is 8%.
-            const commissionRate = (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100;
-            const storedCommission = txn.paymentBreakdown?.platformFee;
-            const commissionAmount = Number.isFinite(storedCommission) && storedCommission > 0
-              ? storedCommission
-              : Math.round(itemPrice * commissionRate * 100) / 100;
-            const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
-            await Payout.create({
-              seller: txn.seller,
-              transaction: txn._id,
-              listing: txn.listing,
-              salePrice: itemPrice,
-              commissionRate,
-              commissionAmount,
-              payoutAmount,
-              status: 'completed',
-              paidAt: new Date(),
-            });
+  
+          txn.status = 'completed';
+          txn.completionProcessing = false;
+          await txn.save();
+  
+          // Create payout record if not exists
+          try {
+            const existingPayout = await Payout.findOne({ transaction: txn._id });
+            if (!existingPayout) {
+              const itemPrice = txn.paymentBreakdown?.subtotal || txn.itemPrice || 0;
+              // Keep the payout ledger aligned with the checkout breakdown.
+              // Falling back to 10% here overstates seller commission and leaks
+              // 2% of every legacy/auto-completed sale whose breakdown omits the
+              // field. The platform rule is 8%.
+              const commissionRate = (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100;
+              const storedCommission = txn.paymentBreakdown?.platformFee;
+              const commissionAmount = Number.isFinite(storedCommission) && storedCommission > 0
+                ? storedCommission
+                : Math.round(itemPrice * commissionRate * 100) / 100;
+              const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
+              // An order whose payout was deferred by a hold is not paid yet.
+              // Recording it as 'completed' reports the money as available
+              // while it is still escrowed; releaseHeldSettlements upgrades
+              // this row once the hold matures.
+              const fundsHeld = Boolean(txn.settlementHold?.releaseAfter);
+              await Payout.create({
+                seller: txn.seller,
+                transaction: txn._id,
+                listing: txn.listing,
+                salePrice: itemPrice,
+                commissionRate,
+                commissionAmount,
+                payoutAmount,
+                status: fundsHeld ? 'pending' : 'completed',
+                paidAt: fundsHeld ? undefined : new Date(),
+              });
+            }
+          } catch (pErr) {
+            console.error('[CRON] Auto-payout error:', pErr.message);
           }
-        } catch (pErr) {
-          console.error('[CRON] Auto-payout error:', pErr.message);
+  
+          completed++;
+        } catch (txnError) {
+          // Release the claim so a later run retries THIS order, then keep
+          // processing the orders that are still healthy.
+          failed++;
+          console.error(`[CRON] Order ${txn._id} failed to auto-complete:`, txnError.message);
+          try {
+            await Transaction.updateOne(
+              { _id: txn._id, completionProcessing: true },
+              { $set: { completionProcessing: false } },
+            );
+          } catch (rollbackError) {
+            console.error(`[CRON] Claim rollback failed for ${txn._id}:`, rollbackError.message);
+          }
         }
-
-        completed++;
       }
     }
 
-    if (completed > 0 || confirmed > 0) {
-      console.log(`[CRON] Auto-processed: ${confirmed} confirmed, ${completed} completed`);
+    if (completed > 0 || confirmed > 0 || failed > 0) {
+      console.log(`[CRON] Auto-processed: ${confirmed} confirmed, ${completed} completed, ${failed} failed`);
     }
   } catch (error) {
     console.error('[CRON] Error auto-processing orders:', error.message);
@@ -339,24 +397,32 @@ async function releaseReserves() {
     for (const seller of sellers) {
       if (!seller.balance.reserveReleaseDate || seller.balance.reserveReleaseDate.length === 0) continue;
       
-      const toRelease = [];
-      const remaining = [];
-
-      for (const entry of seller.balance.reserveReleaseDate) {
-        if (new Date(entry.releaseDate).getTime() <= now) {
-          toRelease.push(entry);
-        } else {
-          remaining.push(entry);
+      // Isolate each seller: one account whose reserve write fails must not
+      // block every OTHER seller's matured reserve. Without this, a single
+      // poisoned row stops the whole daily job before it reaches the rest of
+      // the queue.
+      try {
+        const toRelease = [];
+        const remaining = [];
+  
+        for (const entry of seller.balance.reserveReleaseDate) {
+          if (new Date(entry.releaseDate).getTime() <= now) {
+            toRelease.push(entry);
+          } else {
+            remaining.push(entry);
+          }
         }
-      }
-
-      if (toRelease.length > 0) {
-        const totalRelease = toRelease.reduce((sum, e) => sum + (e.amount || 0), 0);
-        seller.balance.reserve = Math.max(0, (seller.balance.reserve || 0) - totalRelease);
-        seller.balance.available = (seller.balance.available || 0) + totalRelease;
-        seller.balance.reserveReleaseDate = remaining;
-        await seller.save();
-        console.log(`[CRON] Released ${totalRelease} reserve for seller ${seller._id}`);
+  
+        if (toRelease.length > 0) {
+          const totalRelease = toRelease.reduce((sum, e) => sum + (e.amount || 0), 0);
+          seller.balance.reserve = Math.max(0, (seller.balance.reserve || 0) - totalRelease);
+          seller.balance.available = (seller.balance.available || 0) + totalRelease;
+          seller.balance.reserveReleaseDate = remaining;
+          await seller.save();
+          console.log(`[CRON] Released ${totalRelease} reserve for seller ${seller._id}`);
+        }
+      } catch (sellerError) {
+        console.error(`[CRON] Reserve release failed for seller ${seller._id}:`, sellerError.message);
       }
     }
   } catch (error) {
@@ -827,6 +893,118 @@ async function expireShopBoosts() {
 }
 
 // ──────────────────────────────────────────────
+// JOB 10: Release Held Settlements (daily at 2:30 AM)
+// ──────────────────────────────────────────────
+// Completion can *defer* a seller's payout (the new-seller hold: account
+// younger than 14 days, fewer than 5 sales). The deferral used to be permanent
+// — the money stayed in `balance.pending`, the order was already `completed`
+// (so the seller cannot re-run completion) and no job ever came back for it.
+//
+// Every hold is paid through releaseSellerEarnings' `settlementKey`, so a retry
+// or an overlapping run can only move the money once, and the transaction is
+// stamped `settlementHold.releasedAt` so it is not revisited.
+async function releaseHeldSettlements(now = Date.now()) {
+  let released = 0;
+  let failed = 0;
+  try {
+    const held = await Transaction.find({
+      status: 'completed',
+      'settlementHold.releaseAfter': { $lte: new Date(now) },
+      'settlementHold.releasedAt': null,
+      'payout.status': { $ne: 'refunded' },
+    });
+
+    for (const txn of held) {
+      // Isolate each hold: one unreleasable row must not block every other
+      // seller's matured payout (and it stays queued for the next run).
+      try {
+        const seller = await User.findById(txn.seller);
+        if (!seller) {
+          failed += 1;
+          console.error(`[CRON] Held settlement ${txn._id} has no seller account; left for reconciliation`);
+          continue;
+        }
+        const sellerEarnings = Math.round((txn.paymentBreakdown?.sellerEarnings || 0) * 100) / 100;
+        if (sellerEarnings <= 0) {
+          // Nothing to pay: close the hold so it is not scanned forever.
+          await Transaction.updateOne(
+            { _id: txn._id, 'settlementHold.releasedAt': null },
+            { $set: { 'settlementHold.releasedAt': new Date(now) } },
+          );
+          continue;
+        }
+        const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
+        const availableAmount = sellerEarnings - reserveAmount;
+        const release = await releaseSellerEarnings(seller._id, {
+          earnings: sellerEarnings,
+          availableAmount,
+          reserveAmount,
+          settlementKey: txn._id,
+          reserveRelease: {
+            amount: reserveAmount,
+            releaseDate: new Date(now + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+            transactionId: txn._id,
+          },
+        });
+        if (!settlementAlreadyApplied(release)) {
+          await User.updateOne(
+            { _id: seller._id },
+            {
+              $push: {
+                notifications: {
+                  $each: [{
+                    type: 'sale',
+                    listing: txn.listing,
+                    transaction: txn._id,
+                    message: `Payment of ${availableAmount} ${txn.currency} released; ${reserveAmount} ${txn.currency} held in reserve.`,
+                  }],
+                  $position: 0,
+                },
+              },
+            },
+          );
+        }
+        // The payout ledger record is normally written at completion time;
+        // upsert so a transaction that lost it still ends up accounted for.
+        await Payout.findOneAndUpdate(
+          { transaction: txn._id },
+          {
+            $set: { status: 'completed', paidAt: new Date(now) },
+            $setOnInsert: {
+              seller: txn.seller,
+              listing: txn.listing,
+              salePrice: txn.paymentBreakdown?.subtotal || txn.itemPrice || 0,
+              commissionRate: (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100,
+              commissionAmount: txn.paymentBreakdown?.platformFee || 0,
+              payoutAmount: sellerEarnings,
+            },
+          },
+          { upsert: true },
+        );
+        // Stamped last: if a write above failed, the hold stays queued and the
+        // next run retries it — the balance release itself is already
+        // exactly-once, so a retry cannot pay the seller twice.
+        await Transaction.updateOne(
+          { _id: txn._id, 'settlementHold.releasedAt': null },
+          { $set: { 'settlementHold.releasedAt': new Date(now) } },
+        );
+        released += 1;
+      } catch (holdError) {
+        failed += 1;
+        console.error(`[CRON] Held settlement ${txn._id} failed:`, holdError.message);
+      }
+    }
+
+    if (released > 0 || failed > 0) {
+      console.log(`[CRON] Held settlements: ${released} released, ${failed} failed`);
+    }
+  } catch (error) {
+    console.error('[CRON] Error releasing held settlements:', error.message);
+  }
+  return { released, failed };
+}
+
+// ──────────────────────────────────────────────
 // Initialize all cron jobs
 // ──────────────────────────────────────────────
 function initCronJobs() {
@@ -898,6 +1076,13 @@ function initCronJobs() {
     expireShopBoosts();
   });
   console.log('[CRON] Shop boost auto-expiration scheduled (daily at 4:00 AM)');
+
+  // Job 10: Release seller funds withheld by a settlement hold daily at 2:30 AM
+  // '30 2 * * *' = at 2:30 AM every day (after the reserve release at 2:00)
+  cron.schedule('30 2 * * *', () => {
+    releaseHeldSettlements();
+  });
+  console.log('[CRON] Held settlement release scheduled (daily at 2:30 AM)');
 }
 
 module.exports = {
@@ -909,6 +1094,7 @@ module.exports = {
   autoProcessReturnTracking,
   settleDeliveredReturn,
   releaseReserves,
+  releaseHeldSettlements,
   cleanExpiredTokens,
   activateAuctions,
   closeAuctions,

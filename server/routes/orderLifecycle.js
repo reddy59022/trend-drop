@@ -10,7 +10,8 @@ const Order = require('../models/Order');
 const { carriers, normalizeCarrier } = require('../config/shipping');
 const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundRules, returnEligibility, evidenceRequirements, disputeProcess, isValidTransition, getAllowedActions } = require('../config/orderLifecycle');
 const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
-const { releaseSellerEarnings, clawbackSellerEarnings } = require('../utils/balances');
+const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings } = require('../utils/balances');
+const { claimTransaction } = require('../utils/claims');
 const { isValidObjectId } = require('../utils/validators');
 // Viewer-aware transaction shaping (seller earnings column + boost privacy).
 const { sanitizeTransactionForViewer } = require('../utils/transactionView');
@@ -693,8 +694,12 @@ router.post('/:transactionId/confirm-received', auth, validateOrderAccess, async
 // CRITICAL: Only valid from buyer_confirmed after 3 days
 // ============================================================
 router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (req, res) => {
+  // Declared OUTSIDE the try: `let` is block-scoped, so a declaration inside
+  // the try is invisible to the catch. The catch must be able to release the
+  // completion claim, otherwise a failed release strands the order forever.
+  let txn;
   try {
-    const txn = req.transaction;
+    txn = req.transaction;
 
     if (!isValidTransition(txn.status, orderStates.COMPLETED)) {
       return res.status(400).json({ message: `Cannot complete from '${txn.status}'` });
@@ -739,6 +744,11 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
     if (!seller) {
       return res.status(409).json({ message: 'Seller account is unavailable; funds were not released. Please retry after repair.' });
     }
+    // True once the funds for this order are demonstrably with the seller —
+    // either because this attempt released them or because an earlier attempt
+    // already did. Every payout-side effect below is gated on it so a retry
+    // completes the order without paying for it twice.
+    let settlementApplied = true;
     {
       // FIX #3: New seller hold - first 5 sales held 14 days
       const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
@@ -756,11 +766,12 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
 
       // Claim completion exactly once after all timing/hold checks pass. A
       // concurrent cron/manual request must not release the same earnings twice.
-      const claimed = await Transaction.findOneAndUpdate(
-        { _id: txn._id, status: orderStates.BUYER_CONFIRMED, completionProcessing: { $ne: true } },
-        { $set: { completionProcessing: true } },
-        { new: true },
-      );
+      const claimed = await claimTransaction({
+        _id: txn._id,
+        flag: 'completionProcessing',
+        claimedAt: 'completionClaimedAt',
+        extraFilter: { status: orderStates.BUYER_CONFIRMED },
+      });
       if (!claimed) {
         return res.status(400).json({ message: 'Order completion is already being processed or has completed' });
       }
@@ -773,31 +784,39 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
       // Move money from pending → available (minus reserve)
       // ATOMIC (round 25): one server-side pipeline update — concurrent
       // releases can no longer lose updates or double-apply money.
-      await releaseSellerEarnings(seller._id, {
+      // `settlementKey` extends that from *concurrent* to *repeated*: a retry
+      // after a failure further down this route must not pay the seller again.
+      const release = await releaseSellerEarnings(seller._id, {
         earnings: sellerEarnings,
         availableAmount,
         reserveAmount,
+        settlementKey: txn._id,
         reserveRelease: {
           amount: reserveAmount,
           releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
           transactionId: txn._id,
         },
       });
+      // Read by the sale counters below only — never by the catch block — so it
+      // is deliberately scoped to this try.
+      settlementApplied = !settlementAlreadyApplied(release);
 
-      await User.updateOne({ _id: seller._id }, {
-        $inc: { 'stats.totalSales': 1 },
-        $push: {
-          notifications: {
-            $each: [{
-              type: 'sale',
-              listing: txn.listing,
-              transaction: txn._id,
-              message: `Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
-            }],
-            $position: 0,
+      if (settlementApplied) {
+        await User.updateOne({ _id: seller._id }, {
+          $inc: { 'stats.totalSales': 1 },
+          $push: {
+            notifications: {
+              $each: [{
+                type: 'sale',
+                listing: txn.listing,
+                transaction: txn._id,
+                message: `Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
+              }],
+              $position: 0,
+            },
           },
-        },
-      });
+        });
+      }
     }
 
     // Update buyer stats
@@ -809,8 +828,11 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
 
     // ROBUST: Boost fee is now EARNED for a completed order.
     // Finalize at the listing level: owed → collected.
-    // Platform revenue is booked ONLY for sales that completed.
-    await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+    // Platform revenue is booked ONLY for sales that completed. The ledger is
+    // per-listing, so a retry could collect a *different* order's owed fee.
+    if (settlementApplied) {
+      await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+    }
 
     txn.status = orderStates.COMPLETED;
     txn.completionProcessing = false;
@@ -868,7 +890,11 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
       sellerEarnings,
     });
   } catch (error) {
-    if (typeof txn !== 'undefined' && txn?.completionProcessing) {
+    // The filter below is the actual guard and is a no-op once completion
+    // persisted. Do NOT gate on the in-memory flag: the route clears it before
+    // the final save(), so a failed save would look "already completed" and
+    // the order could never be retried.
+    if (txn) {
       try {
         await Transaction.updateOne(
           { _id: txn._id, completionProcessing: true },
@@ -1052,65 +1078,82 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
       return res.status(403).json({ message: 'Only seller can reject return' });
     }
 
-    if (!isValidTransition(txn.status, orderStates.RETURN_REJECTED)) {
+    // Resuming an interrupted rejection: the previous attempt already stored
+    // `return_rejected` and released the seller's funds, then failed while
+    // finishing the sale. Answering 400 here (as the plain transition check
+    // does, since return_rejected → return_rejected is not a transition) would
+    // strand the order with the money paid out and no completion, so the
+    // settlement below is resumed instead.
+    const resumingRejection = txn.status === orderStates.RETURN_REJECTED;
+    if (!resumingRejection && !isValidTransition(txn.status, orderStates.RETURN_REJECTED)) {
       return res.status(400).json({ message: 'Cannot reject return in current status' });
     }
 
     const { reason, evidence } = req.body;
 
-    txn.status = orderStates.RETURN_REJECTED;
-    txn.returnDetails = {
-      ...txn.returnDetails,
-      rejectionReason: reason,
-      sellerInspectionProof: evidence || [],
-    };
+    if (!resumingRejection) {
+      txn.status = orderStates.RETURN_REJECTED;
+      txn.returnDetails = {
+        ...txn.returnDetails,
+        rejectionReason: reason,
+        sellerInspectionProof: evidence || [],
+      };
 
-    const buyer = await User.findById(txn.buyer);
-    if (buyer) {
-      buyer.notifications.unshift({
-        type: 'sale',
-        listing: txn.listing,
-        transaction: txn._id,
-        message: 'Return rejected. You can file a dispute within 14 days.',
-      });
-      await buyer.save();
+      const buyer = await User.findById(txn.buyer);
+      if (buyer) {
+        buyer.notifications.unshift({
+          type: 'sale',
+          listing: txn.listing,
+          transaction: txn._id,
+          message: 'Return rejected. You can file a dispute within 14 days.',
+        });
+        await buyer.save();
+      }
+
+      await txn.save();
     }
-
-    await txn.save();
 
     // Transition to completed after rejection (return_rejected -> completed)
     if (isValidTransition(txn.status, orderStates.COMPLETED)) {
       // Update seller balance and create payout (same as auto-complete)
       const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
       const seller = await User.findById(txn.seller);
+      let settlementApplied = true;
       if (seller) {
         const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
         const availableAmount = sellerEarnings - reserveAmount;
         // ATOMIC (round 25): same release math as auto-complete, one update.
-        await releaseSellerEarnings(seller._id, {
+        // This route has no `*Processing` claim of its own, so the exactly-once
+        // marker is what stops a retry (or a second concurrent request that
+        // already read `return_requested`) from paying the sale twice.
+        const release = await releaseSellerEarnings(seller._id, {
           earnings: sellerEarnings,
           availableAmount,
           reserveAmount,
+          settlementKey: txn._id,
           reserveRelease: {
             amount: reserveAmount,
             releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
             transactionId: txn._id,
           },
         });
-        await User.updateOne({ _id: seller._id }, {
-          $inc: { 'stats.totalSales': 1 },
-          $push: {
-            notifications: {
-              $each: [{
-                type: 'sale',
-                listing: txn.listing,
-                transaction: txn._id,
-                message: `Return rejected. Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
-              }],
-              $position: 0,
+        settlementApplied = !settlementAlreadyApplied(release);
+        if (settlementApplied) {
+          await User.updateOne({ _id: seller._id }, {
+            $inc: { 'stats.totalSales': 1 },
+            $push: {
+              notifications: {
+                $each: [{
+                  type: 'sale',
+                  listing: txn.listing,
+                  transaction: txn._id,
+                  message: `Return rejected. Payment of ${availableAmount} ${txn.currency} released! ${reserveAmount} ${txn.currency} held in reserve (60 days).`,
+                }],
+                $position: 0,
+              },
             },
-          },
-        });
+          });
+        }
       }
 
       const buyer = await User.findById(txn.buyer);
@@ -1119,8 +1162,11 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
         await buyer.save();
       }
 
-      // Collect boost fee for completed order
-      await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+      // Collect boost fee for completed order. The ledger is per-listing, so a
+      // retry could collect a *different* order's owed fee.
+      if (settlementApplied) {
+        await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
+      }
 
       txn.status = orderStates.COMPLETED;
       await txn.save();
@@ -1178,8 +1224,10 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
 // POST /api/orders/:transactionId/confirm-return-received
 // CRITICAL: Refund buyer, deduct from seller, restore inventory
 router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess, async (req, res) => {
+  // Declared OUTSIDE the try so the catch can release the return claim.
+  let txn;
   try {
-    let txn = req.transaction;
+    txn = req.transaction;
 
     if (req.orderRole !== 'seller') {
       return res.status(403).json({ message: 'Only seller can confirm return receipt' });
@@ -1282,7 +1330,10 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
       stripeRefund: stripeRefundResult,
     });
   } catch (error) {
-    if (typeof txn !== 'undefined' && txn?.returnProcessing) {
+    // The filter below ($set only while the claim is still held) is the actual
+    // guard; gating on the in-memory flag would skip the rollback whenever the
+    // final save() is what failed.
+    if (txn) {
       try {
         await Transaction.updateOne({ _id: txn._id, returnProcessing: true }, { $set: { returnProcessing: false } });
       } catch (rollbackError) {
@@ -1298,8 +1349,10 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
 // Alias: Redirects to confirm-return-received logic (uses robust claw-back)
 // Kept for backward compatibility - delegates to the robust implementation
 router.post('/:transactionId/process-return', auth, validateOrderAccess, async (req, res) => {
+  // Declared OUTSIDE the try so the catch can release the return claim.
+  let txn;
   try {
-    let txn = req.transaction;
+    txn = req.transaction;
 
     if (req.orderRole !== 'seller') {
       return res.status(403).json({ message: 'Only seller can process return' });
@@ -1402,7 +1455,10 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
       stripeRefund: stripeRefundResult,
     });
   } catch (error) {
-    if (typeof txn !== 'undefined' && txn?.returnProcessing) {
+    // The filter below ($set only while the claim is still held) is the actual
+    // guard; gating on the in-memory flag would skip the rollback whenever the
+    // final save() is what failed.
+    if (txn) {
       try {
         await Transaction.updateOne({ _id: txn._id, returnProcessing: true }, { $set: { returnProcessing: false } });
       } catch (rollbackError) {
@@ -1625,6 +1681,7 @@ router.post('/auto-process', async (req, res) => {
     let updated = 0;
     let completed = 0;
     let delivered = 0;
+    let failed = 0;
 
     // 1. Auto-advance delivered → buyer_confirmed after 3 days of no action
     // CRITICAL: Skip refunded/cancelled transactions
@@ -1636,14 +1693,20 @@ router.post('/auto-process', async (req, res) => {
     for (const txn of deliveredOrders) {
       const deliveryTime = txn.shipping?.actualDelivery ? new Date(txn.shipping.actualDelivery).getTime() : new Date(txn.updatedAt).getTime();
       if (now - deliveryTime >= timeWindows.BUYER_CONFIRM_DELIVERY) {
-        txn.status = orderStates.BUYER_CONFIRMED;
-        txn.buyerConfirmed = {
-          received: true,
-          confirmedAt: new Date(),
-          autoConfirmed: true,
-        };
-        await txn.save();
-        delivered++;
+        // Isolate this shipment: a failure here must not abort the job before
+        // the fund-release phase below has run for anyone.
+        try {
+          txn.status = orderStates.BUYER_CONFIRMED;
+          txn.buyerConfirmed = {
+            received: true,
+            confirmedAt: new Date(),
+            autoConfirmed: true,
+          };
+          await txn.save();
+          delivered++;
+        } catch (advanceError) {
+          console.error(`[AUTO-PROCESS] Auto-confirm failed for ${txn._id}:`, advanceError.message);
+        }
       }
     }
 
@@ -1660,118 +1723,164 @@ router.post('/auto-process', async (req, res) => {
         // Atomically claim this completion before any balance/stat/payout
         // mutation. Concurrent cron invocations must process a transaction
         // exactly once.
-        const claimed = await Transaction.findOneAndUpdate(
-          { _id: txn._id, status: orderStates.BUYER_CONFIRMED, completionProcessing: { $ne: true } },
-          { $set: { completionProcessing: true } },
-          { new: true },
-        );
+        const claimed = await claimTransaction({
+          _id: txn._id,
+          flag: 'completionProcessing',
+          claimedAt: 'completionClaimedAt',
+          extraFilter: { status: orderStates.BUYER_CONFIRMED },
+        });
         if (!claimed) continue;
         txn.completionProcessing = true;
 
-        const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
-
-        // Release funds to seller with 10% rolling reserve
-        const seller = await User.findById(txn.seller);
-        if (!seller) {
-          // Do not finalize a paid sale when its seller account is missing:
-          // otherwise the buyer's payment is captured but no seller ledger is
-          // credited. Clear the claim and leave the transaction retryable for
-          // reconciliation after the account is repaired.
-          await Transaction.updateOne(
-            { _id: txn._id, completionProcessing: true },
-            { $set: { completionProcessing: false } },
-          );
-          continue;
-        }
-        {
-          // CRITICAL: Apply 10% rolling reserve and new seller hold checks
-          const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
-          let canRelease = true;
-          
-          if (isNewSeller) {
-            const accountAge = Date.now() - new Date(seller.createdAt).getTime();
-            if (accountAge < timeWindows.NEW_SELLER_HOLD) {
-              canRelease = false;
+        // Isolate this order: a failure below must neither abort the remaining
+        // orders nor leave this one claimed forever. Without this, ONE poisoned
+        // row stops every other seller's payout and keeps its own claim set, so
+        // the next run walks straight into the same wall.
+        //
+        // Residual risk (follow-up): the balance release inside is not
+        // idempotent, so a retry after a failure that happened AFTER funds
+        // moved can double-apply. Never paying the seller (the alternative) is
+        // strictly worse, so the claim is released.
+        try {
+          const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+  
+          // Release funds to seller with 10% rolling reserve
+          const seller = await User.findById(txn.seller);
+          if (!seller) {
+            // Do not finalize a paid sale when its seller account is missing:
+            // otherwise the buyer's payment is captured but no seller ledger is
+            // credited. Clear the claim and leave the transaction retryable for
+            // reconciliation after the account is repaired.
+            await Transaction.updateOne(
+              { _id: txn._id, completionProcessing: true },
+              { $set: { completionProcessing: false } },
+            );
+            continue;
+          }
+          // True once this order's funds are with the seller (or an earlier
+          // attempt already put them there) — gates every payout-side effect.
+          let settlementApplied = true;
+          {
+            // CRITICAL: Apply 10% rolling reserve and new seller hold checks
+            const isNewSeller = (seller.stats.totalSales || 0) < timeWindows.NEW_SELLER_THRESHOLD;
+            let canRelease = true;
+            
+            if (isNewSeller) {
+              const accountAge = Date.now() - new Date(seller.createdAt).getTime();
+              if (accountAge < timeWindows.NEW_SELLER_HOLD) {
+                canRelease = false;
+              }
+            }
+            
+            if (canRelease) {
+              const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
+              const availableAmount = sellerEarnings - reserveAmount;
+  
+              // ATOMIC (round 25): one server-side pipeline update for the
+              // balance + reserve; the cron and a concurrent manual
+              // auto-complete can never both apply the release.
+              const release = await releaseSellerEarnings(seller._id, {
+                earnings: sellerEarnings,
+                availableAmount,
+                reserveAmount,
+                settlementKey: txn._id,
+                reserveRelease: {
+                  amount: reserveAmount,
+                  releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+                  transactionId: txn._id,
+                },
+              });
+              settlementApplied = !settlementAlreadyApplied(release);
+            } else {
+              // New seller hold - funds stay in pending. Record when the hold
+              // matures or the money is stranded: this order completes now, so
+              // nothing else will ever come back for the release.
+              txn.settlementHold = {
+                reason: 'new_seller',
+                releaseAfter: new Date(new Date(seller.createdAt).getTime() + timeWindows.NEW_SELLER_HOLD),
+                releasedAt: null,
+              };
+              seller.notifications.unshift({
+                type: 'sale',
+                listing: txn.listing,
+                transaction: txn._id,
+                message: `Payment held: New seller hold active until account is 14 days old.`,
+              });
+            }
+  
+            if (settlementApplied) {
+              await User.updateOne(
+                { _id: seller._id },
+                { $inc: { 'stats.totalSales': 1 } }
+              );
+              await seller.save();
             }
           }
-          
-          if (canRelease) {
-            const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
-            const availableAmount = sellerEarnings - reserveAmount;
-
-            // ATOMIC (round 25): one server-side pipeline update for the
-            // balance + reserve; the cron and a concurrent manual
-            // auto-complete can never both apply the release.
-            await releaseSellerEarnings(seller._id, {
-              earnings: sellerEarnings,
-              availableAmount,
-              reserveAmount,
-              reserveRelease: {
-                amount: reserveAmount,
-                releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
-                transactionId: txn._id,
-              },
-            });
-          } else {
-            // New seller hold - funds stay in pending
-            seller.notifications.unshift({
-              type: 'sale',
-              listing: txn.listing,
-              transaction: txn._id,
-              message: `Payment held: New seller hold active until account is 14 days old.`,
-            });
+  
+          // Update buyer stats
+          const buyer = await User.findById(txn.buyer);
+          if (buyer) {
+            buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
+            await buyer.save();
           }
-
-          await User.updateOne(
-            { _id: seller._id },
-            { $inc: { 'stats.totalSales': 1 } }
-          );
-          await seller.save();
-        }
-
-        // Update buyer stats
-        const buyer = await User.findById(txn.buyer);
-        if (buyer) {
-          buyer.stats.totalPurchases = (buyer.stats.totalPurchases || 0) + 1;
-          await buyer.save();
-        }
-
-        // ROBUST: Boost fee is now EARNED for a completed order.
-        // Finalize at the listing level: owed → collected.
-        await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
-
-        txn.status = orderStates.COMPLETED;
-        txn.completionProcessing = false;
-        await txn.save();
-
-        // Keep the consolidated Enterprise Order in sync after batch completion
-        await syncOrderFromTransaction(txn, 'completed');
-
-        // Auto-create payout
-        // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
-        try {
-          const existingPayout = await Payout.findOne({ transaction: txn._id });
-          if (!existingPayout) {
-            const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
-            const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
-            const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
-            await Payout.create({
-              seller: txn.seller,
-              transaction: txn._id,
-              listing: txn.listing,
-              salePrice: itemPrice,
-              commissionRate: (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100,
-              commissionAmount,
-              payoutAmount,
-              status: 'completed',
-              paidAt: new Date(),
-            });
+  
+          // ROBUST: Boost fee is now EARNED for a completed order.
+          // Finalize at the listing level: owed → collected. The ledger is
+          // per-listing, so a retry could collect a *different* order's owed fee.
+          if (settlementApplied) {
+            await collectBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
           }
-        } catch (pErr) {
-          console.error('Auto-payout error:', pErr.message);
+  
+          txn.status = orderStates.COMPLETED;
+          txn.completionProcessing = false;
+          await txn.save();
+  
+          // Keep the consolidated Enterprise Order in sync after batch completion
+          await syncOrderFromTransaction(txn, 'completed');
+  
+          // Auto-create payout
+          // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
+          try {
+            const existingPayout = await Payout.findOne({ transaction: txn._id });
+            if (!existingPayout) {
+              const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
+              const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
+              const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
+              // Funds withheld by a hold are not paid yet; recording them as
+              // 'completed' reports the money as available while it is still
+              // escrowed. releaseHeldSettlements upgrades this row later.
+              const fundsHeld = Boolean(txn.settlementHold?.releaseAfter);
+              await Payout.create({
+                seller: txn.seller,
+                transaction: txn._id,
+                listing: txn.listing,
+                salePrice: itemPrice,
+                commissionRate: (txn.paymentBreakdown?.platformFeePercent ?? 8) / 100,
+                commissionAmount,
+                payoutAmount,
+                status: fundsHeld ? 'pending' : 'completed',
+                paidAt: fundsHeld ? undefined : new Date(),
+              });
+            }
+          } catch (pErr) {
+            console.error('Auto-payout error:', pErr.message);
+          }
+  
+          completed++;
+        } catch (txnError) {
+          // Release the claim so a later run retries THIS order, then keep
+          // processing the orders that are still healthy.
+          failed++;
+          console.error(`[AUTO-PROCESS] Order ${txn._id} failed:`, txnError.message);
+          try {
+            await Transaction.updateOne(
+              { _id: txn._id, completionProcessing: true },
+              { $set: { completionProcessing: false } },
+            );
+          } catch (rollbackError) {
+            console.error(`[AUTO-PROCESS] Claim rollback failed for ${txn._id}:`, rollbackError.message);
+          }
         }
-
-        completed++;
       }
     }
 
@@ -1779,6 +1888,7 @@ router.post('/auto-process', async (req, res) => {
       message: `Auto-processed: ${delivered} auto-confirmed, ${completed} auto-completed with funds released.`,
       autoConfirmed: delivered,
       autoCompleted: completed,
+      autoFailed: failed,
     });
   } catch (error) {
     console.error(error);

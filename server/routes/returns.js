@@ -379,11 +379,16 @@ router.put('/:id/ship', auth, async (req, res) => {
 // FULL refund semantics: restore listing, reverse boost fee, claw back seller balance,
 // mark payout refunded, issue Stripe refund, sync to Transaction lifecycle.
 router.put('/:id/receive', auth, async (req, res) => {
+  // Declared OUTSIDE the try: `let` is block-scoped, so a declaration inside
+  // the try block is invisible to the catch. Without this, a failed settlement
+  // either skips the rollback entirely or throws a ReferenceError from the
+  // catch block, so the return can never be retried.
+  let returnRequest;
   try {
     if (!isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'Invalid return ID' });
     }
-    let returnRequest = await Return.findById(req.params.id);
+    returnRequest = await Return.findById(req.params.id);
     if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
     if (returnRequest.seller.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
@@ -510,7 +515,11 @@ router.put('/:id/receive', auth, async (req, res) => {
   } catch (error) {
     // A claimed return remains retryable if local/provider processing failed
     // before it reached the terminal refunded state.
-    if (returnRequest?.status === 'received') {
+    // The filter below (still 'received' in the DB) is the actual guard and is
+    // a no-op once the refund persisted. Do NOT gate on the in-memory status:
+    // the route sets 'refunded' before the final save(), so a failed save
+    // would look "already settled" and the return could never be retried.
+    if (returnRequest) {
       try {
         await Return.updateOne(
           { _id: returnRequest._id, status: 'received' },

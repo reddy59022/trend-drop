@@ -159,6 +159,14 @@ const userSchema = new mongoose.Schema({
       transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
     }],
     totalPaidOut: { type: Number, default: 0 },
+    // Transaction ids whose pending → available release has already been applied
+    // to this balance. It is the exactly-once gate for order settlement: the
+    // marker and the balance change are written by one atomic update, so a
+    // retried cron run or a double-clicked "complete order" cannot pay the
+    // seller a second time. Strings (not ObjectIds): pipeline updates are
+    // applied verbatim, so a cast applied on only one side of the comparison
+    // would silently fail to match.
+    settledTransactions: [{ type: String }],
     currency: { type: String, default: 'USD' },
   },
   payoutMethod: {
