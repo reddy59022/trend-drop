@@ -281,6 +281,18 @@ const transactionSchema = new mongoose.Schema({
     releaseAfter: { type: Date, default: null },
     releasedAt: { type: Date, default: null },
   },
+  // What the settlement reconciliation concluded about this order's payout, and
+  // on what evidence. Historically a completed order could say `completed` while
+  // the seller's money never left `balance.pending`; a money-keeping decision
+  // that has to be reconstructed from traces (reserve entries, notifications,
+  // the resulting balance) deserves a written trail on the document.
+  settlementAudit: {
+    verdict: { type: String, default: '' },
+    evidence: [{ type: String }],
+    blockers: [{ type: String }],
+    earnings: { type: Number, default: 0 },
+    reconciledAt: { type: Date, default: null },
+  },
   // Cancellation info
   cancellation: {
     cancelledBy: String,
@@ -328,5 +340,10 @@ transactionSchema.index({ buyer: 1, status: 1, createdAt: -1 });
 transactionSchema.index({ seller: 1, status: 1, createdAt: -1 });
 transactionSchema.index({ buyer: 1, createdAt: -1, _id: -1 });
 transactionSchema.index({ seller: 1, createdAt: -1, _id: -1 });
+// Both settlement-hold scans (the daily release sweep and the reconciliation
+// audit) open with `status: 'completed'` and a settlementHold predicate, and
+// both grow with the order history rather than the active queue. Without this
+// the hourly/daily money jobs degrade into full collection scans.
+transactionSchema.index({ status: 1, 'settlementHold.releaseAfter': 1, 'settlementHold.releasedAt': 1 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

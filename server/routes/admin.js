@@ -14,6 +14,7 @@ const { clawbackSellerEarnings } = require('../utils/balances');
 const { claimTransaction } = require('../utils/claims');
 const { findPaymentIntent, retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
+const { reconcileSettlements } = require('../utils/settlementAudit');
 
 // All admin routes require auth + adminAuth
 router.use(auth, adminAuth);
@@ -505,6 +506,49 @@ router.post('/auto-suspend', async (req, res) => {
   } catch (error) {
     console.error('Auto-suspend error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
+// SETTLEMENT RECONCILIATION
+// ============================================================
+//
+// Orders completed before the new-seller hold was recorded on the transaction
+// can leave a seller's earnings stranded in `balance.pending` while the payout
+// row claims the money was paid. No code path can decide this from the
+// transaction alone, so finance gets an inventory of every affected order with
+// the evidence behind each verdict — and the provably-withheld ones can be paid.
+
+// GET /api/admin/settlements/audit - read-only inventory of unaccounted payouts
+router.get('/settlements/audit', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
+    const report = await reconcileSettlements({ apply: false, limit });
+    res.json(report);
+  } catch (error) {
+    console.error('Settlement audit error:', error.message);
+    res.status(500).json({ message: 'Failed to audit settlements' });
+  }
+});
+
+// POST /api/admin/settlements/reconcile - pay the provably-withheld backlog.
+// Paying money is a two-step, deliberate action: `apply` alone is not enough.
+router.post('/settlements/reconcile', async (req, res) => {
+  try {
+    const { apply = false, confirm = false, limit } = req.body || {};
+    if (apply && confirm !== true) {
+      return res.status(400).json({
+        message: 'Paying held settlements requires apply: true together with confirm: true. Run the audit first and review the findings.',
+      });
+    }
+    const report = await reconcileSettlements({
+      apply: Boolean(apply),
+      limit: Math.min(Math.max(parseInt(limit, 10) || 500, 1), 5000),
+    });
+    res.json(report);
+  } catch (error) {
+    console.error('Settlement reconciliation error:', error.message);
+    res.status(500).json({ message: 'Failed to reconcile settlements' });
   }
 });
 
