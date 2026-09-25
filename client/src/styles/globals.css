@@ -314,7 +314,10 @@ body {
   color: var(--td-text);
   background: var(--td-surface);
   background-image: var(--td-aurora-mesh);
-  background-attachment: fixed;
+  /* No background-attachment: fixed — it forces a full-page repaint on every
+     scroll frame in iOS/Android WebViews and tanks scroll FPS. The aurora mesh
+     is a soft radial wash, so static placement reads identically. */
+  background-attachment: scroll;
   background-size: cover;
   line-height: 1.6;
   padding-top: var(--td-safe-area-top);

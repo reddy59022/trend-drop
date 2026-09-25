@@ -341,7 +341,8 @@ p, li, .auth-subtitle, .listing-detail-description p, .listing-card-title {
   border: 1px solid var(--td-border);
   background: var(--td-surface);
   transition: transform var(--td-transition-spring), box-shadow var(--td-transition-spring), border-color var(--td-transition-fast);
-  will-change: transform;
+  /* No will-change here: product grids render dozens of cards and promoted
+     compositor layers cost memory + scroll FPS on mid-range phones. */
 }
 
 .listing-card:hover {
@@ -496,7 +497,6 @@ p, li, .auth-subtitle, .listing-detail-description p, .listing-card-title {
   letter-spacing: 0.2px;
   position: relative;
   overflow: hidden;
-  will-change: transform;
 }
 
 .btn-primary, .commission-section .btn-primary, .cta-section .btn-primary {

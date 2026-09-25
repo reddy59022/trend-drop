@@ -36,7 +36,7 @@
   box-shadow: 0 10px 24px -12px rgba(108,59,255,0.7), inset 0 1px 0 rgba(255,255,255,0.35);
 }
 .tabs .btn-outline {
-  background: color-mix(in srgb, #ffffff 55%, transparent);
+  background: color-mix(in srgb, var(--td-surface, #ffffff) 55%, transparent);
   color: var(--td-text-secondary, #444);
 }
 
@@ -88,7 +88,7 @@
 .glass-card {
   position: relative;
   border-radius: 22px;
-  background: color-mix(in srgb, #ffffff 82%, transparent);
+  background: color-mix(in srgb, var(--td-surface, #ffffff) 82%, transparent);
   border: 1px solid var(--td-border, rgba(120,120,160,0.16));
   box-shadow: 0 18px 44px -30px rgba(40,25,100,0.5), inset 0 1px 0 rgba(255,255,255,0.5);
   backdrop-filter: blur(14px) saturate(1.2);
@@ -96,6 +96,17 @@
   transition: transform 0.2s ease, box-shadow 0.25s ease;
 }
 .glass-card:hover { transform: translateY(-2px); box-shadow: 0 26px 60px -30px rgba(40,25,100,0.6), inset 0 1px 0 rgba(255,255,255,0.55); }
+
+/* Dark surfaces: keep the glass depth without washing cards white */
+[data-theme="dark"] .glass-card,
+[data-theme="dark"] .stat-box,
+[data-theme="dark"] table {
+  box-shadow: 0 18px 44px -30px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+[data-theme="dark"] .glass-card:hover,
+[data-theme="dark"] .stat-box:hover {
+  box-shadow: 0 26px 60px -30px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.08);
+}
 
 /* Editorial section headers inside cards */
 .glass-card h3, .glass-card h4 { letter-spacing: -0.01em; }
@@ -117,7 +128,7 @@ table {
   border-spacing: 0;
   border-radius: 18px;
   overflow: hidden;
-  background: color-mix(in srgb, #ffffff 78%, transparent);
+  background: color-mix(in srgb, var(--td-surface, #ffffff) 78%, transparent);
   border: 1px solid var(--td-border, rgba(120,120,160,0.16));
   box-shadow: 0 16px 40px -30px rgba(40,25,100,0.5);
 }
@@ -162,7 +173,7 @@ tbody tr:hover { background: color-mix(in srgb, var(--td-primary, #6C3BFF) 5%, t
 .stat-box {
   border-radius: 18px;
   border: 1px solid var(--td-border, rgba(120,120,160,0.16));
-  background: color-mix(in srgb, #ffffff 82%, transparent);
+  background: color-mix(in srgb, var(--td-surface, #ffffff) 82%, transparent);
   box-shadow: 0 14px 34px -26px rgba(40,25,100,0.5), inset 0 1px 0 rgba(255,255,255,0.5);
   transition: transform 0.18s ease, box-shadow 0.24s ease;
 }
@@ -181,7 +192,7 @@ tbody tr:hover { background: color-mix(in srgb, var(--td-primary, #6C3BFF) 5%, t
 .form-input {
   border-radius: 14px;
   border: 1px solid var(--td-border, rgba(120,120,160,0.2));
-  background: color-mix(in srgb, #ffffff 88%, transparent);
+  background: color-mix(in srgb, var(--td-surface-secondary, var(--td-surface, #ffffff)) 88%, transparent);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .form-input:focus {

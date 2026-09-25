@@ -9,7 +9,7 @@ import { toast } from 'react-toastify';
 import { parseVideoUrl } from '../utils/videoEmbed';
 import { defaultAvatar, getConditionColor, formatPrice } from '../utils/helpers';
 
-const ListingCard = ({ listing }) => {
+const ListingCard = React.memo(({ listing }) => {
   const { user } = useAuth();
   const { addToCart } = useCart();
   // Subscribe to currency changes: formatPrice reads the preferred currency
@@ -100,6 +100,8 @@ const ListingCard = ({ listing }) => {
             <img
               src={videoThumbnail}
               alt={listing.title}
+              loading="lazy"
+              decoding="async"
               onLoad={() => setImageLoaded(true)}
               style={{
                 width: '100%',
@@ -141,6 +143,8 @@ const ListingCard = ({ listing }) => {
             <img
               src={listing.images?.[0] || defaultAvatar}
               alt={listing.title}
+              loading="lazy"
+              decoding="async"
               onLoad={() => setImageLoaded(true)}
               style={{ opacity: imageLoaded ? 1 : 0 }}
             />
@@ -210,6 +214,8 @@ const ListingCard = ({ listing }) => {
           <img
             src={listing.seller?.avatar || defaultAvatar}
             alt=""
+            loading="lazy"
+            decoding="async"
             className="seller-avatar-small"
           />
           <span>{listing.seller?.name}</span>
@@ -230,6 +236,6 @@ const ListingCard = ({ listing }) => {
       </div>
     </Link>
   );
-};
+});
 
 export default ListingCard;
