@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { useAuth } from './AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { convertAmount } from '../utils/helpers';
+import { convertAmount, defaultListingImage } from '../utils/helpers';
 import { usePreferredCurrency } from '../utils/currencyStore';
 
 // Cart item shape (local, source of truth for the UI):
@@ -34,7 +34,7 @@ const toLocalItem = (serverItem) => {
     price: listing.price || 0,
     currency: listing.currency || 'USD',
     quantity: serverItem.quantity || 1,
-    thumbnail: (listing.images && listing.images[0]) || '/placeholder.png',
+    thumbnail: (listing.images && listing.images[0]) || defaultListingImage,
     available: listing.available ?? Infinity,
     sellerId: listing.seller?._id || listing.seller,
     sellerName: listing.seller?.name,

@@ -6,7 +6,7 @@ import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
 import { toast } from 'react-toastify';
 import api, { validatePromo, applyBundleDiscount } from '../services/api';
-import { formatPrice, convertAmount } from '../utils/helpers';
+import { formatPrice, convertAmount, listingImage } from '../utils/helpers';
 import { calculateBuyerLine } from '../services/revenueRules';
 import StripeCheckoutForm from '../components/StripeCheckoutForm';
 import { FaTrash, FaMinus, FaPlus, FaShoppingBag, FaArrowLeft, FaShieldAlt, FaTruck, FaCreditCard, FaSpinner, FaTag, FaBoxes } from 'react-icons/fa';
@@ -422,7 +422,7 @@ const Cart = () => {
                     display: 'flex', gap: 16, padding: 16, alignItems: 'center',
                     borderTop: i > 0 ? '1px solid var(--td-border-light)' : 'none'
                   }}>
-                    <img src={item.thumbnail} alt={item.title}
+                    <img src={listingImage(item.thumbnail)} alt={item.title}
                       style={{ width: 72, height: 72, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h4 style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{item.title}</h4>

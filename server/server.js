@@ -123,14 +123,37 @@ app.use('/api/payments/webhook', require('./routes/stripeWebhook'));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// Performance: Cache static assets in production
+// ============================================================
+// Static asset caching (SPA):
+//  - /static/*  : CRA emits content-hashed filenames -> cache
+//                 immutable for a year (safe: hash changes on change)
+//  - index.html : MUST revalidate on every load. The old blanket
+//                 "maxAge 30d + immutable" let browsers/Playwright
+//                 freeze on stale shells referencing deleted bundles
+//                 after every rebuild/deploy.
+//  - other public files (favicon, placeholder art): revalidate.
+const CLIENT_BUILD_DIR = path.join(__dirname, '../client/build');
+const staticOptions = {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js')) res.set('Content-Type', 'application/javascript');
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    } else if (filePath.includes(`${path.sep}static${path.sep}`)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+};
+// Serve the SPA shell for a client-route: always revalidated HTML.
+const sendSpa = (res) => res.sendFile(path.join(CLIENT_BUILD_DIR, 'index.html'), {
+  headers: { 'Cache-Control': 'no-cache' },
+});
+
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../client/build'), {
-    maxAge: '30d',           // Cache static files for 30 days
-    etag: true,
-    lastModified: true,
-    immutable: true,
-  }));
+  app.use(express.static(CLIENT_BUILD_DIR, staticOptions));
 }
 
 // Performance: Set cache headers for API responses (must be BEFORE routes)
@@ -396,7 +419,7 @@ if (process.env.NODE_ENV === 'production') {
     if (!token) {
       // No token: serve the branded SPA /verify-email page (not a raw 400) so
       // the React VerifyEmail screen explains the missing/invalid link.
-      return res.sendFile(path.join(__dirname, '../client/build/index.html'));
+      return sendSpa(res);
     }
     const PendingUser = require('./models/PendingUser');
     const User = require('./models/User');
@@ -428,7 +451,7 @@ if (process.env.NODE_ENV === 'production') {
     if (!user) {
       // Invalid/expired: serve the branded SPA so React shows the styled
       // "Verification Failed" state instead of a bare text error.
-      return res.sendFile(path.join(__dirname, '../client/build/index.html'));
+      return sendSpa(res);
     }
     user.emailVerified = true;
     user.verificationToken = null;
@@ -438,24 +461,22 @@ if (process.env.NODE_ENV === 'production') {
   });
 
   // Serve static files in production (SPA fallback)
-  app.use(express.static(path.join(__dirname, '../client/build'), {
-    maxAge: '30d',
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith('.js')) res.set('Content-Type', 'application/javascript');
-    },
-  }));
+  app.use(express.static(CLIENT_BUILD_DIR, staticOptions));
   // SPA fallback for client-side routing. Serve index.html for any path that
   // isn't a static asset (React Router handles the rest). Keep this AFTER the
   // static middleware so real JS/CSS/image files are served directly, not
   // rewritten to index.html.
   app.get('*', (req, res, next) => {
-    // If the request matches an existing static file, let express.static serve
+    // If the request matches an existing static FILE, let express.static serve
     // it normally (avoids serving stale pages when users hardcode /static/js/...).
-    const staticPath = path.join(__dirname, '../client/build', req.path);
-    fs.existsSync(staticPath) ? null : res.set('Cache-Control', 'no-cache');
+    // Must be a real file: the build directory itself also "exists" and must not
+    // suppress the no-cache policy on the SPA shell.
+    const staticPath = path.join(CLIENT_BUILD_DIR, req.path);
+    const isStaticFile = fs.existsSync(staticPath) && fs.statSync(staticPath).isFile();
+    if (!isStaticFile) res.set('Cache-Control', 'no-cache');
     // If this is the SPA catch-all and no static file matched, serve index.html.
     if (req.method === 'GET' && !path.extname(req.path)) {
-      res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+      sendSpa(res);
       return;
     }
     next();

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { FaChevronLeft, FaChevronRight, FaExpand, FaPlay, FaYoutube, FaInstagram, FaFacebook } from 'react-icons/fa';
 import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
-import { defaultAvatar } from '../utils/helpers';
+import { defaultListingImage } from '../utils/helpers';
 
 /**
  * MediaCarousel — Hybrid image + video carousel for listings.
@@ -52,7 +52,7 @@ const MediaCarousel = ({ images = [], videoUrl }) => {
     return (
       <div className="carousel">
         <div className="carousel-main" style={{ background: 'var(--td-surface-tertiary)' }}>
-          <img src={defaultAvatar} alt="No visual" className="carousel-image" />
+          <img src={defaultListingImage} alt="No visual" className="carousel-image" />
         </div>
       </div>
     );

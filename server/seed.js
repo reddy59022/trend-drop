@@ -242,7 +242,7 @@ async function seed() {
         price: data.price,
         originalPrice: data.originalPrice,
         currency: 'USD',
-        images: [],  // No images as requested
+        images: ['/img/placeholders/listing.svg'],  // Branded placeholder art (swap for real photos)
         category: data.category,
         brand: data.brand,
         size: data.size,
@@ -511,7 +511,7 @@ async function seed() {
     console.log('  🎉 SEED COMPLETE!');
     console.log('═══════════════════════════════════════');
     console.log(`  👤 Users:              2 (both verified, both sellers)`);
-    console.log(`  📦 Listings:           ${createdListings.length} (no images)`);
+    console.log(`  📦 Listings:           ${createdListings.length} (branded placeholder images)`);
     console.log(`  🛒 Orders:             3 (1 shipped, 1 completed, 1 pending)`);
     console.log(`  💳 Transactions:       ${transactions.length}`);
     console.log(`  💰 Offers:             2 (1 pending, 1 accepted)`);

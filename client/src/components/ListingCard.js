@@ -7,7 +7,7 @@ import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
 import { toast } from 'react-toastify';
 import { parseVideoUrl } from '../utils/videoEmbed';
-import { defaultAvatar, getConditionColor, formatPrice } from '../utils/helpers';
+import { defaultAvatar, defaultListingImage, getConditionColor, formatPrice } from '../utils/helpers';
 
 const ListingCard = React.memo(({ listing }) => {
   const { user } = useAuth();
@@ -141,7 +141,7 @@ const ListingCard = React.memo(({ listing }) => {
           <>
             {!imageLoaded && <div className="skeleton skeleton-image" />}
             <img
-              src={listing.images?.[0] || defaultAvatar}
+              src={listing.images?.[0] || defaultListingImage}
               alt={listing.title}
               loading="lazy"
               decoding="async"

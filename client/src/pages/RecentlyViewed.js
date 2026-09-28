@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
-import { formatPrice, defaultAvatar } from '../utils/helpers';
+import { formatPrice, defaultListingImage } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import { FaHistory, FaTrash, FaSearch } from 'react-icons/fa';
 
@@ -83,7 +83,7 @@ const RecentlyViewed = () => {
           {items.map((item, i) => (
             <div key={item._id} className="listing-card" style={{ animation: `fadeInUp 0.3s ease-out ${i * 0.03}s both` }}>
               <div className="listing-card-image">
-                <img src={item.images?.[0] || defaultAvatar} alt={item.title} />
+                <img src={item.images?.[0] || defaultListingImage} alt={item.title} />
               </div>
               <div className="listing-card-info">
                 <h3 className="listing-card-title">{item.title}</h3>

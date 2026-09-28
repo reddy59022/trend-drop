@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { formatPrice } from '../utils/helpers';
+import { formatPrice, defaultListingImage } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import {
   FaArrowLeft, FaTruck, FaShieldAlt, FaCheckCircle, FaTimesCircle,
@@ -407,7 +407,7 @@ const OrderDetail = () => {
                   return (
                     <div key={i} style={{ display: 'flex', gap: 16, paddingTop: i > 0 ? 14 : 0, borderTop: i > 0 ? '1px solid var(--td-border-light)' : 'none' }}>
                       <Link to={`/listing/${listing._id}`}>
-                        <img src={it.image || listing.images?.[0] || '/placeholder.png'} alt={listing.title || it.title}
+                        <img src={it.image || listing.images?.[0] || defaultListingImage} alt={listing.title || it.title}
                           style={{ width: 120, height: 120, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover' }} />
                       </Link>
                       <div style={{ flex: 1 }}>
@@ -432,7 +432,7 @@ const OrderDetail = () => {
             ) : viewOrder.listing ? (
               <div style={{ display: 'flex', gap: 16 }}>
                 <Link to={`/listing/${viewOrder.listing._id}`}>
-                  <img src={viewOrder.listing.images?.[0] || '/placeholder.png'} alt={viewOrder.listing.title}
+                  <img src={viewOrder.listing.images?.[0] || defaultListingImage} alt={viewOrder.listing.title}
                     style={{ width: 120, height: 120, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover' }} />
                 </Link>
                 <div style={{ flex: 1 }}>

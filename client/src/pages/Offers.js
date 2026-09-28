@@ -1,4 +1,4 @@
-import { defaultAvatar, formatPrice } from "../utils/helpers";
+import { defaultListingImage, formatPrice } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -175,7 +175,7 @@ const Offers = () => {
     return (
       <div key={offer._id} className="offer-card" style={{ animation: 'fadeInUp 0.3s ease-out' }}>
         <Link to={`/listing/${offer.listing?._id}`} className="offer-image">
-          <img src={offer.listing?.images?.[0] || defaultAvatar} alt="" />
+          <img src={offer.listing?.images?.[0] || defaultListingImage} alt="" />
         </Link>
         <div className="offer-details">
           <h4>{offer.listing?.title}</h4>

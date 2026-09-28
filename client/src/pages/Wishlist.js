@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { getWishlist, removeFromWishlist } from '../services/api';
 import { useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaSearch } from 'react-icons/fa';
-import { formatPrice, defaultAvatar } from '../utils/helpers';
+import { formatPrice, defaultListingImage } from '../utils/helpers';
 import { toast } from 'react-toastify';
 
 const Wishlist = () => {
@@ -66,7 +66,7 @@ const Wishlist = () => {
               style={{ animation: `fadeInUp 0.3s ease-out ${i * 0.03}s both`, cursor: 'pointer' }}
               onClick={() => navigate(`/listing/${item.listing._id}`)}>
               <div className="listing-card-image">
-                <img src={item.listing.images?.[0] || defaultAvatar} alt={item.listing.title} />
+                <img src={item.listing.images?.[0] || defaultListingImage} alt={item.listing.title} />
                 <button
                   className="like-btn liked"
                   onClick={(e) => { e.stopPropagation(); handleRemove(item.listing._id); }}

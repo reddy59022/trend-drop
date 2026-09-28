@@ -4,7 +4,7 @@ import api from '../services/api';
 import { FaGavel, FaPlus, FaUser, FaTag, FaEye } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
-import { formatPrice, formatPriceRaw } from '../utils/helpers';
+import { formatPrice, formatPriceRaw, defaultListingImage } from '../utils/helpers';
 import './AuctionPage.css';
 
 const AuctionPage = () => {
@@ -126,7 +126,7 @@ const AuctionPage = () => {
                       <div className="my-auction-badge">Your Auction</div>
                       <Link to={`/auctions/${auction._id}`}>
                         <img 
-                          src={auction.listing?.images?.[0] || '/placeholder.png'} 
+                          src={auction.listing?.images?.[0] || defaultListingImage} 
                           alt={auction.listing?.title} 
                           className="auction-image"
                         />
@@ -202,7 +202,7 @@ const AuctionPage = () => {
                   <div key={auction._id} className="auction-card glass-card other-auction">
                     <Link to={`/auctions/${auction._id}`}>
                       <img 
-                        src={auction.listing?.images?.[0] || '/placeholder.png'} 
+                        src={auction.listing?.images?.[0] || defaultListingImage} 
                         alt={auction.listing?.title} 
                         className="auction-image"
                       />

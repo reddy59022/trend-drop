@@ -5,6 +5,7 @@ import { FaUsers, FaShare, FaGift } from 'react-icons/fa';
 import { getOfferSharingStats, shareOfferToLikers, createBundleOffer } from '../services/api';
 import api from '../services/api';
 import { toast } from 'react-toastify';
+import { defaultListingImage } from '../utils/helpers';
 
 const OfferSharing = () => {
   const { user } = useAuth();
@@ -153,7 +154,7 @@ const OfferSharing = () => {
                 onClick={() => { setSelectedListing(listing._id); setShowShareModal(true); }}
               >
                 <img
-                  src={listing.images?.[0] || '/placeholder.png'}
+                  src={listing.images?.[0] || defaultListingImage}
                   alt={listing.title}
                   style={{ width: '100%', height: 80, objectFit: 'cover', borderRadius: 6, marginBottom: 6 }}
                 />
@@ -257,7 +258,7 @@ const OfferSharing = () => {
                   }}
                 >
                   <img
-                    src={listing.images?.[0] || '/placeholder.png'}
+                    src={listing.images?.[0] || defaultListingImage}
                     alt={listing.title}
                     style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 4 }}
                   />

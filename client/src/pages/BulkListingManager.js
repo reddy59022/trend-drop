@@ -4,7 +4,7 @@ import { FaUpload, FaDownload, FaEdit, FaTrash, FaRocket, FaSpinner, FaFileCsv, 
 import { toast } from 'react-toastify';
 import api from '../services/api';
 import { useConfirm } from '../context/ConfirmContext';
-import { formatPrice } from '../utils/helpers';
+import { formatPrice, defaultListingImage } from '../utils/helpers';
 
 const BulkListingManager = () => {
   const confirmDialog = useConfirm();
@@ -257,7 +257,7 @@ const BulkListingManager = () => {
             />
             
             <img 
-              src={listing.images?.[0] || '/placeholder.png'} 
+              src={listing.images?.[0] || defaultListingImage} 
               alt={listing.title}
               style={{ width: 80, height: 80, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover' }}
             />

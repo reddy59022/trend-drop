@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FaChevronLeft, FaChevronRight, FaExpand } from 'react-icons/fa';
-import { defaultAvatar } from '../utils/helpers';
+import { defaultListingImage } from '../utils/helpers';
 
 const ImageCarousel = ({ images = [] }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -28,7 +28,7 @@ const ImageCarousel = ({ images = [] }) => {
     return (
       <div className="carousel">
         <div className="carousel-main" style={{ background: 'var(--td-surface-tertiary)' }}>
-          <img src={defaultAvatar} alt="No visual" className="carousel-image" />
+          <img src={defaultListingImage} alt="No visual" className="carousel-image" />
         </div>
       </div>
     );
