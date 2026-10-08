@@ -5,7 +5,7 @@ const Comment = require('../models/Comment');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const { broadcastToListing, sendNotificationToUser } = require('../websocket');
-const { isValidObjectId } = require('../utils/validators');
+const { isValidObjectId, asNumber } = require('../utils/validators');
 
 // GET /api/comments/trending - Get trending hashtags (must be before /:listingId)
 router.get('/trending', async (req, res) => {
@@ -39,14 +39,15 @@ router.get('/trending', async (req, res) => {
 router.get('/hashtag/:tag', async (req, res) => {
   try {
     const { tag } = req.params;
-    const { page = 1, limit = 50 } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 50) || 50, 50));
     
     const comments = await Comment.find({ hashtags: tag.toLowerCase() })
       .populate('userId', 'name avatar')
       .populate('listingId', 'title images price')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .limit(limit);
     
     res.json({ comments });
   } catch (error) {
@@ -58,14 +59,15 @@ router.get('/hashtag/:tag', async (req, res) => {
 router.get('/:listingId', async (req, res) => {
   try {
     const { listingId } = req.params;
-    const { page = 1, limit = 50 } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 50) || 50, 50));
     
     const comments = await Comment.find({ listingId, parentId: null })
       .populate('userId', 'name avatar')
       .populate({ path: 'replies', populate: { path: 'userId', select: 'name avatar' } })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .limit(limit);
     
     const total = await Comment.countDocuments({ listingId, parentId: null });
     

@@ -2,13 +2,16 @@ const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
+const { asNumber } = require('../utils/validators');
 const LiveEvent = require('../models/LiveEvent');
 const Listing = require('../models/Listing');
 
 // GET /api/live-events - List all live events (with pagination)
 router.get('/', async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
+    const { status } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
     const query = {};
     
     if (status) query.status = status;
@@ -18,7 +21,7 @@ router.get('/', async (req, res) => {
       .populate('listings')
       .sort({ startTime: -1 })
       .skip((page - 1) * limit)
-      .limit(Number(limit));
+      .limit(limit);
     
     const total = await LiveEvent.countDocuments(query);
     

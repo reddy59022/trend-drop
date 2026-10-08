@@ -1,13 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
+const { asNumber } = require('../utils/validators');
 const ARShowroom = require('../models/ARShowroom');
 const Listing = require('../models/Listing');
 
 // GET /api/ar-showrooms - List all public showrooms (with pagination)
 router.get('/', async (req, res) => {
   try {
-    const { roomType, page = 1, limit = 20 } = req.query;
+    const { roomType } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
     const query = { isPublic: true };
     
     if (roomType) query.roomType = roomType;
@@ -17,7 +20,7 @@ router.get('/', async (req, res) => {
       .populate('items.listing', 'title images price')
       .sort({ viewCount: -1 })
       .skip((page - 1) * limit)
-      .limit(Number(limit));
+      .limit(limit);
     
     const total = await ARShowroom.countDocuments(query);
     

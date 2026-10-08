@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { adminAuth } = require('../middleware/admin');
+const { asNumber } = require('../utils/validators');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
@@ -259,7 +260,9 @@ router.post('/users/:id/unsuspend', async (req, res) => {
 // GET /api/admin/listings - List all listings
 router.get('/listings', async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
+    const { status } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
     const query = {};
     if (status === 'sold') query.sold = true;
     if (status === 'active') query.sold = false;
@@ -303,7 +306,9 @@ router.delete('/listings/:id', async (req, res) => {
 // GET /api/admin/reports - List all reports
 router.get('/reports', async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
+    const { status } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
     const query = {};
     if (status) query.status = status;
 
@@ -357,7 +362,9 @@ router.put('/reports/:id/status', async (req, res) => {
 // GET /api/admin/transactions - List all transactions
 router.get('/transactions', async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
+    const { status } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
     const query = {};
     if (status) query.status = status;
 

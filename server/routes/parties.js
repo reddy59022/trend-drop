@@ -4,11 +4,14 @@ const router = express.Router();
 const Party = require('../models/Party');
 const Listing = require('../models/Listing');
 const { auth } = require('../middleware/auth');
+const { asNumber } = require('../utils/validators');
 
 // GET /api/parties - List active/scheduled parties with pagination
 router.get('/', async (req, res) => {
   try {
-    const { category, page = 1, limit = 20 } = req.query;
+    const { category } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
     const now = new Date();
     
     let query = { status: { $in: ['scheduled', 'active'] } };
@@ -19,7 +22,7 @@ router.get('/', async (req, res) => {
     const parties = await Party.find(query)
       .sort({ startTime: -1 })
       .skip((page - 1) * limit)
-      .limit(parseInt(limit))
+      .limit(limit)
       .select('hostName hostAvatar title description coverImage category startTime endTime status discountPercent participantCount shareCount isPublic createdAt');
     
     const total = await Party.countDocuments(query);
@@ -27,8 +30,8 @@ router.get('/', async (req, res) => {
     res.json({
       parties,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page,
+        limit,
         total,
         pages: Math.ceil(total / limit),
       },

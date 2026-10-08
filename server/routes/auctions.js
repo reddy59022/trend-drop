@@ -3,7 +3,7 @@ const router = express.Router();
 const { auth, optionalAuth } = require('../middleware/auth');
 const Auction = require('../models/Auction');
 const Listing = require('../models/Listing');
-const { isValidObjectId } = require('../utils/validators');
+const { isValidObjectId, asNumber } = require('../utils/validators');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 
@@ -78,7 +78,11 @@ router.post('/', auth, async (req, res) => {
 // GET /api/auctions - List auctions (optional auth for ?mine=true) with optional filtering
 router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { status, mine, limit = 20, skip = 0 } = req.query;
+    const { status, mine } = req.query;
+    // Clamp page size to the platform max (50) and skip to a non-negative int:
+    // an unbounded ?limit pulls the whole collection (resource exhaustion).
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
+    const skip = Math.max(0, asNumber(req.query.skip, 0) || 0);
     
     const query = {};
     if (status) query.status = status;
@@ -91,8 +95,8 @@ router.get('/', optionalAuth, async (req, res) => {
       .populate('listing', 'title price images')
       .populate('seller', 'name')
       .sort({ endTime: 1 })
-      .skip(parseInt(skip))
-      .limit(parseInt(limit));
+      .skip(skip)
+      .limit(limit);
     
     res.json({ auctions });
   } catch (error) {
