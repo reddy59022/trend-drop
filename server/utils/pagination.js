@@ -19,9 +19,11 @@ const paginate = async (Model, {
   let total, docs, hasMore, effectivePage;
 
   if (cursor) {
-    // Cursor-based pagination (better for infinite scroll on mobile)
-    filter._id = { $gt: cursor };
-    docs = await Model.find(filter)
+    // Cursor-based pagination (better for infinite scroll on mobile).
+    // NEVER mutate the caller's filter — it is reused across every page of an
+    // infinite scroll. Build a separate query filter with the cursor bound.
+    const cursorFilter = { ...filter, _id: { $gt: cursor } };
+    docs = await Model.find(cursorFilter)
       .sort(sort)
       .limit(safeLimit + 1) // Fetch one extra to check if there are more
       .populate(populate || '')
@@ -31,7 +33,9 @@ const paginate = async (Model, {
     hasMore = docs.length > safeLimit;
     if (hasMore) docs.pop(); // Remove the extra doc
 
-    // Get total count (expensive for large collections, so we cache)
+    // total is the TOTAL number of items matching the caller's filter (NOT
+    // the post-cursor remainder), so a UI can render a stable 1-20 of N
+    // while scrolling instead of watching N shrink on every page.
     total = await Model.countDocuments(filter);
     effectivePage = 1; // Cursor-based doesn't use page numbers
   } else {

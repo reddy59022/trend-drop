@@ -66,6 +66,23 @@ export const parseVideoUrl = (url) => {
     };
   }
 
+  // ---- Instagram ----
+  // instagram.com/reel/ID | instagram.com/p/ID | instagram.com/tv/ID
+  // (Reels, feed videos and IGTV share the /reel|p|tv/<shortcode> shape.)
+  match = trimmed.match(/instagram\.com\/(reel|p|tv)\/([A-Za-z0-9_-]+)/);
+  if (match) {
+    const kind = match[1];
+    const videoId = match[2];
+    return {
+      platform: PLATFORMS.INSTAGRAM,
+      embedUrl: `https://www.instagram.com/${kind}/${videoId}/embed`,
+      thumbnail: '',
+      url: trimmed,
+      videoId,
+      type: 'instagram',
+    };
+  }
+
   // ---- Direct video file ----
   if (VIDEO_FILE_EXTENSIONS.test(trimmed)) {
     return {
@@ -182,7 +199,9 @@ export const getVideoPlatformColor = (videoInfo) => {
  */
 export const isValidVideoUrl = (url) => {
   const parsed = parseVideoUrl(url);
-  return parsed !== null;
+  // parseVideoUrl returns a { platform: 'unknown' } fallback object for
+  // unrecognized strings — that is NOT a valid, playable video URL.
+  return parsed !== null && parsed.platform !== 'unknown';
 };
 
 export { PLATFORMS };

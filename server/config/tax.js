@@ -716,9 +716,15 @@ function getTaxRate(countryCode, stateCode = null, itemValue = 0, category = 'st
       if (stateCode && countryRule.states && countryRule.states[stateCode]) {
         rate = countryRule.states[stateCode].rate;
         name = `Sales Tax - ${countryRule.states[stateCode].name}`;
-      } else {
-        rate = countryRule.countryRate || 0;
+      } else if (countryRule.countryRate != null) {
+        // US-style: a national (federal) rate, 0 where there is none.
+        rate = countryRule.countryRate;
         name = 'Sales Tax - Default';
+      } else {
+        // Non-US sales-tax regimes (e.g. Malaysia SST) define a single
+        // national standardRate and no state map — use it.
+        rate = countryRule.standardRate ?? 0;
+        name = 'Sales Tax';
       }
       break;
 
@@ -761,12 +767,6 @@ function getTaxRate(countryCode, stateCode = null, itemValue = 0, category = 'st
       // Japan-style consumption tax
       rate = countryRule.standardRate || 0;
       name = 'Consumption Tax';
-      break;
-
-    case 'sales_tax':
-      // Malaysia SST
-      rate = countryRule.standardRate || 0;
-      name = 'Sales Tax';
       break;
 
     default:
