@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const RecentlyViewed = require('../models/RecentlyViewed');
 const { auth } = require('../middleware/auth');
+const { asNumber } = require('../utils/validators');
 
 // POST /api/recently-viewed/:listingId - Record a view
 router.post('/:listingId', auth, async (req, res) => {
@@ -56,15 +57,22 @@ router.post('/:listingId', auth, async (req, res) => {
 // GET /api/recently-viewed - Get user's recently viewed listings
 router.get('/', auth, async (req, res) => {
   try {
-    const { limit = 20 } = req.query;
-    
+    // Clamp the page size to the platform max (50) — an unbounded ?limit lets
+    // a caller pull the entire history in one request (resource exhaustion).
+    // Canonical pattern from routes/trends.js; a non-numeric limit falls back
+    // to the 20 default instead of reaching .limit() as NaN.
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
+
     const recentViews = await RecentlyViewed.find({ userId: req.user._id })
       .sort({ viewedAt: -1 })
-      .limit(parseInt(limit))
+      .limit(limit)
       .populate('listingId', 'title price images available category');
-    
+
+    // Drop entries whose listing was since deleted (populate resolves to null):
+    // a null in the array crashes/shrinks the client grid. Same self-heal the
+    // wishlist endpoint performs (see routes/wishlist.js).
     res.json({
-      items: recentViews.map(v => v.listingId),
+      items: recentViews.map(v => v.listingId).filter(Boolean),
     });
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch recently viewed' });
