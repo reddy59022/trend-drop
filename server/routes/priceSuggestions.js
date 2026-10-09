@@ -15,6 +15,13 @@ const CONDITION_MULTIPLIERS = {
   Poor: 0.3,
 };
 
+// Prototype-safe map: the key is user-controlled (from request data).
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// bypasses the `|| default` fallback -> NaN money math. A null-prototype
+// object makes any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(CONDITION_MULTIPLIERS, null);
+
 // Brand multipliers (premium brands)
 const BRAND_MULTIPLIERS = {
   'Louis Vuitton': 3.0,
@@ -28,6 +35,13 @@ const BRAND_MULTIPLIERS = {
   Samsung: 1.0,
 };
 
+// Prototype-safe map: the key is user-controlled (from request data).
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// bypasses the `|| default` fallback -> NaN money math. A null-prototype
+// object makes any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(BRAND_MULTIPLIERS, null);
+
 // Category base prices
 const CATEGORY_BASE_PRICES = {
   Men: 50,
@@ -37,6 +51,13 @@ const CATEGORY_BASE_PRICES = {
   Home: 40,
   Sports: 35,
 };
+
+// Prototype-safe map: the key is user-controlled (from request data).
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// bypasses the `|| default` fallback -> NaN money math. A null-prototype
+// object makes any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(CATEGORY_BASE_PRICES, null);
 
 // GET /api/price-suggestions/settings - Get price suggestion configuration
 router.get('/settings', (req, res) => {

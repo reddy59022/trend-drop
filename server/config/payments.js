@@ -51,6 +51,13 @@ const countryCommissions = {
   default: { platformFee: 8, buyerProtection: 5, minFee: 0.50, maxFee: 500, currency: 'USD' },
 };
 
+// Prototype-safe map: the key is user-controlled (from request data).
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// bypasses the `|| default` fallback -> NaN money math. A null-prototype
+// object makes any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(countryCommissions, null);
+
 const stripeFees = {
   US: { percent: 2.9, fixed: 0.30 },
   CA: { percent: 2.9, fixed: 0.30 },

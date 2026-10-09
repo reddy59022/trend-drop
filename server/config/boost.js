@@ -37,6 +37,13 @@ const boostConfig = {
   },
 };
 
+// Prototype-safe map: the key is user-controlled (from request data).
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// bypasses the `|| default` fallback -> NaN money math. A null-prototype
+// object makes any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(boostConfig.tiers, null);
+
 // Calculate boost fee for a listing
 // fee = flat per-sale deduction (price × tier.feePercent / 100)
 // totalUpfrontCost = daily rate × duration (what seller pays upfront)
