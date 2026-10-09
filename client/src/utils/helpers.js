@@ -111,6 +111,13 @@ export const currencies = {
   AFN: { symbol: 'AFN', name: 'Afghan Afghani', country: 'AF', rate: 88, decimals: 2 },
 };
 
+// Prototype-safe map: currency keys can come from stored/remote data.
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// defeats `|| currencies.USD`, leaving `.rate` undefined -> NaN. Null-prototype
+// makes any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(currencies, null);
+
 // ============================================================
 // GLOBAL CURRENCY STANDARD (one conversion engine for the app)
 // ============================================================
@@ -295,6 +302,8 @@ const countryCurrencyMap = {
   UZ: 'UZS', AZ: 'AZN', KG: 'KGS', TJ: 'TJS', MN: 'MNT', AF: 'AFN',
 };
 
+Object.setPrototypeOf(countryCurrencyMap, null);
+
 // All currency codes the client can format (keys of the map above).
 export const SUPPORTED_CURRENCY_CODES = Object.keys(currencies);
 
@@ -368,7 +377,13 @@ export const truncate = (text, maxLen = 100) => {
 
 // Validation helpers
 export const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-export const validatePhone = (phone) => /^[\d\s\-+()]{7,20}$/.test(phone);
+// A phone must be 7-20 phone characters AND contain at least 7 real digits —
+// the character class alone accepted digit-less garbage like '++++++++'.
+export const validatePhone = (phone) => {
+  if (typeof phone !== 'string') return false;
+  if (!/^[\d\s\-+()]{7,20}$/.test(phone)) return false;
+  return (phone.match(/\d/g) || []).length >= 7;
+};
 
 // Country list (simplified for frontend)
 export const countries = [
