@@ -422,7 +422,7 @@ const Sell = () => {
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Pricing</h2>
             <div className="form-grid">
-              <div className="form-group"><label className="form-label">Listing Price * ({currency || 'USD'})</label><input type="number" name="price" value={formData.price} onChange={handleChange} placeholder="0.00" min="0" step="0.01" required className="form-input" />{formData.price > 0 && <p className="form-hint">You'll earn ~{formatPrice(formData.price * 0.9, currency || 'USD')} after 10% fee</p>}</div>
+              <div className="form-group"><label className="form-label">Listing Price * ({currency || 'USD'})</label><input type="number" name="price" value={formData.price} onChange={handleChange} placeholder="0.00" min="0" step="0.01" required className="form-input" />{formData.price > 0 && <p className="form-hint">You'll earn ~{formatPrice(formData.price * 0.92, currency || 'USD')} after 8% fee</p>}</div>
               <div className="form-group"><label className="form-label">Original Price</label><input type="number" name="originalPrice" value={formData.originalPrice} onChange={handleChange} placeholder="0.00" min="0" step="0.01" className="form-input" /></div>
             </div>
 
