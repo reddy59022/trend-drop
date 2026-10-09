@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { isValidObjectId } = require('../utils/validators');
+const { isValidObjectId, asNumber } = require('../utils/validators');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const Auction = require('../models/Auction');
@@ -159,7 +159,11 @@ router.get('/search', optionalAuth, async (req, res) => {
 
 router.get('/user/:userId', async (req, res) => {
   try {
-    const { sort, page = 1, limit = 20 } = req.query;
+    const { sort } = req.query;
+    // Clamp page >=1 and limit to [1,50]: unbounded ?limit dumps the whole
+    // seller catalog (DoS) and a non-numeric ?page NaNs the skip.
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(asNumber(req.query.limit, 20) || 20, 50));
     let sortOption = { createdAt: -1 };
     if (sort === 'price_low') sortOption = { price: 1 };
     else if (sort === 'price_high') sortOption = { price: -1 };
@@ -167,15 +171,15 @@ router.get('/user/:userId', async (req, res) => {
     const listings = await Listing.find({ seller: req.params.userId, sold: false })
       .populate('seller', 'name avatar')
       .sort(sortOption)
-      .limit(Number(limit))
-      .skip((Number(page) - 1) * Number(limit));
+      .limit(limit)
+      .skip((page - 1) * limit);
 
     const total = await Listing.countDocuments({ seller: req.params.userId, sold: false });
 
     res.json({
       listings,
-      totalPages: Math.ceil(total / Number(limit)),
-      currentPage: Number(page),
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
       total,
     });
   } catch (error) {

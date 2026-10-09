@@ -2,12 +2,17 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const User = require('../models/User');
+const { asNumber } = require('../utils/validators');
 
 // ===================== NOTIFICATIONS =====================
 // GET /api/notifications - Get current user's notifications with optional unread count
 router.get('/', auth, async (req, res) => {
   try {
-    const { limit = 50, page = 1, unread } = req.query;
+    const { unread } = req.query;
+    // Validate pagination input: a non-numeric or zero ?page must fall back to
+    // page 1 (not an empty slice + NaN currentPage), and ?limit is clamped.
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.max(1, Math.min(asNumber(req.query.limit, 50) || 50, 100));
     const user = await User.findById(req.user._id)
       .populate('notifications.from', 'name avatar')
       .populate('notifications.listing', 'title images price');
@@ -26,8 +31,7 @@ router.get('/', auth, async (req, res) => {
     }
 
     const total = notifications.length;
-    const pageSize = Math.min(Number(limit) || 50, 100);
-    const start = (Number(page) - 1) * pageSize;
+    const start = (page - 1) * pageSize;
     const paged = notifications.slice(start, start + pageSize);
 
     res.setHeader('X-Total-Count', unreadCount);
@@ -37,7 +41,7 @@ router.get('/', auth, async (req, res) => {
       unreadCount,
       total,
       totalPages: Math.ceil(total / pageSize),
-      currentPage: Number(page),
+      currentPage: page,
     });
   } catch (error) {
     console.error('Get notifications error:', error);
