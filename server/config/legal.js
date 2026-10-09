@@ -17,6 +17,13 @@ const CURRENT_VERSIONS = {
   prohibited: process.env.LEGAL_PROHIBITED_VERSION || '2026-09-18.1',
 };
 
+// Prototype-safe map: the key is user-controlled (from request data).
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// bypasses the `!value` / `|| default` fallback. A null-prototype object makes
+// any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(CURRENT_VERSIONS, null);
+
 const DOCUMENTS = {
   terms: {
     title: 'Terms of Service',
@@ -84,6 +91,13 @@ const DOCUMENTS = {
     ],
   },
 };
+
+// Prototype-safe map: the key is user-controlled (from request data).
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// bypasses the `!value` / `|| default` fallback. A null-prototype object makes
+// any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(DOCUMENTS, null);
 
 // Until counsel approves a country pack, the platform can expose the baseline
 // documents but must not claim that local legal review is complete.

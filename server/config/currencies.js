@@ -95,6 +95,13 @@ const currencies = {
   AFN: { symbol: 'AFN', name: 'Afghan Afghani', country: 'AF', rate: 88, decimals: 2 },
 };
 
+// Prototype-safe map: the key is user-controlled (from request data).
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// bypasses the `!value` / `|| default` fallback. A null-prototype object makes
+// any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(currencies, null);
+
 // Country code to currency mapping
 const countryCurrencyMap = {
   US: 'USD', CA: 'CAD', MX: 'MXN', GB: 'GBP', DE: 'EUR', FR: 'EUR', IT: 'EUR',
@@ -114,6 +121,13 @@ const countryCurrencyMap = {
   NI: 'NIO', PA: 'PAB', DO: 'DOP', JM: 'JMD', TT: 'TTD', HT: 'HTG', KZ: 'KZT',
   UZ: 'UZS', AZ: 'AZN', KG: 'KGS', TJ: 'TJS', MN: 'MNT', AF: 'AFN',
 };
+
+// Prototype-safe map: the key is user-controlled (from request data).
+// A plain object literal inherits Object.prototype, so a key like
+// 'constructor'/'__proto__'/'toString' returns a truthy inherited member and
+// bypasses the `!value` / `|| default` fallback. A null-prototype object makes
+// any non-configured key fall back exactly like an unknown key.
+Object.setPrototypeOf(countryCurrencyMap, null);
 
 // Convert price from USD to target currency.
 // TDD R26: rounded onto the TARGET currency's own decimal grid. Zero-decimal
