@@ -72,7 +72,12 @@ export const CartProvider = ({ children }) => {
   const [cart, setCart] = useState(() => {
     try {
       const stored = localStorage.getItem('cart');
-      return stored ? JSON.parse(stored) : [];
+      const parsed = stored ? JSON.parse(stored) : [];
+      // Guard shape, not just parse errors: a stored non-array ('null', '5',
+      // '{"a":1}' — extensions, partial writes, legacy data) would leave cart
+      // state as a non-array and every prev.find/filter/map/[...prev] would
+      // throw, crashing the whole app until storage is cleared manually.
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
