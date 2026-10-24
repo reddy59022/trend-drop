@@ -8,7 +8,8 @@ const Payout = require('../models/Payout');
 const Order = require('../models/Order');
 const { isValidObjectId } = require('../utils/validators');
 const { findPaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
-const { releaseSellerEarnings, reverseEscrowHold } = require('../utils/balances');
+const { releaseSellerEarnings, settlementAlreadyApplied, reverseEscrowHold } = require('../utils/balances');
+const { timeWindows } = require('../config/orderLifecycle');
 
 // ===================== ESCROW SERVICE =====================
 // For high-value items (>$500), hold funds in escrow until both parties confirm satisfaction
@@ -108,23 +109,43 @@ const creditReleasedEscrow = async (transaction) => {
   const sellerEarnings = transaction.paymentBreakdown?.sellerEarnings || 0;
   const seller = await User.findById(transaction.seller);
   if (!seller) return;
-  const reserveAmount = Math.round(sellerEarnings * 0.10 * 100) / 100;
-  const availableAmount = sellerEarnings - reserveAmount;
-  seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - sellerEarnings);
-  seller.balance.available = (seller.balance.available || 0) + availableAmount;
-  seller.balance.totalEarned = (seller.balance.totalEarned || 0) + sellerEarnings;
-  seller.balance.reserve = (seller.balance.reserve || 0) + reserveAmount;
-  seller.balance.reserveReleaseDate = seller.balance.reserveReleaseDate || [];
-  seller.balance.reserveReleaseDate.push({
-    amount: reserveAmount,
-    releaseDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-    transactionId: transaction._id,
+  const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
+  const availableAmount = Math.round((sellerEarnings - reserveAmount) * 100) / 100;
+
+  // Release through the shared settlement helper with the SAME settlement key
+  // the order-completion path uses (`transaction._id`). Releasing escrow and
+  // completing the order are one payout, not two: the old read-modify-write
+  // here recorded no key, so a later completion credited sellerEarnings again
+  // (totalEarned + available double-counted) and could lose concurrent updates.
+  const release = await releaseSellerEarnings(seller._id, {
+    earnings: sellerEarnings,
+    availableAmount,
+    reserveAmount,
+    settlementKey: transaction._id,
+    reserveRelease: {
+      amount: reserveAmount,
+      releaseDate: new Date(Date.now() + timeWindows.SELLER_RESERVE_HOLD_DAYS),
+      transactionId: transaction._id,
+    },
   });
-  seller.notifications.unshift({
-    type: 'sale', listing: transaction.listing, transaction: transaction._id,
-    message: `Escrow released! ${availableAmount} ${transaction.currency} added to your account. ${reserveAmount} ${transaction.currency} held in reserve.`,
+  // Already settled for this transaction (a retried release): don't count the
+  // sale or notify twice.
+  if (settlementAlreadyApplied(release)) return;
+
+  await User.updateOne({ _id: seller._id }, {
+    $inc: { 'stats.totalSales': 1 },
+    $push: {
+      notifications: {
+        $each: [{
+          type: 'sale',
+          listing: transaction.listing,
+          transaction: transaction._id,
+          message: `Escrow released! ${availableAmount} ${transaction.currency} added to your account. ${reserveAmount} ${transaction.currency} held in reserve.`,
+        }],
+        $position: 0,
+      },
+    },
   });
-  await seller.save();
 };
 
 // POST /api/escrow/confirm-buyer - Buyer confirms satisfaction with item

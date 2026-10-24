@@ -271,6 +271,45 @@ describe('Escrow Service', () => {
     });
   });
 
+  describe('Escrow release vs order-completion settlement', () => {
+    it('marks the transaction settled so completing the order cannot pay the seller twice', async () => {
+      const { releaseSellerEarnings } = require('../utils/balances');
+
+      await Transaction.findByIdAndUpdate(transactionId, {
+        escrow: {
+          status: 'active', amount: 600, initiatedAt: new Date(),
+          releaseConditions: { buyerConfirmed: true, sellerConfirmed: false, inspectionPeriodDays: 7 },
+        },
+      });
+
+      const confirm = await request(app)
+        .post('/api/escrow/confirm-seller')
+        .set('Authorization', `Bearer ${sellerToken}`)
+        .send({ transactionId });
+      expect(confirm.statusCode).toBe(200);
+      expect(confirm.body.transaction.escrow.status).toBe('released');
+
+      const afterEscrowRelease = await User.findById(sellerId).lean();
+      expect(afterEscrowRelease.balance.available).toBe(1486); // 540 less 10% reserve
+
+      // The order-completion path pays with settlementKey = transaction id.
+      // The escrow release is the same payout, so it must have recorded that
+      // key and the completion settlement must apply nothing.
+      const result = await releaseSellerEarnings(sellerId, {
+        earnings: 540,
+        availableAmount: 486,
+        reserveAmount: 54,
+        settlementKey: transactionId,
+      });
+
+      expect(result.matchedCount).toBe(0);
+      const afterCompletion = await User.findById(sellerId).lean();
+      expect(afterCompletion.balance.available).toBe(afterEscrowRelease.balance.available);
+      expect(afterCompletion.balance.totalEarned).toBe(afterEscrowRelease.balance.totalEarned);
+      expect(afterCompletion.balance.pending).toBe(afterEscrowRelease.balance.pending);
+    });
+  });
+
   describe('POST /api/escrow/dispute', () => {
     it('ESCROW.12 should require reason', async () => {
       await Transaction.findByIdAndUpdate(transactionId, {
