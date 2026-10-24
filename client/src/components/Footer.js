@@ -1,9 +1,26 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FaInstagram, FaTwitter, FaFacebook, FaPinterest, FaTiktok, FaYoutube } from 'react-icons/fa';
+import { FaInstagram, FaTwitter, FaFacebook, FaPinterest, FaTiktok, FaYoutube, FaGlobeAmericas, FaCreditCard } from 'react-icons/fa';
+import api from '../services/api';
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
+
+  // The availability line used to claim "85+ countries" — a number no query
+  // backed and which contradicted the real launch-market count shown on the
+  // home page. It now reads the actual supported-market list, and drops the
+  // claim entirely if that call fails.
+  const [marketCount, setMarketCount] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    api.get('/marketplace/countries')
+      .then((res) => {
+        if (mounted && Array.isArray(res.data) && res.data.length) setMarketCount(res.data.length);
+      })
+      .catch(() => setMarketCount(null));
+    return () => { mounted = false; };
+  }, []);
 
   return (
     <footer className="footer">
@@ -91,9 +108,17 @@ const Footer = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <span>© {currentYear} TrendDrop. All rights reserved.</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ opacity: 0.5 }}>🌍 Available in 85+ countries</span>
-              <span style={{ opacity: 0.5 }}>|</span>
-              <span style={{ opacity: 0.5 }}>💳 Secure payments</span>
+              {marketCount !== null && (
+                <>
+                  <span style={{ opacity: 0.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <FaGlobeAmericas aria-hidden="true" /> Available in {marketCount} markets
+                  </span>
+                  <span style={{ opacity: 0.5 }}>|</span>
+                </>
+              )}
+              <span style={{ opacity: 0.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <FaCreditCard aria-hidden="true" /> Secure payments
+              </span>
             </div>
           </div>
         </div>

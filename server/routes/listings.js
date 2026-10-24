@@ -352,18 +352,33 @@ router.get('/my', auth, async (req, res) => {
     const soldStr = req.query.sold;
     const availableStr = req.query.available;
     const status = req.query.status;
-    
+
+    const VALID_STATUSES = ['draft', 'active', 'sold'];
+    if (status !== undefined && !VALID_STATUSES.includes(status)) {
+      return res.status(400).json({
+        message: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}`,
+      });
+    }
+
     let query = { seller: req.user._id };
-    
-    // Default to unsold, available, active listings
-    if (soldStr !== undefined) query.sold = soldStr === 'true';
-    else query.sold = false;
-    
-    if (availableStr !== undefined) query.available = availableStr === 'true';
-    else query.available = true;
-    
-    if (status !== undefined) query.status = status;
-    else query.status = 'active';
+
+    if (status !== undefined) {
+      // Explicit status filter: honor it exactly. Do NOT also apply the
+      // unsold/available defaults — drafts live at available=false, so those
+      // defaults would silently hide the very listings the caller asked for.
+      query.status = status;
+      if (soldStr !== undefined) query.sold = soldStr === 'true';
+      if (availableStr !== undefined) query.available = availableStr === 'true';
+    } else {
+      // Default to unsold, available, active listings
+      if (soldStr !== undefined) query.sold = soldStr === 'true';
+      else query.sold = false;
+
+      if (availableStr !== undefined) query.available = availableStr === 'true';
+      else query.available = true;
+
+      query.status = 'active';
+    }
 
     const listings = await Listing.find(query)
       .populate('seller', 'name avatar')

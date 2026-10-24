@@ -431,19 +431,20 @@ const Cart = () => {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button className="btn btn-icon btn-ghost" onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
+                        aria-label={`Decrease quantity of ${item.title || 'item'}`}
                         disabled={item.quantity <= 1}
                         style={{ width: 28, height: 28, opacity: item.quantity <= 1 ? 0.4 : 1 }}><FaMinus size={10} /></button>
                       <span style={{ fontWeight: 700, minWidth: 24, textAlign: 'center', fontSize: 14 }}>{item.quantity}</span>
                       <button className="btn btn-icon btn-ghost" onClick={() => {
                         if (item.quantity < (item.available || Infinity)) updateQuantity(item.listingId, item.quantity + 1);
                         else toast.error(`Only ${item.available} available`);
-                      }} style={{ width: 28, height: 28 }}><FaPlus size={10} /></button>
+                      }} aria-label={`Increase quantity of ${item.title || 'item'}`} style={{ width: 28, height: 28 }}><FaPlus size={10} /></button>
                     </div>
                     <div style={{ textAlign: 'right', minWidth: 70 }}>
                       <div style={{ fontWeight: 700, color: 'var(--td-primary)', fontSize: 14 }}>{formatPrice(item.price * item.quantity, item.currency)}</div>
                     </div>
                     <button className="btn btn-icon btn-ghost" onClick={() => removeFromCart(item.listingId)}
-                      style={{ color: 'var(--td-error)', width: 32, height: 32 }} title="Remove"><FaTrash size={12} /></button>
+                      style={{ color: 'var(--td-error)', width: 32, height: 32 }} title="Remove" aria-label={`Remove ${item.title || 'item'} from cart`}><FaTrash size={12} /></button>
                   </div>
                 ))}
               </div>
@@ -486,6 +487,7 @@ const Cart = () => {
                   <div className="badge badge-success" style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                     <span>Code <strong>{appliedPromo.code}</strong> — Save {formatPrice(appliedPromo.discountAmount, cart[0]?.currency || 'USD')}</span>
                     <button className="btn btn-icon btn-ghost" onClick={() => { setAppliedPromo(null); setPromoCode(''); }}
+                      aria-label={`Remove promo code ${appliedPromo.code || ''}`.trim()}
                       style={{ color: '#fff', width: 24, height: 24 }}><FaTrash size={10} /></button>
                   </div>
                 )}

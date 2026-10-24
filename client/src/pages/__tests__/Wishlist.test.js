@@ -31,7 +31,7 @@ describe('Wishlist page', () => {
     api.getWishlist.mockResolvedValue({ data: [{ listing: sampleListing() }] });
     renderPage(<Wishlist />);
     expect(await screen.findByText('Vintage Denim Jacket')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Remove from wishlist' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Remove .* from wishlist/i })).toBeInTheDocument();
   });
   test('renders the empty state when nothing is saved', async () => {
     api.getWishlist.mockResolvedValue({ data: [] });
@@ -44,7 +44,7 @@ describe('Wishlist page', () => {
     api.removeFromWishlist.mockResolvedValue({ data: {} });
     renderPage(<Wishlist />);
     await screen.findByText('Vintage Denim Jacket');
-    fireEvent.click(screen.getByRole('button', { name: 'Remove from wishlist' }));
+    fireEvent.click(screen.getByRole('button', { name: /Remove .* from wishlist/i }));
     await waitFor(() => expect(api.removeFromWishlist).toHaveBeenCalledWith('listing123'));
     expect(await screen.findByText('Your wishlist is empty')).toBeInTheDocument();
   });

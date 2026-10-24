@@ -628,6 +628,7 @@ const VirtualTryOn = () => {
                     )}
                     <button 
                       onClick={() => handleDeleteSession(session._id)}
+                      aria-label={`Delete try-on session ${session._id || ''}`.trim()}
                       className="btn btn-secondary"
                       style={{ 
                         position: 'absolute', 

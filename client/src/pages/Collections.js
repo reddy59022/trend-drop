@@ -195,10 +195,10 @@ const Collections = () => {
                   </div>
                   {isOwner && editingId !== col._id && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                      <button onClick={e => { e.stopPropagation(); startEdit(col); }} className="btn btn-sm" style={{ background: 'rgba(108,92,231,0.1)', color: 'var(--td-primary)', border: 'none', padding: '2px 8px' }}>
+                      <button onClick={e => { e.stopPropagation(); startEdit(col); }} aria-label={`Edit collection ${col.name || ''}`.trim()} className="btn btn-sm" style={{ background: 'rgba(108,92,231,0.1)', color: 'var(--td-primary)', border: 'none', padding: '2px 8px' }}>
                         <FaEdit size={11} />
                       </button>
-                      <button onClick={e => { e.stopPropagation(); handleDelete(col._id); }} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none', padding: '2px 8px' }}>
+                      <button onClick={e => { e.stopPropagation(); handleDelete(col._id); }} aria-label={`Delete collection ${col.name || ''}`.trim()} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none', padding: '2px 8px' }}>
                         <FaTrash size={11} />
                       </button>
                     </div>
@@ -207,6 +207,7 @@ const Collections = () => {
                     <div style={{ marginTop: 8 }}>
                       <input
                         type="text"
+                        aria-label="Collection name"
                         value={form.name}
                         onChange={e => setForm({ ...form, name: e.target.value })}
                         className="input"
@@ -221,10 +222,10 @@ const Collections = () => {
                         onClick={e => e.stopPropagation()}
                       />
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={e => { e.stopPropagation(); handleUpdate(col._id); }} className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none', padding: '2px 8px' }}>
+                        <button onClick={e => { e.stopPropagation(); handleUpdate(col._id); }} aria-label="Save collection" className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none', padding: '2px 8px' }}>
                           <FaSave size={11} />
                         </button>
-                        <button onClick={e => { e.stopPropagation(); setEditingId(null); setForm({ name: '', description: '' }); }} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none', padding: '2px 8px' }}>
+                        <button onClick={e => { e.stopPropagation(); setEditingId(null); setForm({ name: '', description: '' }); }} aria-label="Cancel editing collection" className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none', padding: '2px 8px' }}>
                           <FaTimes size={11} />
                         </button>
                       </div>
@@ -263,6 +264,7 @@ const Collections = () => {
                         {isOwner && (
                           <button
                             onClick={() => handleRemoveListing(activeCollection._id, listing._id)}
+                            aria-label={`Remove ${listing.title || 'listing'} from collection`}
                             className="btn btn-sm"
                             style={{
                               position: 'absolute', top: 8, right: 8, zIndex: 2,

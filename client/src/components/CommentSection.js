@@ -139,6 +139,7 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
                   onClick={() => handleDelete(comment._id)}
                   disabled={deleting === comment._id}
                   title="Delete"
+                  aria-label="Delete comment"
                 >
                   {deleting === comment._id ? <FaSpinner className="spinner-sm" /> : <FaTrash size={12} />}
                 </button>

@@ -169,6 +169,7 @@ const ListingCard = React.memo(({ listing }) => {
             onClick={handleAddToCart}
             disabled={addingToCart}
             title="Quick add to cart"
+            aria-label={`Quick add ${listing.title || 'listing'} to cart`}
           >
             <FaShoppingBag />
           </button>
@@ -179,6 +180,8 @@ const ListingCard = React.memo(({ listing }) => {
           className={`like-btn ${liked ? 'liked' : ''}`}
           onClick={handleLike}
           title={liked ? 'Unlike' : 'Like'}
+          aria-label={liked ? `Unlike ${listing.title}` : `Like ${listing.title}`}
+          aria-pressed={liked}
         >
           <FaHeart />
         </button>

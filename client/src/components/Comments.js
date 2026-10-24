@@ -105,6 +105,7 @@ const Comments = ({ listingId }) => {
                   <button
                     onClick={() => handleLike(comment._id)}
                     className="btn btn-ghost btn-sm"
+                    aria-label={`Like comment (${comment.likes?.length || 0} likes)`}
                   >
                     <FaHeart /> {comment.likes?.length || 0}
                   </button>

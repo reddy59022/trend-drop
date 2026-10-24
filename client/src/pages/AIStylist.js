@@ -230,7 +230,7 @@ const AIStylist = () => {
                 <div key={outfit._id} className="glass-card" style={{ padding: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <h3 style={{ margin: 0 }}>{outfit.name}</h3>
-                    <button className="btn btn-icon btn-ghost" style={{ color: 'var(--td-error)' }}>
+                    <button className="btn btn-icon btn-ghost" style={{ color: 'var(--td-error)' }} aria-label={`Delete outfit ${outfit.name || ''}`.trim()}>
                       <FaTrash size={12} />
                     </button>
                   </div>

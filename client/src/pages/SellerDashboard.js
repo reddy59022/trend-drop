@@ -373,9 +373,9 @@ const SellerDashboard = () => {
                 <input className="form-input" placeholder="Rule name (e.g., Summer Bundle)" value={bundleForm.name} onChange={e => setBundleForm({...bundleForm, name: e.target.value})} />
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <span>Buy</span>
-                  <input className="form-input" type="number" min={2} style={{ width: 70 }} value={bundleForm.minQuantity} onChange={e => setBundleForm({...bundleForm, minQuantity: Number(e.target.value)})} />
+                  <input className="form-input" type="number" min={2} aria-label="Bundle minimum item quantity" style={{ width: 70 }} value={bundleForm.minQuantity} onChange={e => setBundleForm({...bundleForm, minQuantity: Number(e.target.value)})} />
                   <span>+ items, get</span>
-                  <input className="form-input" type="number" min={1} max={100} style={{ width: 70 }} value={bundleForm.discountPercent} onChange={e => setBundleForm({...bundleForm, discountPercent: Number(e.target.value)})} />
+                  <input className="form-input" type="number" min={1} max={100} aria-label="Bundle discount percent" style={{ width: 70 }} value={bundleForm.discountPercent} onChange={e => setBundleForm({...bundleForm, discountPercent: Number(e.target.value)})} />
                   <span>% off</span>
                 </div>
               </div>
@@ -419,8 +419,8 @@ const SellerDashboard = () => {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-outline btn-sm" onClick={() => handleEditBundle(rule)}><FaEdit size={12} /></button>
-                  <button className="btn btn-outline btn-sm" style={{ color: 'var(--td-error)' }} onClick={() => handleDeleteBundle(rule._id)}><FaTrash size={12} /></button>
+                  <button className="btn btn-outline btn-sm" onClick={() => handleEditBundle(rule)} aria-label="Edit bundle rule"><FaEdit size={12} /></button>
+                  <button className="btn btn-outline btn-sm" style={{ color: 'var(--td-error)' }} onClick={() => handleDeleteBundle(rule._id)} aria-label="Delete bundle rule"><FaTrash size={12} /></button>
                 </div>
               </div>
             ))
@@ -449,17 +449,17 @@ const SellerDashboard = () => {
                     <option value="percentage">% Off</option>
                     <option value="fixed">$ Off</option>
                   </select>
-                  <input className="form-input" type="number" min={0.01} step={promoForm.discountType === 'percentage' ? 1 : 0.01} style={{ width: 80 }} value={promoForm.discountValue} onChange={e => setPromoForm({...promoForm, discountValue: Number(e.target.value)})} />
+                  <input className="form-input" type="number" min={0.01} step={promoForm.discountType === 'percentage' ? 1 : 0.01} aria-label="Promo discount value" style={{ width: 80 }} value={promoForm.discountValue} onChange={e => setPromoForm({...promoForm, discountValue: Number(e.target.value)})} />
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span style={{ fontSize: 13 }}>Min purchase:</span>
-                  <input className="form-input" type="number" min={0} style={{ width: 80 }} value={promoForm.minPurchaseAmount} onChange={e => setPromoForm({...promoForm, minPurchaseAmount: Number(e.target.value)})} />
+                  <input className="form-input" type="number" min={0} aria-label="Promo minimum purchase amount" style={{ width: 80 }} value={promoForm.minPurchaseAmount} onChange={e => setPromoForm({...promoForm, minPurchaseAmount: Number(e.target.value)})} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span style={{ fontSize: 13 }}>Usage limit:</span>
-                  <input className="form-input" type="number" min={0} style={{ width: 80 }} value={promoForm.usageLimit} onChange={e => setPromoForm({...promoForm, usageLimit: Number(e.target.value)})} />
+                  <input className="form-input" type="number" min={0} aria-label="Promo usage limit" style={{ width: 80 }} value={promoForm.usageLimit} onChange={e => setPromoForm({...promoForm, usageLimit: Number(e.target.value)})} />
                   <span style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>(0 = unlimited)</span>
                 </div>
               </div>
@@ -494,8 +494,8 @@ const SellerDashboard = () => {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-outline btn-sm" onClick={() => handleEditPromo(promo)}><FaEdit size={12} /></button>
-                  <button className="btn btn-outline btn-sm" style={{ color: 'var(--td-error)' }} onClick={() => handleDeletePromo(promo._id)}><FaTrash size={12} /></button>
+                  <button className="btn btn-outline btn-sm" onClick={() => handleEditPromo(promo)} aria-label={`Edit promo ${promo.code || ''}`.trim()}><FaEdit size={12} /></button>
+                  <button className="btn btn-outline btn-sm" style={{ color: 'var(--td-error)' }} onClick={() => handleDeletePromo(promo._id)} aria-label={`Delete promo ${promo.code || ''}`.trim()}><FaTrash size={12} /></button>
                 </div>
               </div>
             ))

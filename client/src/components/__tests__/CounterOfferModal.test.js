@@ -25,7 +25,7 @@ describe('CounterOfferModal', () => {
     render(<CounterOfferModal offer={offer()} type="sent" isOpen onClose={jest.fn()} onCounterSubmitted={onCounterSubmitted} />);
     const spinbutton = screen.getByRole('spinbutton');
     fireEvent.change(spinbutton, { target: { value: '70' } });
-    fireEvent.click(screen.getByRole('button', { name: /Send|Counter/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^(Counter|Send Counter)$/i }));
     await waitFor(() => expect(api.patch).toHaveBeenCalled());
     expect(onCounterSubmitted).toHaveBeenCalled();
   });

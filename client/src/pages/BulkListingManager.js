@@ -164,6 +164,7 @@ const BulkListingManager = () => {
           <input 
             type="file" 
             accept=".csv" 
+            aria-label="Choose CSV file to upload"
             onChange={e => setCsvFile(e.target.files[0])}
             className="form-input"
             style={{ flex: 1, maxWidth: 300 }}
@@ -240,6 +241,7 @@ const BulkListingManager = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'var(--td-surface)', borderRadius: 'var(--td-radius-sm)' }}>
           <input 
             type="checkbox" 
+            aria-label="Select all listings"
             checked={selectedListings.length === listings.length && listings.length > 0}
             onChange={handleSelectAll}
             style={{ width: 18, height: 18 }}
@@ -251,6 +253,7 @@ const BulkListingManager = () => {
           <div key={listing._id} className="glass-card" style={{ padding: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
             <input 
               type="checkbox" 
+              aria-label={`Select ${listing.title || 'listing'}`}
               checked={selectedListings.includes(listing._id)}
               onChange={() => handleSelect(listing._id)}
               style={{ width: 18, height: 18 }}

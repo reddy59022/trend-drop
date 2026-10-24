@@ -149,7 +149,7 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
                 <div style={{ fontSize: 12, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 4 }}><FaStore size={10} /> Seller</div>
               </div>
             </div>
-            <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaTimes /></button>
+            <button onClick={onClose} aria-label="Close chat" style={{ width: 36, height: 36, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaTimes /></button>
           </div>
           {listing && (
             <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(255,255,255,0.15)', borderRadius: 'var(--td-radius-sm)', display: 'flex', alignItems: 'center', gap: 10 }}>

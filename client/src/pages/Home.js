@@ -304,7 +304,7 @@ const Home = () => {
                 <FaGlobeAmericas className="feature-icon" aria-hidden="true" />
               </div>
               <h3>Global Community</h3>
-              <p>Buy and sell in 85+ countries with multi-currency support and local shipping options.</p>
+              <p>Buy and sell across {market && market.totalCountries ? `${market.totalCountries} markets` : 'our launch markets'} with multi-currency support and local shipping options.</p>
             </div>
             <div className="feature-card glass">
               <div className="feature-icon-wrap">
@@ -321,7 +321,7 @@ const Home = () => {
       <section className="cta-section" aria-label="Call to action">
         <div className="container">
           <h2>Your Closet Has a Story.</h2>
-          <p>Turn it into a masterpiece — and a paycheck. Join thousands of verified sellers worldwide.</p>
+          <p>Turn it into a masterpiece — and a paycheck. Join {market && market.totalSellers ? `${market.totalSellers} verified seller${market.totalSellers === 1 ? '' : 's'}` : 'verified sellers'} already earning on TrendDrop.</p>
           <div className="cta-actions">
             <Link to="/register" className="btn btn-primary btn-xl" aria-label="Get started free">
               Get Started Free

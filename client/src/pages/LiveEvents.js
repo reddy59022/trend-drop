@@ -274,7 +274,7 @@ const LiveEvents = () => {
           <div className="modal-content glass-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Create Live Shopping Event</h2>
-              <button className="modal-close btn btn-icon btn-ghost" onClick={() => setShowCreateModal(false)}>
+              <button className="modal-close btn btn-icon btn-ghost" onClick={() => setShowCreateModal(false)} aria-label="Close create event dialog">
                 ×
               </button>
             </div>

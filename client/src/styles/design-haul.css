@@ -1029,3 +1029,17 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .navbar-menu .nav-dropdown > .nav-dropdown-trigger[aria-expanded='true'] {
   background: var(--td-gradient-brand-soft, rgba(108, 59, 255, 0.12));
 }
+
+/* =====================================================
+   FOOTER vs FLOATING TAB BAR
+   The tab bar is fixed above the bottom edge and .main-content
+   already reserves space for it, but the footer is a sibling
+   rendered AFTER the tab bar markup-wise and had no clearance —
+   its bottom rows (copyright, availability line) sat behind the
+   floating bar on phones. Give the footer the same reservation.
+   ===================================================== */
+@media (max-width: 768px) {
+  .footer {
+    padding-bottom: calc(84px + var(--td-safe-area-bottom, 0px));
+  }
+}

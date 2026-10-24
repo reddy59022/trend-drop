@@ -223,10 +223,10 @@ const SavedSearches = () => {
                   </div>
                   {editingId !== s._id && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                      <button onClick={e => { e.stopPropagation(); startEdit(s); }} className="btn btn-sm" style={{ background: 'rgba(108,92,231,0.1)', color: 'var(--td-primary)', border: 'none', padding: '2px 8px' }}>
+                      <button onClick={e => { e.stopPropagation(); startEdit(s); }} aria-label={`Edit saved search ${s.name || ''}`.trim()} className="btn btn-sm" style={{ background: 'rgba(108,92,231,0.1)', color: 'var(--td-primary)', border: 'none', padding: '2px 8px' }}>
                         <FaEdit size={11} />
                       </button>
-                      <button onClick={e => { e.stopPropagation(); handleDelete(s._id); }} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none', padding: '2px 8px' }}>
+                      <button onClick={e => { e.stopPropagation(); handleDelete(s._id); }} aria-label={`Delete saved search ${s.name || ''}`.trim()} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none', padding: '2px 8px' }}>
                         <FaTrash size={11} />
                       </button>
                     </div>
@@ -235,6 +235,7 @@ const SavedSearches = () => {
                     <div style={{ marginTop: 8 }}>
                       <input
                         type="text"
+                        aria-label="Saved search name"
                         value={form.name}
                         onChange={e => setForm({ ...form, name: e.target.value })}
                         className="input"
@@ -253,10 +254,10 @@ const SavedSearches = () => {
                         ))}
                       </select>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={e => { e.stopPropagation(); handleUpdate(s._id); }} className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none', padding: '2px 8px' }}>
+                        <button onClick={e => { e.stopPropagation(); handleUpdate(s._id); }} aria-label="Save saved search" className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none', padding: '2px 8px' }}>
                           <FaSave size={11} />
                         </button>
-                        <button onClick={e => { e.stopPropagation(); setEditingId(null); }} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none', padding: '2px 8px' }}>
+                        <button onClick={e => { e.stopPropagation(); setEditingId(null); }} aria-label="Cancel editing saved search" className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none', padding: '2px 8px' }}>
                           <FaTimes size={11} />
                         </button>
                       </div>

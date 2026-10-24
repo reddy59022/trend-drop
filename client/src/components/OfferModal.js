@@ -244,7 +244,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
           <h2><FaGavel style={{ marginRight: 8, color: 'var(--td-primary)' }} /> 
             {offer ? 'Offer Details' : 'Make an Offer'}
           </h2>
-          <button className="modal-close" onClick={onClose}><FaTimes /></button>
+          <button className="modal-close" onClick={onClose} aria-label="Close offer dialog"><FaTimes /></button>
         </div>
 
         <div className="modal-body">

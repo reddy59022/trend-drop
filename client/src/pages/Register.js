@@ -166,6 +166,7 @@ const Register = () => {
                 value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 style={{ paddingLeft: 36, paddingRight: 36 }} required minLength={8} />
               <button type="button" onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
                 style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', background: 'none', border: 'none' }}>
                 {showPassword ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
               </button>
@@ -195,6 +196,7 @@ const Register = () => {
                 value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                 style={{ paddingLeft: 36, paddingRight: 36 }} required />
               <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
                 style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', background: 'none', border: 'none' }}>
                 {showConfirmPassword ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
               </button>

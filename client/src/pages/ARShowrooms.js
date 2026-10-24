@@ -165,6 +165,7 @@ const ARShowrooms = () => {
                   <button
                     onClick={() => handleDeleteShowroom(showroom._id)}
                     className="btn btn-icon btn-ghost"
+                    aria-label={`Delete showroom ${showroom.name || ''}`.trim()}
                     style={{ color: 'var(--td-error)', padding: 0 }}
                   >
                     <FaTrash />
@@ -214,7 +215,7 @@ const ARShowrooms = () => {
           <div className="modal-content glass-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Create AR Showroom</h2>
-              <button className="modal-close btn btn-icon btn-ghost" onClick={() => setShowCreateModal(false)}>
+              <button className="modal-close btn btn-icon btn-ghost" onClick={() => setShowCreateModal(false)} aria-label="Close create showroom dialog">
                 ×
               </button>
             </div>

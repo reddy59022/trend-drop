@@ -274,8 +274,8 @@ const Admin = () => {
                         <div style={{ color: 'var(--td-text-tertiary)', fontSize: 12 }}>{r.reason}</div>
                       </div>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => handleResolveReport(r._id, 'resolved')} className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none' }}><FaCheck /></button>
-                        <button onClick={() => handleResolveReport(r._id, 'dismissed')} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none' }}><FaTimes /></button>
+                        <button onClick={() => handleResolveReport(r._id, 'resolved')} aria-label="Resolve report" className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none' }}><FaCheck /></button>
+                        <button onClick={() => handleResolveReport(r._id, 'dismissed')} aria-label="Dismiss report" className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none' }}><FaTimes /></button>
                       </div>
                     </div>
                   ))}
@@ -346,11 +346,11 @@ const Admin = () => {
                                   <option value="admin">admin</option>
                                 </select>
                                 {u.role !== 'suspended' ? (
-                                  <button onClick={() => handleSuspend(u._id)} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none' }}>
+                                  <button onClick={() => handleSuspend(u._id)} aria-label={`Suspend ${u.name || u.email || 'user'}`} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none' }}>
                                     <FaBan size={12} />
                                   </button>
                                 ) : (
-                                  <button onClick={() => handleUnsuspend(u._id)} className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none' }}>
+                                  <button onClick={() => handleUnsuspend(u._id)} aria-label={`Unsuspend ${u.name || u.email || 'user'}`} className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none' }}>
                                     <FaCheck size={12} />
                                   </button>
                                 )}

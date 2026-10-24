@@ -426,6 +426,7 @@ function Transactions() {
                 className="btn btn-sm btn-secondary"
                 onClick={() => setPage(1)}
                 disabled={page === 1}
+                aria-label="First page"
                 style={{ opacity: page === 1 ? 0.5 : 1, minWidth: 36 }}
               >«</button>
               <button
@@ -451,6 +452,7 @@ function Transactions() {
                 className="btn btn-sm btn-secondary"
                 onClick={() => setPage(pagination.totalPages)}
                 disabled={page === pagination.totalPages}
+                aria-label="Last page"
                 style={{ opacity: page === pagination.totalPages ? 0.5 : 1, minWidth: 36 }}
               >»</button>
             </div>

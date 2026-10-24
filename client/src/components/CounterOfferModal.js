@@ -129,7 +129,7 @@ const CounterOfferModal = ({
             <FaExchangeAlt style={{ marginRight: 8, color: 'var(--td-primary)' }} />
             Counter Offer
           </h2>
-          <button className="modal-close" onClick={onClose} disabled={submitting}>
+          <button className="modal-close" onClick={onClose} disabled={submitting} aria-label="Close counter offer">
             <FaTimes />
           </button>
         </div>

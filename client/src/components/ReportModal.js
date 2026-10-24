@@ -54,7 +54,7 @@ const ReportModal = ({ listing, isOpen, onClose, onReportSubmitted }) => {
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
         <div className="modal-header">
           <h2><FaFlag style={{ marginRight: 8, color: 'var(--td-error)' }} /> Report Listing</h2>
-          <button className="modal-close" onClick={onClose}><FaTimes /></button>
+          <button className="modal-close" onClick={onClose} aria-label="Close report dialog"><FaTimes /></button>
         </div>
 
         <div className="modal-body">

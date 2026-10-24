@@ -284,7 +284,7 @@ const EditListing = () => {
                 <div key={index} className="image-preview">
                   <img src={preview} alt={`Preview ${index + 1}`} />
                   {index === 0 && <span className="badge badge-primary" style={{ position: 'absolute', top: 4, left: 4 }}>Cover</span>}
-                  <button type="button" className="remove-image" onClick={() => removeImage(index)}><FaTimes size={12} /></button>
+                  <button type="button" className="remove-image" onClick={() => removeImage(index)} aria-label={`Remove image ${index + 1}`}><FaTimes size={12} /></button>
                 </div>
               ))}
             </div>
@@ -293,7 +293,7 @@ const EditListing = () => {
                 <FaCamera size={32} /><span>Add Photos</span><span style={{ fontSize: 11 }}>{previews.length}/10</span>
               </button>
             )}
-            <input ref={fileInputRef} type="file" multiple accept="image/*" onChange={handleImageChange} style={{ display: 'none' }} />
+            <input ref={fileInputRef} type="file" multiple accept="image/*" onChange={handleImageChange} aria-label="Add listing photos" style={{ display: 'none' }} />
           </div>
 
           {/* VIDEO URL SECTION */}
@@ -328,6 +328,7 @@ const EditListing = () => {
                 <button
                   type="button"
                   className="btn btn-outline"
+                  aria-label="Remove video"
                   onClick={() => { setVideoUrl(''); setVideoPreview(null); }}
                   style={{ padding: '8px 12px', color: 'var(--td-error)' }}
                 >

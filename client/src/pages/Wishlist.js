@@ -71,6 +71,7 @@ const Wishlist = () => {
                   className="like-btn liked"
                   onClick={(e) => { e.stopPropagation(); handleRemove(item.listing._id); }}
                   title="Remove from wishlist"
+                  aria-label={`Remove ${item.listing.title || 'item'} from wishlist`}
                   style={{ animation: 'bounce 0.3s ease-out' }}
                 >
                   <FaHeart />
