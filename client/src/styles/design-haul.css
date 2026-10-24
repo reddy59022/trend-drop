@@ -797,3 +797,44 @@ textarea:focus-visible, [tabindex]:focus-visible {
     font-size: 11.5px;
   }
 }
+
+/* =====================================================
+   MOBILE HEADER — three rows → two
+   Logo (~230px) + five global controls (~180px) do not fit a
+   390px row, so the controls wrapped onto a row of their own and
+   the search box became a third. Shrinking the logo mark and the
+   utility buttons keeps logo + controls + burger on one line with
+   the search row underneath.
+   ===================================================== */
+@media (max-width: 480px) {
+  .navbar-container {
+    gap: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .navbar-logo .td-logo-mark {
+    width: 28px;
+    height: 28px;
+  }
+
+  .navbar-logo .logo-text {
+    font-size: 17px;
+    letter-spacing: -0.4px;
+  }
+
+  .navbar-global-controls {
+    gap: 0;
+    margin-left: auto;
+  }
+
+  .navbar-global-controls .global-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .navbar-global-controls .nav-icon-link {
+    width: 30px;
+    height: 30px;
+  }
+}
