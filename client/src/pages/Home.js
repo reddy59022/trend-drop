@@ -149,26 +149,9 @@ const Home = () => {
         </div>
       </section>
 
-      {/* ===== Live Marketplace Numbers (real counts, never invented) ===== */}
-      {hasStats && (
-        <section className="section" style={{ padding: '32px 0', background: 'var(--td-surface-secondary)' }} aria-label="Marketplace statistics">
-          <div className="container">
-            <div className="stats-bar" role="list">
-              {stats.filter((stat) => stat.value).map((stat) => (
-                <div key={stat.label} className="stat-item" role="listitem">
-                  <span className="stat-icon">{stat.icon}</span>
-                  <div className="stat-info">
-                    <span className="stat-value">{stat.value}</span>
-                    <span className="stat-label">{stat.label}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ===== Categories ===== */}
+      {/* ===== Categories (directly under the hero: navigation belongs
+           above social proof, and shoppers should reach any aisle without
+           scrolling past statistics) ===== */}
       <section className="section" aria-label="Shop by category">
         <div className="container">
           <h2 className="section-title">Shop by Category</h2>
@@ -192,6 +175,25 @@ const Home = () => {
           </div>
         </div>
       </section>
+
+      {/* ===== Live Marketplace Numbers (real counts, never invented) ===== */}
+      {hasStats && (
+        <section className="section" style={{ padding: '32px 0', background: 'var(--td-surface-secondary)' }} aria-label="Marketplace statistics">
+          <div className="container">
+            <div className="stats-bar" role="list">
+              {stats.filter((stat) => stat.value).map((stat) => (
+                <div key={stat.label} className="stat-item" role="listitem">
+                  <span className="stat-icon">{stat.icon}</span>
+                  <div className="stat-info">
+                    <span className="stat-value">{stat.value}</span>
+                    <span className="stat-label">{stat.label}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ===== Trending Listings ===== */}
       <section className="section bg-light" aria-label="Trending listings">
@@ -290,7 +292,7 @@ const Home = () => {
               <h3>Snap & List in Seconds</h3>
               <p>AI-powered listing. Just snap a photo, and we help you set the perfect price.</p>
             </div>
-            <div className="feature-card glass" tabIndex={0}>
+            <div className="feature-card glass">
               <div className="feature-icon-wrap">
                 <FaHeart className="feature-icon" aria-hidden="true" />
               </div>

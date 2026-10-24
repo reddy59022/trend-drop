@@ -941,11 +941,17 @@ textarea:focus-visible, [tabindex]:focus-visible {
    ===================================================== */
 @media (min-width: 769px) {
   .hero {
-    min-height: 74svh;
+    min-height: 62svh;
+    padding-top: calc(var(--td-nav-height, 72px) + 28px);
+    padding-bottom: 56px;
   }
 
   .hero-content h1 {
-    font-size: clamp(2.6rem, 6.5vw, 5.6rem);
+    font-size: clamp(2.4rem, 5vw, 4.6rem);
+  }
+
+  .hero-content p {
+    margin-bottom: var(--td-space-lg, 20px);
   }
 
   /* =====================================================
