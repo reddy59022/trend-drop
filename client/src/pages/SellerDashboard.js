@@ -53,8 +53,10 @@ const SellerDashboard = () => {
   const fetchData = async () => {
     try {
       const [dashRes, commRes] = await Promise.all([
-        getPayoutDashboard().catch(() => ({ data: { commissionRate: 0.10, commissionPercent: 10, totalSales: 0, totalCommission: 0, totalEarnings: 0, pendingAmount: 0, payoutHistory: [], recentTransactions: [] } })),
-        getCommissionInfo().catch(() => ({ data: { commissionPercent: 10, sellerKeeps: '90%', comparedTo: {} } })),
+        // Fallbacks must mirror the real server rate (COMMISSION_RATE = 0.08):
+        // a wrong fallback advertises a fee the platform does not charge.
+        getPayoutDashboard().catch(() => ({ data: { commissionRate: 0.08, commissionPercent: 8, totalSales: 0, totalCommission: 0, totalEarnings: 0, pendingAmount: 0, payoutHistory: [], recentTransactions: [] } })),
+        getCommissionInfo().catch(() => ({ data: { commissionPercent: 8, sellerKeeps: '92%', comparedTo: {} } })),
       ]);
       setDashboard(dashRes.data);
       setCommissionInfo(commRes.data);
@@ -344,7 +346,7 @@ const SellerDashboard = () => {
               <div>2️⃣ <strong>Buyer purchases</strong> — Payment is held securely</div>
               <div>3️⃣ <strong>Ship within 7 days</strong> — Use prepaid shipping label</div>
               <div>4️⃣ <strong>Buyer confirms delivery</strong> — Funds are released</div>
-              <div>5️⃣ <strong>Get paid</strong> — Only {commissionInfo?.commissionPercent || 10}% commission deducted</div>
+              <div>5️⃣ <strong>Get paid</strong> — Only {commissionInfo?.commissionPercent || 8}% commission deducted</div>
             </div>
           </div>
         </>

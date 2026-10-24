@@ -105,10 +105,32 @@ router.get('/feed', auth, async (req, res) => {
 });
 
 // GET /api/users/:id - Get user profile
+//
+// PUBLIC endpoint (no auth): anyone can look up any id. It must therefore
+// return only the public profile — the seller-facing fields the client
+// renders. Returning the user document minus `password` leaked the account's
+// email, phone, shipping address, balance, payout/bank details, legal/tax
+// data and the email-verification token to any visitor. The owner's account
+// data lives behind the authenticated GET /api/users/me.
+const PUBLIC_PROFILE_FIELDS = [
+  'name', 'avatar', 'bio', 'location', 'closetName', 'socialLinks',
+  'stats', 'isVerified', 'createdAt', 'followers', 'following',
+].join(' ');
+
+// Public subset of the seller stats: the numbers the profile UI shows.
+// Purchases and internal trust data (strikes) stay private.
+const publicStats = (stats) => ({
+  totalSales: stats?.totalSales || 0,
+  avgRating: stats?.avgRating || 0,
+  ratingCount: stats?.ratingCount || 0,
+  responseRate: stats?.responseRate || 0,
+  shipTime: stats?.shipTime || 0,
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .select('-password')
+      .select(PUBLIC_PROFILE_FIELDS)
       .populate('followers', 'name avatar')
       .populate('following', 'name avatar');
 
@@ -121,7 +143,10 @@ router.get('/:id', async (req, res) => {
       sold: false,
     });
 
-    res.json({ user, listingsCount });
+    const profile = user.toObject();
+    profile.stats = publicStats(profile.stats);
+
+    res.json({ user: profile, listingsCount });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

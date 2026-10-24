@@ -3,6 +3,55 @@ const router = express.Router();
 const SavedSearch = require('../models/SavedSearch');
 const Listing = require('../models/Listing');
 const { auth } = require('../middleware/auth');
+const { escapeRegex } = require('../utils/validators');
+
+const NOTIFY_FREQUENCIES = ['instant', 'daily', 'weekly', 'never'];
+
+/**
+ * Shared hostile-input guard for create AND update. Both endpoints write
+ * straight into the schema, so a wrong-typed value either throws
+ * "Cast to string failed" (500) or persists an out-of-enum value
+ * (findOneAndUpdate does not run validators by default). Returns an error
+ * message, or null when the payload is acceptable.
+ */
+const validateSavedSearchInput = ({ name, query, filters, notifyFrequency, emailNotify, pushNotify }) => {
+  if (name !== undefined && name !== null && typeof name !== 'string') {
+    return 'name must be a string';
+  }
+  if (name && name.length > 100) {
+    return 'name must be at most 100 characters';
+  }
+  if (query !== undefined && query !== null && typeof query !== 'string') {
+    return 'query must be a string';
+  }
+  if (filters !== undefined && filters !== null && (typeof filters !== 'object' || Array.isArray(filters))) {
+    return 'filters must be an object';
+  }
+  if (filters) {
+    for (const field of ['category', 'brand', 'size', 'condition', 'sort']) {
+      const value = filters[field];
+      if (value !== undefined && value !== null && typeof value !== 'string') {
+        return `filters.${field} must be a string`;
+      }
+    }
+    for (const field of ['minPrice', 'maxPrice']) {
+      const value = filters[field];
+      if (value !== undefined && value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
+        return `filters.${field} must be a number`;
+      }
+    }
+  }
+  if (notifyFrequency !== undefined && !NOTIFY_FREQUENCIES.includes(notifyFrequency)) {
+    return 'notifyFrequency must be one of instant, daily, weekly, never';
+  }
+  if (emailNotify !== undefined && typeof emailNotify !== 'boolean') {
+    return 'emailNotify must be a boolean';
+  }
+  if (pushNotify !== undefined && typeof pushNotify !== 'boolean') {
+    return 'pushNotify must be a boolean';
+  }
+  return null;
+};
 
 // POST /api/saved-searches - Save a search
 router.post('/', auth, async (req, res) => {
@@ -12,40 +61,11 @@ router.post('/', auth, async (req, res) => {
     // Hostile-input guard. Every value below is written straight into the
     // schema, so a wrong-typed value either throws "Cast to string failed" or
     // trips a schema maxlength/enum — both surfaced as a 500.
-    if (name !== undefined && name !== null && typeof name !== 'string') {
-      return res.status(400).json({ message: 'name must be a string' });
-    }
-    if (name && name.length > 100) {
-      return res.status(400).json({ message: 'name must be at most 100 characters' });
-    }
-    if (query !== undefined && query !== null && typeof query !== 'string') {
-      return res.status(400).json({ message: 'query must be a string' });
-    }
-    if (filters !== undefined && filters !== null && (typeof filters !== 'object' || Array.isArray(filters))) {
-      return res.status(400).json({ message: 'filters must be an object' });
-    }
-    if (filters) {
-      for (const field of ['category', 'brand', 'size', 'condition', 'sort']) {
-        const value = filters[field];
-        if (value !== undefined && value !== null && typeof value !== 'string') {
-          return res.status(400).json({ message: `filters.${field} must be a string` });
-        }
-      }
-      for (const field of ['minPrice', 'maxPrice']) {
-        const value = filters[field];
-        if (value !== undefined && value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
-          return res.status(400).json({ message: `filters.${field} must be a number` });
-        }
-      }
-    }
-    if (notifyFrequency !== undefined && !['instant', 'daily', 'weekly', 'never'].includes(notifyFrequency)) {
-      return res.status(400).json({ message: 'notifyFrequency must be one of instant, daily, weekly, never' });
-    }
-    if (emailNotify !== undefined && typeof emailNotify !== 'boolean') {
-      return res.status(400).json({ message: 'emailNotify must be a boolean' });
-    }
-    if (pushNotify !== undefined && typeof pushNotify !== 'boolean') {
-      return res.status(400).json({ message: 'pushNotify must be a boolean' });
+    const validationError = validateSavedSearchInput({
+      name, query, filters, notifyFrequency, emailNotify, pushNotify,
+    });
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
     }
 
     // Limit saved searches per user
@@ -95,12 +115,14 @@ router.get('/:id/results', auth, async (req, res) => {
       return res.status(404).json({ message: 'Saved search not found' });
     }
 
-    // Build query from saved search filters
-    const query = { available: true, sold: false, quantity: { $gt: 0 } };
+    // Build query from saved search filters. Only ACTIVE listings are
+    // visible: draft listings are hidden from the catalog (GET /api/listings
+    // filters on status) and must never leak through a saved search either.
+    const query = { available: true, sold: false, quantity: { $gt: 0 }, status: 'active' };
     const filters = savedSearch.filters || {};
 
     if (filters.category) query.category = filters.category;
-    if (filters.brand) query.brand = { $regex: filters.brand, $options: 'i' };
+    if (filters.brand) query.brand = { $regex: escapeRegex(filters.brand), $options: 'i' };
     if (filters.size) query.size = filters.size;
     if (filters.condition) query.condition = filters.condition;
     if (filters.minPrice || filters.maxPrice) {
@@ -109,17 +131,20 @@ router.get('/:id/results', auth, async (req, res) => {
       if (filters.maxPrice) query.price.$lte = Number(filters.maxPrice);
     }
     if (savedSearch.query) {
+      const safe = escapeRegex(savedSearch.query);
       query.$or = [
-        { title: { $regex: savedSearch.query, $options: 'i' } },
-        { brand: { $regex: savedSearch.query, $options: 'i' } },
-        { description: { $regex: savedSearch.query, $options: 'i' } },
+        { title: { $regex: safe, $options: 'i' } },
+        { brand: { $regex: safe, $options: 'i' } },
+        { description: { $regex: safe, $options: 'i' } },
       ];
     }
 
     let sortOption = { createdAt: -1 };
     if (filters.sort === 'price_low') sortOption = { price: 1 };
     else if (filters.sort === 'price_high') sortOption = { price: -1 };
-    else if (filters.sort === 'popular') sortOption = { 'likes.length': -1 };
+    // Listing has no 'likes.length' path — the maintained counter is
+    // likesCount (what the catalog and closet sort on).
+    else if (filters.sort === 'popular') sortOption = { likesCount: -1 };
 
     const listings = await Listing.find(query)
       .populate('seller', 'name avatar')
@@ -142,6 +167,13 @@ router.get('/:id/results', auth, async (req, res) => {
 router.put('/:id', auth, async (req, res) => {
   try {
     const { name, query, filters, notifyFrequency, emailNotify, pushNotify } = req.body;
+    const validationError = validateSavedSearchInput({
+      name, query, filters, notifyFrequency, emailNotify, pushNotify,
+    });
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
+    }
+
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (query !== undefined) updates.query = query;

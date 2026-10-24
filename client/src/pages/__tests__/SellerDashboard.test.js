@@ -112,6 +112,19 @@ describe('SellerDashboard page', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Auto Respond/i }));
     expect(await screen.findByText('No listings yet')).toBeInTheDocument();
   });
+  test('commission fallback advertises the real 8% fee / 92% keep', async () => {
+    // The platform charges 8% (server COMMISSION_RATE = 0.08, i.e. sellers keep
+    // 92%). When the commission endpoints are unreachable the dashboard must
+    // not fall back to a different, wrong rate.
+    getPayoutDashboard.mockRejectedValue(new Error('offline'));
+    getCommissionInfo.mockRejectedValue(new Error('offline'));
+    renderPage(<SellerDashboard />);
+    expect(await screen.findByText('Only 8%')).toBeInTheDocument();
+    expect(screen.getByText('You keep 92% of every sale')).toBeInTheDocument();
+    expect(screen.queryByText('Only 10%')).not.toBeInTheDocument();
+    expect(screen.queryByText('You keep 90% of every sale')).not.toBeInTheDocument();
+  });
+
   test('survives API failure without crashing', async () => {
     getPayoutDashboard.mockRejectedValue(new Error('boom'));
     getRatingsBySeller.mockRejectedValue(new Error('boom'));

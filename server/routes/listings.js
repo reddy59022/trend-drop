@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { isValidObjectId, asNumber } = require('../utils/validators');
+const { isValidObjectId, asNumber, escapeRegex } = require('../utils/validators');
 const Listing = require('../models/Listing');
 const User = require('../models/User');
 const Auction = require('../models/Auction');
@@ -76,7 +76,9 @@ router.get('/', optionalAuth, async (req, res) => {
     let query = { available: true, sold: false, quantity: { $gt: 0 }, status: 'active' };
 
     if (category) query.category = category;
-    if (brand) query.brand = { $regex: brand, $options: 'i' };
+    // Escape metacharacters: a brand typed as "[" or "(" would otherwise be
+    // an invalid MongoDB pattern (500) and "\\.*" would match everything.
+    if (brand) query.brand = { $regex: escapeRegex(brand), $options: 'i' };
     if (size) query.size = size;
     if (condition) query.condition = condition;
     if (minPrice || maxPrice) {
@@ -85,10 +87,11 @@ router.get('/', optionalAuth, async (req, res) => {
       if (maxPrice) query.price.$lte = Number(maxPrice);
     }
     if (search) {
+      const safeSearch = escapeRegex(search);
       query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { brand: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
+        { title: { $regex: safeSearch, $options: 'i' } },
+        { brand: { $regex: safeSearch, $options: 'i' } },
+        { description: { $regex: safeSearch, $options: 'i' } },
       ];
     }
 
@@ -157,7 +160,7 @@ router.get('/search', optionalAuth, async (req, res) => {
   }
 });
 
-router.get('/user/:userId', async (req, res) => {
+router.get('/user/:userId', optionalAuth, async (req, res) => {
   try {
     const { sort } = req.query;
     // Clamp page >=1 and limit to [1,50]: unbounded ?limit dumps the whole
@@ -168,13 +171,26 @@ router.get('/user/:userId', async (req, res) => {
     if (sort === 'price_low') sortOption = { price: 1 };
     else if (sort === 'price_high') sortOption = { price: -1 };
 
-    const listings = await Listing.find({ seller: req.params.userId, sold: false })
+    // This endpoint backs the PUBLIC profile closet, but the seller dashboard
+    // also reads it to manage drafts. Everyone else must see exactly what the
+    // catalog shows (active + available + in stock); only the owner (or an
+    // admin) may see unpublished/paused listings.
+    const isOwner = req.user && String(req.user._id) === String(req.params.userId);
+    const isAdmin = req.user && req.user.role === 'admin';
+    const filter = { seller: req.params.userId, sold: false };
+    if (!isOwner && !isAdmin) {
+      filter.status = 'active';
+      filter.available = true;
+      filter.quantity = { $gt: 0 };
+    }
+
+    const listings = await Listing.find(filter)
       .populate('seller', 'name avatar')
       .sort(sortOption)
       .limit(limit)
       .skip((page - 1) * limit);
 
-    const total = await Listing.countDocuments({ seller: req.params.userId, sold: false });
+    const total = await Listing.countDocuments(filter);
 
     res.json({
       listings,
