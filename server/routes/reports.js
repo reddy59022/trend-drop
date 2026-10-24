@@ -3,6 +3,7 @@ const router = express.Router();
 const Report = require('../models/Report');
 const { auth } = require('../middleware/auth');
 const { adminAuth } = require('../middleware/admin');
+const { isValidObjectId } = require('../utils/validators');
 
 // POST /api/reports - Report a listing (validated: the listing must exist and
 // the reason must be one of the moderation categories, so no orphan reports
@@ -52,6 +53,10 @@ router.get('/', auth, adminAuth, async (req, res) => {
 // PATCH /api/reports/:id/status - Update report status (admin only)
 router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   try {
+    // A malformed id used to reach findByIdAndUpdate and throw a CastError (500).
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid report ID' });
+    }
     const { status } = req.body;
     // `findByIdAndUpdate` does NOT run schema validators, so an arbitrary
     // status used to be persisted silently. Validate against the model enum

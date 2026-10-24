@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
+const { isValidObjectId } = require('../utils/validators');
 const Vendor = require('../models/Vendor');
 
 // GET /api/vendors - Get user vendor listings
@@ -50,6 +51,10 @@ router.post('/', auth, async (req, res) => {
 // and splits stay within 0-100).
 router.post('/:id/invite', auth, async (req, res) => {
   try {
+    // A malformed id used to reach Vendor.findById and throw a CastError (500).
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid vendor ID' });
+    }
     const { sellerId, commission } = req.body;
     const numericCommission = Number(commission);
     if (!Number.isFinite(numericCommission) || numericCommission < 0 || numericCommission > 100) {

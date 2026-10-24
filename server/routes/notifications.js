@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const User = require('../models/User');
-const { asNumber } = require('../utils/validators');
+const { asNumber, isValidObjectId } = require('../utils/validators');
 
 // ===================== NOTIFICATIONS =====================
 // GET /api/notifications - Get current user's notifications with optional unread count
@@ -81,8 +81,13 @@ router.put('/read', auth, async (req, res) => {
 });
 
 // PUT /api/notifications/:id/read - Mark a single notification as read
+// The global assertObjectId middleware cannot see child-router params, so id
+// routes validate themselves: a malformed id is a 400, never a CastError 500.
 router.put('/:id/read', auth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid notification ID' });
+    }
     const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -104,6 +109,11 @@ router.put('/:id/read', auth, async (req, res) => {
 // DELETE /api/notifications/:id - Delete a single notification
 router.delete('/:id', auth, async (req, res) => {
   try {
+    // DocumentArray#pull casts _id to ObjectId: an invalid id used to throw
+    // a CastError and answer 500.
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid notification ID' });
+    }
     const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });

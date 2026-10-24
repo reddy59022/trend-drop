@@ -48,6 +48,13 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'end time must be after start time' });
     }
     
+    // Only a live, in-stock listing can be auctioned. Without this check a
+    // seller could auction an item that is already sold, and closing that
+    // auction would mint a second order for merchandise that is gone.
+    if (listing.sold || listing.available === false) {
+      return res.status(400).json({ message: 'Listing is not available for auction' });
+    }
+
     // Check if auction already exists for this listing
     const existingAuction = await Auction.findOne({ listing: listingId });
     if (existingAuction) {
@@ -405,12 +412,35 @@ router.post('/:id/close', auth, async (req, res) => {
     let winner = null;
     let winningBid = 0;
     let winningCurrency = auction.currency || 'USD';
-    
+    let claimedListing = null;
+    let noWinnerReason = 'reserve price not met or no bids';
+
     if (auction.bids.length > 0 && auction.currentBid >= auction.reservePrice) {
       const highestBid = auction.bids.reduce((max, bid) => bid.amount > max.amount ? bid : max, auction.bids[0]);
-      winner = highestBid.bidder;
-      winningBid = highestBid.amount;
-      winningCurrency = highestBid.currency || auction.currency || 'USD';
+
+      // Claim the item ATOMICALLY before declaring a winner. The listing may
+      // have been sold through the normal catalog while the auction was
+      // running; marking it sold again and creating a second transaction would
+      // charge the winner for an item the seller no longer has. A failed claim
+      // (sold / paused / out of stock) closes the auction with no winner.
+      claimedListing = await Listing.findOneAndUpdate(
+        {
+          _id: auction.listing._id || auction.listing,
+          sold: { $ne: true },
+          available: { $ne: false },
+          quantity: { $gt: 0 },
+        },
+        { $set: { sold: true, available: false } },
+        { new: true },
+      );
+
+      if (claimedListing) {
+        winner = highestBid.bidder;
+        winningBid = highestBid.amount;
+        winningCurrency = highestBid.currency || auction.currency || 'USD';
+      } else {
+        noWinnerReason = 'the item is no longer available';
+      }
     }
     
     auction.winner = winner;
@@ -427,15 +457,10 @@ router.post('/:id/close', auth, async (req, res) => {
     
     await auction.save();
     
-    // Update listing if sold
+    // Create the winner's order (the listing was already claimed above)
     if (winner) {
-      await Listing.findByIdAndUpdate(auction.listing._id, {
-        sold: true,
-        available: false,
-      });
-      
       // Create transaction/order server-side (enterprise standard)
-      const listing = await Listing.findById(auction.listing._id).populate('seller');
+      const listing = await Listing.findById(claimedListing._id).populate('seller');
       
       // Calculate fees
       const platformFeePercent = 8; // 8% platform fee
@@ -517,10 +542,10 @@ router.post('/:id/close', auth, async (req, res) => {
         },
       });
     } else {
-      // No winner - reserve not met or no bids
+      // No winner — reserve not met, no bids, or the item is no longer available
       res.json({ 
         auction,
-        message: 'Auction closed without a winner (reserve price not met or no bids)',
+        message: `Auction closed without a winner (${noWinnerReason})`,
       });
     }
   } catch (error) {
