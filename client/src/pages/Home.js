@@ -6,6 +6,13 @@ import ListingCard from '../components/ListingCard';
 
 const LOADING_SKELETONS = 4;
 
+// Real numbers, honestly formatted: the landing page must never invent
+// marketplace figures. Large counts stay exact rather than rounded up.
+const formatCount = (value) => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
+  return value.toLocaleString('en-US');
+};
+
 const SkeletonCard = () => (
   <div className="listing-card" style={{ pointerEvents: 'none' }}>
     <div style={{ width: '100%', paddingBottom: '100%', background: 'linear-gradient(90deg, var(--td-surface-2) 25%, var(--td-surface) 50%, var(--td-surface-2) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite', borderRadius: 'var(--td-radius-sm) var(--td-radius-sm) 0 0' }} />
@@ -20,6 +27,7 @@ const SkeletonCard = () => (
 const Home = () => {
   const [trending, setTrending] = useState([]);
   const [newArrivals, setNewArrivals] = useState([]);
+  const [market, setMarket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -27,12 +35,15 @@ const Home = () => {
     setLoading(true);
     setError(null);
     try {
-      const [trendingRes, newRes] = await Promise.all([
+      const [trendingRes, newRes, marketRes] = await Promise.all([
         api.get('/listings?limit=8&sort=popular'),
         api.get('/listings?limit=8&sort=newest'),
+        // Marketplace numbers are decoration, never a reason to fail the page.
+        api.get('/listings/marketplace-stats').catch(() => null),
       ]);
       setTrending(trendingRes.data.listings || []);
       setNewArrivals(newRes.data.listings || []);
+      setMarket(marketRes && marketRes.data ? marketRes.data : null);
     } catch (error) {
       console.error('Error fetching listings:', error);
       setError('Unable to load listings. Please check your connection and try again.');
@@ -45,23 +56,36 @@ const Home = () => {
     fetchData();
   }, [fetchData]);
 
+  // Counts come from GET /listings/marketplace-stats (active, in-stock items
+  // only). The category strip keeps its editorial order; a category with no
+  // live items simply shows no count instead of an invented one.
+  const categoryCounts = (market && Array.isArray(market.categories))
+    ? market.categories.reduce((acc, c) => {
+      if (c && typeof c.name === 'string') acc[c.name] = c.count;
+      return acc;
+    }, {})
+    : {};
+
   const categories = [
-    { name: 'Women', icon: '👗', color: '#FF6BC1', count: '12.5K', ariaLabel: 'Browse Women fashion' },
-    { name: 'Men', icon: '👔', color: '#6C3BFF', count: '8.3K', ariaLabel: 'Browse Men fashion' },
-    { name: 'Kids', icon: '🧸', color: '#FFB020', count: '4.1K', ariaLabel: 'Browse Kids fashion' },
-    { name: 'Electronics', icon: '📱', color: '#00D4FF', count: '6.7K', ariaLabel: 'Browse Electronics' },
-    { name: 'Home', icon: '🏠', color: '#10D98E', count: '5.2K', ariaLabel: 'Browse Home goods' },
-    { name: 'Beauty', icon: '💄', color: '#FF8ACB', count: '3.8K', ariaLabel: 'Browse Beauty products' },
-    { name: 'Accessories', icon: '👜', color: '#FFB86B', count: '9.4K', ariaLabel: 'Browse Accessories' },
-    { name: 'Vintage', icon: '🎭', color: '#9D74FF', count: '2.6K', ariaLabel: 'Browse Vintage items' },
+    { name: 'Women', icon: '👗', color: '#FF6BC1', ariaLabel: 'Browse Women fashion' },
+    { name: 'Men', icon: '👔', color: '#6C3BFF', ariaLabel: 'Browse Men fashion' },
+    { name: 'Kids', icon: '🧸', color: '#FFB020', ariaLabel: 'Browse Kids fashion' },
+    { name: 'Electronics', icon: '📱', color: '#00D4FF', ariaLabel: 'Browse Electronics' },
+    { name: 'Home', icon: '🏠', color: '#10D98E', ariaLabel: 'Browse Home goods' },
+    { name: 'Beauty', icon: '💄', color: '#FF8ACB', ariaLabel: 'Browse Beauty products' },
+    { name: 'Accessories', icon: '👜', color: '#FFB86B', ariaLabel: 'Browse Accessories' },
+    { name: 'Clothing', icon: '👕', color: '#9D74FF', ariaLabel: 'Browse Clothing' },
   ];
 
+  // Only real figures, plus one true constant (the 8% flat commission).
   const stats = [
-    { value: '85+', label: 'Countries', icon: <FaGlobeAmericas aria-hidden="true" /> },
-    { value: '50K+', label: 'Active Sellers', icon: <FaUsers aria-hidden="true" /> },
-    { value: '1M+', label: 'Items Listed', icon: <FaGem aria-hidden="true" /> },
-    { value: '99%', label: 'Buyer Protection', icon: <FaShieldAlt aria-hidden="true" /> },
+    { value: formatCount(market && market.totalListings), label: 'Items live', icon: <FaGem aria-hidden="true" /> },
+    { value: formatCount(market && market.totalSellers), label: 'Sellers', icon: <FaUsers aria-hidden="true" /> },
+    { value: formatCount(market && market.totalCountries), label: 'Countries', icon: <FaGlobeAmericas aria-hidden="true" /> },
+    { value: '8%', label: 'Flat commission', icon: <FaTag aria-hidden="true" /> },
   ];
+
+  const hasStats = stats.some((stat) => stat.value);
 
   const renderListingGrid = (listings) => {
     if (listings.length === 0) {
@@ -116,29 +140,31 @@ const Home = () => {
             </Link>
           </div>
           <div className="hero-features" role="list" aria-label="Platform highlights">
-            <span role="listitem"><FaTruck aria-hidden="true" /> Free shipping over $50</span>
+            <span role="listitem"><FaTruck aria-hidden="true" /> Free US shipping over $50</span>
             <span role="listitem"><FaShieldAlt aria-hidden="true" /> Buyer protection</span>
             <span role="listitem"><FaTag aria-hidden="true" /> Low 8% commission</span>
           </div>
         </div>
       </section>
 
-      {/* ===== Global Stats Bar ===== */}
-      <section className="section" style={{ padding: '32px 0', background: 'var(--td-surface-secondary)' }} aria-label="Platform statistics">
-        <div className="container">
-          <div className="stats-bar" role="list">
-            {stats.map((stat, i) => (
-              <div key={i} className="stat-item" role="listitem">
-                <span className="stat-icon">{stat.icon}</span>
-                <div className="stat-info">
-                  <span className="stat-value">{stat.value}</span>
-                  <span className="stat-label">{stat.label}</span>
+      {/* ===== Live Marketplace Numbers (real counts, never invented) ===== */}
+      {hasStats && (
+        <section className="section" style={{ padding: '32px 0', background: 'var(--td-surface-secondary)' }} aria-label="Marketplace statistics">
+          <div className="container">
+            <div className="stats-bar" role="list">
+              {stats.filter((stat) => stat.value).map((stat) => (
+                <div key={stat.label} className="stat-item" role="listitem">
+                  <span className="stat-icon">{stat.icon}</span>
+                  <div className="stat-info">
+                    <span className="stat-value">{stat.value}</span>
+                    <span className="stat-label">{stat.label}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ===== Categories ===== */}
       <section className="section" aria-label="Shop by category">
@@ -156,7 +182,9 @@ const Home = () => {
               >
                 <span className="category-icon" aria-hidden="true">{cat.icon}</span>
                 <span className="category-name">{cat.name}</span>
-                <span className="category-count">{cat.count} items</span>
+                {categoryCounts[cat.name] > 0 && (
+                  <span className="category-count">{categoryCounts[cat.name].toLocaleString('en-US')} items</span>
+                )}
               </Link>
             ))}
           </div>

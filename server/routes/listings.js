@@ -124,6 +124,58 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
+// ============================================================
+// GET /api/listings/marketplace-stats - Public, real marketplace numbers
+// ============================================================
+// The landing page used to render hard-coded figures ("1M+ Items Listed",
+// "50K+ Active Sellers", per-category counts) that nothing ever measured.
+// Fabricated social proof is misleading advertising on a live marketplace, so
+// these numbers now come from the same filter the catalog uses: active,
+// available, unsold, in stock. Aggregations are cached briefly because the
+// home page asks on every visit.
+const MARKET_STATS_TTL_MS = 5 * 60 * 1000;
+let marketStatsCache = { at: 0, body: null };
+
+router.get('/marketplace-stats', async (req, res) => {
+  try {
+    if (marketStatsCache.body && Date.now() - marketStatsCache.at < MARKET_STATS_TTL_MS) {
+      return res.json(marketStatsCache.body);
+    }
+
+    const liveListing = { status: 'active', available: true, sold: false, quantity: { $gt: 0 } };
+    const [facets] = await Listing.aggregate([
+      { $match: liveListing },
+      {
+        $facet: {
+          total: [{ $count: 'n' }],
+          sellers: [{ $group: { _id: '$seller' } }, { $count: 'n' }],
+          categories: [{ $group: { _id: '$category', count: { $sum: 1 } } }],
+        },
+      },
+    ]);
+
+    const { getSupportedCountries } = require('../config/marketplace');
+    const categories = (facets.categories || [])
+      .filter((c) => c._id)
+      .map((c) => ({ name: String(c._id), count: c.count }))
+      .sort((a, b) => b.count - a.count);
+
+    const body = {
+      totalListings: (facets.total[0] || {}).n || 0,
+      totalSellers: (facets.sellers[0] || {}).n || 0,
+      totalCountries: getSupportedCountries().length,
+      categories,
+      generatedAt: new Date().toISOString(),
+    };
+
+    marketStatsCache = { at: Date.now(), body };
+    res.json(body);
+  } catch (error) {
+    console.error('Marketplace stats error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/search', optionalAuth, async (req, res) => {
   try {
     const { asText, asNumber, escapeRegex } = require('../utils/validators');

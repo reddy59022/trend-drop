@@ -96,7 +96,7 @@ const assertObjectId = (req, res, next) => {
     [/^\/admin\/seller-badges\/(?!pending(?:\/|$))([^/]+)/, 'userId'],
     [/^\/pricehistory\/([^/]+)/, 'listingId'],
     [/^\/listings\/user\/([^/]+)/, 'userId'],
-    [/^\/listings\/(?!search(?:\/|$)|user(?:\/|$)|my(?:\/|$)|bulk(?:-|\/|$))([^/]+)/, 'id'],
+    [/^\/listings\/(?!search(?:\/|$)|user(?:\/|$)|my(?:\/|$)|marketplace-stats(?:\/|$)|bulk(?:-|\/|$))([^/]+)/, 'id'],
     [/^\/comments\/(?!trending(?:\/|$)|hashtag(?:\/|$))([^/]+)/, 'id'],
     [/^\/recently-viewed\/(?!clear(?:\/|$))([^/]+)/, 'listingId'],
     [/^\/payouts\/process\/([^/]+)/, 'transactionId'],

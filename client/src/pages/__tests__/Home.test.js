@@ -57,6 +57,33 @@ describe('Home page', () => {
     retry[0].click();
     expect(await screen.findAllByText('Vintage Denim Jacket')).toHaveLength(2);
   });
+  test('shows real marketplace numbers instead of the old hard-coded marketing figures', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('marketplace-stats')) {
+        return Promise.resolve({
+          data: {
+            totalListings: 273,
+            totalSellers: 41,
+            totalCountries: 33,
+            categories: [{ name: 'Women', count: 88 }, { name: 'Men', count: 12 }],
+          },
+        });
+      }
+      return Promise.resolve(okListings([sampleListing()]));
+    });
+
+    renderPage(<Home />);
+
+    expect(await screen.findByText('273')).toBeInTheDocument();
+    expect(screen.getByText('41')).toBeInTheDocument();
+    expect(screen.getByText('33')).toBeInTheDocument();
+    expect(screen.getByText('Items live')).toBeInTheDocument();
+    expect(screen.getByText('88 items')).toBeInTheDocument();
+    expect(screen.queryByText('1M+')).not.toBeInTheDocument();
+    expect(screen.queryByText('50K+')).not.toBeInTheDocument();
+    expect(screen.queryByText('12.5K items')).not.toBeInTheDocument();
+  });
+
   test('category cards link to filtered search', async () => {
     api.get.mockResolvedValue(okListings([]));
     renderPage(<Home />);

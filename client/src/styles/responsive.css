@@ -809,6 +809,58 @@ body,
 }
 
 /* ============================================================
+   10b. MOBILE HERO — first screen must earn its height
+   The hero packed a badge, a clamp() headline, a three-line deck,
+   two stacked full-width buttons and a trust row into one section,
+   pushing both CTAs below the 844px fold on a phone. Tighten the
+   rhythm so the primary action is always visible without scrolling.
+   ============================================================ */
+@media (max-width: 768px) {
+  .hero {
+    min-height: 0;
+    padding: 40px var(--td-content-padding) 36px;
+  }
+
+  .hero-badge {
+    margin-bottom: 14px;
+    padding: 6px 14px;
+    font-size: 11px;
+    letter-spacing: 0.4px;
+  }
+
+  .hero-content h1 {
+    font-size: clamp(1.9rem, 9vw, 2.5rem);
+    letter-spacing: -0.8px;
+    margin-bottom: 12px;
+  }
+
+  .hero-content p {
+    font-size: 15px;
+    line-height: 1.5;
+    margin-bottom: 20px;
+  }
+
+  .hero-actions {
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .hero-actions .btn-lg {
+    width: 100%;
+    justify-content: center;
+    padding: 14px 20px;
+  }
+
+  .hero-features {
+    gap: 8px 14px;
+  }
+
+  .hero-features span {
+    font-size: 11.5px;
+  }
+}
+
+/* ============================================================
    11. PRINT (optional polish)
    ============================================================ */
 @media print {
