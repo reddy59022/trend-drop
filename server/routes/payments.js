@@ -159,6 +159,14 @@ router.post('/create-intent', auth, async (req, res) => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) {
         return res.status(400).json({ message: 'Each item must be an object with a valid quantity' });
       }
+      // Ids arrive from the client: a malformed one used to reach findById()
+      // and throw a CastError (500) before any authorization was created.
+      if (!isValidObjectId(item.listingId)) {
+        return res.status(400).json({ message: 'Each item requires a valid listingId', failedItem: item.listingId });
+      }
+      if (item.offerId && !isValidObjectId(item.offerId)) {
+        return res.status(400).json({ message: 'Invalid offerId', failedItem: item.listingId });
+      }
       const hasQuantity = Object.prototype.hasOwnProperty.call(item, 'quantity');
       if (hasQuantity && !isPositiveIntegerQuantity(item.quantity)) {
         return res.status(400).json({ message: 'quantity must be a positive integer', failedItem: item.listingId });
@@ -482,6 +490,15 @@ router.post('/confirm-batch', auth, async (req, res) => {
     for (const item of items) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) {
         return releaseAuthOnFailure(res, 400, { message: 'Each item must be an object with a valid quantity' });
+      }
+      // Ids arrive from the client: validate before Mongoose casts them, so a
+      // malformed listingId/offerId is a 400 (and the hold is released) rather
+      // than a CastError 500 that leaves the authorization stranded.
+      if (!isValidObjectId(item.listingId)) {
+        return releaseAuthOnFailure(res, 400, { message: 'Each item requires a valid listingId', failedItem: item.listingId });
+      }
+      if (item.offerId && !isValidObjectId(item.offerId)) {
+        return releaseAuthOnFailure(res, 400, { message: 'Invalid offerId', failedItem: item.listingId });
       }
       const hasQuantity = Object.prototype.hasOwnProperty.call(item, 'quantity');
       if (hasQuantity && !isPositiveIntegerQuantity(item.quantity)) {

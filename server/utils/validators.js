@@ -103,6 +103,7 @@ const assertObjectId = (req, res, next) => {
     [/^\/listings\/([^/]+)\/(?:boost|deactivate-boost)/, 'id'],
     [/^\/saved-searches\/([^/]+)/, 'id'],
     [/^\/collections\/seller\/([^/]+)/, 'sellerId'],
+    [/^\/collections\/[^/]+\/listings\/([^/]+)/, 'listingId'],
     [/^\/collections\/([^/]+)/, 'id'],
     [/^\/offers\/listing\/([^/]+)/, 'listingId'],
     [/^\/offers\/bulk\/([^/]+)/, 'listingId'],

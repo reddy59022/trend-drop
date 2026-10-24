@@ -3,6 +3,7 @@ const router = express.Router();
 const Collection = require('../models/Collection');
 const Listing = require('../models/Listing');
 const { auth, optionalAuth } = require('../middleware/auth');
+const { isValidObjectId } = require('../utils/validators');
 
 // POST /api/collections - Create collection
 router.post('/', auth, async (req, res) => {
@@ -173,6 +174,10 @@ router.post('/:id/listings', auth, async (req, res) => {
 
     const { listingId } = req.body;
     if (!listingId) return res.status(400).json({ message: 'Listing ID required' });
+    // A malformed body id reached Listing.findById() as a CastError -> 500.
+    if (!isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Invalid listing ID', param: 'listingId' });
+    }
 
     // Verify listing belongs to seller
     const listing = await Listing.findById(listingId);
