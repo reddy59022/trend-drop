@@ -17,10 +17,9 @@
     "test:ci": "NODE_ENV=test node scripts/run-jest-shards.js"
   },
   "dependencies": {
-    "@sendinblue/client": "^3.3.1",
     "axios": "^1.19.0",
     "bcryptjs": "^2.4.3",
-    "cloudinary": "^1.37.0",
+    "cloudinary": "^2.11.0",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.1",
@@ -35,7 +34,6 @@
     "mongoose": "^7.2.0",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "multer-storage-cloudinary": "^4.0.0",
     "node-cron": "^4.5.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",

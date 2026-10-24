@@ -1,12 +1,11 @@
 // Brevo (formerly Sendinblue) email configuration
-const SibApiV3Sdk = require('@sendinblue/client');
-
+//
+// Transport: plain fetch to Brevo's v3 REST API (Node >= 18). This replaces
+// the deprecated @sendinblue/client SDK, whose request@2.88.2 dependency
+// chain carried CRITICAL advisories (request SSRF, form-data boundary/CRLF)
+// plus moderate ones (qs, tough-cookie, uuid@3).
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
-
-const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-if (BREVO_API_KEY) {
-  apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, BREVO_API_KEY);
-}
+const BREVO_SMTP_URL = 'https://api.brevo.com/v3/smtp/email';
 
 const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'reddy59021@gmail.com';
 const SENDER_NAME = 'TrendDrop';
@@ -34,6 +33,27 @@ const hasApiKey = () => {
   return false;
 };
 
+// POST one transactional email to Brevo. Throws on transport or API failure;
+// callers wrap it in a fire-and-forget promise that only logs errors.
+const sendTransactionalEmail = async (payload) => {
+  const response = await fetch(BREVO_SMTP_URL, {
+    method: 'POST',
+    headers: {
+      'api-key': BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(`Brevo API error ${response.status}: ${data.message || 'send failed'}`);
+    error.response = { body: data };
+    throw error;
+  }
+  return data;
+};
+
 // Send email verification. Fire-and-forget: returns immediately so
 // registration never blocks on the (slow) email provider; failures are
 // logged, never thrown to the caller.
@@ -44,9 +64,7 @@ const sendVerificationEmail = (email, name, token) => {
   const safeVerificationUrl = escapeHtml(verificationUrl);
 
   const sendPromise = (async () => {
-    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-    sendSmtpEmail.subject = 'Verify your TrendDrop email address';
-    sendSmtpEmail.htmlContent = `
+    const htmlContent = `
       <!DOCTYPE html>
       <html>
       <head><meta charset="utf-8"></head>
@@ -83,12 +101,15 @@ const sendVerificationEmail = (email, name, token) => {
       </body>
       </html>
     `;
-    sendSmtpEmail.to = [{ email, name }];
-    sendSmtpEmail.sender = { email: SENDER_EMAIL, name: SENDER_NAME };
-    sendSmtpEmail.replyTo = { email: SENDER_EMAIL, name: 'TrendDrop Support' };
 
-    const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
-    console.log('Verification email sent to:', email, 'messageId:', result.body?.messageId);
+    const data = await sendTransactionalEmail({
+      subject: 'Verify your TrendDrop email address',
+      htmlContent,
+      to: [{ email, name }],
+      sender: { email: SENDER_EMAIL, name: SENDER_NAME },
+      replyTo: { email: SENDER_EMAIL, name: 'TrendDrop Support' },
+    });
+    console.log('Verification email sent to:', email, 'messageId:', data.messageId);
     return { emailSent: true };
   })();
 
@@ -109,14 +130,12 @@ const sendPasswordResetEmail = (email, name, token) => {
   const safeResetUrl = escapeHtml(resetUrl);
 
   const sendPromise = (async () => {
-    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-    sendSmtpEmail.subject = 'Reset your TrendDrop password';
-    sendSmtpEmail.htmlContent = `
+    const htmlContent = `
       <!DOCTYPE html>
       <html>
       <body style="font-family: Arial, sans-serif; background:#f5f5f5; padding:20px;">
         <div style="max-width:600px; margin:0 auto; background:#fff; border-radius:12px; overflow:hidden;">
-          <div style="background:linear-gradient(135deg, #FF4D6D, #FF8FA3); padding:20px; text-align:center;">
+          <div style="background:linear-gradient(135deg, #FF4D6D, #FF8FA3); padding:30px; text-align:center;">
             <h1 style="color:#fff; margin:0; font-size:20px;">Password Reset</h1>
           </div>
           <div style="padding:30px;">
@@ -132,10 +151,13 @@ const sendPasswordResetEmail = (email, name, token) => {
       </body>
       </html>
     `;
-    sendSmtpEmail.to = [{ email, name }];
-    sendSmtpEmail.sender = { email: SENDER_EMAIL, name: SENDER_NAME };
 
-    await apiInstance.sendTransacEmail(sendSmtpEmail);
+    await sendTransactionalEmail({
+      subject: 'Reset your TrendDrop password',
+      htmlContent,
+      to: [{ email, name }],
+      sender: { email: SENDER_EMAIL, name: SENDER_NAME },
+    });
     console.log('Password reset email sent to:', email);
     return { emailSent: true };
   })();

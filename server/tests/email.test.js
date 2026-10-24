@@ -2,30 +2,20 @@
 // Covers config/email.js: keyless skip path (no network), keyed send path,
 // FRONTEND_URL precedence, and localhost fallback for email links.
 // jest.setup.js globally mocks ./config/email (returns true) for hermetically;
-// unmock here so the REAL module logic is exercised (still no network: the
-// @sendinblue/client SDK below is mocked).
+// unmock here so the REAL module logic is exercised (still no network: fetch
+// to the Brevo REST endpoint is captured below).
 jest.unmock('../config/email');
 
-const mockSend = jest.fn(async function sendTransacEmail(email) {
-  this.sent = (this.sent || []).concat(email);
-  return { body: { messageId: `msg-${this.sent.length}` } };
-});
+const mockSend = jest.fn(async (payload) => ({ messageId: `msg-${mockSend.mock.calls.length}` }));
 
-jest.mock('@sendinblue/client', () => ({
-  TransactionalEmailsApi: class {
-    constructor() {
-      this.sent = [];
-    }
-    setApiKey() {
-      this.keySet = true;
-    }
-    sendTransacEmail(email) {
-      return mockSend.call(this, email);
-    }
-  },
-  TransactionalEmailsApiApiKeys: { apiKey: 'api-key' },
-  SendSmtpEmail: class {},
-}));
+// Capture the Brevo REST payloads posted by config/email.js.
+beforeEach(() => {
+  global.fetch = jest.fn(async (url, opts) => {
+    const payload = JSON.parse(opts.body);
+    await mockSend(payload);
+    return { ok: true, status: 201, json: async () => ({ messageId: `msg-${mockSend.mock.calls.length}` }) };
+  });
+});
 
 const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 

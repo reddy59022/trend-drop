@@ -1,6 +1,4 @@
 const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const multer = require('multer');
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -30,49 +28,8 @@ const imageOptimization = {
   },
 };
 
-// Performance: Optimized Cloudinary storage with aggressive compression
-const storage = new CloudinaryStorage({
-  cloudinary,
-  params: (req, file) => {
-    const folder = req.path.includes('avatar') ? 'trend-drop/avatars' : 'trend-drop/listings';
-    return {
-      folder,
-      allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'avif'],
-      format: 'webp',           // WebP = 30-50% smaller than JPEG
-      quality: 'auto:good',     // Auto quality based on content
-      eager_async: true,        // Generate responsive sizes in background
-      // Responsive breakpoints for mobile/web/ios/android
-      // Generate only the thumbnail eagerly for listings to cut transformation usage.
-      // The cover image (first upload) will still be transformed on demand via the "large" preset.
-      eager: req.path.includes('avatar')
-        ? [
-            imageOptimization.avatar.thumb,
-            imageOptimization.avatar.medium,
-          ]
-        : [
-            imageOptimization.listing.thumb,
-          ],
-      transformation: [
-        req.path.includes('avatar')
-          ? imageOptimization.avatar.medium
-          : imageOptimization.listing.large,
-      ],
-    };
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB max
-  },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'), false);
-    }
-  },
-});
-
-module.exports = { cloudinary, upload, imageOptimization };
+// Uploads go through middleware/upload.js (multer memory storage) and the
+// data-URI helpers in routes/ — the multer-storage-cloudinary adapter that
+// used to live here was dead code and pinned cloudinary 1.x (HIGH advisory),
+// so it is gone. `imageOptimization` remains as the shared preset source.
+module.exports = { cloudinary, imageOptimization };
