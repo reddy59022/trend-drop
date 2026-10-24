@@ -80,5 +80,6 @@ e2e/.cache/
 blob-report/
 e2e/reports/
 
-# Production audit screenshots (evidence, not source)
-aud/*.png
+# Production audit screenshots are committed as evidence (no ignore rule —
+# the old `aud/*.png` pattern targeted a nonexistent folder and silently
+# left 8 files out of sync).
