@@ -231,9 +231,9 @@ const SellerDashboard = () => {
   // Money accuracy: Total Sales is gross, Your Earnings is realized (completed),
   // Pending Payout is owed-but-not-yet-released.
   const stats = [
-    { label: 'Total Sales', value: formatPrice(dashboard.totalSales || 0, 'USD'), color: 'var(--td-primary)', icon: <FaDollarSign /> },
-    { label: 'Your Earnings', value: formatPrice(dashboard.totalEarnings || 0, 'USD'), color: 'var(--td-success)', icon: <FaChartLine /> },
-    { label: 'Pending Payout', value: formatPrice(dashboard.pendingAmount || 0, 'USD'), color: 'var(--td-warning)', icon: <FaHistory /> },
+    { label: 'Total Sales', value: formatPrice(dashboard.totalSales || 0, 'USD'), color: 'var(--td-primary)', icon: <FaDollarSign />, caption: 'Gross sales volume, before commission' },
+    { label: 'Your Earnings', value: formatPrice(dashboard.totalEarnings || 0, 'USD'), color: 'var(--td-success)', icon: <FaChartLine />, caption: 'Already released to your balance' },
+    { label: 'Pending Payout', value: formatPrice(dashboard.pendingAmount || 0, 'USD'), color: 'var(--td-warning)', icon: <FaHistory />, caption: 'Owed to you, released after delivery' },
   ];
 
   const tabs = [
@@ -288,6 +288,9 @@ const SellerDashboard = () => {
                 <div style={{ color: stat.color, marginBottom: 8 }}>{stat.icon}</div>
                 <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>{stat.label}</div>
                 <div style={{ fontSize: 24, fontWeight: 800, color: stat.color }}>{stat.value}</div>
+                {stat.caption && (
+                  <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)', marginTop: 4, lineHeight: 1.35 }}>{stat.caption}</div>
+                )}
               </div>
             ))}
           </div>

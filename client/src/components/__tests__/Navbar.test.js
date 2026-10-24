@@ -139,3 +139,26 @@ describe('Navbar top-right — auto-selected country + currency (IP geo)', () =>
     expect(screen.getByLabelText('Select currency')).toHaveTextContent('USD');
   });
 });
+
+describe('Navbar Shop mega-menu — category navigation', () => {
+  test('N9 opens with every category linking to a filtered search', async () => {
+    renderNavbar();
+    fireEvent.click(screen.getByLabelText('Shop categories'));
+
+    expect(await screen.findByText('Shop by category')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Women/ })).toHaveAttribute('href', '/search?category=Women');
+    expect(screen.getByRole('menuitem', { name: /Clothing/ })).toHaveAttribute('href', '/search?category=Clothing');
+    expect(screen.getByRole('menuitem', { name: /Browse everything/ })).toHaveAttribute('href', '/search');
+    // 8 categories + "Browse everything"
+    expect(screen.getAllByRole('menuitem')).toHaveLength(9);
+  });
+
+  test('N10 choosing a category closes the menu', async () => {
+    renderNavbar();
+    fireEvent.click(screen.getByLabelText('Shop categories'));
+    await screen.findByText('Shop by category');
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /Kids/ }));
+    expect(screen.queryByText('Shop by category')).not.toBeInTheDocument();
+  });
+});

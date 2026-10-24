@@ -30,6 +30,13 @@ import {
   FaUserPlus,
   FaAward,
   FaTag,
+  FaFemale,
+  FaMale,
+  FaChild,
+  FaMobileAlt,
+  FaCouch,
+  FaSpa,
+  FaTshirt,
 } from 'react-icons/fa';
 
 // Currency dropdown: curated popular list first; the ACTIVE currency is
@@ -91,6 +98,7 @@ const Navbar = () => {
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [shopOpen, setShopOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [countryOpen, setCountryOpen] = useState(false);
@@ -208,6 +216,7 @@ const Navbar = () => {
   const closeAllMenus = () => {
     setMenuOpen(false);
     setDropdownOpen(false);
+    setShopOpen(false);
     setCurrencyOpen(false);
     setCountryOpen(false);
     setLangOpen(false);
@@ -303,6 +312,52 @@ const Navbar = () => {
           >
             Browse
           </Link>
+          {/* Shop — category mega-menu (the catalog is the product; it must be
+              reachable in one click from anywhere, not only via the search box) */}
+          <div className="nav-dropdown">
+            <button
+              className="nav-dropdown-trigger"
+              onClick={() => setShopOpen(!shopOpen)}
+              aria-label="Shop categories"
+              aria-haspopup="menu"
+              aria-expanded={shopOpen}
+            >
+              Shop
+            </button>
+
+            {shopOpen && (
+              <div className="nav-mega-menu" role="menu">
+                <div className="dropdown-header">Shop by category</div>
+                <div className="nav-mega-grid">
+                  {[
+                    { name: 'Women', icon: <FaFemale /> },
+                    { name: 'Men', icon: <FaMale /> },
+                    { name: 'Kids', icon: <FaChild /> },
+                    { name: 'Electronics', icon: <FaMobileAlt /> },
+                    { name: 'Home', icon: <FaCouch /> },
+                    { name: 'Beauty', icon: <FaSpa /> },
+                    { name: 'Accessories', icon: <FaShoppingBag /> },
+                    { name: 'Clothing', icon: <FaTshirt /> },
+                  ].map((cat) => (
+                    <Link
+                      key={cat.name}
+                      to={`/search?category=${cat.name}`}
+                      className="nav-mega-item"
+                      role="menuitem"
+                      onClick={() => { setShopOpen(false); setMenuOpen(false); }}
+                    >
+                      <span aria-hidden="true">{cat.icon}</span>
+                      {cat.name}
+                    </Link>
+                  ))}
+                </div>
+                <Link to="/search" className="nav-mega-all" role="menuitem" onClick={() => { setShopOpen(false); setMenuOpen(false); }}>
+                  Browse everything →
+                </Link>
+              </div>
+            )}
+          </div>
+
           <Link 
             to="/sell" 
             className="nav-link sell-link"

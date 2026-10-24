@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { FaSearch, FaCamera, FaHeart, FaUsers, FaBolt, FaShieldAlt, FaGlobeAmericas, FaGem, FaSpinner, FaExclamationTriangle, FaTag, FaStar, FaTruck } from 'react-icons/fa';
+import { FaSearch, FaCamera, FaHeart, FaUsers, FaBolt, FaShieldAlt, FaGlobeAmericas, FaGem, FaSpinner, FaExclamationTriangle, FaTag, FaStar, FaTruck, FaFemale, FaMale, FaChild, FaMobileAlt, FaCouch, FaSpa, FaShoppingBag, FaTshirt } from 'react-icons/fa';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
 
@@ -66,15 +66,17 @@ const Home = () => {
     }, {})
     : {};
 
+  // One icon family (react-icons) instead of emoji: emoji render differently on
+  // every OS and read as placeholder design next to a premium wordmark.
   const categories = [
-    { name: 'Women', icon: '👗', color: '#FF6BC1', ariaLabel: 'Browse Women fashion' },
-    { name: 'Men', icon: '👔', color: '#6C3BFF', ariaLabel: 'Browse Men fashion' },
-    { name: 'Kids', icon: '🧸', color: '#FFB020', ariaLabel: 'Browse Kids fashion' },
-    { name: 'Electronics', icon: '📱', color: '#00D4FF', ariaLabel: 'Browse Electronics' },
-    { name: 'Home', icon: '🏠', color: '#10D98E', ariaLabel: 'Browse Home goods' },
-    { name: 'Beauty', icon: '💄', color: '#FF8ACB', ariaLabel: 'Browse Beauty products' },
-    { name: 'Accessories', icon: '👜', color: '#FFB86B', ariaLabel: 'Browse Accessories' },
-    { name: 'Clothing', icon: '👕', color: '#9D74FF', ariaLabel: 'Browse Clothing' },
+    { name: 'Women', icon: <FaFemale aria-hidden="true" />, color: '#FF6BC1', ariaLabel: 'Browse Women fashion' },
+    { name: 'Men', icon: <FaMale aria-hidden="true" />, color: '#6C3BFF', ariaLabel: 'Browse Men fashion' },
+    { name: 'Kids', icon: <FaChild aria-hidden="true" />, color: '#FFB020', ariaLabel: 'Browse Kids fashion' },
+    { name: 'Electronics', icon: <FaMobileAlt aria-hidden="true" />, color: '#00D4FF', ariaLabel: 'Browse Electronics' },
+    { name: 'Home', icon: <FaCouch aria-hidden="true" />, color: '#10D98E', ariaLabel: 'Browse Home goods' },
+    { name: 'Beauty', icon: <FaSpa aria-hidden="true" />, color: '#FF8ACB', ariaLabel: 'Browse Beauty products' },
+    { name: 'Accessories', icon: <FaShoppingBag aria-hidden="true" />, color: '#FFB86B', ariaLabel: 'Browse Accessories' },
+    { name: 'Clothing', icon: <FaTshirt aria-hidden="true" />, color: '#9D74FF', ariaLabel: 'Browse Clothing' },
   ];
 
   // Only real figures, plus one true constant (the 8% flat commission).
@@ -195,7 +197,7 @@ const Home = () => {
       <section className="section bg-light" aria-label="Trending listings">
         <div className="container">
           <div className="section-header">
-            <h2 className="section-title">🔥 Trending Now</h2>
+            <h2 className="section-title">Trending Now</h2>
             <Link to="/search?sort=popular" className="btn btn-ghost btn-sm" aria-label="View all trending">
               View All →
             </Link>
@@ -240,6 +242,11 @@ const Home = () => {
                 </div>
               ))}
             </div>
+            <p className="commission-footnote">
+              Competitor rates are the platforms' published seller fees as of
+              October 2026 and can change. TrendDrop's 8% is a single flat
+              commission — no listing fees, no payment-processing surcharge.
+            </p>
           </div>
         </div>
       </section>
@@ -248,7 +255,7 @@ const Home = () => {
       <section className="section" aria-label="New arrivals">
         <div className="container">
           <div className="section-header">
-            <h2 className="section-title">✨ New Arrivals</h2>
+            <h2 className="section-title">New Arrivals</h2>
             <Link to="/feed" className="btn btn-ghost btn-sm" aria-label="View all new arrivals">
               View All →
             </Link>

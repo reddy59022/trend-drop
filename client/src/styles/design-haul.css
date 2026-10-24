@@ -838,3 +838,188 @@ textarea:focus-visible, [tabindex]:focus-visible {
     height: 30px;
   }
 }
+
+/* =====================================================
+   NAV MEGA-MENU — one click to any category
+   The catalog was only reachable via search or the home
+   page tiles. This is the primary way shoppers navigate
+   every serious marketplace, so it belongs in the header.
+   ===================================================== */
+.nav-mega-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  padding: 18px;
+  background: color-mix(in srgb, var(--td-surface, #fff) 92%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--td-border, rgba(108, 59, 255, 0.18));
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(8, 8, 26, 0.18);
+  z-index: 200;
+  animation: fadeInUp 0.18s ease-out;
+}
+
+.nav-mega-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+
+.nav-mega-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  border-radius: 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--td-text, #0d0d24);
+  transition: background var(--td-transition-normal, 0.2s ease),
+              transform var(--td-transition-normal, 0.2s ease);
+}
+
+.nav-mega-item svg {
+  font-size: 20px;
+  color: var(--td-primary, #6c3bff);
+}
+
+.nav-mega-item:hover {
+  background: var(--td-gradient-brand-soft, rgba(108, 59, 255, 0.1));
+  transform: translateY(-2px);
+}
+
+.nav-mega-all {
+  display: block;
+  text-align: center;
+  padding: 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--td-primary, #6c3bff);
+  background: var(--td-gradient-brand-soft, rgba(108, 59, 255, 0.1));
+}
+
+.nav-mega-all:hover {
+  background: var(--td-primary, #6c3bff);
+  color: #fff;
+}
+
+@media (max-width: 768px) {
+  .nav-mega-menu {
+    position: static;
+    transform: none;
+    width: 100%;
+    box-shadow: none;
+    background: transparent;
+    border: 0;
+    padding: 0 0 10px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .nav-mega-grid {
+    grid-template-columns: repeat(4, 1fr);
+    margin: 8px 0;
+  }
+  .nav-mega-item {
+    padding: 10px 4px;
+    font-size: 11px;
+  }
+}
+
+/* =====================================================
+   HOME — hero stops eating the whole screen
+   Desktop hero was min-height: 92svh, so the first product
+   tile sat below two full screens. 74svh keeps the statement
+   hero while letting the category rail peek above the fold.
+   Scoped to desktop: the mobile block above owns the phone
+   hero and must keep winning there.
+   ===================================================== */
+@media (min-width: 769px) {
+  .hero {
+    min-height: 74svh;
+  }
+
+  .hero-content h1 {
+    font-size: clamp(2.6rem, 6.5vw, 5.6rem);
+  }
+
+  /* =====================================================
+     SECTION RHYTHM — one editorial cadence everywhere
+     ===================================================== */
+  .section {
+    padding: 64px 0;
+  }
+
+  .section-title {
+    font-size: clamp(1.55rem, 3vw, 2.15rem);
+    margin-bottom: 6px;
+  }
+
+  .section-header {
+    align-items: end;
+    gap: 16px;
+    margin-bottom: 26px;
+  }
+}
+
+/* Category tiles: icon glyphs inherit the tile accent instead of
+   the OS-default emoji rendering. */
+.category-icon {
+  color: var(--cat-color, var(--td-primary, #6c3bff));
+  background: color-mix(in srgb, var(--cat-color, #6c3bff) 12%, transparent);
+}
+
+.category-icon svg {
+  font-size: 22px;
+}
+
+/* Dated source note under the fee comparison — a claim without a
+   date is a liability, not a marketing point. */
+.commission-footnote {
+  margin-top: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.62);
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+/* Cards: one hover language across the app. */
+.listing-card,
+.category-card,
+.feature-card,
+.compare-card {
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+              box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.listing-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 22px 48px rgba(8, 8, 26, 0.16);
+}
+
+/* The Shop trigger sits in the nav row, so it should read like the other
+   nav links, not like the account pill it shares a class with. */
+.navbar-menu .nav-dropdown > .nav-dropdown-trigger {
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: inherit;
+  border-radius: var(--td-radius-full, 999px);
+  cursor: pointer;
+}
+
+.navbar-menu .nav-dropdown > .nav-dropdown-trigger:hover,
+.navbar-menu .nav-dropdown > .nav-dropdown-trigger[aria-expanded='true'] {
+  background: var(--td-gradient-brand-soft, rgba(108, 59, 255, 0.12));
+}
