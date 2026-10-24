@@ -55,10 +55,17 @@ verified (validation, ownership, config and read surfaces).
    was rejected with `400 Invalid listing ID` because `validateObjectId`
    matched it as `/:id`. The guard now exempts it, so new public listing
    sub-routes cannot be broken the same way.
-3. **Mobile hero pushed both CTAs below the fold.** At 390×844 the hero packed
-   a badge, `clamp()` headline, three-line deck, two stacked full-width buttons
-   and a trust row into ~800px. Spacing/typography now tighten below 768px:
-   the primary CTA is visible on the first screen.
+3. **Mobile hero pushed both CTAs below the fold.** At 390×844 the kinetic
+   hero measured 869px with 58.5px type and 112px top padding. The tightening
+   added in `responsive.css` was silently overwritten by `design-haul.css`
+   (imported later), which is itself a defect worth knowing about: five CSS
+   layers stack on this app and the last one wins. The rules now live at the
+   end of `design-haul.css`: hero 869px → **588px**, headline 58.5px → 35.1px,
+   both CTAs fully visible on the first screen.
+4. **Three-row mobile header.** Logo (~230px) + five global controls could not
+   share a 390px row, so the controls wrapped and the search box became a third
+   row. Logo mark and utility hit areas now shrink below 480px: logo + controls
+   + menu on one row, search on the second (verified in the deployed build).
 
 ## 3. UI/UX audit — issues found, ranked
 
@@ -74,46 +81,49 @@ verified (validation, ownership, config and read surfaces).
    Depop 10% without a date or source — legally risky if left unqualified.
 
 ### Navigation and first impression
-4. Desktop header carries three global dropdowns (country, currency, language)
-   plus theme next to the account menu; on phones they wrap into a second row,
-   leaving a three-row header.
-5. No category navigation in the header — "Feed / Browse / Sell" only.
-6. Hero is the whole first screen on desktop too; no products are visible
-   without scrolling.
-7. The homepage repeats the same seller pitch three times (hero CTA,
+5. Desktop header carries three global dropdowns (country, currency, language)
+   plus theme next to the account menu — five utility targets competing with
+   search. (Phone wrapping fixed; the desktop density is still open.)
+6. No category navigation in the header — "Feed / Browse / Sell" only.
+7. Hero is the whole first screen on desktop too; no products are visible
+   without scrolling (desktop `min-height: 92svh`).
+8. The homepage repeats the same seller pitch three times (hero CTA,
    commission block, closing CTA).
 
 ### Consistency
-8. Mixed typography roles: Sora for headings, Inter for body, Cormorant for the
+9. Mixed typography roles: Sora for headings, Inter for body, Cormorant for the
    hero serif, plus emoji used as category icons — reads less premium than an
    icon set.
-9. Dark-mode-first palette; light mode exists but the hero stays dark in both,
-   so the brand reads inconsistent between themes.
-10. Section spacing varies page to page (dashboard uses `page-container`,
+10. Dark-mode-first palette; light mode exists but the hero stays dark in both,
+    so the brand reads inconsistent between themes.
+11. Section spacing varies page to page (dashboard uses `page-container`,
     home uses `.container` + `.section`), producing uneven rhythm.
+12. **Five stacked CSS layers** (`globals`, `App`, `append-to-app`,
+    `responsive`, `design-haul`, `dashboard-bespoke`) with no ownership rules:
+    a fix in the wrong layer silently does nothing (this bit the mobile hero).
 
 ### Accessibility / ergonomics
-11. Header icon-only actions (bell, heart, mail, bag) are labelled for screen
+13. Header icon-only actions (bell, heart, mail, bag) are labelled for screen
     readers but have no visible text or tooltips on desktop.
-12. Mobile tab bar floats over content; the last row of cards can sit behind it.
-13. Hero trust row drops to 12px text on mobile.
+14. Mobile tab bar floats over content; the last row of cards can sit behind it.
+15. Hero trust row drops to 11.5px text on mobile.
 
 ### Seller surfaces
-14. Dashboard headline metrics are hard to reconcile: "Total Sales $7,560.04",
+16. Dashboard headline metrics are hard to reconcile: "Total Sales $7,560.04",
     "Your Earnings $150.00", "Pending Payout $2,203.50". The API returns
     `totalSales 7560.04`, `totalEarnings 150`, `pendingBalance 2203.50`,
     `totalPaidOut 420.75` — the labels do not explain the relationship, and
     `totalCommission 1038.36` is 13.7% of gross, not the 8% advertised. Needs a
     product decision on definitions before changing numbers.
-15. `GET /listings/my?status=draft` returns nothing unless `available=false` is
+17. `GET /listings/my?status=draft` returns nothing unless `available=false` is
     also sent (the `available` default is `true`); the API is easy to misuse.
 
 ## 4. Recommended next steps
 
 1. Clean the production catalog of E2E/QA listings and seed real inventory with
    photography (needs explicit approval; it deletes production rows).
-2. Rebuild the header: category mega-nav on desktop, two-row mobile header with
-   a single account sheet holding country/currency/language/theme.
+2. Rebuild the header for desktop: category mega-nav, and move
+   country/currency/language/theme into one account/settings sheet.
 3. Reconcile the seller dashboard money labels with the API and show the true
    effective commission.
 4. Replace emoji category icons with a single icon set and unify section
