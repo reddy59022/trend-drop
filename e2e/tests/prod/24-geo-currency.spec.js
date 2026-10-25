@@ -5,6 +5,10 @@
  * /api/marketplace/status call (the endpoint the server resolves from the
  * real client IP in production — identical for web, iOS and Android) and
  * returning the payload that IP would produce.
+ *
+ * The controls live in ONE consolidated preferences popover (the panel also
+ * holds language + theme). The trigger always shows the active country and
+ * currency codes, so the auto-selection is visible without opening anything.
  */
 const { test, expect } = require('@playwright/test');
 
@@ -22,9 +26,17 @@ const fulfillGeo = (country, currency) => (route) =>
     }),
   });
 
+const TRIGGER = '.prefs-trigger';
+
 async function expectGeoSelected(page, country, currency) {
-  await expect(page.locator('.country-btn')).toHaveText(new RegExp(country));
-  await expect(page.locator('.currency-btn')).toHaveText(new RegExp(currency));
+  const trigger = page.locator(TRIGGER);
+  await expect(trigger).toHaveText(new RegExp(country));
+  await expect(trigger).toHaveText(new RegExp(currency));
+}
+
+async function openPrefs(page) {
+  await page.locator(TRIGGER).click();
+  await expect(page.locator('select[aria-label="Select country"]')).toBeVisible();
 }
 
 test.describe('Geo auto-selection of top-right country + currency', () => {
@@ -34,12 +46,9 @@ test.describe('Geo auto-selection of top-right country + currency', () => {
     await page.goto('/');
     await expectGeoSelected(page, 'GB', 'GBP');
 
-    // The auto-selected currency is the active option in its dropdown.
-    await page.locator('.currency-btn').click();
-    const active = page.locator('.currency-option.active');
-    await expect(active).toHaveCount(1);
-    await expect(active).toContainText('GBP');
-    await expect(active).toContainText('✓');
+    // The auto-selected currency is the active choice in the panel select.
+    await openPrefs(page);
+    await expect(page.locator('select[aria-label="Select currency"]')).toHaveValue('GBP');
   });
 
   test('24.2 fresh visitor with a DE IP sees DE + EUR auto-selected', async ({ page }) => {
@@ -48,11 +57,8 @@ test.describe('Geo auto-selection of top-right country + currency', () => {
     await page.goto('/');
     await expectGeoSelected(page, 'DE', 'EUR');
 
-    await page.locator('.country-btn').click();
-    const activeCountry = page.locator('.country-option.active');
-    await expect(activeCountry).toHaveCount(1);
-    await expect(activeCountry).toContainText('DE');
-    await expect(activeCountry).toContainText('✓');
+    await openPrefs(page);
+    await expect(page.locator('select[aria-label="Select country"]')).toHaveValue('DE');
   });
 
   test('24.3 a manual currency choice is never overridden by IP geo (country still updates)', async ({ page }) => {
@@ -63,23 +69,23 @@ test.describe('Geo auto-selection of top-right country + currency', () => {
     });
     await page.route('**/api/marketplace/status**', fulfillGeo('GB', 'GBP'));
     await page.goto('/');
-    await expect(page.locator('.currency-btn')).toHaveText(/USD/);
-    await expect(page.locator('.country-btn')).toHaveText(/GB/);
+    await expect(page.locator(TRIGGER)).toHaveText(/USD/);
+    await expect(page.locator(TRIGGER)).toHaveText(/GB/);
   });
 
   test('24.4 geo endpoint failure: falls back to USD, app renders, no crash', async ({ page }) => {
     await page.addInitScript(() => localStorage.clear());
     await page.route('**/api/marketplace/status**', (route) => route.abort());
     await page.goto('/');
-    await expect(page.locator('.currency-btn')).toHaveText(/USD/);
-    await expect(page.locator('.country-btn')).toBeVisible();
+    await expect(page.locator(TRIGGER)).toHaveText(/USD/);
+    await expect(page.locator(TRIGGER)).toBeVisible();
   });
 
   test('24.5 real server (localhost IP unresolved): default US + USD contract', async ({ page }) => {
     await page.addInitScript(() => localStorage.clear());
     await page.goto('/');
-    await expect(page.locator('.country-btn')).toHaveText(/US/);
-    await expect(page.locator('.currency-btn')).toHaveText(/USD/);
+    await expect(page.locator(TRIGGER)).toHaveText(/US/);
+    await expect(page.locator(TRIGGER)).toHaveText(/USD/);
   });
 
   test('24.6 switching country from the top-right switches to its currency', async ({ page }) => {
@@ -97,14 +103,14 @@ test.describe('Geo auto-selection of top-right country + currency', () => {
     await page.goto('/');
     await expectGeoSelected(page, 'GB', 'GBP');
 
-    await page.locator('.country-btn').click();
-    await page.locator('.country-option', { hasText: 'United States' }).click();
-    await expect(page.locator('.country-btn')).toHaveText(/US/);
-    await expect(page.locator('.currency-btn')).toHaveText(/USD/);
+    await openPrefs(page);
+    await page.locator('select[aria-label="Select country"]').selectOption('US');
+    await expect(page.locator(TRIGGER)).toHaveText(/US/);
+    await expect(page.locator(TRIGGER)).toHaveText(/USD/);
 
     // Manual choice survives a reload (not re-detected from the IP).
     await page.reload();
-    await expect(page.locator('.country-btn')).toHaveText(/US/);
-    await expect(page.locator('.currency-btn')).toHaveText(/USD/);
+    await expect(page.locator(TRIGGER)).toHaveText(/US/);
+    await expect(page.locator(TRIGGER)).toHaveText(/USD/);
   });
 });
