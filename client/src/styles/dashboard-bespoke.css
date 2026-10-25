@@ -259,3 +259,9 @@ tbody tr:hover { background: color-mix(in srgb, var(--td-primary, #6C3BFF) 5%, t
 footer a, .footer-grid a, .footer-link { padding-block: 5px; }
 .comment-delete { min-width: 32px; min-height: 32px; }
 .star-btn { min-width: 34px; min-height: 34px; }
+@media (pointer: coarse) {
+  /* Touch-target floor (iOS 44pt / Material 48dp) for the row-inline
+     controls on data screens; this layer (6/6) would otherwise beat the
+     app-wide floor in design-haul.css (5/6) and keep them at 32-34px. */
+  .comment-delete, .star-btn { min-width: 44px; min-height: 44px; }
+}

@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
 import Pagination from '../components/Pagination';
-import { FaStore, FaFilter } from 'react-icons/fa';
+import { FaStore, FaFilter, FaTshirt } from 'react-icons/fa';
 
 const Closet = () => {
   const { id } = useParams();
@@ -55,7 +55,7 @@ const Closet = () => {
         </div>
       ) : listings.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">👕</div>
+          <div className="empty-state-icon"><FaTshirt aria-hidden="true" /></div>
           <h2>No items in this closet yet</h2>
           <p>This closet is waiting to be filled with amazing finds.</p>
           <Link to="/sell" className="btn btn-primary">Start Selling</Link>

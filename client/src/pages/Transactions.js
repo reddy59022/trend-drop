@@ -207,7 +207,7 @@ function Transactions() {
           >
             <FaFilter /> {getActiveStatusLabel()}
             {activeStatuses.length > 0 && filter !== 'all' && (
-              <span style={{ fontSize: 10, background: 'var(--td-primary)', color: '#fff', borderRadius: 8, padding: '1px 6px' }}>default</span>
+              <span style={{ fontSize: 11, background: 'var(--td-primary)', color: '#fff', borderRadius: 8, padding: '1px 6px' }}>default</span>
             )}
           </button>
           {showStatusDropdown && (

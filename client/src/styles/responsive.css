@@ -758,6 +758,7 @@ body,
   .auth-container {
     padding: 16px !important;
     max-height: calc(100vh - 32px) !important;
+    max-height: calc(100dvh - 32px) !important;
     overflow-y: auto !important;
   }
 

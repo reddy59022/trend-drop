@@ -122,25 +122,39 @@ const NativeAppLifecycle = () => {
       }
     };
 
-    let listenerCleanup = () => {};
+    const listenerCleanups = [];
+    let disposed = false;
+    const track = (promise) => promise.then((handle) => {
+      const remove = () => {
+        try { handle.remove(); } catch (e) { /* already removed */ }
+      };
+      // Unmount can race the async addListener() call: if it already happened,
+      // remove the listener immediately instead of leaking it.
+      if (disposed) remove();
+      else listenerCleanups.push(remove);
+    });
     import('@capacitor/app').then(({ App }) => {
-      // Keep the returned handle so the deep-link listener is removed on
-      // unmount (avoids duplicate appUrlOpen handlers accumulating on
+      // Keep the returned handles so the listeners are removed on
+      // unmount (avoids duplicate handlers accumulating on
       // iOS/Android when the provider re-mounts).
-      App.addListener('appUrlOpen', (event) => handleUrl(event.url)).then(
-        (handle) => {
-          listenerCleanup = () => {
-            try { handle.remove(); } catch (e) { /* already removed */ }
-          };
-        }
-      );
+      track(App.addListener('appUrlOpen', (event) => handleUrl(event.url)));
+      // Android hardware/gesture back must behave like a native navigation
+      // stack (platform standard): step back through WebView history, and at
+      // the root minimize to the launcher instead of killing the app. iOS
+      // swipes are handled by the WebView itself; this event is Android-only.
+      track(App.addListener('backButton', ({ canGoBack }) => {
+        if (canGoBack) window.history.back();
+        else App.minimizeApp();
+      }));
     }).catch(() => {});
 
     const onLocation = () => handleUrl(window.location.href);
     window.addEventListener('popstate', onLocation);
 
     return () => {
-      listenerCleanup();
+      disposed = true;
+      listenerCleanups.forEach((remove) => remove());
+      listenerCleanups.length = 0;
       window.removeEventListener('popstate', onLocation);
     };
   }, []);

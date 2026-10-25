@@ -129,7 +129,7 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
     };
     const c = configs[status] || configs.pending;
     return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--td-radius-full)', fontSize: 10, fontWeight: 600, color: c.color, background: c.bg }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--td-radius-full)', fontSize: 11, fontWeight: 600, color: c.color, background: c.bg }}>
         {c.icon} {c.label}
       </span>
     );
@@ -211,14 +211,14 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
                     {!isOwn && !showAvatar && <div style={{ width: 28, flexShrink: 0 }} />}
                     <div style={{ maxWidth: '72%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : '#fff', color: isOwn ? '#fff' : 'var(--td-text)', boxShadow: isOwn ? '0 4px 12px rgba(108,59,255,0.3)' : 'var(--td-shadow-sm)' }}>
                       {msg.listing && (msg.listing._id || msg.listing) !== (listing?._id || listing?.id) && (
-                        <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <FaTag size={9} /> Re: {msg.listing.title}
                         </div>
                       )}
                       <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.text}</div>
-                      <div style={{ fontSize: 10, marginTop: 4, opacity: isOwn ? 0.8 : 0.5, textAlign: isOwn ? 'right' : 'left' }}>
+                      <div style={{ fontSize: 11, marginTop: 4, opacity: isOwn ? 0.8 : 0.5, textAlign: isOwn ? 'right' : 'left' }}>
                         {timeAgo(msg.createdAt)}
-                        {isOwn && msg.read && <span style={{ marginLeft: 4, fontSize: 9 }}>✓✓</span>}
+                        {isOwn && msg.read && <span style={{ marginLeft: 4, fontSize: 11 }}>✓✓</span>}
                       </div>
                     </div>
                     {isOwn && showAvatar && <img src={user?.avatar || defaultAvatar} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}

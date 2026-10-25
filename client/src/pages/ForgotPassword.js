@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../services/api';
-import { FaEnvelope, FaPaperPlane, FaArrowLeft } from 'react-icons/fa';
+import { FaEnvelope, FaPaperPlane, FaArrowLeft, FaLock } from 'react-icons/fa';
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState('');
@@ -47,7 +47,7 @@ const ForgotPassword = () => {
         ) : (
           <>
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
+              <div style={{ fontSize: 48, marginBottom: 16, color: 'var(--td-primary)' }}><FaLock aria-hidden="true" /></div>
               <h1>Forgot Password?</h1>
               <p className="auth-subtitle">No worries! Enter your email and we'll send you a reset link.</p>
             </div>

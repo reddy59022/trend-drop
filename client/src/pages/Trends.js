@@ -91,7 +91,7 @@ const Trends = () => {
         </div>
       ) : trends.length === 0 ? (
         <div className="empty-state" style={{ padding: 'var(--td-space-xl)' }}>
-          <div className="empty-state-icon">📊</div>
+          <div className="empty-state-icon"><FaChartLine aria-hidden="true" /></div>
           <h3>No trends found</h3>
           <p>Try refreshing or changing the timeframe</p>
         </div>

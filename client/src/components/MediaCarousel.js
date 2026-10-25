@@ -268,7 +268,7 @@ const MediaCarousel = ({ images = [], videoUrl }) => {
             color: '#fff',
             padding: '4px 8px',
             borderRadius: 'var(--td-radius-full)',
-            fontSize: 10,
+            fontSize: 11,
             display: 'flex',
             alignItems: 'center',
             gap: 4,

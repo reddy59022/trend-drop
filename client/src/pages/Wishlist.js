@@ -54,7 +54,7 @@ const Wishlist = () => {
 
       {validItems.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">💝</div>
+          <div className="empty-state-icon"><FaHeart aria-hidden="true" /></div>
           <h2>Your wishlist is empty</h2>
           <p>Save items you love by tapping the heart icon on any listing.</p>
           <Link to="/search" className="btn btn-primary btn-lg"><FaSearch /> Browse Items</Link>

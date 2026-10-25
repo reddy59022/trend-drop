@@ -50,7 +50,7 @@ const ShopBoostCard = () => {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Boost Whole Shop</h3>
-            {active && <span style={{ background: 'var(--td-success)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--td-radius-full)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Active</span>}
+            {active && <span style={{ background: 'var(--td-success)', color: '#fff', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--td-radius-full)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Active</span>}
           </div>
           <p style={{ fontSize: 14, color: 'var(--td-text-secondary)', margin: 0, lineHeight: 1.5 }}>{active ? 'Every listing boosted at highest priority — top of feeds, maximum visibility.' : 'Boost every listing automatically — appear at the top of feeds with maximum visibility.'}</p>
         </div>

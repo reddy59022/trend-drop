@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaCalendarAlt, FaUsers, FaShare, FaClock, FaTag, FaHeart, FaSearch, FaPlus } from 'react-icons/fa';
+import { FaCalendarAlt, FaUsers, FaShare, FaClock, FaTag, FaHeart, FaSearch, FaPlus, FaGlassCheers } from 'react-icons/fa';
 
 const Parties = () => {
   const { user } = useAuth();
@@ -70,7 +70,7 @@ const Parties = () => {
   const handleJoin = async (partyId) => {
     try {
       await api.post(`/parties/${partyId}/join`);
-      toast.success('Joined party! 👋');
+      toast.success('Joined party!');
       fetchParties();
     } catch (error) {
       toast.error('Failed to join');
@@ -80,7 +80,7 @@ const Parties = () => {
   if (loading) {
     return (
       <div className="page-container">
-        <h1 className="page-title">🎪 Shopping Parties</h1>
+        <h1 className="page-title"><FaGlassCheers aria-hidden="true" /> Shopping Parties</h1>
         <div className="listings-grid">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="skeleton skeleton-card">
@@ -100,7 +100,7 @@ const Parties = () => {
     <div className="page-container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--td-space-lg)' }}>
         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          🎪 Shopping Parties
+          <FaGlassCheers aria-hidden="true" /> Shopping Parties
         </h1>
         {user && (
           <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
@@ -125,7 +125,7 @@ const Parties = () => {
 
       {parties.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">🎪</div>
+          <div className="empty-state-icon"><FaGlassCheers aria-hidden="true" /></div>
           <h2>No parties scheduled</h2>
           <p>Check back later for upcoming shopping events!</p>
           <Link to="/search" className="btn btn-primary">

@@ -113,7 +113,7 @@ const Search = () => {
             <option value="popular">Most Popular</option>
           </select>
           <button className="btn btn-outline btn-sm" onClick={() => setShowFilters(!showFilters)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <FaSlidersH size={14} /> Filters {activeFilters.length > 0 && <span className="badge badge-primary" style={{ fontSize: 10 }}>{activeFilters.length}</span>}
+            <FaSlidersH size={14} /> Filters {activeFilters.length > 0 && <span className="badge badge-primary" style={{ fontSize: 11 }}>{activeFilters.length}</span>}
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaTimes, FaSpinner, FaGavel, FaMoneyBillWave, FaHistory, FaCheck, FaArrowRight, FaUser, FaStore } from 'react-icons/fa';
+import { FaTimes, FaSpinner, FaGavel, FaMoneyBillWave, FaHistory, FaCheck, FaArrowRight, FaUser, FaStore, FaBolt } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -378,7 +378,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
               background: 'rgba(0, 200, 83, 0.06)',
               fontSize: 13, display: 'flex', alignItems: 'center', gap: 8,
             }}>
-              <span style={{ fontSize: 16 }}>⚡</span>
+              <span style={{ fontSize: 16 }}><FaBolt aria-hidden="true" /></span>
               <span>
                 <strong>Instant offers:</strong> {formatPrice(listing.autoRespond.minPrice, listing.currency)} or more is
                 accepted automatically; lower offers get an instant counter at {formatPrice(listing.autoRespond.minPrice, listing.currency)}.

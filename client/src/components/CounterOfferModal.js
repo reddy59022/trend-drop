@@ -178,7 +178,7 @@ const CounterOfferModal = ({
               </div>
               {error && (
                 <div className="form-error" style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <FaTimes style={{ fontSize: 10 }} />
+                  <FaTimes style={{ fontSize: 11 }} />
                   {error}
                 </div>
               )}

@@ -66,7 +66,7 @@ const Notifications = () => {
   if (!user) return (
     <div className="page-container">
       <div className="empty-state">
-        <div className="empty-state-icon">🔔</div>
+        <div className="empty-state-icon"><FaBell aria-hidden="true" /></div>
         <h2>Notifications</h2>
         <p>Sign in to view your notifications</p>
         <Link to="/login" className="btn btn-primary btn-lg">Sign In</Link>
@@ -101,7 +101,7 @@ const Notifications = () => {
 
       {notifications.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">🔔</div>
+          <div className="empty-state-icon"><FaBell aria-hidden="true" /></div>
           <h2>No notifications yet</h2>
           <p>When someone interacts with your listings, you'll see it here.</p>
           <Link to="/feed" className="btn btn-primary">Browse Listings</Link>

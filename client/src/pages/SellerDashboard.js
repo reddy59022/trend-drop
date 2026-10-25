@@ -272,7 +272,7 @@ const SellerDashboard = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, background: 'rgba(255,255,255,0.12)', borderRadius: 'var(--td-radius-md)', padding: 16, maxWidth: 400, margin: '0 auto' }}>
                   {Object.entries(commissionInfo.comparedTo || {}).map(([platform, rate]) => (
                     <div key={platform} style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 10, textTransform: 'uppercase', opacity: 0.8, marginBottom: 4, letterSpacing: 1 }}>{platform}</div>
+                      <div style={{ fontSize: 11, textTransform: 'uppercase', opacity: 0.8, marginBottom: 4, letterSpacing: 1 }}>{platform}</div>
                       <div style={{ fontSize: platform === 'trenddrop' ? 22 : 18, fontWeight: platform === 'trenddrop' ? 800 : 600 }}>{rate}</div>
                     </div>
                   ))}

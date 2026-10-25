@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import moment from 'moment';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { FaExchangeAlt, FaArrowUp, FaCheck, FaTimes, FaGavel, FaClock, FaComment } from 'react-icons/fa';
+import { FaExchangeAlt, FaArrowUp, FaCheck, FaTimes, FaGavel, FaClock, FaComment, FaBolt, FaInbox, FaPaperPlane } from 'react-icons/fa';
 import { io } from 'socket.io-client';
 import { getSocketBaseURL } from '../services/native';
 import CounterOfferModal from '../components/CounterOfferModal';
@@ -200,7 +200,7 @@ const Offers = () => {
               offers so sellers and buyers can tell they were handled instantly. */}
           {offer.autoResponded && (
             <span className="offer-status" style={{ marginTop: 4, background: 'rgba(0, 200, 83, 0.12)', color: 'var(--td-success)', fontSize: 11 }}>
-              ⚡ Auto-respond {offer.status === 'accepted' ? '(auto-accepted)' : offer.status === 'countered' ? '(auto-countered)' : ''}
+              <FaBolt aria-hidden="true" /> Auto-respond {offer.status === 'accepted' ? '(auto-accepted)' : offer.status === 'countered' ? '(auto-countered)' : ''}
             </span>
           )}
           {(offer.status === 'pending' || offer.status === 'countered' || offer.status === 'buyer_countered') && !isOfferExpired(offer) && (
@@ -301,7 +301,7 @@ const Offers = () => {
         {activeTab === 'received' ? (
           receivedOffers.length === 0 ? (
             <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-              <div className="empty-state-icon">📩</div>
+              <div className="empty-state-icon"><FaInbox aria-hidden="true" /></div>
               <h2>No offers received</h2>
               <p>When buyers make offers on your items, they'll appear here.</p>
             </div>
@@ -309,7 +309,7 @@ const Offers = () => {
         ) : (
           sentOffers.length === 0 ? (
             <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-              <div className="empty-state-icon">📤</div>
+              <div className="empty-state-icon"><FaPaperPlane aria-hidden="true" /></div>
               <h2>No offers sent</h2>
               <p>Browse listings and make offers on items you love.</p>
               <Link to="/search" className="btn btn-primary">Browse Items</Link>

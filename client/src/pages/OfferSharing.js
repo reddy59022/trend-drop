@@ -262,7 +262,7 @@ const OfferSharing = () => {
                     alt={listing.title}
                     style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 4 }}
                   />
-                  <div style={{ fontSize: 10, marginTop: 4, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, marginTop: 4, textAlign: 'center' }}>
                     {formatPrice(listing.price, listing.currency)}
                   </div>
                 </div>

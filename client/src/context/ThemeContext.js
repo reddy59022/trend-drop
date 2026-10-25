@@ -96,6 +96,27 @@ export const ThemeProvider = ({ children }) => {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem('theme', theme); } catch (e) { /* private-mode WebView */ }
+
+    // Platform chrome follows the theme (mobile-standard):
+    // - <meta name="theme-color"> paints the Android browser/status-bar area
+    //   and the iOS Safari toolbar; a stale color makes the chrome clash.
+    // - The native status-bar text style must flip with the theme or it
+    //   becomes invisible (dark icons on a dark screen).
+    // Matches the surface under the glass navbar (--td-surface in both
+    // themes), so the native status bar and browser chrome blend with the
+    // app instead of floating a mismatched colour above it.
+    const themeColor = theme === 'dark' ? '#08081A' : '#FFFFFF';
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', themeColor);
+
+    import('../services/native').then(({ setStatusBarColor }) => {
+      setStatusBarColor(themeColor, { light: theme === 'dark' });
+    }).catch(() => { /* web — no status bar to style */ });
   }, [theme]);
 
   // Persist the active currency/country for the rest of the app (the source

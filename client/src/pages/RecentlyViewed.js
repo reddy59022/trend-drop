@@ -4,7 +4,7 @@ import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import { formatPrice, defaultListingImage } from '../utils/helpers';
 import { toast } from 'react-toastify';
-import { FaHistory, FaTrash, FaSearch } from 'react-icons/fa';
+import { FaHistory, FaTrash, FaSearch, FaEye } from 'react-icons/fa';
 
 const RecentlyViewed = () => {
   // Subscribe to currency changes (formatPrice reads the preferred-currency
@@ -71,7 +71,7 @@ const RecentlyViewed = () => {
 
       {items.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">👁️</div>
+          <div className="empty-state-icon"><FaEye aria-hidden="true" /></div>
           <h2>No recently viewed items</h2>
           <p>Items you view will appear here for easy access.</p>
           <Link to="/search" className="btn btn-primary">

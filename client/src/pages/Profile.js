@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { FaMapMarkerAlt, FaCheckCircle, FaEdit, FaUserPlus, FaUserMinus, FaTshirt, FaInstagram, FaTiktok, FaPinterest, FaYoutube, FaEnvelope, FaTruck, FaStar } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaCheckCircle, FaEdit, FaUserPlus, FaUserMinus, FaTshirt, FaStore, FaInstagram, FaTiktok, FaPinterest, FaYoutube, FaEnvelope, FaTruck, FaStar } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -119,7 +119,7 @@ const Profile = () => {
             {profile.name}
             {profile.isVerified && <FaCheckCircle size={22} color="var(--td-primary)" title="Verified Seller" />}
           </h1>
-          {profile.closetName && <p className="closet-name">🏪 {profile.closetName}</p>}
+          {profile.closetName && <p className="closet-name"><FaStore aria-hidden="true" /> {profile.closetName}</p>}
           {profile.location && (
             <p className="profile-location"><FaMapMarkerAlt /> {profile.location}</p>
           )}
@@ -181,7 +181,7 @@ const Profile = () => {
         </div>
         {listings.length === 0 ? (
           <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-            <div className="empty-state-icon">👕</div>
+            <div className="empty-state-icon"><FaTshirt aria-hidden="true" /></div>
             <h2>No listings yet</h2>
             <p>{isOwnProfile ? 'Start selling items from your closet!' : 'This seller hasn\'t listed anything yet.'}</p>
             {isOwnProfile && <Link to="/sell" className="btn btn-primary">Create First Listing</Link>}

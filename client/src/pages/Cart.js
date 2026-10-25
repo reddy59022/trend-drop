@@ -426,7 +426,7 @@ const Cart = () => {
                       style={{ width: 72, height: 72, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h4 style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{item.title}</h4>
-                      {item.negotiatedPrice && <span className="badge badge-success" style={{ marginBottom: 4, fontSize: 10 }}>Negotiated</span>}
+                      {item.negotiatedPrice && <span className="badge badge-success" style={{ marginBottom: 4, fontSize: 11 }}>Negotiated</span>}
                       <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>{formatPrice(item.price, item.currency)} each</div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

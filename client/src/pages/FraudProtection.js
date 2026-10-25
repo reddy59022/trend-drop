@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getFraudSettings, checkFraud, flagFraud } from '../services/api';
+import { FaShieldAlt, FaFlag } from 'react-icons/fa';
 
 const RISK_COLORS = {
   low: { color: 'var(--td-success)', bg: 'rgba(34,197,94,0.1)' },
@@ -91,7 +92,7 @@ const FraudProtection = () => {
 
   return (
     <div className="page-container" style={{ maxWidth: 900, margin: '0 auto', padding: 'var(--td-space-lg)' }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>🛡️ Fraud Protection</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}><FaShieldAlt aria-hidden="true" /> Fraud Protection</h1>
       <p style={{ color: 'var(--td-text-secondary)', marginBottom: 24 }}>
         Enterprise-grade transaction risk scoring to protect buyers and sellers.
       </p>
@@ -236,7 +237,7 @@ const FraudProtection = () => {
           onChange={(e) => setFlagForm({ ...flagForm, notes: e.target.value })}
         />
         <button className="btn btn-outline" style={{ marginTop: 12, color: 'var(--td-error)', borderColor: 'var(--td-error)' }} onClick={handleFlag} disabled={flagging}>
-          {flagging ? 'Flagging...' : '🚩 Flag Transaction'}
+          {flagging ? 'Flagging...' : <><FaFlag aria-hidden="true" /> Flag Transaction</>}
         </button>
 
         {flagResult && (

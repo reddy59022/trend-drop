@@ -256,7 +256,7 @@ const Sell = () => {
                 {previews.map((preview, index) => (
                   <div key={index} className="image-preview">
                     <img src={preview} alt={`Preview ${index + 1}`} />
-                    {index === 0 && <span style={{ position: 'absolute', top: 4, left: 4, background: 'var(--td-primary)', color: '#fff', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>Cover</span>}
+                    {index === 0 && <span style={{ position: 'absolute', top: 4, left: 4, background: 'var(--td-primary)', color: '#fff', padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 700 }}>Cover</span>}
                     <button type="button" className="remove-image" onClick={() => removeImage(index)} aria-label={`Remove image ${index + 1}`}><FaTimes size={12} /></button>
                   </div>
                 ))}
@@ -557,7 +557,7 @@ const Sell = () => {
                             color: '#fff',
                             padding: '2px 8px',
                             borderRadius: 4,
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: 700,
                           }}>
                             RECOMMENDED

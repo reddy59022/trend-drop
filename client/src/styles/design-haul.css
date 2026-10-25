@@ -45,6 +45,15 @@ body {
   }
   .nav-icon-link { min-width: 44px; min-height: 44px; }
   .like-btn, .quick-cart-btn { width: 42px; height: 42px; }
+
+  /* Platform touch-target floor: iOS HIG 44pt, Material 48dp — 44px is the
+     shared bar. Icon buttons and chips rendered at 30-38px, under both
+     standards, so on touch devices every interactive control grows to the
+     minimum. Desktop (fine pointers) keeps its compact sizes. */
+  button, [role="button"], .btn, select, .dropdown-item, .tab {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 
 @media (display-mode: standalone) {

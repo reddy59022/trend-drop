@@ -48,7 +48,7 @@ const ResetPassword = () => {
       <div className="auth-container" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
         {message ? (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
+            <div style={{ fontSize: 48, marginBottom: 16, color: 'var(--td-primary)' }}><FaLock aria-hidden="true" /></div>
             <h1>Password Reset Successful</h1>
             <p className="auth-subtitle">{message}</p>
             <Link to="/login" className="btn btn-primary btn-block"><FaArrowLeft /> Back to Login</Link>
@@ -56,7 +56,7 @@ const ResetPassword = () => {
         ) : (
           <>
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
+              <div style={{ fontSize: 48, marginBottom: 16, color: 'var(--td-primary)' }}><FaLock aria-hidden="true" /></div>
               <h1>Reset Your Password</h1>
               <p className="auth-subtitle">Choose a new password for your TrendDrop account.</p>
             </div>
