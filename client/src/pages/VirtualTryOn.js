@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import { formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
-import { FaCamera, FaUpload, FaRulerHorizontal, FaTimes, FaHistory, FaMagic } from 'react-icons/fa';
+import { FaCamera, FaUpload, FaRulerHorizontal, FaTimes, FaHistory, FaMagic, FaTshirt } from 'react-icons/fa';
 import { isNative, requestCameraPermission } from '../services/native';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 
@@ -346,7 +346,7 @@ const VirtualTryOn = () => {
     return (
       <div className="page-container">
         <div className="empty-state">
-          <div className="empty-state-icon">👗</div>
+          <div className="empty-state-icon"><FaTshirt aria-hidden="true" /></div>
           <h2>Virtual Try-On</h2>
           <p>Please login to use virtual try-on features.</p>
           <Link
@@ -380,9 +380,9 @@ const VirtualTryOn = () => {
             Add your measurements for personalized size recommendations.
           </p>
           <div style={{ display: 'flex', gap: 'var(--td-space-md)', flexWrap: 'wrap' }}>
-            <span className="badge badge-primary">📱 Camera try-on</span>
-            <span className="badge badge-primary">📸 Photo upload</span>
-            <span className="badge badge-primary">📏 Size recommendation</span>
+            <span className="badge badge-primary"><FaCamera aria-hidden="true" /> Camera try-on</span>
+            <span className="badge badge-primary"><FaUpload aria-hidden="true" /> Photo upload</span>
+            <span className="badge badge-primary"><FaRulerHorizontal aria-hidden="true" /> Size recommendation</span>
           </div>
         </div>
       )}

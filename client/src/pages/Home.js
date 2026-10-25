@@ -227,12 +227,9 @@ const Home = () => {
         <div className="container">
           <div className="commission-content">
             <div className="commission-text">
-              <span className="commission-badge">💎 Lowest Fees</span>
+              <span className="commission-badge"><FaGem aria-hidden="true" /> Lowest Fees</span>
               <h2>Keep Up to 92% of Your Sales</h2>
               <p>TrendDrop has one of the lowest commission rates in fashion — just 8%. More money in your pocket, and more time in style.</p>
-              <Link to="/seller-dashboard" className="btn btn-primary btn-lg" aria-label="Start selling, keep more">
-                Start Selling — Keep More 💰
-              </Link>
             </div>
             <div className="commission-comparison" role="list">
               {commissionData.map(item => (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FaRobot, FaHeart, FaPlus, FaTrash, FaCalendarAlt, FaMagic } from 'react-icons/fa';
+import { FaRobot, FaHeart, FaPlus, FaTrash, FaCalendarAlt, FaMagic, FaTshirt, FaChartBar } from 'react-icons/fa';
 import { updateAIPreferences, getAIRecommendations, generateAIRecommendations, getAITrends, getUserOutfits, createOutfit } from '../services/api';
 import ListingCard from '../components/ListingCard';
 import { toast } from 'react-toastify';
@@ -194,7 +194,7 @@ const AIStylist = () => {
 
           {recommendations.length === 0 ? (
             <div className="empty-state" style={{ padding: 'var(--td-space-xl)' }}>
-              <div className="empty-state-icon">✨</div>
+              <div className="empty-state-icon"><FaMagic aria-hidden="true" /></div>
               <h3>No recommendations yet</h3>
               <p>Set your preferences and click "Refresh" to get personalized recommendations</p>
             </div>
@@ -220,7 +220,7 @@ const AIStylist = () => {
 
           {outfits.length === 0 ? (
             <div className="empty-state" style={{ padding: 'var(--td-space-xl)' }}>
-              <div className="empty-state-icon">👗</div>
+              <div className="empty-state-icon"><FaTshirt aria-hidden="true" /></div>
               <h3>No outfits created</h3>
               <p>Create outfits to save your favorite combinations</p>
             </div>
@@ -259,7 +259,7 @@ const AIStylist = () => {
           <h2 style={{ marginBottom: 16 }}>Seasonal Trends (Last 30 Days)</h2>
           {trends.length === 0 ? (
             <div className="empty-state" style={{ padding: 'var(--td-space-xl)' }}>
-              <div className="empty-state-icon">📊</div>
+              <div className="empty-state-icon"><FaChartBar aria-hidden="true" /></div>
               <h3>No trending data yet</h3>
               <p>Trends will appear as items are listed and sold</p>
             </div>

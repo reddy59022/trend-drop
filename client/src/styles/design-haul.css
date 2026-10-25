@@ -794,7 +794,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
   }
 
   .hero-features span {
-    font-size: 11.5px;
+    font-size: 12.5px;
   }
 }
 
@@ -1041,5 +1041,123 @@ textarea:focus-visible, [tabindex]:focus-visible {
 @media (max-width: 768px) {
   .footer {
     padding-bottom: calc(84px + var(--td-safe-area-bottom, 0px));
+  }
+}
+
+/* ============================================================
+   Consolidated preferences popover (Navbar)
+   ONE control replaces the country/currency/language/theme
+   button cluster (UI/UX audit item 5: five utility targets
+   competing with search). Lives at the END of this layer on
+   purpose: design-haul.css is imported last and must win.
+   ============================================================ */
+.prefs-trigger {
+  gap: 6px;
+  padding: 0 10px;
+}
+
+/* Icon + text inside the commission badge (emoji replaced by the icon set) */
+.commission-badge {
+  gap: 6px;
+}
+
+.prefs-codes {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.prefs-panel {
+  width: 300px;
+}
+
+.prefs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.prefs-header .dropdown-header {
+  border-bottom: none;
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.prefs-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--td-radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--td-text-secondary);
+  cursor: pointer;
+  transition: all var(--td-transition-fast);
+}
+
+.prefs-close:hover {
+  background: var(--td-surface-hover);
+  color: var(--td-text);
+}
+
+.prefs-theme-row {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-sm);
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--td-radius-sm);
+  font-size: var(--td-text-base);
+  color: var(--td-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--td-transition-fast);
+  text-align: left;
+}
+
+.prefs-theme-row:hover {
+  background: var(--td-surface-hover);
+}
+
+.prefs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.prefs-label {
+  font-size: var(--td-text-sm);
+  font-weight: 700;
+  color: var(--td-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.prefs-select {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: var(--td-radius-sm);
+  border: 1px solid var(--td-border);
+  background: var(--td-surface);
+  color: var(--td-text);
+  font-size: var(--td-text-base);
+  cursor: pointer;
+  transition: border-color var(--td-transition-fast);
+}
+
+.prefs-select:focus {
+  outline: none;
+  border-color: var(--td-primary);
+}
+
+@media (max-width: 480px) {
+  .prefs-panel {
+    width: min(300px, calc(100vw - 48px));
+    right: -8px;
   }
 }

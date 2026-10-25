@@ -1,9 +1,12 @@
 /**
- * Navbar top-right country + currency selectors — IP auto-selection UI proof.
+ * Navbar top-right preferences — IP auto-selection UI proof.
  *
- * The top-right controls must display the auto-detected country and currency
- * (from the server IP geo resolution) with the active option marked, and a
- * manual change must flow through the context (and persist there).
+ * The top-right must show the auto-detected country and currency (from the
+ * server IP geo resolution) in ONE consolidated preferences control (audit
+ * item: five utility targets competing with search), and manual changes must
+ * flow through the context (and persist there). Country, currency, language
+ * and theme live in a single panel so a visitor adjusts every locale pref
+ * from one place instead of hunting across four tiny buttons.
  */
 import '@testing-library/jest-dom';
 import React from 'react';
@@ -56,13 +59,18 @@ const renderNavbar = (theme) => {
   );
 };
 
+const openPrefs = async () => {
+  fireEvent.click(screen.getByLabelText('Region & language preferences'));
+  await screen.findByText('Region & preferences');
+};
+
 beforeEach(() => {
   api.get.mockReset();
   api.get.mockResolvedValue({
     data: [
       { code: 'US', name: 'United States', currency: 'USD', flag: '🇺🇸' },
       { code: 'GB', name: 'United Kingdom', currency: 'GBP', flag: '🇬🇧' },
-      { code: 'DE', name: 'Germany', currency: 'EUR', flag: '🇩🇪' },
+      { code: 'DE', name: 'Germany', currency: 'EUR', flag: '🇪🇺' },
     ],
   });
 });
@@ -72,71 +80,98 @@ afterEach(() => {
 });
 
 describe('Navbar top-right — auto-selected country + currency (IP geo)', () => {
-  test('N1 displays the auto-detected country and currency in the top-right controls', async () => {
+  test('N1 displays the auto-detected country and currency in the top-right control', async () => {
     renderNavbar();
-    await waitFor(() => expect(screen.getByLabelText('Select country')).toHaveTextContent('GB'));
-    expect(screen.getByLabelText('Select currency')).toHaveTextContent('GBP');
+    await waitFor(() => expect(screen.getByLabelText('Region & language preferences')).toHaveTextContent('GB'));
+    expect(screen.getByLabelText('Region & language preferences')).toHaveTextContent('GBP');
   });
 
-  test('N2 currency dropdown marks the auto-selected currency as active with a check mark', async () => {
+  test('N2 the preferences panel shows the auto-selected currency as the active choice', async () => {
     renderNavbar();
-    fireEvent.click(screen.getByLabelText('Select currency'));
-    const dropdown = await screen.findByText('Select Currency');
-    expect(dropdown).toBeInTheDocument();
-    const active = screen.getByText('GBP', { selector: '.currency-code' }).closest('button');
-    expect(active).toHaveClass('active');
-    expect(active.textContent).toContain('✓');
+    await openPrefs();
+    expect(screen.getByLabelText('Select currency')).toHaveValue('GBP');
   });
 
-  test('N3 country dropdown marks the auto-detected country as active with a check mark', async () => {
+  test('N3 the preferences panel shows the auto-detected country as the active choice', async () => {
     renderNavbar();
-    fireEvent.click(screen.getByLabelText('Select country'));
-    const dropdown = await screen.findByText('Select Country');
-    expect(dropdown).toBeInTheDocument();
-    const active = screen.getByText('GB', { selector: '.country-code' }).closest('button');
-    expect(active).toHaveClass('active');
-    expect(active.textContent).toContain('✓');
+    await openPrefs();
+    expect(screen.getByLabelText('Select country')).toHaveValue('GB');
   });
 
-  test('N4 picking another currency calls changeCurrency and closes the dropdown', async () => {
-    const theme = renderNavbar();
-    fireEvent.click(screen.getByLabelText('Select currency'));
-    await screen.findByText('Select Currency');
-    fireEvent.click(screen.getByText('EUR', { selector: '.currency-code' }));
+  test('N4 picking another currency calls changeCurrency', async () => {
+    renderNavbar();
+    await openPrefs();
+    fireEvent.change(screen.getByLabelText('Select currency'), { target: { value: 'EUR' } });
     expect(globalThis.__tdThemeMock.changeCurrency).toHaveBeenCalledWith('EUR');
-    expect(screen.queryByText('Select Currency')).not.toBeInTheDocument();
   });
 
   test('N5 picking another country calls changeCountry AND switches to its currency', async () => {
     renderNavbar();
-    fireEvent.click(screen.getByLabelText('Select country'));
-    await screen.findByText('Select Country');
-    fireEvent.click(screen.getByText('US', { selector: '.country-code' }));
+    await openPrefs();
+    fireEvent.change(screen.getByLabelText('Select country'), { target: { value: 'US' } });
     expect(globalThis.__tdThemeMock.changeCountry).toHaveBeenCalledWith('US');
     expect(globalThis.__tdThemeMock.changeCurrency).toHaveBeenCalledWith('USD');
   });
 
   test('N6 an auto-selected currency outside the popular list still appears and is active', async () => {
     renderNavbar({ currency: 'SEK' });
-    fireEvent.click(screen.getByLabelText('Select currency'));
-    await screen.findByText('Select Currency');
-    const active = screen.getByText('SEK', { selector: '.currency-code' }).closest('button');
-    expect(active).toHaveClass('active');
-    expect(active.textContent).toContain('✓');
+    await openPrefs();
+    const select = screen.getByLabelText('Select currency');
+    expect(select).toHaveValue('SEK');
+    expect(Array.from(select.options).some((o) => o.value === 'SEK')).toBe(true);
   });
 
-  test('N7 countries list API failure: dropdown still opens with the detected country present', async () => {
+  test('N7 countries list API failure: panel still opens with the detected country present', async () => {
     api.get.mockRejectedValue(new Error('countries endpoint down'));
     renderNavbar();
-    fireEvent.click(screen.getByLabelText('Select country'));
-    const active = await screen.findByText('GB', { selector: '.country-code' });
-    expect(active.closest('button')).toHaveClass('active');
+    await openPrefs();
+    const select = screen.getByLabelText('Select country');
+    expect(Array.from(select.options).some((o) => o.value === 'GB')).toBe(true);
   });
 
-  test('N8 unknown country (detection failed): country control renders a neutral placeholder', async () => {
-    renderNavbar({ country: null });
-    await waitFor(() => expect(screen.getByLabelText('Select country')).toHaveTextContent('—'));
-    expect(screen.getByLabelText('Select currency')).toHaveTextContent('USD');
+  test('N8 unknown country (detection failed): the control renders a neutral placeholder', async () => {
+    // ThemeContext falls back to USD exactly when the country is undetected
+    // (savedPrefs.currency || 'USD'), so this models the real failed state.
+    renderNavbar({ country: null, currency: 'USD' });
+    await waitFor(() => expect(screen.getByLabelText('Region & language preferences')).toHaveTextContent('—'));
+    expect(screen.getByLabelText('Region & language preferences')).toHaveTextContent('USD');
+  });
+});
+
+describe('Navbar preferences panel — one place for every locale control', () => {
+  test('C1 there are no separate country/currency/language trigger buttons — one control only', async () => {
+    renderNavbar();
+    // The old design shipped four competing utility buttons next to the
+    // account menu. The consolidated design has exactly one preferences
+    // trigger; the "Select …" labels belong to the fields inside the panel.
+    expect(screen.queryAllByRole('button', { name: /select (country|currency|language)/i })).toHaveLength(0);
+    expect(screen.getAllByLabelText('Region & language preferences')).toHaveLength(1);
+  });
+
+  test('C2 one click reveals country, currency, language and theme in a single panel', async () => {
+    renderNavbar();
+    await openPrefs();
+    expect(screen.getByLabelText('Select country')).toBeInTheDocument();
+    expect(screen.getByLabelText('Select currency')).toBeInTheDocument();
+    expect(screen.getByLabelText('Select language')).toBeInTheDocument();
+    expect(screen.getByLabelText('Toggle theme')).toBeInTheDocument();
+  });
+
+  test('C3 the panel is keyboard-dismissable and the language select flows through', async () => {
+    renderNavbar();
+    await openPrefs();
+    fireEvent.change(screen.getByLabelText('Select language'), { target: { value: 'fr' } });
+    expect(globalThis.__tdThemeMock.changeLanguage).toHaveBeenCalledWith('fr');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('Region & preferences')).not.toBeInTheDocument());
+  });
+
+  test('C4 the theme toggle inside the panel calls toggleTheme', async () => {
+    renderNavbar();
+    await openPrefs();
+    fireEvent.click(screen.getByLabelText('Toggle theme'));
+    expect(globalThis.__tdThemeMock.toggleTheme).toHaveBeenCalled();
   });
 });
 

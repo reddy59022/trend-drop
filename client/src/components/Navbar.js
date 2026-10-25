@@ -19,7 +19,6 @@ import {
   FaMoon,
   FaSun,
   FaGlobe,
-  FaDollarSign,
   FaStore,
   FaExchangeAlt,
   FaStar,
@@ -64,7 +63,7 @@ const currencyOptions = (active) => {
 const FALLBACK_COUNTRIES = [
   { code: 'US', name: 'United States', currency: 'USD', flag: '🇺🇸' },
   { code: 'GB', name: 'United Kingdom', currency: 'GBP', flag: '🇬🇧' },
-  { code: 'DE', name: 'Germany', currency: 'EUR', flag: '🇩🇪' },
+  { code: 'DE', name: 'Germany', currency: 'EUR', flag: '🇪🇺' },
   { code: 'FR', name: 'France', currency: 'EUR', flag: '🇫🇷' },
   { code: 'IT', name: 'Italy', currency: 'EUR', flag: '🇮🇹' },
   { code: 'ES', name: 'Spain', currency: 'EUR', flag: '🇪🇸' },
@@ -100,9 +99,7 @@ const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [currencyOpen, setCurrencyOpen] = useState(false);
-  const [countryOpen, setCountryOpen] = useState(false);
-  const [langOpen, setLangOpen] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [countriesList, setCountriesList] = useState([]);
@@ -110,6 +107,7 @@ const Navbar = () => {
   const searchRef = useRef(null);
   const isFirstRender = useRef(true);
   const dropdownRef = useRef(null);
+  const prefsRef = useRef(null);
 
   // Track scroll for glass effect
   useEffect(() => {
@@ -140,8 +138,8 @@ const Navbar = () => {
     }
   }, [user]);
 
-  // Fetch the launch-market list for the country dropdown. On failure the
-  // static fallback (plus the detected country) still renders the dropdown.
+  // Fetch the launch-market list for the country selector. On failure the
+  // static fallback (plus the detected country) still renders the selector.
   useEffect(() => {
     let mounted = true;
     api.get('/marketplace/countries')
@@ -198,6 +196,24 @@ const Navbar = () => {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // Close the preferences panel on outside click or Escape (popover contract)
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (prefsRef.current && !prefsRef.current.contains(e.target)) {
+        setPrefsOpen(false);
+      }
+    };
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setPrefsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, []);
+
   const handleSearch = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
@@ -217,9 +233,7 @@ const Navbar = () => {
     setMenuOpen(false);
     setDropdownOpen(false);
     setShopOpen(false);
-    setCurrencyOpen(false);
-    setCountryOpen(false);
-    setLangOpen(false);
+    setPrefsOpen(false);
   };
 
   // Check if a route is active
@@ -477,122 +491,99 @@ const Navbar = () => {
           )}
         </div>
 
-        {/* Right-side global controls */}
+        {/* Right-side global controls — one consolidated preferences popover
+            (country + currency + language + theme) instead of four competing
+            utility buttons next to the account menu (UI/UX audit item 5). */}
         <div className="navbar-global-controls">
-          {/* Theme Toggle */}
-          <button 
-            className="nav-icon-link global-btn" 
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-            aria-label="Toggle theme"
-          >
-            {theme === 'dark' ? <FaSun /> : <FaMoon />}
-          </button>
-
-          {/* Country Selector — auto-selected from the visitor's IP */}
-          <div className="nav-dropdown">
+          <div className="nav-dropdown" ref={prefsRef}>
             <button
-              className="nav-icon-link global-btn country-btn"
-              onClick={() => { setCountryOpen(!countryOpen); setCurrencyOpen(false); setLangOpen(false); }}
-              title="Select country"
-              aria-label="Select country"
-              aria-haspopup="menu"
-              aria-expanded={countryOpen}
-            >
-              {country ? (
-                <>
-                  <span className="country-flag">{(countryOptions.find(c => c.code === country) || {}).flag || '🏳️'}</span>
-                  <span className="country-code-badge">{country}</span>
-                </>
-              ) : (
-                <span className="country-code-badge">—</span>
-              )}
-            </button>
-
-            {countryOpen && (
-              <div className="country-dropdown">
-                <div className="dropdown-header">Select Country</div>
-                {countryOptions.map(c => (
-                  <button
-                    key={c.code}
-                    className={`country-option ${country === c.code ? 'active' : ''}`}
-                    onClick={() => {
-                      changeCountry(c.code);
-                      // Also switch to the country's currency
-                      if (c.currency) changeCurrency(c.currency);
-                      setCountryOpen(false);
-                    }}
-                  >
-                    <span className="country-flag">{c.flag}</span>
-                    <span className="country-code">{c.code}</span>
-                    <span className="country-name">{c.name}</span>
-                    {country === c.code && <span className="check-mark">✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Currency Selector */}
-          <div className="nav-dropdown">
-            <button
-              className="nav-icon-link global-btn currency-btn"
-              onClick={() => { setCurrencyOpen(!currencyOpen); setCountryOpen(false); setLangOpen(false); }}
-              title="Select currency"
-              aria-label="Select currency"
-              aria-haspopup="menu"
-              aria-expanded={currencyOpen}
-            >
-              <FaDollarSign size={12} />
-              <span style={{ fontSize: 11, fontWeight: 700 }}>{country === null ? 'USD' : currency}</span>
-            </button>
-            
-            {currencyOpen && (
-              <div className="currency-dropdown">
-                <div className="dropdown-header">Select Currency</div>
-                {currencyOptions(currency).map(c => (
-                  <button
-                    key={c.code}
-                    className={`currency-option ${currency === c.code ? 'active' : ''}`}
-                    onClick={() => { changeCurrency(c.code); setCurrencyOpen(false); }}
-                  >
-                    <span className="currency-symbol">{c.symbol}</span>
-                    <span className="currency-code">{c.code}</span>
-                    <span className="currency-name">{c.name}</span>
-                    {currency === c.code && <span className="check-mark">✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Language Selector */}
-          <div className="nav-dropdown">
-            <button 
-              className="nav-icon-link global-btn"
-              onClick={() => { setLangOpen(!langOpen); setCurrencyOpen(false); }}
-              title="Select language"
-              aria-label="Select language"
-              aria-haspopup="menu"
-              aria-expanded={langOpen}
+              className="nav-icon-link global-btn prefs-trigger"
+              onClick={() => setPrefsOpen(!prefsOpen)}
+              title="Region, currency & language"
+              aria-label="Region & language preferences"
+              aria-haspopup="dialog"
+              aria-expanded={prefsOpen}
             >
               <FaGlobe size={14} />
+              <span className="prefs-codes">{country || '—'} · {currency || 'USD'}</span>
             </button>
-            
-            {langOpen && (
-              <div className="lang-dropdown">
-                <div className="dropdown-header">Select Language</div>
-                {languages.map(l => (
+
+            {prefsOpen && (
+              <div className="nav-dropdown-menu prefs-panel" role="dialog" aria-label="Region & preferences">
+                <div className="prefs-header">
+                  <span className="dropdown-header">Region & preferences</span>
                   <button
-                    key={l.code}
-                    className={`lang-option ${language === l.code ? 'active' : ''}`}
-                    onClick={() => { changeLanguage(l.code); setLangOpen(false); }}
+                    className="prefs-close"
+                    onClick={() => setPrefsOpen(false)}
+                    aria-label="Close preferences"
                   >
-                    <span className="lang-flag">{l.flag}</span>
-                    <span className="lang-name">{l.name}</span>
-                    {language === l.code && <span className="check-mark">✓</span>}
+                    <FaTimes size={12} />
                   </button>
-                ))}
+                </div>
+
+                <button
+                  className="prefs-theme-row"
+                  onClick={toggleTheme}
+                  title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                  aria-label="Toggle theme"
+                >
+                  {theme === 'dark' ? <FaSun size={14} /> : <FaMoon size={14} />}
+                  <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+                </button>
+
+                <label className="prefs-field">
+                  <span className="prefs-label">Country</span>
+                  <select
+                    className="prefs-select"
+                    aria-label="Select country"
+                    value={country || ''}
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      changeCountry(code);
+                      const opt = countryOptions.find((c) => c.code === code);
+                      if (opt && opt.currency) changeCurrency(opt.currency);
+                    }}
+                  >
+                    {!country && <option value="">—</option>}
+                    {countryOptions.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.name} ({c.code})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="prefs-field">
+                  <span className="prefs-label">Currency</span>
+                  <select
+                    className="prefs-select"
+                    aria-label="Select currency"
+                    value={currency || 'USD'}
+                    onChange={(e) => changeCurrency(e.target.value)}
+                  >
+                    {currencyOptions(currency).map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.symbol} {c.code} — {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="prefs-field">
+                  <span className="prefs-label">Language</span>
+                  <select
+                    className="prefs-select"
+                    aria-label="Select language"
+                    value={language || 'en'}
+                    onChange={(e) => changeLanguage(e.target.value)}
+                  >
+                    {languages.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {l.flag} {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             )}
           </div>
