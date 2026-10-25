@@ -49,7 +49,7 @@ const Parties = () => {
         startTime: new Date(newParty.startTime),
         endTime: new Date(newParty.endTime),
       });
-      toast.success('Party created! 🎉');
+      toast.success('Party created!');
       setShowCreateModal(false);
       fetchParties();
     } catch (error) {
@@ -60,7 +60,7 @@ const Parties = () => {
   const handleShare = async (partyId) => {
     try {
       await api.post(`/parties/${partyId}/share`);
-      toast.success('Party shared! 📱');
+      toast.success('Party shared!');
       fetchParties();
     } catch (error) {
       toast.error('Failed to share');

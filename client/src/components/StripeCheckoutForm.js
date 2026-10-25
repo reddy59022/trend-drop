@@ -59,7 +59,7 @@ const StripeCheckoutForm = ({ amount, currency, totalAmount, onSuccess, onError,
       const completed = await onSuccess(paymentMethod);
       if (completed !== false) {
         setSuccess(true);
-        toast.success('Payment successful! 🎉');
+        toast.success('Payment successful!');
       }
     } catch (err) {
       setCardError(err.message || 'Payment failed');

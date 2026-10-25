@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
-import { FaShareAlt, FaInstagram, FaTiktok, FaPinterest, FaSnapchat, FaFacebook, FaPlus, FaSync, FaTrash } from 'react-icons/fa';
+import { FaShareAlt, FaInstagram, FaTiktok, FaPinterest, FaSnapchat, FaFacebook, FaPlus, FaSync, FaTrash, FaMobileAlt } from 'react-icons/fa';
 import api from '../services/api';
 
 const SocialCommerce = () => {
@@ -118,7 +118,7 @@ const SocialCommerce = () => {
 
       {connections.length === 0 ? (
         <div className="empty-state" style={{ padding: 'var(--td-space-xl)' }}>
-          <div className="empty-state-icon">📱</div>
+          <div className="empty-state-icon"><FaMobileAlt aria-hidden="true" /></div>
           <h3>No social platforms connected</h3>
           <p>Connect your social media accounts to auto-post your listings and grow your sales</p>
         </div>

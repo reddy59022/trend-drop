@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
-import { FaTimes, FaSpinner, FaFlag, FaUpload, FaExclamationTriangle } from 'react-icons/fa';
+import { FaTimes, FaSpinner, FaFlag, FaUpload, FaExclamationTriangle, FaTimesCircle, FaPen, FaBan, FaEnvelope, FaComment } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 
 const reportReasons = [
-  { value: 'inappropriate', label: 'Inappropriate Content', icon: '🚫' },
-  { value: 'counterfeit', label: 'Counterfeit Item', icon: '⚠️' },
-  { value: 'misleading', label: 'Misleading Description', icon: '📝' },
-  { value: 'prohibited', label: 'Prohibited Item', icon: '🚨' },
-  { value: 'spam', label: 'Spam', icon: '📧' },
-  { value: 'other', label: 'Other', icon: '💬' },
+  { value: 'inappropriate', label: 'Inappropriate Content', icon: <FaTimesCircle aria-hidden="true" /> },
+  { value: 'counterfeit', label: 'Counterfeit Item', icon: <FaExclamationTriangle aria-hidden="true" /> },
+  { value: 'misleading', label: 'Misleading Description', icon: <FaPen aria-hidden="true" /> },
+  { value: 'prohibited', label: 'Prohibited Item', icon: <FaBan aria-hidden="true" /> },
+  { value: 'spam', label: 'Spam', icon: <FaEnvelope aria-hidden="true" /> },
+  { value: 'other', label: 'Other', icon: <FaComment aria-hidden="true" /> },
 ];
 
 const ReportModal = ({ listing, isOpen, onClose, onReportSubmitted }) => {

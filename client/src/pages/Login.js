@@ -46,7 +46,7 @@ const Login = () => {
     setLoading(true);
     try {
       await login(form.email, form.password);
-      toast.success('Welcome back! 🎉');
+      toast.success('Welcome back!');
       const from = location.state?.from || '/feed';
       navigate(from, { replace: true });
     } catch (error) {

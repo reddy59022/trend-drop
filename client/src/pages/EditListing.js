@@ -556,7 +556,10 @@ const EditListing = () => {
                   {Object.entries(BOOST_TIERS).map(([key, tier]) => {
                     const isSelected = selectedBoostTier === key;
                     return (
-                      <div key={key} onClick={() => setSelectedBoostTier(key)} style={{
+                      <div key={key} role="button" tabIndex={0} aria-pressed={isSelected}
+                        onClick={() => setSelectedBoostTier(key)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedBoostTier(key); } }}
+                        style={{
                         padding: 'var(--td-space-md)',
                         borderRadius: 'var(--td-radius-sm)',
                         border: `2px solid ${isSelected ? tier.color : 'var(--td-border)'}`,

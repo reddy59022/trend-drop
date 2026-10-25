@@ -102,7 +102,7 @@ const Reviews = () => {
       {/* Reviews List */}
       {data.ratings.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">⭐</div>
+          <div className="empty-state-icon"><FaStar aria-hidden="true" /></div>
           <h2>No reviews yet</h2>
           <p>Be the first to review this seller!</p>
         </div>

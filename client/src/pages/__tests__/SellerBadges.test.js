@@ -70,7 +70,7 @@ describe('SellerBadges page', () => {
     renderPage(<SellerBadges />);
 
     await waitFor(() => {
-      expect(screen.getByText('Gold')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Gold' })).toBeInTheDocument();
       expect(screen.getByText('42')).toBeInTheDocument();
       expect(screen.getByText('0.0')).toBeInTheDocument();
       expect(screen.getByText('87.5%')).toBeInTheDocument();

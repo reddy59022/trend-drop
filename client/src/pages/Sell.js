@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaTruck, FaDollarSign, FaCheckCircle, FaPlay, FaYoutube, FaInstagram, FaLink, FaRocket, FaStar, FaCrown } from 'react-icons/fa';
+import { FaCamera, FaTimes, FaImage, FaSpinner, FaInfoCircle, FaExclamationTriangle, FaTruck, FaDollarSign, FaCheckCircle, FaPlay, FaYoutube, FaInstagram, FaLink, FaRocket, FaStar, FaCrown } from 'react-icons/fa';
 import { parseVideoUrl, getVideoPlatformLabel, getVideoPlatformColor } from '../utils/videoEmbed';
 import { countries, formatPrice } from '../utils/helpers';
 import { useTheme } from '../context/ThemeContext';
@@ -407,7 +407,7 @@ const Sell = () => {
                    <FaTruck size={12} /> Default for {formData.shipsFrom}: {formatPrice(defaultShippingFees[formData.shipsFrom] || 3.99, currency || 'USD')} ({defaultShippingLabels[formData.shipsFrom] || 'International'})
                  </p>
                  <p className="form-hint" style={{ marginTop: 4, fontSize: 11, color: 'var(--td-error)' }}>
-                   ⚠️ If actual shipping cost exceeds this amount, the difference will be deducted from your payout.
+                   <FaExclamationTriangle aria-hidden="true" /> If actual shipping cost exceeds this amount, the difference will be deducted from your payout.
                  </p>
                </div>
             </div>

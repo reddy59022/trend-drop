@@ -295,7 +295,7 @@ const BulkListingManager = () => {
 
         {listings.length === 0 && (
           <div className="empty-state" style={{ padding: 40 }}>
-            <div className="empty-state-icon">📦</div>
+            <div className="empty-state-icon"><FaBox aria-hidden="true" /></div>
             <h3>No Listings Yet</h3>
             <p>Create your first listing to use bulk management features</p>
             <Link to="/sell" className="btn btn-primary">Create Listing</Link>

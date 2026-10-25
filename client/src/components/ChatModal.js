@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaTimes, FaPaperPlane, FaSpinner, FaStore, FaCheck, FaTimesCircle, FaExchangeAlt, FaClock, FaTag, FaShoppingBag } from 'react-icons/fa';
+import { FaTimes, FaPaperPlane, FaSpinner, FaStore, FaCheck, FaTimesCircle, FaExchangeAlt, FaClock, FaTag, FaShoppingBag, FaComment } from 'react-icons/fa';
 import { startConversation, getConversationWithUser } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { defaultAvatar, timeAgo, formatPrice } from '../utils/helpers';
@@ -183,7 +183,7 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
             )}
             {offerExpired && (offer.status === 'pending' || offer.status === 'countered') && (
               <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(148,148,184,0.1)', borderRadius: 'var(--td-radius-sm)', fontSize: 12, color: 'var(--td-text-secondary)', textAlign: 'center' }}>
-                ⏰ This offer has expired. A new offer can be made.
+                <FaClock aria-hidden="true" /> This offer has expired. A new offer can be made.
               </div>
             )}
           </div>
@@ -195,7 +195,7 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}><FaSpinner className="spinner" /></div>
           ) : messages.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}>
-              <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.3 }}>💬</div>
+              <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.3 }}><FaComment aria-hidden="true" /></div>
               <p style={{ fontSize: 16, fontWeight: 500, marginBottom: 4 }}>Start a conversation with {sellerName}</p>
               <p style={{ fontSize: 13 }}>Ask about the item, negotiate a price, or say hello!</p>
             </div>

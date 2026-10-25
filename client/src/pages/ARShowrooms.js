@@ -148,7 +148,7 @@ const ARShowrooms = () => {
       {/* Showrooms Grid/List */}
       {showrooms.length === 0 ? (
         <div className="empty-state" style={{ padding: 'var(--td-space-xl)' }}>
-          <div className="empty-state-icon">🏠</div>
+          <div className="empty-state-icon"><FaHome aria-hidden="true" /></div>
           <h3>No showrooms found</h3>
           <p>{activeTab === 'my' ? 'Create your first AR showroom to showcase your items in 3D' : 'Be the first to create an AR showroom!'}</p>
         </div>

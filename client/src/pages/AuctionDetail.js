@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { FaGavel, FaClock, FaArrowLeft, FaVideo, FaBroadcastTower, FaEye, FaTrophy, FaComment, FaVideoSlash } from 'react-icons/fa';
+import { FaGavel, FaClock, FaArrowLeft, FaVideo, FaBroadcastTower, FaEye, FaTrophy, FaComment, FaVideoSlash, FaCheckCircle, FaTimes } from 'react-icons/fa';
 import api from '../services/api';
 import { getSocketBaseURL } from '../services/native';
 import { useAuth } from '../context/AuthContext';
@@ -46,7 +46,7 @@ const AuctionDetail = () => {
     if (localStream && videoEl) {
       videoEl.srcObject = localStream;
       videoEl.play()
-        .then(() => console.log('Local video stream playing'))
+        .then(() => console.debug('Local video stream playing'))
         .catch(err => {
           console.error('Error playing local video:', err);
           // Retry with muted autoplay (some browsers require it)
@@ -113,11 +113,11 @@ const AuctionDetail = () => {
     });
     
     socket.on('connect', () => {
-      console.log('Socket connected for live stream');
+      console.debug('Socket connected for live stream');
     });
     
     socket.on('disconnect', () => {
-      console.log('Socket disconnected');
+      console.debug('Socket disconnected');
     });
     
     socketRef.current = socket;
@@ -176,7 +176,7 @@ const AuctionDetail = () => {
       // ===== Handle viewers joining - create peer connection per viewer =====
       socket.on('stream:viewer-joined', ({ auctionId, userId, userName }) => {
         if (auctionId !== id) return;
-        console.log(`Viewer ${userName} joined stream room`);
+        console.debug(`Viewer ${userName} joined stream room`);
         setViewerCount(prev => prev + 1);
         createPeerConnectionForViewer(userId);
       });
@@ -184,7 +184,7 @@ const AuctionDetail = () => {
       // Viewer answers our offer
       socket.on('stream:answer', ({ auctionId, answer, viewerId }) => {
         if (auctionId !== id) return;
-        console.log('Received answer from viewer:', viewerId);
+        console.debug('Received answer from viewer:', viewerId);
         const pc = peerConnectionsRef.current.get(String(viewerId));
         if (pc) {
           pc.setRemoteDescription(new RTCSessionDescription(answer))
@@ -195,7 +195,7 @@ const AuctionDetail = () => {
       // ICE candidates from viewers
       socket.on('stream:ice-candidate', ({ auctionId, candidate, fromUserId }) => {
         if (auctionId !== id) return;
-        console.log('Received ICE from viewer:', fromUserId);
+        console.debug('Received ICE from viewer:', fromUserId);
         const pc = peerConnectionsRef.current.get(String(fromUserId));
         if (pc && candidate) {
           pc.addIceCandidate(new RTCIceCandidate(candidate))
@@ -248,7 +248,7 @@ const AuctionDetail = () => {
       
       // Handle connection state
       pc.onconnectionstatechange = () => {
-        console.log(`Peer connection to viewer ${viewerId}: ${pc.connectionState}`);
+        console.debug(`Peer connection to viewer ${viewerId}: ${pc.connectionState}`);
         if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
           peerConnectionsRef.current.delete(String(viewerId));
           setViewerCount(prev => Math.max(0, prev - 1));
@@ -289,7 +289,7 @@ const AuctionDetail = () => {
       // to avoid race condition where seller's SDP offer arrives before listener is ready
       socket.on('stream:offer', async ({ auctionId, offer, sellerId }) => {
         if (auctionId !== id) return;
-        console.log('Received offer from seller');
+        console.debug('Received offer from seller');
         
         try {
           // Create/update peer connection
@@ -316,7 +316,7 @@ const AuctionDetail = () => {
       // ICE candidates from seller
       socket.on('stream:ice-candidate', ({ auctionId, candidate, fromUserId }) => {
         if (auctionId !== id) return;
-        console.log('Received ICE from seller');
+        console.debug('Received ICE from seller');
         if (remotePeerRef.current) {
           remotePeerRef.current.addIceCandidate(new RTCIceCandidate(candidate))
             .catch(err => console.error('Error adding ICE:', err));
@@ -354,7 +354,7 @@ const AuctionDetail = () => {
       
       // Handle remote stream
       pc.ontrack = (event) => {
-        console.log('Received remote track:', event.streams[0]);
+        console.debug('Received remote track:', event.streams[0]);
         remotePeerRef.current.remoteStream = event.streams[0];
         if (viewerVideoRef.current) {
           viewerVideoRef.current.srcObject = event.streams[0];
@@ -375,9 +375,9 @@ const AuctionDetail = () => {
       };
       
       pc.onconnectionstatechange = () => {
-        console.log(`Viewer peer connection state: ${pc.connectionState}`);
+        console.debug(`Viewer peer connection state: ${pc.connectionState}`);
         if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-          console.log('Connection lost to seller');
+          console.debug('Connection lost to seller');
         }
       };
       
@@ -573,9 +573,9 @@ const AuctionDetail = () => {
           {/* Status Badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 'var(--td-space-md)', flexWrap: 'wrap' }}>
             <span className={`auction-status-badge ${auction.status}`}>
-              {auction.status === 'scheduled' ? '⏳ Upcoming' : 
-               auction.status === 'active' ? '🔴 Live' : 
-               auction.status === 'closed' ? '✅ Ended' : '❌ Cancelled'}
+              {auction.status === 'scheduled' ? <><FaClock aria-hidden="true" /> Upcoming</> :
+               auction.status === 'active' ? <><FaBroadcastTower aria-hidden="true" /> Live</> :
+               auction.status === 'closed' ? <><FaCheckCircle aria-hidden="true" /> Ended</> : <><FaTimes aria-hidden="true" /> Cancelled</>}
             </span>
             {auction.currency && (
               <span className="currency-badge">{auction.currency}</span>

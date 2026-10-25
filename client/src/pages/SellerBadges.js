@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { FaMedal, FaGem, FaTag, FaCheck, FaStar } from 'react-icons/fa';
 import { getMySellerBadge, requestSellerVerification, updateSellerBadgeStats } from '../services/api';
 import { toast } from 'react-toastify';
 
 const TIER_STYLES = {
-  bronze: { color: '#CD7F32', label: 'Bronze', icon: '🥉' },
-  silver: { color: '#C0C0C0', label: 'Silver', icon: '🥈' },
-  gold: { color: '#FFD700', label: 'Gold', icon: '🥇' },
-  platinum: { color: '#E5E4E2', label: 'Platinum', icon: '💎' },
-  none: { color: 'var(--td-text-secondary)', label: 'No Badge', icon: '🏷️' },
+  bronze: { color: '#CD7F32', label: 'Bronze', icon: <FaMedal style={{ color: '#CD7F32' }} /> },
+  silver: { color: '#C0C0C0', label: 'Silver', icon: <FaMedal style={{ color: '#A8A8A8' }} /> },
+  gold: { color: '#FFD700', label: 'Gold', icon: <FaMedal style={{ color: '#D4A017' }} /> },
+  platinum: { color: '#E5E4E2', label: 'Platinum', icon: <FaGem style={{ color: '#8E8EA0' }} /> },
+  none: { color: 'var(--td-text-secondary)', label: 'No Badge', icon: <FaTag /> },
 };
 
 const asNumber = (value) => {
@@ -210,13 +211,13 @@ const SellerBadges = () => {
         {/* Benefits */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 16 }}>
           <span className={`badge ${badge?.benefits?.featuredListings ? 'badge-primary' : ''}`}>
-            {badge?.benefits?.featuredListings ? '✅ Featured Listings' : '⚪ Featured Listings'}
+            {badge?.benefits?.featuredListings ? <><FaCheck aria-hidden="true" /> Featured Listings</> : 'Featured Listings'}
           </span>
           <span className={`badge ${badge?.benefits?.reducedFees ? 'badge-primary' : ''}`}>
-            {badge?.benefits?.reducedFees ? '✅ Reduced Fees' : '⚪ Reduced Fees'}
+            {badge?.benefits?.reducedFees ? <><FaCheck aria-hidden="true" /> Reduced Fees</> : 'Reduced Fees'}
           </span>
           <span className={`badge ${badge?.benefits?.prioritySupport ? 'badge-primary' : ''}`}>
-            {badge?.benefits?.prioritySupport ? '✅ Priority Support' : '⚪ Priority Support'}
+            {badge?.benefits?.prioritySupport ? <><FaCheck aria-hidden="true" /> Priority Support</> : 'Priority Support'}
           </span>
         </div>
 
@@ -247,7 +248,7 @@ const SellerBadges = () => {
                 return (
                   <tr key={t.tier} style={{ borderBottom: '1px solid var(--td-border-light)', background: isCurrent ? 'rgba(255,215,0,0.05)' : 'transparent' }}>
                     <td style={{ padding: 8, fontWeight: 600 }}>
-                      {TIER_STYLES[t.tier].icon} {TIER_STYLES[t.tier].label} {isCurrent && '⭐'}
+                      {TIER_STYLES[t.tier].icon} {TIER_STYLES[t.tier].label} {isCurrent && <FaStar aria-hidden="true" />}
                     </td>
                     <td style={{ padding: 8 }}>{t.sales}</td>
                     <td style={{ padding: 8 }}>{t.rating}</td>

@@ -123,7 +123,7 @@ const Offers = () => {
   if (!user) return (
     <div className="page-container">
       <div className="empty-state">
-        <div className="empty-state-icon">💬</div>
+        <div className="empty-state-icon"><FaComment aria-hidden="true" /></div>
         <h2>Offers</h2>
         <p>Sign in to manage your offers</p>
         <Link to="/login" className="btn btn-primary btn-lg">Sign In</Link>
@@ -143,7 +143,7 @@ const Offers = () => {
     return map[status] || 'status-pending';
   };
 
-  const getStatusLabel = (s) => ({ pending: '⏳ Pending', accepted: '✅ Accepted', declined: '❌ Declined', countered: '🔄 Countered', buyer_countered: '🔄 You Countered', completed: '✅ Completed', expired: '⏰ Expired' }[s] || s);
+  const getStatusLabel = (s) => ({ pending: 'Pending', accepted: 'Accepted', declined: 'Declined', countered: 'Countered', buyer_countered: 'You Countered', completed: 'Completed', expired: 'Expired' }[s] || s);
 
   const isOfferExpired = (offer) => {
     // Pending/countered offers expire 24 hours after creation or last counter
@@ -215,7 +215,7 @@ const Offers = () => {
           )}
           {offer.status === 'accepted' && offer.acceptedUntil && (
             <p style={{ fontSize: 11, color: isOfferExpired(offer) ? 'var(--td-error)' : 'var(--td-text-secondary)', marginTop: 4 }}>
-              {isOfferExpired(offer) ? '⏰ Purchase window expired' : `⏳ Purchase window: ${Math.max(0, Math.floor((new Date(offer.acceptedUntil) - new Date()) / (1000 * 60 * 60)))}h remaining`}
+              {isOfferExpired(offer) ? <><FaClock aria-hidden="true" /> Purchase window expired</> : <><FaClock aria-hidden="true" /> Purchase window: {Math.max(0, Math.floor((new Date(offer.acceptedUntil) - new Date()) / (1000 * 60 * 60)))}h remaining</>}
             </p>
           )}
           <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
@@ -241,7 +241,7 @@ const Offers = () => {
         )}
         {type === 'received' && offer.status === 'accepted' && (
           <div className="offer-actions">
-            <span className="offer-status status-success" style={{ padding: '4px 12px' }}>✅ Accepted - Waiting for buyer</span>
+            <span className="offer-status status-success" style={{ padding: '4px 12px' }}><FaCheck aria-hidden="true" /> Accepted - Waiting for buyer</span>
           </div>
         )}
         {type === 'received' && offer.status === 'countered' && (
@@ -277,7 +277,7 @@ const Offers = () => {
         )}
         {type === 'sent' && isOfferExpired(offer) && (
           <div className="offer-actions">
-            <span className="offer-status status-expired" style={{ padding: '4px 12px' }}>⏰ Offer expired - make a new offer</span>
+            <span className="offer-status status-expired" style={{ padding: '4px 12px' }}><FaClock aria-hidden="true" /> Offer expired - make a new offer</span>
           </div>
         )}
       </div>

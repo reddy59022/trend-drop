@@ -1,3 +1,7 @@
+/* STACK LAYER 5/6 — the current design language; this layer WINS over 1-4.
+   Cascade = import order in index.js; later layers win on the same selector.
+   Add new visual rules HERE. Dashboard-only polish goes in
+   dashboard-bespoke.css (6/6), which wins over this file. */
 /* =====================================================
    TrendDrop — SIGNATURE DESIGN LANGUAGE · "THE DROP"
    ----------------------------------------------------
@@ -589,7 +593,7 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
   border: 1px solid var(--td-glass-border);
 }
 
-.tabs { border-radius: 999px; }
+
 .tab.active, .step-dot.active { background: var(--td-gradient-brand); color: #fff; }
 
 .empty-state { padding: var(--td-space-xxxl) var(--td-space-lg); }

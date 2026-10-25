@@ -1,3 +1,7 @@
+/* STACK LAYER 1/6 — foundation: tokens (--td-*), base elements, primitives.
+   Cascade = import order in index.js; later layers win on the same selector.
+   New visual rules go in design-haul.css (5/6), dashboard polish in
+   dashboard-bespoke.css (6/6). Check those before adding rules here. */
 /* =====================================================
    TrendDrop — Global Design System
    "Wear the Extraordinary"
@@ -434,14 +438,7 @@ ul, ol {
 }
 
 /* ---- Spinner ---- */
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--td-border);
-  border-top-color: var(--td-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
+
 
 .spinner-sm {
   width: 20px;
@@ -483,9 +480,7 @@ ul, ol {
   font-family: var(--td-font-display);
 }
 
-.section {
-  padding: var(--td-section) 0;
-}
+
 
 .section-title {
   font-size: var(--td-text-2xl);
@@ -517,15 +512,7 @@ ul, ol {
   box-shadow: var(--td-glass-shadow);
 }
 
-.glass-card {
-  background: var(--td-glass-bg);
-  backdrop-filter: blur(var(--td-glass-blur));
-  -webkit-backdrop-filter: blur(var(--td-glass-blur));
-  border: 1px solid var(--td-glass-border);
-  box-shadow: var(--td-shadow-card);
-  border-radius: var(--td-radius-lg);
-  transition: all var(--td-transition-normal);
-}
+
 
 .glass-card:hover {
   box-shadow: var(--td-shadow-card-hover);
@@ -736,10 +723,7 @@ ul, ol {
   width: 100%;
 }
 
-.form-input:focus {
-  border-color: var(--td-primary);
-  box-shadow: 0 0 0 4px var(--td-primary-glow);
-}
+
 
 .form-input::placeholder {
   color: var(--td-text-tertiary);
@@ -776,51 +760,24 @@ select.form-input {
   padding-right: 38px;
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--td-space-md);
-}
+
 
 .form-grid .full-width {
   grid-column: 1 / -1;
 }
 
 /* ---- Tags / Badges ---- */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 12px;
-  border-radius: var(--td-radius-full);
-  font-size: var(--td-text-sm);
-  font-weight: 600;
-  line-height: 1.4;
-}
 
-.badge-primary {
-  background: rgba(108, 59, 255, 0.10);
-  color: var(--td-primary);
-}
 
-.badge-success {
-  background: rgba(16, 217, 142, 0.12);
-  color: var(--td-success);
-}
 
-.badge-warning {
-  background: rgba(255, 176, 32, 0.12);
-  color: var(--td-warning);
-}
 
-.badge-error {
-  background: rgba(255, 77, 109, 0.12);
-  color: var(--td-error);
-}
 
-.badge-info {
-  background: rgba(61, 155, 255, 0.12);
-  color: var(--td-info);
-}
+
+
+
+
+
+
 
 .badge-accent {
   background: rgba(255, 184, 107, 0.14);
@@ -885,11 +842,7 @@ select.form-input {
   color: var(--td-text);
 }
 
-.empty-state p {
-  color: var(--td-text-secondary);
-  font-size: var(--td-text-base);
-  max-width: 400px;
-}
+
 
 /* ---- Skeleton Loading ---- */
 .skeleton {
@@ -1108,8 +1061,8 @@ select.form-input {
 .flex { display: flex; }
 .flex-col { flex-direction: column; }
 .flex-wrap { flex-wrap: wrap; }
-.flex-center { display: flex; align-items: center; justify-content: center; }
-.flex-between { display: flex; align-items: center; justify-content: space-between; }
+
+
 .flex-gap-xs { gap: var(--td-space-xs); }
 .flex-gap-sm { gap: var(--td-space-sm); }
 .flex-gap-md { gap: var(--td-space-md); }

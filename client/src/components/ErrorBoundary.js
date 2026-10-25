@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FaGlobe, FaLock, FaExclamationTriangle } from 'react-icons/fa';
 
 /**
  * ErrorBoundary - Catches JavaScript errors anywhere in the child component tree,
@@ -81,7 +82,7 @@ class ErrorBoundary extends React.Component {
           padding: '40px 20px'
         }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>
-            {isNetworkError ? '🌐' : isAuthError ? '🔒' : '⚠️'}
+            {isNetworkError ? <FaGlobe aria-hidden="true" /> : isAuthError ? <FaLock aria-hidden="true" /> : <FaExclamationTriangle aria-hidden="true" />}
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>
             {isNetworkError ? 'Connection Issue' : isAuthError ? 'Access Error' : 'Something went wrong'}

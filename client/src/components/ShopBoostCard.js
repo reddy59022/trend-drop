@@ -31,7 +31,7 @@ const ShopBoostCard = () => {
       } else {
         const res = await api.post('/shop-boost');
         setShopBoost(res.data.shopBoost); setBoostedCount(res.data.boostedListings || 0);
-        toast.success(`🚀 Shop boost ON — ${res.data.boostedListings || 0} listings boosted!`);
+        toast.success(`Shop boost ON — ${res.data.boostedListings || 0} listings boosted!`);
       }
     } catch (error) { toast.error(error.response?.data?.message || 'Something went wrong'); }
     setSaving(false);

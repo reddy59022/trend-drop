@@ -13,7 +13,7 @@ const NotFound = () => {
       textAlign: 'center',
       padding: '40px 20px'
     }}>
-      <div style={{ fontSize: 80, marginBottom: 16, lineHeight: 1 }}>🔍</div>
+      <div style={{ fontSize: 80, marginBottom: 16, lineHeight: 1 }}><FaSearch aria-hidden="true" /></div>
       <h1 style={{ fontSize: 48, fontWeight: 800, marginBottom: 8, color: 'var(--td-primary)' }}>404</h1>
       <h2 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Page Not Found</h2>
       <p style={{ fontSize: 16, color: 'var(--td-text-tertiary)', maxWidth: 400, marginBottom: 32 }}>

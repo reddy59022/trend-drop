@@ -35,7 +35,7 @@ const Referrals = () => {
       setStats(statsRes.data.stats);
       setSettings(settingsRes.data);
       if (statsRes.data.stats.code) {
-        setShareText(`Join me on TrendDrop and get $${statsRes.data.stats.rewardAmount || 10} off your first purchase! Use my code: ${statsRes.data.stats.code} 🛍️✨`);
+        setShareText(`Join me on TrendDrop and get ${formatPrice(statsRes.data.stats.rewardAmount || 10)} off your first purchase! Use my code: ${statsRes.data.stats.code} 🛍️✨`);
       }
     } catch (error) {
       console.error(error);
@@ -48,7 +48,7 @@ const Referrals = () => {
       const res = await api.post('/referrals/generate');
       setReferral(res.data.referral);
       setStats(prev => ({ ...prev, code: res.data.referral.code, status: 'active', rewardAmount: res.data.referral.rewardAmount }));
-      setShareText(`Join me on TrendDrop and get $${res.data.referral.rewardAmount} off your first purchase! Use my code: ${res.data.referral.code} 🛍️✨`);
+      setShareText(`Join me on TrendDrop and get ${formatPrice(res.data.referral.rewardAmount)} off your first purchase! Use my code: ${res.data.referral.code} 🛍️✨`);
       toast.success('Your referral code has been generated!');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to generate code');
@@ -111,7 +111,7 @@ const Referrals = () => {
   if (!user) return (
     <div className="page-container">
       <div className="empty-state">
-        <div className="empty-state-icon">🎁</div>
+        <div className="empty-state-icon"><FaGift aria-hidden="true" /></div>
         <h2>Referral Program</h2>
         <p>Sign in to get your personal referral link</p>
         <Link to="/login" className="btn btn-primary btn-lg">Sign In</Link>
@@ -127,8 +127,7 @@ const Referrals = () => {
       <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}><FaGift /> Referral Program</h1>
 
       {/* Hero */}
-      <div className="glass-card" style={{ padding: 'var(--td-space-xl)', marginBottom: 'var(--td-space-lg)', textAlign: 'center', background: 'linear-gradient(135deg, var(--td-primary) 0%, #FF6BC1 100%)', color: '#fff' }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>🎁</div>
+      <div className="glass-card" style={{ padding: 'var(--td-space-xl)', marginBottom: 'var(--td-space-lg)', textAlign: 'center', background: 'linear-gradient(135deg, var(--td-primary) 0%, #FF6BC1 100%)', color: '#fff' }}>          <div style={{ fontSize: 40, marginBottom: 12 }}><FaGift aria-hidden="true" /></div>
         <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>
           Give {formatPrice(rewardAmount, 'USD')}, Get {formatPrice(rewardAmount, 'USD')}
         </h2>
@@ -173,7 +172,7 @@ const Referrals = () => {
 
       {!code ? (
         <div className="glass-card" style={{ padding: 'var(--td-space-xl)', textAlign: 'center' }}>
-          <div className="empty-state-icon">🎉</div>
+          <div className="empty-state-icon"><FaGift aria-hidden="true" /></div>
           <h3 style={{ marginBottom: 8 }}>Get your referral code</h3>
           <p style={{ color: 'var(--td-text-tertiary)', marginBottom: 20 }}>
             Generate a unique code to share with friends and start earning

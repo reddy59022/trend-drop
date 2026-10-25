@@ -188,13 +188,13 @@ const FraudProtection = () => {
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
               <span className={`badge ${result.recommendations?.decline ? 'badge-primary' : ''}`}>
-                {result.recommendations?.decline ? '🚫 Decline' : '✅ Allow'}
+                {result.recommendations?.decline ? 'Decline' : 'Allow'}
               </span>
               <span className={`badge ${result.recommendations?.additionalVerification ? 'badge-primary' : ''}`}>
-                {result.recommendations?.additionalVerification ? '🔒 Require Verification' : '⚪ No Extra Verification'}
+                {result.recommendations?.additionalVerification ? 'Require Verification' : 'No Extra Verification'}
               </span>
               <span className={`badge ${result.recommendations?.manualReview ? 'badge-primary' : ''}`}>
-                {result.recommendations?.manualReview ? '🔍 Manual Review' : '⚪ Auto-approved'}
+                {result.recommendations?.manualReview ? 'Manual Review' : 'Auto-approved'}
               </span>
             </div>
           </div>

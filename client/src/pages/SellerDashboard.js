@@ -403,7 +403,7 @@ const SellerDashboard = () => {
           {/* Bundle rules list */}
           {bundleRules.length === 0 && !showBundleForm ? (
             <div className="empty-state" style={{ padding: 'var(--td-space-xxl)' }}>
-              <div className="empty-state-icon">📦</div>
+              <div className="empty-state-icon"><FaBoxes aria-hidden="true" /></div>
               <h3>No bundle rules yet</h3>
               <p>Create bundle discounts like "Buy 2+ items, get 15% off"</p>
             </div>
@@ -473,7 +473,7 @@ const SellerDashboard = () => {
           {/* Promo codes list */}
           {promos.length === 0 && !showPromoForm ? (
             <div className="empty-state" style={{ padding: 'var(--td-space-xxl)' }}>
-              <div className="empty-state-icon">🏷️</div>
+              <div className="empty-state-icon"><FaTags aria-hidden="true" /></div>
               <h3>No promo codes yet</h3>
               <p>Create codes like SAVE10 or SUMMER20 for your buyers</p>
             </div>
@@ -619,7 +619,7 @@ const SellerDashboard = () => {
                 onChange={e => setBulkAutoOfferLikers(e.target.checked)}
                 style={{ accentColor: 'var(--td-primary)', width: 16, height: 16 }}
               />
-              <span style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}>📨 Auto-offer to likers — likers instantly receive an accepted offer at the minimum price</span>
+              <span style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}><FaExchangeAlt aria-hidden="true" /> Auto-offer to likers — likers instantly receive an accepted offer at the minimum price</span>
             </label>
           </div>
 
@@ -627,7 +627,7 @@ const SellerDashboard = () => {
           <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Per-Listing Auto Respond</h4>
           {listings.length === 0 ? (
             <div className="empty-state" style={{ padding: 30 }}>
-              <div className="empty-state-icon">📦</div>
+              <div className="empty-state-icon"><FaBoxes aria-hidden="true" /></div>
               <h3>No listings yet</h3>
               <p>Create a listing to enable auto-respond for it.</p>
             </div>

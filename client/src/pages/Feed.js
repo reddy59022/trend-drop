@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
 import Pagination from '../components/Pagination';
-import { FaFilter } from 'react-icons/fa';
+import { FaFilter, FaPen } from 'react-icons/fa';
 
 const Feed = () => {
   const { user } = useAuth();
@@ -100,7 +100,7 @@ const Feed = () => {
         </div>
       ) : listings.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">📝</div>
+          <div className="empty-state-icon"><FaPen aria-hidden="true" /></div>
           <h2>{user ? 'Your feed is empty' : 'No listings yet'}</h2>
           <p>{user ? 'Follow sellers to see their latest items here' : 'Be the first to list an item!'}</p>
           <Link to={user ? '/search' : '/register'} className="btn btn-primary btn-lg">

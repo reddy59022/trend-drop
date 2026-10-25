@@ -171,7 +171,7 @@ const CreateAuction = () => {
       // - LiveKit
       // - Agora/Vonage/Twilio (managed services)
       
-      console.log(`Starting live stream for auction ${auctionId}`);
+      console.debug(`Starting live stream for auction ${auctionId}`);
       
       // Store stream info on server for viewers to connect
       await api.post(`/auctions/${auctionId}/stream/start`, {

@@ -1,3 +1,6 @@
+/* STACK LAYER 4/6 — breakpoints only (media queries).
+   Cascade = import order in index.js; later layers win on the same selector.
+   Component visuals belong in design-haul.css (5/6), not here. */
 /* ============================================================
    TRENDDROP — UNIVERSAL RESPONSIVE OVERRIDES
    ============================================================

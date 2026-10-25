@@ -28,7 +28,7 @@ const ForgotPassword = () => {
       <div className="auth-container" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
         {sent ? (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 48, marginBottom: 16, animation: 'scaleIn 0.3s ease-out' }}>📧</div>
+            <div style={{ fontSize: 48, marginBottom: 16, animation: 'scaleIn 0.3s ease-out' }}><FaEnvelope aria-hidden="true" /></div>
             <h1>Check Your Email</h1>
             <p className="auth-subtitle">
               We've sent a password reset link to<br />

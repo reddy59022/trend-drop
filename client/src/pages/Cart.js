@@ -49,7 +49,7 @@ const Cart = () => {
         const key = res.data.publishableKey;
         const configured = res.data.configured;
         
-        console.log('Stripe init:', { configured, keyPrefix: key ? key.substring(0, 7) + '...' : 'not set' });
+        console.debug('Stripe init:', { configured, keyPrefix: key ? key.substring(0, 7) + '...' : 'not set' });
         
         if (configured && key && key.startsWith('pk_')) {
           // Keep the promise in a ref as well as state so a fast tap on
@@ -61,7 +61,7 @@ const Cart = () => {
         } else {
           try {
             const statusRes = await api.get('/payments/status');
-            console.log('Payment status:', statusRes.data);
+            console.debug('Payment status:', statusRes.data);
           } catch (e) {}
         }
       } catch (e) {
@@ -215,7 +215,7 @@ const Cart = () => {
 
         clearCart();
         setShowForm(false);
-        toast.success('Order placed successfully! 🎉');
+        toast.success('Order placed successfully!');
 
         // Navigate with the router — window.location.href deep-links are a
         // hard page load that breaks inside the Capacitor WebView
@@ -385,7 +385,7 @@ const Cart = () => {
 
       {cart.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">🛍️</div>
+          <div className="empty-state-icon"><FaShoppingBag aria-hidden="true" /></div>
           <h2>Your bag is empty</h2>
           <p>Looks like you haven't added anything yet. Browse our collection and find something you love!</p>
           <Link to="/search" className="btn btn-primary btn-lg">Start Shopping</Link>

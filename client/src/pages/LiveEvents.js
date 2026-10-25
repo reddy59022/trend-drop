@@ -158,7 +158,7 @@ const LiveEvents = () => {
         <div>
           {myEvents.length === 0 ? (
             <div className="empty-state" style={{ padding: 'var(--td-space-xl)' }}>
-              <div className="empty-state-icon">📅</div>
+              <div className="empty-state-icon"><FaCalendarAlt aria-hidden="true" /></div>
               <h3>No upcoming events</h3>
               <p>Create your first live shopping event to showcase your items to buyers</p>
             </div>
@@ -194,7 +194,7 @@ const LiveEvents = () => {
         <div>
           {liveEvents.length === 0 ? (
             <div className="empty-state" style={{ padding: 'var(--td-space-xl)' }}>
-              <div className="empty-state-icon">🔴</div>
+              <div className="empty-state-icon"><FaVideo aria-hidden="true" /></div>
               <h3>No live events right now</h3>
               <p>Check back later for live shopping events from your favorite sellers</p>
             </div>

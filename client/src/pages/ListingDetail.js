@@ -1,7 +1,7 @@
 import { defaultAvatar, formatPrice, formatPriceRaw, getConditionColor, normalizeComment } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment, FaBolt, FaExchangeAlt } from 'react-icons/fa';
+import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment, FaBolt, FaExchangeAlt, FaClock } from 'react-icons/fa';
 import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -614,7 +614,7 @@ const ListingDetail = () => {
                 {buyerOffer && buyerOffer.status === 'pending' && (
                   <>
                     <span className="badge badge-warning" style={{ padding: '8px 16px', fontSize: 14 }}>
-                      ⏳ Offer pending — awaiting seller response
+                      <FaClock aria-hidden="true" /> Offer pending — awaiting seller response
                     </span>
                     <button className="btn btn-primary btn-lg" onClick={handleAddToBag}>
                       Add to Bag at {formatPrice(listing.price, listing.currency || 'USD')}
@@ -642,7 +642,7 @@ const ListingDetail = () => {
                 {buyerOffer && buyerOffer.status === 'buyer_countered' && (
                   <>
                     <span className="badge badge-warning" style={{ padding: '8px 16px', fontSize: 14 }}>
-                      🔄 Counter sent — awaiting seller response
+                      <FaExchangeAlt aria-hidden="true" /> Counter sent — awaiting seller response
                     </span>
                     <button className="btn btn-primary btn-lg" onClick={handleAddToBag}>
                       Add to Bag at {formatPrice(listing.price, listing.currency || 'USD')}
@@ -652,7 +652,7 @@ const ListingDetail = () => {
                 {buyerOffer && buyerOffer.status === 'accepted' && (
                   <>
                     <span className="badge badge-success" style={{ padding: '8px 16px', fontSize: 14 }}>
-                      ✅ Offer accepted at {formatPrice(getOfferPrice(), listing.currency || 'USD')}
+                      <FaCheckCircle aria-hidden="true" /> Offer accepted at {formatPrice(getOfferPrice(), listing.currency || 'USD')}
                     </span>
                     <button className="btn btn-primary btn-lg" style={{ flex: 2 }} onClick={handleAddToBag}>
                       Buy Now at {formatPrice(getOfferPrice(), listing.currency || 'USD')}

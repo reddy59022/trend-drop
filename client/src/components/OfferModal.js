@@ -3,7 +3,7 @@ import { FaTimes, FaSpinner, FaGavel, FaMoneyBillWave, FaHistory, FaCheck, FaArr
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
-import { formatPrice, formatPriceRaw } from '../utils/helpers';
+import { formatPrice, formatPriceRaw, currencies } from '../utils/helpers';
 
 /**
  * OfferModal - Full Counter-Offer Chain Support (v14.0)
@@ -16,6 +16,10 @@ import { formatPrice, formatPriceRaw } from '../utils/helpers';
  * - Shows who needs to act next
  */
 const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer }) => {
+  // Offers run in the listing's own currency — money-input hints must show
+  // that currency without conversion (the number typed is submitted in it).
+  const offerCurrency = listing?.currency || 'USD';
+  const offerSymbol = (currencies[offerCurrency] || currencies.USD).symbol;
   const { user } = useAuth();
   const [amount, setAmount] = useState('');
   const [message, setMessage] = useState('');
@@ -299,11 +303,11 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
                       <span style={{
                         position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
                         fontWeight: 700, color: 'var(--td-text-tertiary)', fontSize: 16,
-                      }}>$</span>
+                      }}>{offerSymbol}</span>
                       <input
                         type="number"
                         className="form-input"
-                        placeholder={`Min: $${((offer.counterAmount || offer.amount) + 1).toFixed(0)}`}
+                        placeholder={`Min: ${formatPriceRaw((offer.counterAmount || offer.amount) + 1, offerCurrency)}`}
                         value={counterAmount}
                         onChange={(e) => setCounterAmount(e.target.value)}
                         min={(offer.counterAmount || offer.amount) + 1}
@@ -409,11 +413,11 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
                   <span style={{
                     position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
                     fontWeight: 700, color: 'var(--td-text-tertiary)', fontSize: 16,
-                  }}>$</span>
+                  }}>{offerSymbol}</span>
                   <input
                     type="number"
                     className="form-input"
-                    placeholder={`Min: $${minOffer.toFixed(0)}`}
+                    placeholder={`Min: ${formatPriceRaw(minOffer, offerCurrency)}`}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     min={minOffer}

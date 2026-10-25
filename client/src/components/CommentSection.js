@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FaPaperPlane, FaTrash, FaSpinner, FaUserCircle } from 'react-icons/fa';
+import { FaPaperPlane, FaTrash, FaSpinner, FaUserCircle, FaComment } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -149,7 +149,7 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
         </div>
       ) : (
         <div className="no-comments" data-testid="no-comments">
-          <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.3 }}>💬</div>
+          <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.3 }}><FaComment aria-hidden="true" /></div>
           <p>No comments yet. Be the first to share your thoughts!</p>
         </div>
       )}

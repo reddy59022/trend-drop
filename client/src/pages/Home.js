@@ -93,7 +93,7 @@ const Home = () => {
     if (listings.length === 0) {
       return (
         <div className="empty-state" style={{ padding: '40px 20px', textAlign: 'center' }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🛍️</div>
+          <div style={{ fontSize: 48, marginBottom: 12 }}><FaShoppingBag aria-hidden="true" /></div>
           <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>No listings yet</h3>
           <p style={{ color: 'var(--td-text-tertiary)', fontSize: 14, marginBottom: 16 }}>
             Be the first to list an item! Start selling today.

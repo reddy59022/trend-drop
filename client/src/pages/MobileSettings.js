@@ -35,7 +35,7 @@ function MobileSettings() {
       const res = await api.get('/mobile/preferences');
       setPreferences(res.data);
     } catch (error) {
-      console.log('No existing preferences, using defaults');
+      console.debug('No existing preferences, using defaults');
     }
   };
 

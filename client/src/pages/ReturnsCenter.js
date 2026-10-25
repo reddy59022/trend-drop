@@ -123,7 +123,7 @@ const ReturnsCenter = () => {
   if (!user) return (
     <div className="page-container">
       <div className="empty-state">
-        <div className="empty-state-icon">📦</div>
+        <div className="empty-state-icon"><FaBoxOpen aria-hidden="true" /></div>
         <h2>Returns Center</h2>
         <p>Sign in to manage your returns</p>
         <Link to="/login" className="btn btn-primary btn-lg">Sign In</Link>
@@ -255,7 +255,7 @@ const ReturnsCenter = () => {
       {/* Returns list */}
       {filtered.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">📦</div>
+          <div className="empty-state-icon"><FaBoxOpen aria-hidden="true" /></div>
           <h2>No returns {activeFilter !== 'all' ? `with status "${activeFilter}"` : 'yet'}</h2>
           <p>Your return requests and their status will appear here.</p>
           <Link to="/transactions" className="btn btn-primary">View Transactions</Link>

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { getTransactions as fetchTransactionsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { formatPrice, getStatusColor, getStatusLabel, formatDate } from '../utils/helpers';
-import { FaTruck, FaCheckCircle, FaClock, FaBox, FaShoppingBag, FaDollarSign, FaChevronDown, FaChevronUp, FaChevronLeft, FaChevronRight, FaFilter } from 'react-icons/fa';
+import { FaTruck, FaCheckCircle, FaClock, FaBox, FaShoppingBag, FaDollarSign, FaExclamationTriangle, FaChevronDown, FaChevronUp, FaChevronLeft, FaChevronRight, FaFilter } from 'react-icons/fa';
 
 // All possible transaction statuses grouped by category for the filter UI
 const STATUS_GROUPS = [
@@ -277,7 +277,7 @@ function Transactions() {
 
       {error && !loading && (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">⚠️</div>
+          <div className="empty-state-icon"><FaExclamationTriangle aria-hidden="true" /></div>
           <h2>Something went wrong</h2>
           <p>{error}</p>
           <button className="btn btn-primary" onClick={fetchTransactions}>Retry</button>
@@ -315,7 +315,9 @@ function Transactions() {
 
             return (
               <div key={txn._id} className="glass-card" style={{ overflow: 'hidden', animation: 'fadeInUp 0.3s ease-out' }}>
-                <div onClick={() => setExpandedId(isExpanded ? null : txn._id)}
+                <div role="button" tabIndex={0} aria-expanded={isExpanded}
+                  onClick={() => setExpandedId(isExpanded ? null : txn._id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(isExpanded ? null : txn._id); } }}
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 'var(--td-space-md)', cursor: 'pointer' }}>
                   <img src={txn.listing?.images?.[0] || ''} alt="" style={{ width: 64, height: 64, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>

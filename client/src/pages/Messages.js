@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { getConversations, getConversationWithUser, startConversation } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { defaultAvatar, timeAgo, formatPrice } from '../utils/helpers';
-import { FaEnvelope, FaSearch, FaPaperPlane, FaSpinner, FaStore, FaArrowLeft, FaTag, FaClock, FaImage } from 'react-icons/fa';
+import { FaEnvelope, FaSearch, FaPaperPlane, FaSpinner, FaStore, FaArrowLeft, FaTag, FaClock, FaImage, FaComment } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import moment from 'moment';
 
@@ -167,7 +167,10 @@ const Messages = () => {
         {threadListings.length > 0 && (
           <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '4px 0 12px', marginBottom: 8 }}>
             {threadListings.map((l) => (
-              <div key={l._id || l.id} onClick={() => navigate(`/listing/${l._id || l.id}`)} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px 6px 6px', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-full)', border: '1px solid var(--td-border)', cursor: 'pointer' }}>
+              <div key={l._id || l.id} role="button" tabIndex={0} aria-label={`Open listing ${l.title}`}
+                onClick={() => navigate(`/listing/${l._id || l.id}`)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/listing/${l._id || l.id}`); } }}
+                style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px 6px 6px', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-full)', border: '1px solid var(--td-border)', cursor: 'pointer' }}>
                 {l.images?.[0]
                   ? <img src={l.images[0]} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
                   : <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--td-surface-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaImage size={11} style={{ color: 'var(--td-text-tertiary)' }} /></div>}
@@ -212,7 +215,7 @@ const Messages = () => {
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}><FaSpinner className="spinner" /></div>
           ) : threadMessages.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}>
-              <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>💬</div>
+              <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}><FaComment aria-hidden="true" /></div>
               <p style={{ fontSize: 14 }}>No messages yet. Start the conversation!</p>
             </div>
           ) : (
@@ -269,7 +272,7 @@ const Messages = () => {
 
       {filtered.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">💬</div>
+          <div className="empty-state-icon"><FaComment aria-hidden="true" /></div>
           <h2>No conversations yet</h2>
           <p>Start chatting by messaging a seller on their listing.</p>
         </div>

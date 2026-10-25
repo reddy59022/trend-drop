@@ -1,3 +1,7 @@
+/* STACK LAYER 6/6 — dashboard/data-screen polish; WINS over every layer.
+   Cascade = import order in index.js; later layers win on the same selector.
+   Keep rules here scoped to dashboard/data screens; app-wide visuals belong
+   in design-haul.css (5/6). */
 /* ============================================================
    TRENDDROP · BESPOKE DATA-SCREEN LAYER
    ------------------------------------------------------------

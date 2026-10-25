@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { FaMapMarkerAlt, FaCheckCircle, FaEdit, FaUserPlus, FaUserMinus, FaTshirt, FaInstagram, FaMusic, FaPinterest, FaYoutube, FaEnvelope, FaTruck, FaStar } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaCheckCircle, FaEdit, FaUserPlus, FaUserMinus, FaTshirt, FaInstagram, FaTiktok, FaPinterest, FaYoutube, FaEnvelope, FaTruck, FaStar } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -128,7 +128,7 @@ const Profile = () => {
           {profile.socialLinks && Object.entries(profile.socialLinks).filter(([, v]) => v).length > 0 && (
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               {profile.socialLinks.instagram && <a href={`https://instagram.com/${profile.socialLinks.instagram}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm"><FaInstagram aria-hidden="true" /> Instagram</a>}
-              {profile.socialLinks.tiktok && <a href={`https://tiktok.com/@${profile.socialLinks.tiktok}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm"><FaMusic aria-hidden="true" /> TikTok</a>}
+              {profile.socialLinks.tiktok && <a href={`https://tiktok.com/@${profile.socialLinks.tiktok}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm"><FaTiktok aria-hidden="true" /> TikTok</a>}
               {profile.socialLinks.pinterest && <a href={`https://pinterest.com/${profile.socialLinks.pinterest}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm"><FaPinterest aria-hidden="true" /> Pinterest</a>}
               {profile.socialLinks.youtube && <a href={`https://youtube.com/@${profile.socialLinks.youtube}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm"><FaYoutube aria-hidden="true" /> YouTube</a>}
             </div>

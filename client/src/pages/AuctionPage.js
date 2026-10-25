@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import { FaGavel, FaPlus, FaUser, FaTag, FaEye } from 'react-icons/fa';
+import { FaGavel, FaPlus, FaUser, FaTag, FaEye, FaClock, FaCalendarAlt, FaCheckCircle } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { formatPrice, formatPriceRaw, defaultListingImage } from '../utils/helpers';
@@ -147,7 +147,7 @@ const AuctionPage = () => {
                         </div>
 
                         <div className="time-left">
-                          <span>{auction.status === 'active' ? '⏰' : auction.status === 'scheduled' ? '📅' : '✅'} 
+                          <span>{auction.status === 'active' ? <FaClock aria-hidden="true" /> : auction.status === 'scheduled' ? <FaCalendarAlt aria-hidden="true" /> : <FaCheckCircle aria-hidden="true" />}{' '}
                             {auction.status === 'active' ? `Time left: ${formatTimeLeft(auction.endTime)}` : 
                              auction.status === 'scheduled' ? `Starts: ${new Date(auction.startTime).toLocaleString()}` : 
                              'Ended'}</span>
@@ -225,7 +225,7 @@ const AuctionPage = () => {
 
                       {auction.status === 'active' && (
                         <div className="time-left">
-                          <span>⏰ Time left: {formatTimeLeft(auction.endTime)}</span>
+                          <span><FaClock aria-hidden="true" /> Time left: {formatTimeLeft(auction.endTime)}</span>
                         </div>
                       )}
 

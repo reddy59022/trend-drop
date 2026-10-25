@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FaFilter, FaTimes, FaSlidersH, FaSave, FaTag } from 'react-icons/fa';
+import { FaFilter, FaTimes, FaSlidersH, FaSave, FaTag, FaSearch } from 'react-icons/fa';
 import api, { getSearchBrands, getSearchColors, getSearchSizes, saveSearchFilter } from '../services/api';
 import ListingCard from '../components/ListingCard';
 import Pagination from '../components/Pagination';
@@ -107,10 +107,10 @@ const Search = () => {
         </h1>
         <div className="search-controls">
           <select value={filters.sort} onChange={(e) => handleFilterChange('sort', e.target.value)} className="form-input" style={{ width: 'auto', padding: '8px 32px 8px 12px' }}>
-            <option value="newest">✨ Newest</option>
-            <option value="price_low">💰 Price: Low to High</option>
-            <option value="price_high">💎 Price: High to Low</option>
-            <option value="popular">🔥 Most Popular</option>
+            <option value="newest">Newest</option>
+            <option value="price_low">Price: Low to High</option>
+            <option value="price_high">Price: High to Low</option>
+            <option value="popular">Most Popular</option>
           </select>
           <button className="btn btn-outline btn-sm" onClick={() => setShowFilters(!showFilters)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <FaSlidersH size={14} /> Filters {activeFilters.length > 0 && <span className="badge badge-primary" style={{ fontSize: 10 }}>{activeFilters.length}</span>}
@@ -297,7 +297,7 @@ const Search = () => {
             </div>
           ) : listings.length === 0 ? (
             <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-              <div className="empty-state-icon">🔍</div>
+              <div className="empty-state-icon"><FaSearch aria-hidden="true" /></div>
               <h2>No items found</h2>
               <p>Try different filters or search terms</p>
               <button className="btn btn-primary" onClick={clearFilters}>Clear Filters</button>

@@ -35,7 +35,7 @@ const SizeRecommendation = () => {
     try {
       const res = await api.post('/size-guides/recommendations', measurements);
       setSavedMeasurements(res.data);
-      toast.success('Measurements saved! 📏');
+      toast.success('Measurements saved!');
     } catch (error) {
       toast.error('Failed to save measurements');
     }
@@ -46,7 +46,7 @@ const SizeRecommendation = () => {
     return (
       <div className="page-container">
         <div className="empty-state">
-          <div className="empty-state-icon">📏</div>
+          <div className="empty-state-icon"><FaRulerHorizontal aria-hidden="true" /></div>
           <h2>Size Recommendations</h2>
           <p>Please login to save your measurements and get personalized recommendations.</p>
           <Link to="/login" className="btn btn-primary">Login</Link>
