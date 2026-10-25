@@ -36,10 +36,10 @@ const Closet = () => {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <FaFilter size={14} color="var(--td-text-tertiary)" />
           <select value={sort} onChange={(e) => { setSort(e.target.value); setPage(1); }} className="form-input" style={{ width: 'auto', padding: '8px 32px 8px 12px' }}>
-            <option value="newest">✨ Newest</option>
-            <option value="price_low">💰 Low to High</option>
-            <option value="price_high">💎 High to Low</option>
-            <option value="popular">🔥 Popular</option>
+            <option value="newest">Newest</option>
+            <option value="price_low">Price: Low to High</option>
+            <option value="price_high">Price: High to Low</option>
+            <option value="popular">Most Popular</option>
           </select>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import api from '../services/api';
+import { formatPrice } from '../utils/helpers';
 import './PriceSuggestion.css';
 
 const PriceSuggestion = () => {
@@ -105,15 +106,15 @@ const PriceSuggestion = () => {
 
         {suggestion && (
           <div className="suggestion-result">
-            <h2>Suggested Price: ${suggestion.suggestedPrice}</h2>
+            <h2>Suggested Price: {formatPrice(suggestion.suggestedPrice)}</h2>
             <div className="price-range">
-              <span>Recommended Range: ${suggestion.priceRange.min} - ${suggestion.priceRange.max}</span>
+              <span>Recommended Range: {formatPrice(suggestion.priceRange.min)} – {formatPrice(suggestion.priceRange.max)}</span>
             </div>
 
             <div className="price-breakdown">
               <h3>Price Breakdown:</h3>
               <ul>
-                <li>Base Price: ${suggestion.breakdown.basePrice}</li>
+                <li>Base Price: {formatPrice(suggestion.breakdown.basePrice)}</li>
                 <li>Brand Multiplier: {suggestion.breakdown.brandMultiplier}x</li>
                 <li>Condition Multiplier: {suggestion.breakdown.conditionMultiplier}x</li>
                 <li>Seasonality: {suggestion.breakdown.seasonality}x</li>
@@ -129,7 +130,7 @@ const PriceSuggestion = () => {
               {similarListings.map(listing => (
                 <div key={listing._id} className="similar-item">
                   <span className="similar-title">{listing.title}</span>
-                  <span className="similar-price">${listing.price}</span>
+                  <span className="similar-price">{formatPrice(listing.price, listing.currency)}</span>
                 </div>
               ))}
             </div>

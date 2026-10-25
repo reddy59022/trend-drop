@@ -4,6 +4,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
 import { FaCreditCard, FaCheck, FaCrown, FaStar, FaGem, FaRocket } from 'react-icons/fa';
 import api from '../services/api';
+import { formatPrice } from '../utils/helpers';
 
 const Subscriptions = () => {
   const { user } = useAuth();
@@ -108,7 +109,7 @@ const Subscriptions = () => {
             <div style={{ fontSize: 48, marginBottom: 12 }}>{getPlanIcon(plan.id)}</div>
             <h3 style={{ margin: '0 0 8px 0' }}>{plan.name}</h3>
             <div style={{ fontSize: 32, fontWeight: 700, margin: '12px 0' }}>
-              ${(billingCycle === 'annual' ? (plan.annualPrice ?? plan.price) : plan.price).toFixed(2)}
+              {formatPrice(billingCycle === 'annual' ? (plan.annualPrice ?? plan.price) : plan.price)}
               <span style={{ fontSize: 14, color: 'var(--td-text-secondary)' }}>
                 /{billingCycle === 'annual' ? 'year' : 'month'}
               </span>

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { getTransactions as fetchTransactionsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { formatPrice, getStatusColor, getStatusLabel, formatDate } from '../utils/helpers';
-import { FaTruck, FaCheckCircle, FaClock, FaBox, FaShoppingBag, FaChevronDown, FaChevronUp, FaChevronLeft, FaChevronRight, FaFilter } from 'react-icons/fa';
+import { FaTruck, FaCheckCircle, FaClock, FaBox, FaShoppingBag, FaDollarSign, FaChevronDown, FaChevronUp, FaChevronLeft, FaChevronRight, FaFilter } from 'react-icons/fa';
 
 // All possible transaction statuses grouped by category for the filter UI
 const STATUS_GROUPS = [
@@ -190,7 +190,9 @@ function Transactions() {
       <div className="tabs" style={{ marginBottom: 'var(--td-space-md)' }}>
         {['all', 'bought', 'sold'].map(f => (
           <button key={f} className={`tab ${filter === f ? 'active' : ''}`} onClick={() => handleFilterChange(f)}>
-            {f === 'all' ? '📦 All' : f === 'bought' ? '🛒 Bought' : '💰 Sold'}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {f === 'all' ? <><FaBox aria-hidden="true" /> All</> : f === 'bought' ? <><FaShoppingBag aria-hidden="true" /> Bought</> : <><FaDollarSign aria-hidden="true" /> Sold</>}
+            </span>
           </button>
         ))}
       </div>
@@ -284,7 +286,7 @@ function Transactions() {
 
       {!loading && !error && transactions.length === 0 ? (
         <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
-          <div className="empty-state-icon">📦</div>
+          <div className="empty-state-icon"><FaBox aria-hidden="true" /></div>
           <h2>No orders found</h2>
           <p>{activeStatuses.length > 0 ? 'No orders match the selected filters. Try a different status.' : 'Your transaction history will appear here'}</p>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>

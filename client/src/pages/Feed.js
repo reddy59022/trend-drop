@@ -51,10 +51,10 @@ const Feed = () => {
   }, [fetchFeed]);
 
   const sortOptions = [
-    { value: 'popular', label: '🔥 Popular' },
-    { value: 'newest', label: '✨ Newest' },
-    { value: 'price_low', label: '💰 Price: Low → High' },
-    { value: 'price_high', label: '💎 Price: High → Low' },
+    { value: 'popular', label: 'Most Popular' },
+    { value: 'newest', label: 'Newest' },
+    { value: 'price_low', label: 'Price: Low → High' },
+    { value: 'price_high', label: 'Price: High → Low' },
   ];
 
   return (

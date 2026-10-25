@@ -5,7 +5,7 @@ import { FaUsers, FaShare, FaGift } from 'react-icons/fa';
 import { getOfferSharingStats, shareOfferToLikers, createBundleOffer } from '../services/api';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import { defaultListingImage } from '../utils/helpers';
+import { defaultListingImage, formatPrice } from '../utils/helpers';
 
 const OfferSharing = () => {
   const { user } = useAuth();
@@ -162,7 +162,7 @@ const OfferSharing = () => {
                   {listing.title.substring(0, 30)}...
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--td-primary)', marginTop: 4 }}>
-                  ${listing.price}
+                  {formatPrice(listing.price, listing.currency)}
                 </div>
               </div>
             ))}
@@ -263,7 +263,7 @@ const OfferSharing = () => {
                     style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 4 }}
                   />
                   <div style={{ fontSize: 10, marginTop: 4, textAlign: 'center' }}>
-                    ${listing.price}
+                    {formatPrice(listing.price, listing.currency)}
                   </div>
                 </div>
               ))}

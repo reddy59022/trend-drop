@@ -1161,3 +1161,44 @@ textarea:focus-visible, [tabindex]:focus-visible {
     right: -8px;
   }
 }
+
+/* ============================================================
+   Light-mode hero (UI/UX audit item 10: the hero stayed dark in
+   light mode, so the brand read inconsistent between themes).
+   Same aurora motion, pearl-light palette.
+   ============================================================ */
+[data-theme="light"] .hero {
+  background:
+    radial-gradient(120% 120% at 15% 10%, rgba(108, 59, 255, 0.20) 0%, transparent 45%),
+    radial-gradient(110% 110% at 85% 15%, rgba(255, 107, 193, 0.16) 0%, transparent 42%),
+    radial-gradient(120% 120% at 50% 100%, rgba(0, 212, 255, 0.12) 0%, transparent 50%),
+    radial-gradient(100% 100% at 70% 60%, rgba(255, 215, 0, 0.10) 0%, transparent 45%),
+    linear-gradient(160deg, #F7F5FE 0%, #FFFFFF 45%, #F1EBFF 100%);
+}
+
+[data-theme="light"] .hero::before {
+  opacity: 0.55;
+}
+
+[data-theme="light"] .hero-content p {
+  color: var(--td-text-secondary);
+}
+
+[data-theme="light"] .hero-badge {
+  background: rgba(108, 59, 255, 0.08);
+  border-color: rgba(108, 59, 255, 0.18);
+  color: var(--td-primary);
+  box-shadow: 0 8px 30px rgba(108, 59, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+[data-theme="light"] .hero-features span {
+  color: var(--td-text);
+  background: rgba(108, 59, 255, 0.06);
+  border-color: rgba(108, 59, 255, 0.12);
+}
+
+[data-theme="light"] .hero-actions .btn-glass {
+  color: var(--td-text);
+  border-color: var(--td-glass-border);
+  background: var(--td-glass-bg);
+}

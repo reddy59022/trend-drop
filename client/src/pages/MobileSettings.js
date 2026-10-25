@@ -70,7 +70,7 @@ function MobileSettings() {
     setLoading(true);
     try {
       await api.put('/mobile/preferences', preferences);
-      toast.success('Mobile settings saved! 📱');
+      toast.success('Mobile settings saved!');
     } catch (err) {
       toast.error('Failed to save settings');
     }
@@ -98,7 +98,7 @@ function MobileSettings() {
     return (
       <div className="page-container">
         <div className="empty-state">
-          <div className="empty-state-icon">📱</div>
+          <div className="empty-state-icon"><FaMobileAlt aria-hidden="true" /></div>
           <h2>Mobile Settings</h2>
           <p>Please login to access mobile features.</p>
           <button className="btn btn-primary" onClick={() => navigate('/login')}>Login</button>

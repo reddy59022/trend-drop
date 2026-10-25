@@ -88,6 +88,10 @@
   --td-space-xxl: 48px;
   --td-space-xxxl: 64px;
   --td-section: 90px;
+  /* Page-shell rhythm — the compact sibling of --td-section. Both come from
+     this scale so editorial sections and app pages stay in sync (audit item:
+     section spacing varied page to page because they used unrelated tokens). */
+  --td-section-compact: 56px;
 
   /* Border Radius */
   --td-radius-xs: 6px;
@@ -467,7 +471,7 @@ ul, ol {
 .page-container {
   max-width: var(--td-max-width);
   margin: 0 auto;
-  padding: var(--td-space-xxl) var(--td-content-padding);
+  padding: var(--td-section-compact) var(--td-content-padding);
 }
 
 .page-title {

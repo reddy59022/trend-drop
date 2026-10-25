@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { FaMapMarkerAlt, FaCheckCircle, FaEdit, FaUserPlus, FaUserMinus, FaTshirt } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaCheckCircle, FaEdit, FaUserPlus, FaUserMinus, FaTshirt, FaInstagram, FaMusic, FaPinterest, FaYoutube, FaEnvelope, FaTruck, FaStar } from 'react-icons/fa';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -127,18 +127,18 @@ const Profile = () => {
           {/* Social Links */}
           {profile.socialLinks && Object.entries(profile.socialLinks).filter(([, v]) => v).length > 0 && (
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-              {profile.socialLinks.instagram && <a href={`https://instagram.com/${profile.socialLinks.instagram}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">📸 Instagram</a>}
-              {profile.socialLinks.tiktok && <a href={`https://tiktok.com/@${profile.socialLinks.tiktok}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">🎵 TikTok</a>}
-              {profile.socialLinks.pinterest && <a href={`https://pinterest.com/${profile.socialLinks.pinterest}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">📌 Pinterest</a>}
-              {profile.socialLinks.youtube && <a href={`https://youtube.com/@${profile.socialLinks.youtube}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">▶️ YouTube</a>}
+              {profile.socialLinks.instagram && <a href={`https://instagram.com/${profile.socialLinks.instagram}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm"><FaInstagram aria-hidden="true" /> Instagram</a>}
+              {profile.socialLinks.tiktok && <a href={`https://tiktok.com/@${profile.socialLinks.tiktok}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm"><FaMusic aria-hidden="true" /> TikTok</a>}
+              {profile.socialLinks.pinterest && <a href={`https://pinterest.com/${profile.socialLinks.pinterest}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm"><FaPinterest aria-hidden="true" /> Pinterest</a>}
+              {profile.socialLinks.youtube && <a href={`https://youtube.com/@${profile.socialLinks.youtube}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm"><FaYoutube aria-hidden="true" /> YouTube</a>}
             </div>
           )}
           {/* Seller Stats */}
           {!isOwnProfile && profile.stats && (
             <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, color: 'var(--td-text-tertiary)' }}>
-              {profile.stats.responseRate > 0 && <span>📨 {profile.stats.responseRate}% response rate</span>}
-              {profile.stats.shipTime > 0 && <span>🚚 Ships in {profile.stats.shipTime} days</span>}
-              {profile.stats.ratingCount > 0 && <span>⭐ {profile.stats.avgRating?.toFixed(1)} ({profile.stats.ratingCount})</span>}
+              {profile.stats.responseRate > 0 && <span><FaEnvelope aria-hidden="true" /> {profile.stats.responseRate}% response rate</span>}
+              {profile.stats.shipTime > 0 && <span><FaTruck aria-hidden="true" /> Ships in {profile.stats.shipTime} days</span>}
+              {profile.stats.ratingCount > 0 && <span><FaStar aria-hidden="true" /> {profile.stats.avgRating?.toFixed(1)} ({profile.stats.ratingCount})</span>}
             </div>
           )}
           <div className="profile-stats">

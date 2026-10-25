@@ -321,7 +321,7 @@ const SellerDashboard = () => {
             </div>
             {dashboard.payoutHistory?.length === 0 ? (
               <div className="empty-state" style={{ padding: 'var(--td-space-xxl)' }}>
-                <div className="empty-state-icon">💰</div>
+                <div className="empty-state-icon"><FaDollarSign aria-hidden="true" /></div>
                 <h3>No payouts yet</h3>
                 <p>Complete your first sale to see payouts here</p>
               </div>
@@ -516,7 +516,7 @@ const SellerDashboard = () => {
             <select className="form-input" value={selectedListing} onChange={e => setSelectedListing(e.target.value)}>
               <option value="">Choose a listing...</option>
               {listings.map(l => (
-                <option key={l._id} value={l._id}>{l.title} (${l.price})</option>
+                <option key={l._id} value={l._id}>{l.title} ({formatPrice(l.price, l.currency || 'USD')})</option>
               ))}
             </select>
           </div>
