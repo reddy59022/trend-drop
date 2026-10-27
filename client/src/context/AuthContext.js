@@ -83,21 +83,42 @@ export const AuthProvider = ({ children }) => {
       if (perm.receive !== 'granted') return null;
       await PushNotifications.register();
       return await new Promise((resolve) => {
-        const finished = (val) => { resolve(val); };
-        PushNotifications.addListener('registration', (token) => {
-          const t = token?.value;
-          if (t) {
-            api.post('/mobile/push-token', {
-              token: t,
-              platform: platform(),
-              deviceId: t,
-              appVersion: '1.0.0',
-            }).catch(() => {});
+        let handle = null;
+        let settled = false;
+        let timer = null;
+        // Remove the listener + timer once settled: leaving them behind
+        // accumulated duplicate listeners on every re-registration.
+        const tryRemove = () => {
+          if (handle && typeof handle.remove === 'function') {
+            Promise.resolve(handle.remove()).catch(() => {});
           }
-          finished(t);
-        });
+        };
+        const finished = (val) => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          tryRemove();
+          resolve(val);
+        };
+        Promise.resolve(
+          PushNotifications.addListener('registration', (token) => {
+            const t = token?.value;
+            if (t) {
+              api.post('/mobile/push-token', {
+                token: t,
+                platform: platform(),
+                deviceId: t,
+                appVersion: '1.0.0',
+              }).catch(() => {});
+            }
+            finished(t);
+          })
+        ).then((h) => {
+          handle = h;
+          if (settled) tryRemove();
+        }).catch(() => {});
         // Timeout in case registration never fires
-        setTimeout(() => finished(null), 8000);
+        timer = setTimeout(() => finished(null), 8000);
       });
     } catch (e) {
       console.warn('Push registration failed:', e.message);
@@ -172,6 +193,20 @@ export const AuthProvider = ({ children }) => {
 
   const openNativeOAuth = (url, key) =>
     new Promise((resolve, reject) => {
+      let settled = false;
+      let safetyTimer = null;
+      const settle = (fn, value) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('oauth-callback', onCallback);
+        clearTimeout(safetyTimer);
+        setOauthListeners((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        fn(value);
+      };
       const onCallback = (event) => {
         const rawUrl = event?.detail?.url || event?.url || '';
         if (!rawUrl) return;
@@ -188,13 +223,7 @@ export const AuthProvider = ({ children }) => {
           /* ignore malformed url */
         }
         if (token) {
-          window.removeEventListener('oauth-callback', onCallback);
-          setOauthListeners((prev) => {
-            const next = { ...prev };
-            delete next[key];
-            return next;
-          });
-          resolve(token);
+          settle(resolve, token);
         }
       };
       window.addEventListener('oauth-callback', onCallback);
@@ -203,19 +232,12 @@ export const AuthProvider = ({ children }) => {
       import('@capacitor/browser')
         .then(({ Browser }) => Browser.open({ url, presentationStyle: 'popover' }))
         .catch((e) => {
-          window.removeEventListener('oauth-callback', onCallback);
-          setOauthListeners((prev) => {
-            const next = { ...prev };
-            delete next[key];
-            return next;
-          });
-          reject(new Error('Native OAuth is not available. Try a different login method.'));
+          settle(reject, new Error('Native OAuth is not available. Try a different login method.'));
         });
 
       // Safety timeout so a cancelled flow doesn't hang
-      setTimeout(() => {
-        window.removeEventListener('oauth-callback', onCallback);
-        resolve(null);
+      safetyTimer = setTimeout(() => {
+        settle(resolve, null);
       }, 120000);
     });
 
@@ -238,6 +260,10 @@ export const AuthProvider = ({ children }) => {
       const nonce = Array.from(nonceBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
       const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=id_token token&scope=${scope}&nonce=${nonce}`;
       const idToken = await openNativeOAuth(url, 'google');
+      // A cancelled/timed-out flow resolves null. Posting a null idToken
+      // would just bounce off the server with an opaque 400 — surface a
+      // clean cancellation instead.
+      if (!idToken) throw new Error('Google sign-in was cancelled.');
       const { email, name } = decodeJwtPayload(idToken);
       return exchangeOAuthToken('/auth/google', { idToken, email, name });
     }
@@ -278,6 +304,7 @@ export const AuthProvider = ({ children }) => {
       const scope = encodeURIComponent('name email');
       const url = `https://appleid.apple.com/auth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=id_token&scope=${scope}`;
       const identityToken = await openNativeOAuth(url, 'apple');
+      if (!identityToken) throw new Error('Apple sign-in was cancelled.');
       const { email, name } = decodeJwtPayload(identityToken);
       return exchangeOAuthToken('/auth/apple', { identityToken, email, name });
     }

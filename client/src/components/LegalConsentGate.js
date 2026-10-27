@@ -12,6 +12,7 @@ export default function LegalConsentGate() {
   const [accepted, setAccepted] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!user || PUBLIC_PATHS.some((path) => location.pathname.startsWith(path))) {
@@ -31,9 +32,14 @@ export default function LegalConsentGate() {
   const accept = async () => {
     if (!accepted || !ageConfirmed) return;
     setSaving(true);
+    setError('');
     try {
       await acceptLegalDocuments({ termsVersion: versions.terms, privacyVersion: versions.privacy, ageConfirmed: true });
       setStatus({ ...status, needsReconsent: false });
+    } catch (err) {
+      // Keep the dialog open with actionable feedback — a silent failure here
+      // left users staring at a stuck button with no idea what happened.
+      setError('Could not save your acceptance. Please check your connection and try again.');
     } finally {
       setSaving(false);
     }
@@ -47,6 +53,7 @@ export default function LegalConsentGate() {
         <p><Link to="/legal/terms" target="_blank" rel="noreferrer">Terms of Service</Link> · <Link to="/legal/privacy" target="_blank" rel="noreferrer">Privacy Notice</Link></p>
         <label style={{ display: 'block', margin: '16px 0' }}><input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> I accept the current Terms of Service and Privacy Notice.</label>
         <label style={{ display: 'block', marginBottom: 18 }}><input type="checkbox" checked={ageConfirmed} onChange={(e) => setAgeConfirmed(e.target.checked)} /> I confirm I meet the applicable minimum age requirement.</label>
+        {error && <p role="alert" style={{ color: 'var(--td-danger, #d33)', marginBottom: 12 }}>{error}</p>}
         <button className="btn btn-primary btn-block" disabled={!accepted || !ageConfirmed || saving} onClick={accept}>{saving ? 'Saving…' : 'Accept and continue'}</button>
       </div>
     </div>

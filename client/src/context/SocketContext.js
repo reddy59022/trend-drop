@@ -10,8 +10,13 @@ export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
 
+  // Key the connection on identity, not object identity: updateProfile/
+  // updateAvatar swap in a fresh user object, and depending on the whole
+  // object would tear down and rebuild the socket on every profile edit.
+  const userId = user ? (user._id || user.id || null) : null;
+
   useEffect(() => {
-    if (!user || !token) return;
+    if (!userId || !token) return;
     const s = io(getSocketBaseURL(), {
       auth: { token },
       transports: ['websocket', 'polling'],
@@ -32,7 +37,7 @@ export const SocketProvider = ({ children }) => {
       setSocket(null);
       setConnected(false);
     };
-  }, [user, token]);
+  }, [userId, token]);
 
   return (
     <SocketContext.Provider value={{ socket, connected }}>
