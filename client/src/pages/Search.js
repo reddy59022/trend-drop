@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { FaFilter, FaTimes, FaSlidersH, FaSave, FaTag, FaSearch } from 'react-icons/fa';
 import api, { getSearchBrands, getSearchColors, getSearchSizes, saveSearchFilter } from '../services/api';
@@ -57,7 +57,11 @@ const Search = () => {
     loadSuggestions();
   }, [filters.category]); // eslint-disable-line
 
+  // Sequence guard: rapid filter/page/query changes fire overlapping requests;
+  // a slow stale response must not overwrite fresher results.
+  const fetchSeqRef = useRef(0);
   const fetchListings = async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -66,10 +70,13 @@ const Search = () => {
       params.set('page', page);
       params.set('limit', 20);
       const res = await api.get(`/listings?${params.toString()}`);
+      if (seq !== fetchSeqRef.current) return; // superseded by a newer request
       setListings(res.data.listings || res.data.docs || []);
       setPagination(res.data.pagination || { total: res.data.total, totalPages: res.data.totalPages, currentPage: Number(page) });
-    } catch (error) { console.error(error); }
-    setLoading(false);
+    } catch (error) {
+      if (seq === fetchSeqRef.current) console.error(error);
+    }
+    if (seq === fetchSeqRef.current) setLoading(false);
   };
 
   const handleFilterChange = (key, value) => { setFilters(prev => ({ ...prev, [key]: value })); setPage(1); };

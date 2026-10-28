@@ -40,6 +40,29 @@ describe('Trends page', () => {
     renderPage(<Trends />);
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/trends', expect.objectContaining({ params: { timeframe: 'week' } })));
   });
+  test('a stale out-of-order response cannot overwrite fresher data (race guard)', async () => {
+    // Two overlapping requests resolved in reverse order: the newer request
+    // resolves first, the stale one LAST — the stale payload must be ignored.
+    let resolveFirst;
+    let resolveSecond;
+    api.get
+      .mockReturnValueOnce(new Promise((r) => { resolveFirst = r; }))
+      .mockReturnValueOnce(new Promise((r) => { resolveSecond = r; }));
+
+    renderPage(<Trends />);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /Day/ }));
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+
+    resolveSecond({ data: [{ postId: '2', text: 'FRESH day trend', author: 'A', likes: 1, reposts: 1, replies: 1, views: 1, hashtags: [] }] });
+    expect(await screen.findByText('FRESH day trend')).toBeInTheDocument();
+
+    resolveFirst({ data: [{ postId: '1', text: 'STALE week trend', author: 'B', likes: 1, reposts: 1, replies: 1, views: 1, hashtags: [] }] });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText('STALE week trend')).not.toBeInTheDocument();
+    expect(screen.getByText('FRESH day trend')).toBeInTheDocument();
+  });
   test('switching to the Viral tab fetches viral trends', async () => {
     renderPage(<Trends />);
     await waitFor(() => expect(api.get).toHaveBeenCalled());

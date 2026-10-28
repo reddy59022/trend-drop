@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FaFire, FaChartLine, FaSync, FaClock, FaEye, FaRetweet, FaComment, FaHeart } from 'react-icons/fa';
 import api from '../services/api';
 import { displayDateTime } from '../utils/helpers';
@@ -12,16 +12,21 @@ const Trends = () => {
   // Declared before the effect that uses it (and stable while timeframe/
   // activeTab are unchanged), so the effect still refetches on exactly the same
   // triggers as before.
+  // Sequence guard: rapid tab/timeframe switching fires overlapping requests;
+  // without this, a slow stale response can overwrite fresher data.
+  const fetchSeqRef = useRef(0);
   const fetchTrends = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     try {
       const endpoint = activeTab === 'viral' ? '/trends/viral' : '/trends';
       const res = await api.get(endpoint, { params: { timeframe } });
+      if (seq !== fetchSeqRef.current) return; // superseded by a newer request
       setTrends(res.data || []);
     } catch (error) {
-      console.error('Error fetching trends:', error);
+      if (seq === fetchSeqRef.current) console.error('Error fetching trends:', error);
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) setLoading(false);
     }
   }, [timeframe, activeTab]);
 

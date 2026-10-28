@@ -4,9 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import { FaUndoAlt, FaCheckCircle, FaTimesCircle, FaTruck, FaInfoCircle, FaBoxOpen, FaDollarSign, FaChevronDown, FaChevronUp, FaTag, FaPaperclip } from 'react-icons/fa';
-import { formatPrice } from '../utils/helpers';
+import { formatPrice, timeAgo } from '../utils/helpers';
 import { promptText } from '../services/native';
-import moment from 'moment';
 
 const RETURN_REASONS = [
   'Item not as described',
@@ -290,7 +289,7 @@ const ReturnsCenter = () => {
                     <div>
                       <Link to={`/listing/${r.listing?._id || ''}`} style={{ fontWeight: 600, fontSize: 14 }} onClick={(e) => e.stopPropagation()}>{r.listing?.title || 'Item'}</Link>
                       <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
-                        {buyerSide ? `Seller: ${r.seller?.name || ''}` : `Buyer: ${r.buyer?.name || ''}`} • {moment(r.createdAt).fromNow()}
+                        {buyerSide ? `Seller: ${r.seller?.name || ''}` : `Buyer: ${r.buyer?.name || ''}`} • {timeAgo(r.createdAt)}
                       </div>
                       <div style={{ fontSize: 13, marginTop: 4 }}>
                         {getStatusBadge(r.status)} {r.refundAmount > 0 && (

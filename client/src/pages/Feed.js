@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -14,13 +14,19 @@ const Feed = () => {
   const [pagination, setPagination] = useState(null);
   const [sort, setSort] = useState('popular');
 
+  // Sequence guard: rapid sort/page changes fire overlapping requests; a slow
+  // stale response must not overwrite fresher data.
+  const fetchSeqRef = useRef(0);
   const fetchFeed = useCallback(async (pageNum = 1) => {
+    const seq = ++fetchSeqRef.current;
+    const isCurrent = () => seq === fetchSeqRef.current;
     setLoading(true);
     try {
       const url = user
         ? `/users/feed?page=${pageNum}&limit=20&sort=${sort}`
         : `/listings?page=${pageNum}&limit=20&sort=${sort}`;
       const res = await api.get(url);
+      if (!isCurrent()) return; // superseded by a newer request
       const listingsData = res.data.listings || res.data.docs || [];
       setListings(listingsData);
       setPagination({
@@ -32,6 +38,7 @@ const Feed = () => {
       if (user && error?.response?.status === 401) {
         try {
           const res = await api.get(`/listings?page=${pageNum}&limit=20&sort=${sort}`);
+          if (!isCurrent()) return;
           setListings(res.data.listings || []);
           setPagination({
             total: res.data.total || 0,
@@ -39,11 +46,11 @@ const Feed = () => {
             currentPage: res.data.currentPage || pageNum,
           });
         } catch (fallbackError) {
-          toast.error('Failed to load feed');
+          if (isCurrent()) toast.error('Failed to load feed');
         }
       }
     }
-    setLoading(false);
+    if (isCurrent()) setLoading(false);
   }, [user, sort]);
 
   useEffect(() => {

@@ -1,5 +1,10 @@
 # TrendDrop — Client Hardening Pass (27 Oct 2026)
 
+> **Round 2** (same day): three more bug classes found and fixed —
+> stale-response races, broken-image skeletons and raw `moment` bypasses.
+> See §7.
+>
+
 100% hardening sweep of **all 65+ pages** (`client/src/pages`), **all 20
 components**, contexts, services and utils. Complements `PAGE_AUDIT.md`
 (UI/UX/a11y battery) with a *crash-safety / data-integrity* battery: every
@@ -106,3 +111,31 @@ Per-page status (findings → fixes this pass):
 | OrderDetail, OfferModal, ListingDetail, Trends, LoyaltyProgram | date render guards |
 | helpers (util) | moment guards + displayDate/displayDateTime |
 | All other pages/components | battery clean (0 findings each class) |
+
+## 7. Round 2 — races, images, date bypasses
+
+Three fresh battery classes not covered by round 1:
+
+**Stale-response races** — filter/sort/period switchers fire overlapping
+requests with last-write-wins; a slow stale response could permanently
+overwrite fresher data (wrong results under the visible selection). Fixed
+with per-fetcher sequence guards (stale responses and stale errors/loading
+are ignored): Trends (`fetchTrends`), SellerAnalytics (3 fetchers),
+Transactions, Search, Closet, Feed (incl. its 401 fallback path).
+Regression: out-of-order-response test in `Trends.test.js`.
+
+**Broken-image skeletons** — `ImageCarousel`, `MediaCarousel` and
+`ListingCard` gate visibility on `onLoad`; a 404 URL never fires `onLoad`,
+so the skeleton spun forever (image permanently invisible). `onError` now
+swaps to the placeholder and clears the gate. Also swaps broken seller
+avatars to `defaultAvatar`. Regressions in `ImageCarousel.test.js` and
+`ListingCard.test.js`.
+
+**Raw `moment` bypasses** — five renders called `moment(x).fromNow()`
+directly (ChatModal, Messages, Notifications, ReturnsCenter, Offers),
+bypassing the round-1 guards: missing dates rendered "a few seconds ago"
+(silently wrong) and invalid ones "Invalid date". All now use the guarded
+`timeAgo`; unused `moment` imports removed.
+
+Round 2 verification: **111 suites / 613 client tests**, production build
+Clean, 294 E2E scenarios green.

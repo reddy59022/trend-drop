@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import ListingCard from '../components/ListingCard';
@@ -16,15 +16,22 @@ const Closet = () => {
 
   useEffect(() => { fetchCloset(); }, [id, sort, page]); // eslint-disable-line
 
+  // Sequence guard: rapid sort/page changes fire overlapping requests; a slow
+  // stale response must not overwrite fresher data.
+  const fetchSeqRef = useRef(0);
   const fetchCloset = async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     try {
       const res = await api.get(`/users/${id}/closet?sort=${sort}&page=${page}&limit=20`);
+      if (seq !== fetchSeqRef.current) return; // superseded by a newer request
       setListings(res.data.listings || []);
       setTotalPages(res.data.totalPages || 1);
       setTotal(res.data.total || res.data.listings?.length || 0);
-    } catch (error) { console.error(error); }
-    setLoading(false);
+    } catch (error) {
+      if (seq === fetchSeqRef.current) console.error(error);
+    }
+    if (seq === fetchSeqRef.current) setLoading(false);
   };
 
   return (

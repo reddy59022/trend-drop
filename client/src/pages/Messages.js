@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom';
 import { defaultAvatar, timeAgo, formatPrice } from '../utils/helpers';
 import { FaEnvelope, FaSearch, FaPaperPlane, FaSpinner, FaStore, FaArrowLeft, FaTag, FaClock, FaImage, FaComment } from 'react-icons/fa';
 import { toast } from 'react-toastify';
-import moment from 'moment';
 
 const OFFER_STATUSES = {
   pending: { color: 'var(--td-warning)', bg: 'rgba(255,176,32,0.12)', label: 'Offer Pending' },
@@ -199,7 +198,7 @@ const Messages = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {expired && <span style={{ fontSize: 11, color: cfg.color, display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> {cfg.label}</span>}
                     {!expired && o.status === 'pending' && o.expiresAt && (
-                      <span style={{ fontSize: 11, color: cfg.color, display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> {moment(o.expiresAt).fromNow()}</span>
+                      <span style={{ fontSize: 11, color: cfg.color, display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> {timeAgo(o.expiresAt)}</span>
                     )}
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--td-radius-full)', color: cfg.color, background: 'var(--td-surface)' }}>{cfg.label}</span>
                   </div>

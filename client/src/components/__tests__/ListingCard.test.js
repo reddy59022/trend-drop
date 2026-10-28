@@ -21,6 +21,14 @@ beforeEach(() => {
 const listing = () => ({ _id: 'l1', title: 'Cool Shirt', price: 25, currency: 'USD', images: ['http://img'], likes: [], seller: { _id: 'seller1', name: 'Seller' } });
 
 describe('ListingCard', () => {
+  test('a broken image URL swaps to the placeholder and clears the eternal skeleton', async () => {
+    renderPage(<ListingCard listing={listing()} />);
+    const img = screen.getByAltText('Cool Shirt');
+    expect(img).toHaveStyle({ opacity: 0 }); // hidden behind skeleton pre-load
+    fireEvent.error(img);
+    await waitFor(() => expect(img.getAttribute('src')).toContain('data:image/svg+xml'));
+    expect(img).toHaveStyle({ opacity: 1 });
+  });
   test('renders the listing title, price, and a link to the detail page', () => {
     renderPage(<ListingCard listing={listing()} />);
     expect(screen.getByText('Cool Shirt')).toBeInTheDocument();

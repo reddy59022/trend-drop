@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import { FaDollarSign, FaEye, FaTag, FaStar, FaPercentage, FaShoppingBag } from 'react-icons/fa';
@@ -14,32 +14,45 @@ const SellerAnalytics = () => {
   // Declared before the effect that uses them. All three are keyed to `period`
   // only, so they stay stable between period changes and the effect below fires
   // on the same trigger as before.
+  // Sequence guards: rapid period switching (7D→1Y→30D) fires overlapping
+  // requests per fetcher; a slow stale response must not overwrite fresher
+  // data or flash errors from a superseded request.
+  const overviewSeqRef = useRef(0);
+  const revenueSeqRef = useRef(0);
+  const topListingsSeqRef = useRef(0);
+
   const fetchOverview = useCallback(async () => {
+    const seq = ++overviewSeqRef.current;
     try {
       const res = await api.get(`/users/me/analytics/overview?period=${period}`);
+      if (seq !== overviewSeqRef.current) return; // superseded
       setOverview(res.data.overview);
     } catch (error) {
-      toast.error('Failed to load analytics overview');
+      if (seq === overviewSeqRef.current) toast.error('Failed to load analytics overview');
     } finally {
-      setLoading(false);
+      if (seq === overviewSeqRef.current) setLoading(false);
     }
   }, [period]);
 
   const fetchRevenue = useCallback(async () => {
+    const seq = ++revenueSeqRef.current;
     try {
       const res = await api.get(`/users/me/analytics/revenue?period=${period}`);
+      if (seq !== revenueSeqRef.current) return; // superseded
       setRevenueData(res.data.revenue || []);
     } catch (error) {
-      console.error('Failed to load revenue data:', error);
+      if (seq === revenueSeqRef.current) console.error('Failed to load revenue data:', error);
     }
   }, [period]);
 
   const fetchTopListings = useCallback(async () => {
+    const seq = ++topListingsSeqRef.current;
     try {
       const res = await api.get(`/users/me/analytics/top-listings?period=${period}`);
+      if (seq !== topListingsSeqRef.current) return; // superseded
       setTopListings(res.data.topListings || []);
     } catch (error) {
-      console.error('Failed to load top listings:', error);
+      if (seq === topListingsSeqRef.current) console.error('Failed to load top listings:', error);
     }
   }, [period]);
 

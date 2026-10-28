@@ -229,6 +229,13 @@ const MediaCarousel = ({ images = [], videoUrl }) => {
           className="carousel-image"
           style={{ opacity: loaded[currentIndex] ? 1 : 0 }}
           onLoad={() => handleImageLoad(currentIndex)}
+          onError={(e) => {
+            // A broken URL must not leave the skeleton up forever (onLoad
+            // never fires on 404) — swap to the placeholder and reveal it.
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = defaultListingImage;
+            handleImageLoad(currentIndex);
+          }}
         />
       </>
     );
@@ -319,12 +326,13 @@ const MediaCarousel = ({ images = [], videoUrl }) => {
               {item.type === 'video' ? (
                 <div className="carousel-thumb-video">
                   {item.thumbnail ? (
-                    <img
-                      src={item.thumbnail}
-                      alt=""
-                      className="carousel-thumb"
-                      onLoad={() => handleImageLoad(i)}
-                    />
+                <img
+                  src={item.thumbnail}
+                  alt=""
+                  className="carousel-thumb"
+                  onLoad={() => handleImageLoad(i)}
+                  onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = defaultListingImage; }}
+                />
                   ) : (
                     <div className="carousel-thumb" style={{
                       background: 'var(--td-surface-tertiary)',
@@ -343,6 +351,7 @@ const MediaCarousel = ({ images = [], videoUrl }) => {
                   alt=""
                   className="carousel-thumb"
                   onLoad={() => handleImageLoad(i)}
+                  onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = defaultListingImage; }}
                 />
               )}
             </div>

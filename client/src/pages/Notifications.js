@@ -1,8 +1,7 @@
-import { defaultAvatar } from "../utils/helpers";
+import { defaultAvatar, timeAgo } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FaHeart, FaComment, FaUserPlus, FaTag, FaShoppingBag, FaShareAlt, FaBell, FaCheck, FaEnvelope, FaDollarSign, FaStar } from 'react-icons/fa';
-import moment from 'moment';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -120,7 +119,7 @@ const Notifications = () => {
                   <img src={notification.from?.avatar || defaultAvatar} alt="" className="notification-avatar" />
                   <p>{notification.message}</p>
                 </div>
-                <span className="notification-time">{moment(notification.createdAt).fromNow()}</span>
+                <span className="notification-time">{timeAgo(notification.createdAt)}</span>
               </div>
               {notification.listing?.images?.[0] && (
                 <img src={notification.listing.images[0]} alt="" className="notification-listing-image" />

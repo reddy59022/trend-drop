@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { getTransactions as fetchTransactionsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -105,7 +105,11 @@ function Transactions() {
     return defaults ? defaults.join(',') : '';
   }, [statusFilter, filter]);
 
+  // Sequence guard: rapid filter/page switching fires overlapping requests;
+  // a slow stale response must not overwrite fresher data.
+  const fetchSeqRef = useRef(0);
   const fetchTransactions = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -113,15 +117,17 @@ function Transactions() {
       const statusStr = getStatusFilterString();
       if (statusStr) params.status = statusStr;
       const res = await fetchTransactionsApi(params);
+      if (seq !== fetchSeqRef.current) return; // superseded by a newer request
       setTransactions(res.data.transactions);
       setPagination(res.data.pagination);
     } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
       console.error('Failed to fetch transactions:', err);
       setError('Failed to load transactions. Please try again.');
       setTransactions([]);
       setPagination(null);
     }
-    setLoading(false);
+    if (seq === fetchSeqRef.current) setLoading(false);
   }, [filter, page, limit, getStatusFilterString]);
 
   // Fetch on filter, page, or limit change

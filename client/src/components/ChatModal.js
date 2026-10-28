@@ -4,7 +4,6 @@ import { startConversation, getConversationWithUser } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { defaultAvatar, timeAgo, formatPrice } from '../utils/helpers';
 import { toast } from 'react-toastify';
-import moment from 'moment';
 
 const ChatModal = ({ isOpen, onClose, listing, seller }) => {
   const { user } = useAuth();
@@ -172,7 +171,7 @@ const ChatModal = ({ isOpen, onClose, listing, seller }) => {
                 {getStatusBadge(offerExpired && offer.status === 'pending' ? 'expired' : offer.status)}
               </div>
               {offer.expiresAt && offer.status === 'pending' && !offerExpired && (
-                <span style={{ fontSize: 11, color: 'var(--td-text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> Expires {moment(offer.expiresAt).fromNow()}</span>
+                <span style={{ fontSize: 11, color: 'var(--td-text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> Expires {timeAgo(offer.expiresAt)}</span>
               )}
             </div>
             {offer.status === 'pending' && !offerExpired && isSeller && (

@@ -1,8 +1,7 @@
-import { defaultListingImage, formatPrice } from "../utils/helpers";
+import { defaultListingImage, formatPrice, timeAgo } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import moment from 'moment';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FaExchangeAlt, FaArrowUp, FaCheck, FaTimes, FaGavel, FaClock, FaComment, FaBolt, FaInbox, FaPaperPlane } from 'react-icons/fa';
@@ -219,7 +218,7 @@ const Offers = () => {
               {isOfferExpired(offer) ? <><FaClock aria-hidden="true" /> Purchase window expired</> : <><FaClock aria-hidden="true" /> Purchase window: {Math.max(0, Math.floor((new Date(offer.acceptedUntil) - new Date()) / (1000 * 60 * 60)))}h remaining</>}
             </p>
           )}
-          <p className="offer-time">{moment(offer.createdAt).fromNow()}</p>
+          <p className="offer-time">{timeAgo(offer.createdAt)}</p>
           <Link to="/messages" style={{ fontSize: 11, color: 'var(--td-primary)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
             <FaComment size={10} /> {type === 'received' ? 'Message Buyer' : 'View Conversation'}
           </Link>

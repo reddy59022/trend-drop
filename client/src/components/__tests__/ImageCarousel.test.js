@@ -16,6 +16,16 @@ describe('ImageCarousel', () => {
     render(<MemoryRouter future={routerFuture}><ImageCarousel images={imgs} /></MemoryRouter>);
     expect(screen.getByText('1 / 3')).toBeInTheDocument();
   });
+  test('a broken image URL swaps to the placeholder and clears the eternal skeleton', () => {
+    render(<MemoryRouter future={routerFuture}><ImageCarousel images={imgs} /></MemoryRouter>);
+    const img = screen.getByRole('img');
+    // Before load: hidden behind the skeleton (opacity 0).
+    expect(img).toHaveStyle({ opacity: 0 });
+    fireEvent.error(img);
+    expect(img.getAttribute('src')).toContain('data:image/svg+xml');
+    // Skeleton gate is cleared even though onLoad never fired.
+    expect(img).toHaveStyle({ opacity: 1 });
+  });
   test('clicking next advances the image and updates counter', () => {
     render(<MemoryRouter future={routerFuture}><ImageCarousel images={imgs} /></MemoryRouter>);
     fireEvent.click(screen.getByLabelText('Next image'));

@@ -103,6 +103,13 @@ const ListingCard = React.memo(({ listing }) => {
               loading="lazy"
               decoding="async"
               onLoad={() => setImageLoaded(true)}
+              onError={(e) => {
+                // Broken URL: onLoad never fires on 404 — swap to the
+                // placeholder and clear the eternal skeleton.
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = defaultListingImage;
+                setImageLoaded(true);
+              }}
               style={{
                 width: '100%',
                 height: '100%',
@@ -146,6 +153,11 @@ const ListingCard = React.memo(({ listing }) => {
               loading="lazy"
               decoding="async"
               onLoad={() => setImageLoaded(true)}
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = defaultListingImage;
+                setImageLoaded(true);
+              }}
               style={{ opacity: imageLoaded ? 1 : 0 }}
             />
           </>
@@ -220,6 +232,7 @@ const ListingCard = React.memo(({ listing }) => {
             loading="lazy"
             decoding="async"
             className="seller-avatar-small"
+            onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = defaultAvatar; }}
           />
           <span>{listing.seller?.name}</span>
           {listing.seller?.verified && (
