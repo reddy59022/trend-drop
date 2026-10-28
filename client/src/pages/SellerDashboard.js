@@ -71,11 +71,11 @@ const SellerDashboard = () => {
   };
 
   const fetchBundleRules = async () => {
-    try { const res = await getBundleRules(); setBundleRules(res.data); } catch {}
+    try { const res = await getBundleRules(); setBundleRules(Array.isArray(res.data) ? res.data : []); } catch {}
   };
 
   const fetchPromos = async () => {
-    try { const res = await getPromos(); setPromos(res.data); } catch {}
+    try { const res = await getPromos(); setPromos(Array.isArray(res.data) ? res.data : []); } catch {}
   };
 
   const fetchListings = async () => {

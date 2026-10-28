@@ -126,9 +126,11 @@ const Navbar = () => {
           const res = await api.get('/notifications?limit=1&unread=true');
           // If we have an X-Total-Count header or similar mechanism
           if (res.headers && res.headers['x-total-count']) {
-            setUnreadNotifications(parseInt(res.headers['x-total-count']));
+            // Non-numeric header values parse to NaN and would render a
+            // "NaN" badge — fall back to 0.
+            setUnreadNotifications(parseInt(res.headers['x-total-count'], 10) || 0);
           } else if (res.data && res.data.unreadCount) {
-            setUnreadNotifications(res.data.unreadCount);
+            setUnreadNotifications(Number(res.data.unreadCount) || 0);
           }
         } catch (e) {
           // Silently fail

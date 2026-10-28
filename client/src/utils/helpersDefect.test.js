@@ -24,6 +24,11 @@ import {
   convertToUSD,
   convertBetweenCurrencies,
   validatePhone,
+  timeAgo,
+  formatDate,
+  formatDateTime,
+  displayDate,
+  displayDateTime,
 } from './helpers';
 
 const PROTO_KEYS = ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty'];
@@ -55,6 +60,37 @@ describe('DEFECT 1: prototype-chain currency keys must fall back to USD, never N
       for (const v of vals) expect(Number.isFinite(v)).toBe(true);
     });
   }
+});
+
+describe('HARDENING: date helpers must render — for missing/invalid dates', () => {
+  test('missing dates render — instead of silently rendering "today" (moment(undefined))', () => {
+    expect(formatDate(undefined)).toBe('—');
+    expect(formatDate(null)).toBe('—');
+    expect(formatDate('')).toBe('—');
+    expect(formatDateTime(undefined)).toBe('—');
+    expect(timeAgo(undefined)).toBe('—');
+  });
+
+  test('invalid date values render — instead of "Invalid date"/"Invalid Date"', () => {
+    expect(formatDate('not-a-date')).toBe('—');
+    expect(formatDateTime('not-a-date')).toBe('—');
+    expect(timeAgo('not-a-date')).toBe('—');
+    expect(displayDate('not-a-date')).toBe('—');
+    expect(displayDate(undefined)).toBe('—');
+    expect(displayDateTime('not-a-date')).toBe('—');
+    expect(displayDateTime(null)).toBe('—');
+  });
+
+  test('valid dates still format normally', () => {
+    const iso = '2026-01-15T12:00:00.000Z';
+    expect(formatDate(iso)).not.toBe('—');
+    expect(formatDate(iso)).toContain('2026');
+    expect(displayDate(iso)).not.toBe('—');
+    expect(displayDateTime(iso)).not.toBe('—');
+    expect(timeAgo(iso)).not.toBe('—');
+    // Options pass-through keeps custom formats working.
+    expect(displayDate(iso, { year: 'numeric' })).toMatch(/2025|2026/);
+  });
 });
 
 describe('DEFECT 2: validatePhone must require digits (reject digit-less garbage)', () => {

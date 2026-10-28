@@ -4,7 +4,7 @@ import api from '../services/api';
 import { FaGavel, FaPlus, FaUser, FaTag, FaEye, FaClock, FaCalendarAlt, FaCheckCircle } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
-import { formatPrice, formatPriceRaw, defaultListingImage } from '../utils/helpers';
+import { formatPrice, formatPriceRaw, defaultListingImage, displayDateTime } from '../utils/helpers';
 import './AuctionPage.css';
 
 const AuctionPage = () => {
@@ -40,7 +40,8 @@ const AuctionPage = () => {
   
   const formatTimeLeft = (endTime) => {
     const diff = new Date(endTime) - new Date();
-    if (diff <= 0) return 'Ended';
+    // Invalid/missing endTime makes diff NaN, which would render "NaNh NaNm".
+    if (!Number.isFinite(diff) || diff <= 0) return 'Ended';
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
     return `${hours}h ${minutes}m`;
@@ -149,7 +150,7 @@ const AuctionPage = () => {
                         <div className="time-left">
                           <span>{auction.status === 'active' ? <FaClock aria-hidden="true" /> : auction.status === 'scheduled' ? <FaCalendarAlt aria-hidden="true" /> : <FaCheckCircle aria-hidden="true" />}{' '}
                             {auction.status === 'active' ? `Time left: ${formatTimeLeft(auction.endTime)}` : 
-                             auction.status === 'scheduled' ? `Starts: ${new Date(auction.startTime).toLocaleString()}` : 
+                             auction.status === 'scheduled' ? `Starts: ${displayDateTime(auction.startTime)}` : 
                              'Ended'}</span>
                         </div>
 

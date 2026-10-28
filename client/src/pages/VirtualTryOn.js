@@ -107,7 +107,7 @@ const VirtualTryOn = () => {
   const fetchTryOnHistory = async () => {
     try {
       const res = await api.get('/virtual-try-on');
-      setTryOnHistory(res.data);
+      setTryOnHistory(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       // No history yet
     }

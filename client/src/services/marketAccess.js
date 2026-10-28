@@ -9,13 +9,23 @@ import api from './api';
 const STORAGE_KEY = 'td_region_country';
 const SUPPORTED_KEY = 'td_region_supported';
 
-export const getStoredCountry = () => localStorage.getItem(STORAGE_KEY);
+// localStorage can throw in restricted WebViews / private browsing. Region
+// checks run during boot, so storage access must never crash the app or
+// mask the server's authoritative response.
+const safeGet = (key) => {
+  try { return localStorage.getItem(key); } catch { return null; }
+};
+const safeSet = (key, value) => {
+  try { localStorage.setItem(key, value); } catch { /* best effort */ }
+};
 
-export const getStoredSupported = () => localStorage.getItem(SUPPORTED_KEY) === 'true';
+export const getStoredCountry = () => safeGet(STORAGE_KEY);
+
+export const getStoredSupported = () => safeGet(SUPPORTED_KEY) === 'true';
 
 export const setRegionCountry = (country) => {
   if (country && typeof country === 'string' && country.trim()) {
-    localStorage.setItem(STORAGE_KEY, country.trim().toUpperCase());
+    safeSet(STORAGE_KEY, country.trim().toUpperCase());
   }
 };
 
@@ -44,8 +54,8 @@ export const checkRegionStatus = async (user) => {
   try {
     const res = await api.get(`/marketplace/status${query}`);
     const data = res.data || {};
-    if (data.country) localStorage.setItem(STORAGE_KEY, data.country.toUpperCase());
-    localStorage.setItem(SUPPORTED_KEY, data.supported ? 'true' : 'false');
+    if (data.country) safeSet(STORAGE_KEY, data.country.toUpperCase());
+    safeSet(SUPPORTED_KEY, data.supported ? 'true' : 'false');
     return { ...data, country: data.country || country || 'US' };
   } catch (error) {
     return { country: country || 'US', supported: true, message: 'Available', error: true };

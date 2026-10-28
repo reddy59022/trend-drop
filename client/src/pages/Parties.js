@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import { FaCalendarAlt, FaUsers, FaShare, FaClock, FaTag, FaHeart, FaSearch, FaPlus, FaGlassCheers } from 'react-icons/fa';
+import { displayDate } from '../utils/helpers';
 
 const Parties = () => {
   const { user } = useAuth();
@@ -43,11 +44,25 @@ const Parties = () => {
 
   const handleCreateParty = async (e) => {
     e.preventDefault();
+    // Guard the numeric + date fields: a cleared input parses to NaN (sent as
+    // null) and empty dates become Invalid Date (also serialized as null).
+    const discount = Number(newParty.discountPercent);
+    if (newParty.discountPercent === '' || !Number.isFinite(discount) || discount < 0 || discount > 100) {
+      toast.error('Discount must be a number between 0 and 100');
+      return;
+    }
+    const startTime = new Date(newParty.startTime);
+    const endTime = new Date(newParty.endTime);
+    if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+      toast.error('Please provide a valid start and end time');
+      return;
+    }
     try {
       await api.post('/parties', {
         ...newParty,
-        startTime: new Date(newParty.startTime),
-        endTime: new Date(newParty.endTime),
+        discountPercent: discount,
+        startTime,
+        endTime,
       });
       toast.success('Party created!');
       setShowCreateModal(false);
@@ -149,7 +164,7 @@ const Parties = () => {
                 <div style={{ display: 'flex', gap: 16, fontSize: 13, color: 'var(--td-text-secondary)' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <FaCalendarAlt size={12} />
-                    {new Date(party.startTime).toLocaleDateString()}
+                    {displayDate(party.startTime)}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <FaUsers size={12} />
@@ -266,7 +281,7 @@ const Parties = () => {
                   type="number"
                   className="form-input"
                   value={newParty.discountPercent}
-                  onChange={e => setNewParty({...newParty, discountPercent: parseInt(e.target.value)})}
+                  onChange={e => setNewParty({...newParty, discountPercent: e.target.value === '' ? '' : parseInt(e.target.value, 10) || 0})}
                   min="5"
                   max="30"
                   required

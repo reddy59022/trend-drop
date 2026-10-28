@@ -67,7 +67,7 @@ const StarRating = ({ rating, onRate, readonly = false, size = 20 }) => {
       {stars}
       {readonly && rating > 0 && (
         <span style={{ marginLeft: 8, fontSize: 14, fontWeight: 600, color: 'var(--td-text-secondary)' }}>
-          {rating.toFixed(1)}
+          {Number(rating).toFixed(1)}
         </span>
       )}
     </div>

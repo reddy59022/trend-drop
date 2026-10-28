@@ -317,10 +317,39 @@ export const getCurrencyByCountry = (countryCode) => {
   }
 };
 
-// Time helpers
-export const timeAgo = (date) => moment(date).fromNow();
-export const formatDate = (date, format = 'MMM D, YYYY') => moment(date).format(format);
-export const formatDateTime = (date) => moment(date).format('MMM D, YYYY h:mm A');
+// Time helpers.
+// moment(undefined) silently yields "now" (wrong dates for missing fields) and
+// invalid inputs format as the literal "Invalid date" — both render '—' instead.
+const toMoment = (date) => {
+  if (date === undefined || date === null || date === '') return null;
+  const m = moment(date);
+  return m.isValid() ? m : null;
+};
+export const timeAgo = (date) => {
+  const m = toMoment(date);
+  return m ? m.fromNow() : '—';
+};
+export const formatDate = (date, format = 'MMM D, YYYY') => {
+  const m = toMoment(date);
+  return m ? m.format(format) : '—';
+};
+export const formatDateTime = (date) => {
+  const m = toMoment(date);
+  return m ? m.format('MMM D, YYYY h:mm A') : '—';
+};
+
+// Locale-style guarded variants for raw `new Date(x).toLocale*()` renders:
+// same output as before for valid values, '—' for missing/invalid ones.
+export const displayDate = (value, options) => {
+  if (value === undefined || value === null || value === '') return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, options);
+};
+export const displayDateTime = (value) => {
+  if (value === undefined || value === null || value === '') return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+};
 
 // Status colors
 export const getStatusColor = (status) => {

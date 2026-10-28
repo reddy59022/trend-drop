@@ -20,7 +20,7 @@ const Wishlist = () => {
   const fetchWishlist = async () => {
     try {
       const res = await getWishlist();
-      setItems(res.data);
+      setItems(Array.isArray(res.data) ? res.data : []);
     } catch (error) { console.error(error); }
     finally { setLoading(false); }
   };

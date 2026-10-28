@@ -93,7 +93,9 @@ const LiveEvents = () => {
   };
 
   const formatDateTime = (date) => {
-    return new Date(date).toLocaleString('en-US', {
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',

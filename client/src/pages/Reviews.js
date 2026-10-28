@@ -21,7 +21,18 @@ const Reviews = () => {
   useEffect(() => { fetchRatings(); }, [sellerId]); // eslint-disable-line
 
   const fetchRatings = async () => {
-    try { const res = await getRatingsBySeller(sellerId); setData(res.data); } catch (error) { console.error(error); }
+    try {
+      const res = await getRatingsBySeller(sellerId);
+      // Normalize the shape instead of replacing state wholesale: a partial
+      // response (missing ratings array / averageRating) would crash the
+      // summary and list renders below.
+      const body = res.data || {};
+      setData({
+        averageRating: Number(body.averageRating) || 0,
+        count: Number(body.count) || 0,
+        ratings: Array.isArray(body.ratings) ? body.ratings : [],
+      });
+    } catch (error) { console.error(error); }
     finally { setLoading(false); }
   };
 
@@ -63,7 +74,7 @@ const Reviews = () => {
 
       {/* Rating Summary */}
       <div className="glass-card" style={{ padding: 'var(--td-space-lg)', textAlign: 'center', marginBottom: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
-        <div style={{ fontSize: 48, fontWeight: 800, color: 'var(--td-primary)', lineHeight: 1 }}>{data.averageRating.toFixed(1)}</div>
+        <div style={{ fontSize: 48, fontWeight: 800, color: 'var(--td-primary)', lineHeight: 1 }}>{Number(data.averageRating || 0).toFixed(1)}</div>
         <StarRating rating={data.averageRating} size={24} readonly />
         <div style={{ marginTop: 8, color: 'var(--td-text-tertiary)', fontSize: 14 }}>
           Based on {data.count} review{data.count !== 1 ? 's' : ''}

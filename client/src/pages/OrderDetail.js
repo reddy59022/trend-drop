@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { formatPrice, defaultListingImage } from '../utils/helpers';
+import { formatPrice, defaultListingImage, displayDate } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import {
   FaArrowLeft, FaTruck, FaShieldAlt, FaCheckCircle, FaTimesCircle,
@@ -478,8 +478,8 @@ const OrderDetail = () => {
                         <Icon size={12} style={{ marginRight: 4 }} /> {step.label}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
-                        {new Date(step.date).toLocaleDateString('en-US', { 
-                          month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+                        {displayDate(step.date, {
+                          month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
                         })}
                       </div>
                     </div>
@@ -542,7 +542,7 @@ const OrderDetail = () => {
                   {trackingSteps.map((step, i) => (
                     <div key={i} style={{ display: 'flex', gap: 8, padding: '4px 0', fontSize: 12 }}>
                       <span style={{ color: 'var(--td-text-tertiary)', minWidth: 80 }}>
-                        {new Date(step.timestamp).toLocaleDateString()}
+                        {displayDate(step.timestamp)}
                       </span>
                       <span style={{ fontWeight: 500 }}>{step.label}</span>
                     </div>
@@ -599,7 +599,7 @@ const OrderDetail = () => {
                   {escrow.initiatedAt && (
                     <div className="flex-between">
                       <span style={{ color: 'var(--td-text-secondary)' }}>Initiated</span>
-                      <span>{new Date(escrow.initiatedAt).toLocaleDateString()}</span>
+                      <span>{displayDate(escrow.initiatedAt)}</span>
                     </div>
                   )}
                   {escrow.status === 'active' && (

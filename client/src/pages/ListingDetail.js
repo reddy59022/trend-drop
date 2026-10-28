@@ -1,4 +1,4 @@
-import { defaultAvatar, formatPrice, formatPriceRaw, getConditionColor, normalizeComment } from "../utils/helpers";
+import { defaultAvatar, formatPrice, formatPriceRaw, getConditionColor, normalizeComment, displayDate } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment, FaBolt, FaExchangeAlt, FaClock } from 'react-icons/fa';
@@ -333,7 +333,7 @@ const ListingDetail = () => {
                     >
                       <div className="chart-tooltip">
                         {formatPrice(entry.price, listing.currency)}<br />
-                        {new Date(entry.date).toLocaleDateString()}
+                        {displayDate(entry.date)}
                       </div>
                     </div>
                   );

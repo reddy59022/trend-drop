@@ -36,6 +36,13 @@ describe('Reviews page', () => {
     renderPageWithRoute(<Reviews />, { route: '/reviews/seller1', path: '/reviews/:sellerId' });
     expect(await screen.findByText('Great seller!')).toBeInTheDocument();
   });
+  test('a partial API response (missing ratings array / null averageRating) renders without crashing', async () => {
+    // Shape drift must not crash the summary or list renders.
+    api.getRatingsBySeller.mockResolvedValue({ data: { averageRating: null, count: 2 } });
+    renderPageWithRoute(<Reviews />, { route: '/reviews/seller1', path: '/reviews/:sellerId' });
+    expect(await screen.findByText(/Seller Reviews/)).toBeInTheDocument();
+    expect(screen.getByText('0.0')).toBeInTheDocument();
+  });
   test('submitting a review calls createRating', async () => {
     api.getRatingsBySeller.mockResolvedValue({ data: { ratings: [], averageRating: 0, count: 0 } });
     api.createRating.mockResolvedValue({ data: {} });

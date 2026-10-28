@@ -220,12 +220,12 @@ const Referrals = () => {
               <div>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>2️⃣</div>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>They join TrendDrop</div>
-                <div style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>Your friend signs up with your code and gets ${(stats?.rewardAmount || settings?.rewardAmount || 10).toFixed(2)} credit.</div>
+                <div style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>Your friend signs up with your code and gets {formatPrice(rewardAmount, 'USD')} credit.</div>
               </div>
               <div>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>3️⃣</div>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>You both earn</div>
-                <div style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>You get ${(stats?.rewardAmount || settings?.rewardAmount || 10).toFixed(2)} credit when they make their first purchase!</div>
+                <div style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>You get {formatPrice(rewardAmount, 'USD')} credit when they make their first purchase!</div>
               </div>
             </div>
           </div>

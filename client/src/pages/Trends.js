@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaFire, FaChartLine, FaSync, FaClock, FaEye, FaRetweet, FaComment, FaHeart } from 'react-icons/fa';
 import api from '../services/api';
+import { displayDateTime } from '../utils/helpers';
 
 const Trends = () => {
   const [trends, setTrends] = useState([]);
@@ -124,7 +125,7 @@ const Trends = () => {
               )}
 
               <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>
-                {new Date(trend.timestamp).toLocaleString()}
+                {displayDateTime(trend.timestamp)}
               </div>
             </div>
           ))}

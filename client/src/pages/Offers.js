@@ -11,7 +11,7 @@ import { getSocketBaseURL } from '../services/native';
 import CounterOfferModal from '../components/CounterOfferModal';
 
 const Offers = () => {
-  const { user } = useAuth();
+  const { user, token: authToken } = useAuth();
   const [activeTab, setActiveTab] = useState('received');
   const [receivedOffers, setReceivedOffers] = useState([]);
   const [sentOffers, setSentOffers] = useState([]);
@@ -29,8 +29,9 @@ const Offers = () => {
     if (!user) return;
     fetchOffers();
 
-    // Connect to socket for real-time updates
-    const token = localStorage.getItem('token');
+    // Connect to socket for real-time updates. Token comes from auth context
+    // (raw localStorage access can throw in restricted WebViews).
+    const token = authToken;
     if (token) {
       const socket = io(getSocketBaseURL(), {
         auth: { token },

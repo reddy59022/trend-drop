@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { FaGem, FaHistory, FaGift, FaStar } from 'react-icons/fa';
 import api from '../services/api';
+import { displayDate } from '../utils/helpers';
 
 const LoyaltyProgram = () => {
   const { user } = useAuth();
@@ -108,7 +109,7 @@ const LoyaltyProgram = () => {
               </span>
             </div>
             <small style={{ color: 'var(--td-text-secondary)' }}>
-              {new Date(entry.createdAt).toLocaleDateString()}
+              {displayDate(entry.createdAt)}
             </small>
           </div>
         ))}

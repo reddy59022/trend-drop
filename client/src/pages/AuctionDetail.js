@@ -6,7 +6,7 @@ import api from '../services/api';
 import { getSocketBaseURL } from '../services/native';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
-import { formatPrice, formatPriceRaw } from '../utils/helpers';
+import { formatPrice, formatPriceRaw, displayDateTime } from '../utils/helpers';
 import MediaCarousel from '../components/MediaCarousel';
 import CommentSection from '../components/CommentSection';
 
@@ -18,7 +18,7 @@ const ICE_SERVERS = [
 
 const AuctionDetail = () => {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, token: authToken } = useAuth();
   const navigate = useNavigate();
   const [auction, setAuction] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -105,8 +105,10 @@ const AuctionDetail = () => {
   // ============ SOCKET CONNECTION ============
   const connectSocket = () => {
     if (socketRef.current?.connected) return socketRef.current;
-    
-    const token = localStorage.getItem('token');
+
+    // Token comes from auth context (raw localStorage access can throw in
+    // restricted WebViews).
+    const token = authToken;
     const socket = io(getSocketBaseURL(), {
       auth: { token },
       transports: ['websocket', 'polling'],
@@ -709,8 +711,8 @@ const AuctionDetail = () => {
               {auction.listing?.condition && (
                 <div><strong>Condition:</strong> {auction.listing.condition}</div>
               )}
-              <div><strong>Auction Started:</strong> {new Date(auction.startTime).toLocaleString()}</div>
-              <div><strong>Auction Ends:</strong> {new Date(auction.endTime).toLocaleString()}</div>
+              <div><strong>Auction Started:</strong> {displayDateTime(auction.startTime)}</div>
+              <div><strong>Auction Ends:</strong> {displayDateTime(auction.endTime)}</div>
             </div>
           </div>
 

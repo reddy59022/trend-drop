@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import { FaDollarSign, FaEye, FaTag, FaStar, FaPercentage, FaShoppingBag } from 'react-icons/fa';
+import { displayDate } from '../utils/helpers';
 
 const SellerAnalytics = () => {
   const [loading, setLoading] = useState(true);
@@ -49,16 +50,19 @@ const SellerAnalytics = () => {
   }, [period, fetchOverview, fetchRevenue, fetchTopListings]);
 
   const formatCurrency = (amount) => {
+    const n = Number(amount);
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-    }).format(amount);
+    }).format(Number.isFinite(n) ? n : 0);
   };
 
   const formatNumber = (num) => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-    return num.toString();
+    const n = Number(num);
+    if (!Number.isFinite(n)) return '0';
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return n.toString();
   };
 
   if (loading) {
@@ -109,14 +113,14 @@ const SellerAnalytics = () => {
             <div className="metric-icon"><FaPercentage /></div>
             <div className="metric-content">
               <p className="metric-label">Conversion Rate</p>
-              <h3 className="metric-value">{(overview?.conversionRate || 0).toFixed(1)}%</h3>
+              <h3 className="metric-value">{(Number(overview?.conversionRate) || 0).toFixed(1)}%</h3>
             </div>
           </div>
           <div className="metric-card">
             <div className="metric-icon"><FaStar /></div>
             <div className="metric-content">
               <p className="metric-label">Avg Rating</p>
-              <h3 className="metric-value">{(overview?.avgRating || 0).toFixed(1)}</h3>
+              <h3 className="metric-value">{(Number(overview?.avgRating) || 0).toFixed(1)}</h3>
               <p className="metric-subtext">{overview?.totalRatings || 0} reviews</p>
             </div>
           </div>
@@ -177,7 +181,7 @@ const SellerAnalytics = () => {
                     <div>
                       <p className="activity-buyer">{sale.buyer?.name || 'Anonymous Buyer'}</p>
                       <p className="activity-date">
-                        {new Date(sale.createdAt).toLocaleDateString('en-US', {
+                        {displayDate(sale.createdAt, {
                           month: 'short',
                           day: 'numeric',
                           year: 'numeric',

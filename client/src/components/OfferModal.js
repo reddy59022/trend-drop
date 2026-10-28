@@ -3,7 +3,7 @@ import { FaTimes, FaSpinner, FaGavel, FaMoneyBillWave, FaHistory, FaCheck, FaArr
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
-import { formatPrice, formatPriceRaw, currencies } from '../utils/helpers';
+import { formatPrice, formatPriceRaw, currencies, displayDateTime } from '../utils/helpers';
 
 /**
  * OfferModal - Full Counter-Offer Chain Support (v14.0)
@@ -201,7 +201,7 @@ const OfferModal = ({ listing, isOpen, onClose, onOfferSubmitted, existingOffer 
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)', marginTop: 2 }}>
-                  {new Date(entry.createdAt).toLocaleString()}
+                  {displayDateTime(entry.createdAt)}
                 </div>
               </div>
               {idx < offer.counterHistory.length - 1 && (
