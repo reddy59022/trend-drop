@@ -22,13 +22,23 @@ describe('Operational readiness and reconciliation contracts', () => {
   });
 
   test('payment reconciliation fields have indexes for retry/webhook lookups', () => {
-    const transactionIndexes = Transaction.schema.indexes().map(([fields]) => fields);
+    const transactionIndexes = Transaction.schema.indexes();
+    const transactionFields = transactionIndexes.map(([fields]) => fields);
     const payoutIndexes = Payout.schema.indexes().map(([fields]) => fields);
 
-    expect(transactionIndexes).toEqual(expect.arrayContaining([
+    expect(transactionFields).toEqual(expect.arrayContaining([
       { stripePaymentIntentId: 1 },
-      { 'paymentBreakdown.paymentIntentId': 1 },
     ]));
+    // The paymentIntentId lookup key is now the LEFTMOST field of the
+    // (paymentIntentId, listing) compound index — retries/webhooks keep
+    // prefix-index lookups, and the pair is UNIQUE (checkout idempotency:
+    // parallel double-confirms must never double-credit a seller).
+    const idempotencyIndex = transactionIndexes.find(([fields]) =>
+      Object.keys(fields)[0] === 'paymentBreakdown.paymentIntentId'
+    );
+    expect(idempotencyIndex).toBeDefined();
+    expect(idempotencyIndex[0].listing).toBe(1);
+    expect(idempotencyIndex[1]).toMatchObject({ unique: true });
     expect(payoutIndexes).toEqual(expect.arrayContaining([
       { paymentIntentId: 1 },
     ]));

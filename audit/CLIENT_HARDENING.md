@@ -4,6 +4,9 @@
 > stale-response races, broken-image skeletons and raw `moment` bypasses.
 > See §7.
 >
+> **Round 3** (server-side): HTTP-level race probe against the live API found
+> the checkout idempotency TOCTOU; fixed at the DB layer. See §8.
+>
 
 100% hardening sweep of **all 65+ pages** (`client/src/pages`), **all 20
 components**, contexts, services and utils. Complements `PAGE_AUDIT.md`
@@ -139,3 +142,47 @@ bypassing the round-1 guards: missing dates rendered "a few seconds ago"
 
 Round 2 verification: **111 suites / 613 client tests**, production build
 Clean, 294 E2E scenarios green.
+
+## 8. Round 3 — HTTP race probe + server money-path audit
+
+**Checkout idempotency race (fixed).** The `existingTxn` guard in
+`POST /api/payments/confirm` is read-then-write and the Transaction indexes
+on the payment intent were non-unique: a parallel double-confirm (double-click,
+retry storm) could create two transactions for one payment intent and
+double-credit the seller. Fixes:
+
+1. **DB-level guarantee** — partial unique index on
+   `(paymentBreakdown.paymentIntentId, listing)` in `models/Transaction.js`.
+   Compound (not single-field) because `confirm-batch` creates one transaction
+   per listing for a shared intent; partial so legacy empty-intent rows keep
+   coexisting. The paymentIntentId field is the leftmost prefix, so
+   retry/webhook lookups keep their index (contract pinned in
+   `operationalReadiness.test.js`, strengthened to also assert uniqueness).
+2. **Idempotent race-loser response** — a confirm that loses the E11000 race
+   rolls back its own partials and returns the winner's order (200) instead of
+   a scary 500 for a purchase that went through.
+3. **Non-fatal index builds** — `config/db.js` now handles connection 'error'
+   events so an index build that fails on legacy duplicate rows degrades to
+   "no index" instead of a dead process.
+
+**HTTP race probe (all invariants hold).** Four scenarios against the live
+in-memory API: (S1) 6 parallel confirms of one intent → exactly 1 sale
+ledger row; (S2) 2 buyers racing the last item → exactly 1 sale + 1
+'refunded' audit row, loser 400; (S3) accept/counter/decline fired in
+parallel → exactly one transition wins, state machine consistent; (S4) 10
+parallel auction bids → zero lost bids, `currentBid` = max. Regression:
+`tests/checkoutIdempotencyIndex.test.js` (3 tests).
+
+**Money-path audit (clean).** `stripeWebhook.js` only updates existing
+transactions (no create → no duplicate risk); payouts use atomic
+balance-guarded `findOneAndUpdate`; inventory claims are atomic
+(`quantity: {$gt: 0}` + `$inc`); promo claims atomic; rollback scopes cover
+partial failures.
+
+**Mobile-shell audit (clean).** Deep links: origin-stripped paths only,
+gated by `isAppPath` before `window.location.replace`, OAuth callbacks
+restricted to trusted hosts; push-registration listener leak fixed in
+round 1; Android back-button minimizes at root; no new findings.
+
+Round 3 verification: server suite green (727 tests incl. 3 new),
+294 E2E scenarios green (incl. checkout specs), 4/4 race-probe invariants.

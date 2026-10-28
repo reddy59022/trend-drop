@@ -30,6 +30,16 @@ const RETRY_DELAY_MS = 2000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Connection-level errors (index build failures, socket drops) are emitted on
+// the connection EventEmitter — an unhandled 'error' event would crash the
+// process. Log them instead; a failed unique-index build (e.g. legacy
+// duplicate rows) must degrade to "no index", never to a dead server.
+if (mongoose.connection.listenerCount('error') === 0) {
+  mongoose.connection.on('error', (err) => {
+    console.error('MongoDB connection error (non-fatal):', err && err.message);
+  });
+}
+
 const connectDB = async () => {
   // If mongoose is already connected (e.g., a test suite explicitly connected
   // to its own URI), honor the existing connection instead of re-connecting.

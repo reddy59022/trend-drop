@@ -334,7 +334,18 @@ transactionSchema.index({ 'disputeInfo.stripeDisputeId': 1 });
 // every webhook/retry. Keep them indexed so idempotency remains fast as the
 // ledger grows instead of degrading into collection scans.
 transactionSchema.index({ 'stripePaymentIntentId': 1 });
-transactionSchema.index({ 'paymentBreakdown.paymentIntentId': 1 });
+// CHECKOUT IDEMPOTENCY (DB-level): one transaction per (payment intent,
+// listing). The route-level `existingTxn` guards are read-then-write and
+// lose to true parallel races (double-click / retry storms): two confirms of
+// the same intent could both pass the check and double-credit the seller.
+// The unique index turns that race into a clean E11000 the routes handle.
+// Compound (not single-field) because confirm-batch creates one transaction
+// per listing for a shared intent. Partial so legacy rows with an empty
+// paymentIntentId keep coexisting.
+transactionSchema.index(
+  { 'paymentBreakdown.paymentIntentId': 1, listing: 1 },
+  { unique: true, partialFilterExpression: { 'paymentBreakdown.paymentIntentId': { $gt: '' } } }
+);
 // Compound indexes for paginated status-filtered queries (enterprise scale)
 transactionSchema.index({ buyer: 1, status: 1, createdAt: -1 });
 transactionSchema.index({ seller: 1, status: 1, createdAt: -1 });

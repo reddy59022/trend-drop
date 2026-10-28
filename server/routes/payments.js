@@ -1498,6 +1498,26 @@ router.post('/confirm', auth, async (req, res) => {
       try { await Transaction.findByIdAndDelete(createdTransaction._id); } catch (e) {}
     }
 
+    // CHECKOUT IDEMPOTENCY: a parallel double-confirm lost the (payment
+    // intent, listing) unique-index race after the read-then-write guard above
+    // passed. Rollbacks already ran (the boost-fee increment is undone); the
+    // winner's order exists, so answer idempotent-success with it instead of
+    // surfacing a scary 500 for a purchase that actually went through.
+    if (error && error.code === 11000) {
+      try {
+        const winner = await Transaction.findOne({
+          'paymentBreakdown.paymentIntentId': req.body.paymentIntentId,
+          listing: req.body.listingId,
+        });
+        if (winner) {
+          return res.json({
+            message: 'Order already exists for this payment',
+            transaction: sanitizeTransactionForViewer(winner, req.user._id),
+          });
+        }
+      } catch (lookupErr) { /* fall through to the generic 500 */ }
+    }
+
     res.status(500).json({ message: error.message || 'Error confirming payment' });
   }
 });
