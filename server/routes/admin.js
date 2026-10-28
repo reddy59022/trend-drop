@@ -11,7 +11,7 @@ const Payout = require('../models/Payout');
 const Report = require('../models/Report');
 const Offer = require('../models/Offer');
 const SellerBadge = require('../models/SellerBadge');
-const { clawbackSellerEarnings } = require('../utils/balances');
+const { clawbackSellerEarnings, sellerSaleTotal } = require('../utils/balances');
 const { claimTransaction } = require('../utils/claims');
 const { findPaymentIntent, retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
@@ -444,7 +444,9 @@ router.post('/transactions/:id/refund', async (req, res) => {
 
     // Remove seller earnings atomically so a refund cannot overwrite a
     // concurrent sale/payout balance update.
-    await clawbackSellerEarnings(txn.seller, txn.paymentBreakdown?.sellerEarnings || 0);
+    // Reverse EXACTLY what the sale credited (earnings + shipping
+    // reimbursement) — sellerSaleTotal detects the row's ledger shape.
+    await clawbackSellerEarnings(txn.seller, sellerSaleTotal(txn.paymentBreakdown));
 
     // Restore the exact quantity sold. Restoring one unit for a bulk
     // transaction strands inventory and leaves quantitySold inconsistent.

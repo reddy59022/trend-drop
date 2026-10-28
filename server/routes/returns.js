@@ -9,7 +9,7 @@ const Listing = require('../models/Listing');
 const { orderStates, isValidTransition } = require('../config/orderLifecycle');
 const { isValidObjectId } = require('../utils/validators');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
-const { clawbackSellerEarnings } = require('../utils/balances');
+const { clawbackSellerEarnings, sellerSaleTotal } = require('../utils/balances');
 
 // Reuse the listing image pipeline (Cloudinary in prod, deterministic mock in test).
 const { uploadListingImages } = (() => {
@@ -428,7 +428,9 @@ router.put('/:id/receive', auth, async (req, res) => {
     const totalPaid = txn.paymentBreakdown?.totalPaid || 0;
     const itemPrice = txn.itemPrice || txn.paymentBreakdown?.subtotal || 0;
     const buyerRefund = Math.round((responsibility === 'buyer' ? itemPrice : (totalPaid || returnRequest.refundAmount)) * 100) / 100;
-    const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+    // Reverse EXACTLY what the sale credited (earnings + shipping
+    // reimbursement) — sellerSaleTotal detects the row's ledger shape.
+    const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
 
     // Issue Stripe refund to original payment method.
     // NOTE: single-item purchases (POST /api/transactions) record the funding

@@ -34,6 +34,7 @@ const { increment } = require('../utils/metrics');
 const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require('../utils/transactionView');
 const { boostConfig } = require('../config/boost');
 const { isValidMoneyInput, isPositiveIntegerQuantity } = require('../criticalRules');
+const { sellerSaleTotal } = require('../utils/balances');
 
 // Flat per-sale boost fee: price × tier.feePercent / 100
 // Charged ONLY upon successful sale (never upfront)
@@ -360,6 +361,10 @@ router.post('/create-intent', auth, async (req, res) => {
       promoDiscount: promoDiscount.toString(),
       bundleDiscount: bundleDiscountTotal.toString(),
       bundleDiscountBySeller: JSON.stringify(bundleDiscountBySeller),
+      // Stranded-intent guard (voidStrandedSingleUnitIntent): proves a
+      // terminal rejection at confirm can never be consumed elsewhere before
+      // it returns the buyer's money.
+      totalUnits: itemData.reduce((sum, d) => sum + (d.quantity || 1), 0).toString(),
     };
 
     const paymentIntent = await authorizePaymentIntent(
@@ -831,8 +836,11 @@ router.post('/confirm-batch', auth, async (req, res) => {
           platformFee: platformFeeTotal,
           platformFeePercent: breakdown.seller.platformFeePercent,
           shippingPayout: plan.shippingCostTotal,
-          sellerEarnings: sellerEarningsWithBoost,
-          boostFee,
+        sellerEarnings: sellerEarningsWithBoost,
+        // Round 4: the exact amount credited to the seller's balance
+        // (earnings + shipping label reimbursement) — utils/balances.js.
+        sellerCredit: Math.round((sellerEarningsWithBoost + plan.shippingCostTotal) * 100) / 100,
+        boostFee,
           boostTier: listing.boost?.tier || '',
           paymentIntentId,
         },
@@ -937,9 +945,14 @@ router.post('/confirm-batch', auth, async (req, res) => {
       });
       createdPayouts.push(payout);
 
+      // SHIPPING REIMBURSEMENT (round 4): the buyer paid shipping as a label
+      // cost reimbursement for the seller (the seller UI promises "Shipping
+      // label payout"), so the balance credit must include it. The Payout row
+      // stays on sellerEarnings — its contract is salePrice ≡ commission +
+      // payoutAmount and the reimbursement is not part of the sale split.
       sellerBalanceUpdates.push({
         sellerDoc: seller,
-        earnings: sellerEarningsWithBoost,
+        earnings: Math.round((sellerEarningsWithBoost + plan.shippingCostTotal) * 100) / 100,
         listingId: listing._id,
         transactionId: txn._id,
         sellerCurrency: breakdown.sellerCurrency,
@@ -1210,6 +1223,44 @@ router.post('/confirm-batch', auth, async (req, res) => {
   }
 });
 
+// NO-LOSS GUARD (money-matrix round 4): create-intent authorizes — and live// Stripe auto-capture charges — at creation time, so a terminal refusal at
+// confirm must return the money instead of stranding it. Voiding is only
+// safe when NO other endpoint could still complete this payment:
+//   - the intent is positively THIS buyer's (metadata.buyerId match),
+//   - it funds exactly ONE unit of exactly this listing (create-intent stamps
+//     totalUnits), and
+//   - every purchase path recomputes the same totals, so once the amount
+//     gate fails, none of them can consume it either.
+// Multi-unit/multi-line (cart) intents are left untouched — confirm-batch
+// fulfils or releases those at its own locked totals. Legacy intents without
+// totalUnits metadata are also left untouched (never move money we cannot
+// account for).
+// Returns true when the money was released/refunded.
+const voidStrandedSingleUnitIntent = async (paymentIntent, paymentIntentId, buyerId, listingId) => {
+  const md = paymentIntent?.metadata || {};
+  const itemIds = String(md.itemIds || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const soleSingleUnit =
+    String(md.buyerId || '') === String(buyerId) &&
+    String(md.totalUnits || '') === '1' &&
+    itemIds.length === 1 &&
+    itemIds[0] === String(listingId);
+  if (!soleSingleUnit) return false;
+  try {
+    if (paymentIntent.status === 'requires_capture') {
+      await releaseAuthorization(paymentIntentId);
+      return true;
+    }
+    if (paymentIntent.status === 'succeeded') {
+      await issueRefund(paymentIntentId);
+      return true;
+    }
+    return false; // requires_payment_method etc. — nothing was taken
+  } catch (e) {
+    console.error('Stranded-intent void failed:', e.message);
+    return false;
+  }
+};
+
 // STEP 2: Single item confirm + capture
 router.post('/confirm', auth, async (req, res) => {
   let createdTransaction = null;
@@ -1253,10 +1304,14 @@ router.post('/confirm', auth, async (req, res) => {
 
     const listing = await Listing.findById(listingId);
     if (!listing) {
-      return res.status(404).json({ message: 'Listing not found' });
+      // NO-LOSS: the money is already taken at authorization — a terminal
+      // refusal returns it (paymentReleased) instead of stranding it.
+      const voided = await voidStrandedSingleUnitIntent(paymentIntent, paymentIntentId, req.user._id, listingId);
+      return res.status(404).json({ message: 'Listing not found', paymentReleased: voided });
     }
     if (!listing.available || listing.sold || listing.quantity <= 0) {
-      return res.status(400).json({ message: 'Item sold out' });
+      const voided = await voidStrandedSingleUnitIntent(paymentIntent, paymentIntentId, req.user._id, listingId);
+      return res.status(400).json({ message: 'Item sold out', paymentReleased: voided });
     }
 
     // REVENUE INTEGRITY (round 25): the intent about to be captured must
@@ -1286,7 +1341,41 @@ router.post('/confirm', auth, async (req, res) => {
       });
     }
 
-    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
+    // OFFER PRICING PARITY (money-matrix round 4): create-intent prices an
+    // accepted offer at the negotiated amount, so pricing from listing.price
+    // alone here made every offer purchase fail the amount gate below (or
+    // credit list-price earnings against an offer-price capture). The request
+    // carries no offer field, so match the authorization against BOTH
+    // legitimate server-computed prices — list price and this buyer's
+    // accepted-offer price — and record whichever the intent was actually
+    // authorized for. Cent-exact matches win; the tolerance fallback below
+    // preserves legacy behaviour (flat-amount mocks, over-authorization).
+    const acceptedOffer = await Offer.findOne({
+      listing: listing._id,
+      buyer: req.user._id,
+      status: 'accepted',
+    });
+    const offerExpired = Boolean(acceptedOffer?.acceptedUntil)
+      && new Date(acceptedOffer.acceptedUntil).getTime() < Date.now();
+    // Mirror create-intent's price resolution exactly (|| not ??) so this
+    // candidate total equals the amount that was authorized.
+    const offerPrice = (acceptedOffer && !offerExpired)
+      ? (acceptedOffer.acceptedPrice || acceptedOffer.counterAmount || acceptedOffer.amount)
+      : null;
+
+    const metaDiscount = (Number(paymentIntent.metadata?.promoDiscount) || 0)
+      + (Number(paymentIntent.metadata?.bundleDiscount) || 0);
+    const expectedCentsFor = (bd) => Math.round((bd.buyer.totalPaid - metaDiscount) * 100);
+
+    const listBreakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
+    const candidates = [{ salePrice: listing.price, breakdown: listBreakdown }];
+    if (offerPrice != null && offerPrice !== listing.price) {
+      candidates.push({
+        salePrice: offerPrice,
+        breakdown: calculatePaymentBreakdown(offerPrice, sellerCountry, toCountry, listing.weight || 0.5),
+        offer: acceptedOffer,
+      });
+    }
 
     // AMOUNT PARITY (round 25): capture ONLY an intent authorized for exactly
     // what this order charges (create-intent subtracts promo/bundle discounts
@@ -1294,13 +1383,33 @@ router.post('/confirm', auth, async (req, res) => {
     // never fulfil a $1000 order — the seller would be credited money the
     // platform never collected. Shared helper — see verifyIntentAmount in
     // config/payments.js.
-    const metaDiscount = (Number(paymentIntent.metadata?.promoDiscount) || 0)
-      + (Number(paymentIntent.metadata?.bundleDiscount) || 0);
-    const expectedCents = Math.round((breakdown.buyer.totalPaid - metaDiscount) * 100);
-    const amountCheck = verifyIntentAmount(paymentIntent, expectedCents);
-    if (!amountCheck.ok) {
-      return res.status(400).json({ message: amountCheck.reason });
+    const authorizedCents = Number(paymentIntent.amount);
+    let chosen = null;
+    if (Number.isFinite(authorizedCents) && authorizedCents > 0) {
+      chosen = candidates.find((c) => expectedCentsFor(c.breakdown) === Math.round(authorizedCents)) || null;
     }
+    if (!chosen) {
+      const amountCheck = verifyIntentAmount(paymentIntent, expectedCentsFor(listBreakdown));
+      if (!amountCheck.ok) {
+        // NO-LOSS: the authorization can no longer complete ANY purchase at a
+        // price the server computes. When it funds exactly one unit of exactly
+        // this listing, no endpoint can ever consume it — return the money
+        // instead of stranding it.
+        const voided = await voidStrandedSingleUnitIntent(paymentIntent, paymentIntentId, req.user._id, listingId);
+        return res.status(400).json({ message: amountCheck.reason, paymentReleased: voided });
+      }
+      chosen = candidates[0];
+    }
+    const { salePrice, breakdown } = chosen;
+    // Capture no more than the order charges: an over-authorization (test
+    // mocks, or pricing that moved down after authorization) must never
+    // over-charge the buyer. Null captures the full amount (exact matches).
+    // The orderCents > 0 guard keeps a fully-discounted order (metaDiscount
+    // can exceed totalPaid) from producing a negative partial capture.
+    const orderCents = expectedCentsFor(breakdown);
+    const captureAmount = (Number.isFinite(authorizedCents) && orderCents > 0 && authorizedCents > orderCents)
+      ? orderCents
+      : null;
 
     const { generateLabel, getPreferredCarrier } = require('../config/shipping');
     const sellerAddress = seller?.shippingAddress ? {
@@ -1319,7 +1428,8 @@ router.post('/confirm', auth, async (req, res) => {
     }, carrierCode);
 
     // Boost fee: flat % of sale price, charged only upon successful sale
-    boostFee = getBoostFee(listing, listing.price);
+    // (offer purchases: the negotiated sale price, not list price)
+    boostFee = getBoostFee(listing, salePrice);
 
     // Item-level boost fee ledger (this listing only)
     await recordBoostFeeOwed(listing._id, boostFee, 1);
@@ -1329,7 +1439,7 @@ router.post('/confirm', auth, async (req, res) => {
       listing: listingId,
       buyer: req.user._id,
       seller: listing.seller,
-      itemPrice: listing.price,
+      itemPrice: salePrice,
       currency: listing.currency || 'USD',
       paymentBreakdown: {
         subtotal: breakdown.buyer.itemPrice,
@@ -1342,6 +1452,9 @@ router.post('/confirm', auth, async (req, res) => {
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: breakdown.seller.shippingPayout,
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
+        // Round 4: the exact amount credited to the seller's balance
+        // (earnings + shipping label reimbursement) — utils/balances.js.
+        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
         boostFee,
         boostTier: listing.boost?.tier || '',
         paymentIntentId,
@@ -1372,7 +1485,7 @@ router.post('/confirm', auth, async (req, res) => {
       autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
     });
 
-    const captureResult = await capturePaymentIntent(paymentIntentId);
+    const captureResult = await capturePaymentIntent(paymentIntentId, captureAmount);
     captured = true;
 
     // Any successful purchase transitions the listing to SOLD (same business
@@ -1406,15 +1519,16 @@ router.post('/confirm', auth, async (req, res) => {
       // never race on document versioning (spurious 500 + refund churn).
       await User.updateOne(
         { _id: seller._id },
-        {
-          $inc: { 'balance.pending': breakdown.seller.sellerEarnings - boostFee },
+        {              // SHIPPING REIMBURSEMENT (round 4): earnings + the shipping
+              // label reimbursement the buyer paid for this seller.
+              $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100 },
           $push: {
             notifications: {
               $each: [saleNotification({
                 from: req.user._id,
                 listing: listing._id,
                 transaction: createdTransaction._id,
-                message: `Item sold! You'll earn ${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
+                message: `Item sold! You'll earn ${Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
               })],
               $position: 0,
             },
@@ -1442,6 +1556,20 @@ router.post('/confirm', auth, async (req, res) => {
       }
     } catch (pErr) {
       console.error('Auto-payout creation error:', pErr.message);
+    }
+
+    // Consume the negotiated deal (parity with /transactions/offer/:id and
+    // confirm-batch): an accepted offer funds exactly one purchase. Saved only
+    // after every money step succeeded — a rollback before this point leaves
+    // the offer 'accepted', matching the refunded/released payment.
+    if (chosen.offer) {
+      try {
+        chosen.offer.status = 'completed';
+        chosen.offer.transaction = createdTransaction._id;
+        await chosen.offer.save();
+      } catch (e) {
+        console.error('Offer consumption failed:', e.message);
+      }
     }
 
     await createdTransaction.populate(['buyer', 'seller', 'listing']);
@@ -1474,7 +1602,9 @@ router.post('/confirm', auth, async (req, res) => {
       try {
         await User.updateOne(
           { _id: createdTransaction.seller },
-          { $inc: { 'balance.pending': -(createdTransaction.paymentBreakdown?.sellerEarnings || 0) } },
+          // Reverse EXACTLY what was credited (earnings + shipping
+          // reimbursement) — sellerSaleTotal detects the row's ledger shape.
+          { $inc: { 'balance.pending': -(sellerSaleTotal(createdTransaction.paymentBreakdown) || 0) } },
         );
       } catch (e) { console.error('Seller credit rollback failed:', e.message); }
     }

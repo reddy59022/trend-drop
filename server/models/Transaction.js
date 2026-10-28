@@ -74,6 +74,13 @@ const transactionSchema = new mongoose.Schema({
     platformFeePercent: { type: Number, default: 8 },
     shippingPayout: { type: Number, default: 0 },
     sellerEarnings: { type: Number, required: true },
+    // Round 4 (money matrix): the EXACT amount of seller money this sale
+    // credited to the seller's balance = net earnings + the shipping label
+    // reimbursement the buyer paid. Absent on historic rows (which credited
+    // raw sellerEarnings) — utils/balances.js sellerSaleTotal falls back to
+    // sellerEarnings for those, keeping every release/clawback symmetric.
+    // Intentionally NO default: an unstamped row must stay unstamped.
+    sellerCredit: { type: Number },
     // Boost fees - BUG 9: Added missing fields that transactions.js sets
     boostFee: { type: Number, default: 0 },
     boostTier: { type: String, default: '' },

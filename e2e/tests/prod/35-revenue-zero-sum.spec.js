@@ -266,7 +266,10 @@ describeRevenue('35 · customer/seller/platform revenue invariants', () => {
 
     const sellerAfter = await api.req('get', '/api/users/me', { token: sellerToken });
     expect(sellerAfter.status).toBe(200);
-    expect(cents(sellerAfter.data.balance.pending - before.data.balance.pending)).toBe(seller);
+    // The seller's balance gains BOTH legs they are owed: net earnings + the
+    // shipping label reimbursement the buyer paid (the seller buys the
+    // label). The refund below must then reverse exactly this amount.
+    expect(cents(sellerAfter.data.balance.pending - before.data.balance.pending)).toBe(cents(seller + shipping));
 
     const cancelled = await api.req('post', `/api/orders/${transaction._id}/cancel`, {
       token: buyerToken,

@@ -20,7 +20,7 @@ const Return = require('../models/Return');
 const Offer = require('../models/Offer');
 
 const { orderStates, timeWindows } = require('./orderLifecycle');
-const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings } = require('../utils/balances');
+const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings, sellerSaleTotal } = require('../utils/balances');
 const { claimTransaction } = require('../utils/claims');
 const { releaseSellerSettlement } = require('../utils/settlement');
 const { retrievePaymentIntent, findPaymentIntent, issueRefund, releaseAuthorization } = require('./payments');
@@ -124,7 +124,7 @@ async function autoCancelUnshippedOrders(now = Date.now()) {
       });
       await Payout.updateMany({ transaction: claimed._id, status: { $ne: 'refunded' } }, { $set: { status: 'refunded', refundedAt: new Date(now) } });
 
-      const sellerEarnings = Math.round((claimed.paymentBreakdown?.sellerEarnings || 0) * 100) / 100;
+      const sellerEarnings = sellerSaleTotal(claimed.paymentBreakdown);
       if (sellerEarnings > 0) {
         await User.updateOne({ _id: claimed.seller }, [
           { $set: { 'balance.pending': { $max: [0, { $subtract: [{ $ifNull: ['$balance.pending', 0] }, sellerEarnings] }] }, 'balance.totalEarned': { $max: [0, { $subtract: [{ $ifNull: ['$balance.totalEarned', 0] }, sellerEarnings] }] } } },
@@ -228,7 +228,7 @@ async function autoProcessOrders() {
         // on the seller's balance, so releasing the claim can only complete the
         // order, never pay for it twice.
         try {
-          const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+          const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
   
           // Release funds to seller with 10% rolling reserve + new seller hold
           const seller = await User.findById(txn.seller);
@@ -335,7 +335,7 @@ async function autoProcessOrders() {
               const commissionAmount = Number.isFinite(storedCommission) && storedCommission > 0
                 ? storedCommission
                 : Math.round(itemPrice * commissionRate * 100) / 100;
-              const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
+              const payoutAmount = txn.paymentBreakdown?.sellerEarnings || 0;
               // An order whose payout was deferred by a hold is not paid yet.
               // Recording it as 'completed' reports the money as available
               // while it is still escrowed; releaseHeldSettlements upgrades
@@ -489,8 +489,9 @@ async function settleDeliveredReturn(txn, returnRequest, now) {
       returnRequest.payoutMarkedRefunded = true;
       await returnRequest.save();
     }
-    if (!returnRequest.sellerLedgerClawedBack && claimed.paymentBreakdown?.sellerEarnings > 0) {
-      await clawbackSellerEarnings(claimed.seller, claimed.paymentBreakdown.sellerEarnings);
+    const returnClawbackAmount = sellerSaleTotal(claimed.paymentBreakdown);
+    if (!returnRequest.sellerLedgerClawedBack && returnClawbackAmount > 0) {
+      await clawbackSellerEarnings(claimed.seller, returnClawbackAmount);
       returnRequest.sellerLedgerClawedBack = true;
       await returnRequest.save();
     }
@@ -729,7 +730,7 @@ async function autoProcessReturns() {
         await markPayoutRefunded(txn);
 
         const refundAmount = txn.paymentBreakdown?.totalPaid || 0;
-        const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+        const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
 
         // Issue Stripe refund to original payment method.
         // Single-item purchases record the funding intent in

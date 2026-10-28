@@ -466,6 +466,9 @@ router.post('/checkout', auth, async (req, res) => {
           platformFeePercent: breakdown.seller.platformFeePercent,
           shippingPayout: breakdown.seller.shippingPayout,
           sellerEarnings: earningsTotal,
+          // Round 4: the exact amount credited to the seller's balance
+          // (earnings + shipping label reimbursement) — utils/balances.js.
+          sellerCredit: Math.round((earningsTotal + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
           // TDD-B1: canonical provider id (never the raw client string) so one
           // authorization can never fund a second purchase / confirm-batch replay.
           paymentIntentId: pi.id,
@@ -522,14 +525,16 @@ router.post('/checkout', auth, async (req, res) => {
         await User.updateOne(
           { _id: seller._id },
           {
-            $inc: { 'balance.pending': earningsTotal },
+            // SHIPPING REIMBURSEMENT (round 4): earnings + the shipping label
+            // reimbursement the buyer paid for this seller's label.
+            $inc: { 'balance.pending': Math.round((earningsTotal + (breakdown.seller.shippingPayout || 0)) * 100) / 100 },
             $push: {
               notifications: {
                 $each: [saleNotification({
                   from: req.user._id,
                   listing: listing._id,
                   transaction: transaction._id,
-                  message: `Item sold from cart! You'll earn ${earningsTotal} ${breakdown.sellerCurrency}. Shipping label ready.`,
+                  message: `Item sold from cart! You'll earn ${Math.round((earningsTotal + (breakdown.seller.shippingPayout || 0)) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
                 })],
                 $position: 0,
               },
@@ -537,7 +542,7 @@ router.post('/checkout', auth, async (req, res) => {
           }
         );
         // Only revertible once persisted — no phantom pending earnings.
-        rollback.track.addSellerCredit(seller._id, earningsTotal);
+        rollback.track.addSellerCredit(seller._id, Math.round((earningsTotal + (breakdown.seller.shippingPayout || 0)) * 100) / 100);
       }
 
       // Create payout record

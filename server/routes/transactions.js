@@ -289,6 +289,9 @@ router.post('/guest', async (req, res) => {
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: breakdown.seller.shippingPayout,
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
+        // Round 4: the exact amount credited to the seller's balance
+        // (earnings + shipping label reimbursement) — utils/balances.js.
+        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
         boostFee,
         boostTier: listing.boost?.tier || '',
         // TDD-B1: record the funding intent so a single authorization can
@@ -356,9 +359,10 @@ router.post('/guest', async (req, res) => {
     // Item-level boost fee ledger (this listing only)
     await recordBoostFeeOwed(listing._id, boostFee, 1);
 
-    // Update seller pending balance
+    // Update seller pending balance (earnings + the shipping label
+    // reimbursement the buyer paid — round-4 shipping pass-through)
     await User.findByIdAndUpdate(listing.seller, {
-      $inc: { 'balance.pending': breakdown.seller.sellerEarnings - boostFee }
+      $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100 }
     });
 
     res.status(201).json({
@@ -474,6 +478,9 @@ router.post('/', auth, async (req, res) => {
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: breakdown.seller.shippingPayout,
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
+        // Round 4: the exact amount credited to the seller's balance
+        // (earnings + shipping label reimbursement) — utils/balances.js.
+        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
         boostFee,
         boostTier: listing.boost?.tier || '',
         paymentIntentId: gate.pi.id,
@@ -537,7 +544,9 @@ router.post('/', auth, async (req, res) => {
     rollback.track.addBoostFee(listing._id, boostFee);
 
     // Update seller's pending balance and notification
-    const finalSellerEarnings = breakdown.seller.sellerEarnings - boostFee;
+    // SHIPPING REIMBURSEMENT (round 4): the buyer's shipping charge is a
+    // label-cost reimbursement owed to the seller (see utils/balances.js).
+    const finalSellerEarnings = Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100;
     if (seller) {
       // ATOMIC credit ($inc + prepend): concurrent purchases of the same
       // seller's items used to race on document versioning here — the loser
@@ -714,6 +723,9 @@ router.post('/offer/:offerId', auth, async (req, res) => {
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: breakdown.seller.shippingPayout,
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
+        // Round 4: the exact amount credited to the seller's balance
+        // (earnings + shipping label reimbursement) — utils/balances.js.
+        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
         boostFee,
         boostTier: listing.boost?.tier || '',
         // TDD-B1: funding intent recorded so it cannot be replayed.
@@ -766,7 +778,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       await User.updateOne(
         { _id: seller._id },
         {
-          $inc: { 'balance.pending': breakdown.seller.sellerEarnings - boostFee },
+          $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100 },
           $push: {
             notifications: {
               $each: [saleNotification({
@@ -782,7 +794,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       );
       // Only revertible once persisted — a rolled-back purchase leaves the
       // seller with no phantom pending earnings.
-      rollback.track.addSellerCredit(seller._id, breakdown.seller.sellerEarnings - boostFee);
+      rollback.track.addSellerCredit(seller._id, Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100);
     }
 
     // Notify buyer of purchase (atomic prepend — the same buyer may have

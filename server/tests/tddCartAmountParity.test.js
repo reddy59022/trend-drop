@@ -200,11 +200,14 @@ describe('TDD R26 — cart checkout payment-amount parity', () => {
     expect(txn).toBeTruthy();
     expect(txn.quantity).toBe(4);
 
-    // Retry-proof: the seller's pending balance must equal the earnings the
-    // platform actually RECORDED for them (sum, not a hardcoded figure).
+    // Retry-proof: the seller's pending balance must equal the money the
+    // platform actually RECORDED as credited for them (sum, not a hardcoded
+    // figure). Since round 4 that is sellerCredit — net earnings PLUS the
+    // shipping label reimbursement the buyer paid (paid-shipping lines here:
+    // 4 units exceed the free-shipping weight cap).
     const sellerTxns = await Transaction.find({ seller: seller._id });
     const recordedEarnings = sellerTxns
-      .reduce((sum, t) => sum + (t.paymentBreakdown?.sellerEarnings || 0), 0);
+      .reduce((sum, t) => sum + (t.paymentBreakdown?.sellerCredit ?? t.paymentBreakdown?.sellerEarnings ?? 0), 0);
     const sellerAfter = await User.findById(seller._id);
     expect(Math.round((sellerAfter.balance.pending || 0) * 100) / 100)
       .toBe(Math.round(recordedEarnings * 100) / 100);
@@ -255,8 +258,10 @@ describe('TDD R26 — cart checkout payment-amount parity', () => {
     expect(txn.paymentBreakdown.sellerEarnings).toBeLessThan(60);
 
     const sellerAfter = await User.findById(seller._id);
+    // sellerCredit = the exact credited amount (earnings + shipping
+    // reimbursement); free-shipping lines keep it equal to sellerEarnings.
     expect(Math.round((sellerAfter.balance.pending || 0) * 100) / 100)
-      .toBe(Math.round(txn.paymentBreakdown.sellerEarnings * 100) / 100);
+      .toBe(Math.round((txn.paymentBreakdown.sellerCredit ?? txn.paymentBreakdown.sellerEarnings) * 100) / 100);
   });
 
   test('accepted offer present but buyer authorized LIST price: list price is what gets recorded', async () => {

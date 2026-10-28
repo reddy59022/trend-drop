@@ -16,7 +16,7 @@
  */
 const User = require('../models/User');
 const Payout = require('../models/Payout');
-const { releaseSellerEarnings, settlementAlreadyApplied, round2 } = require('./balances');
+const { releaseSellerEarnings, settlementAlreadyApplied, round2, sellerSaleTotal } = require('./balances');
 const { timeWindows } = require('../config/orderLifecycle');
 
 /**
@@ -41,15 +41,19 @@ const releaseSellerSettlement = async (txn, { now = Date.now(), message = null }
   }
 
   const sellerEarnings = round2(txn.paymentBreakdown?.sellerEarnings || 0);
-  if (sellerEarnings <= 0) {
+  // Money owed to the seller = earnings + the shipping label reimbursement
+  // the buyer paid (round-4 pass-through). The Payout row below stays on the
+  // raw earnings leg (its parity contract: salePrice ≡ commission + payout).
+  const sellerTake = sellerSaleTotal(txn.paymentBreakdown);
+  if (sellerTake <= 0) {
     return { paid: false, reason: 'nothing_to_pay' };
   }
 
-  const reserveAmount = round2(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT);
-  const availableAmount = round2(sellerEarnings - reserveAmount);
+  const reserveAmount = round2(sellerTake * timeWindows.SELLER_RESERVE_PERCENT);
+  const availableAmount = round2(sellerTake - reserveAmount);
 
   const release = await releaseSellerEarnings(seller._id, {
-    earnings: sellerEarnings,
+    earnings: sellerTake,
     availableAmount,
     reserveAmount,
     settlementKey: txn._id,

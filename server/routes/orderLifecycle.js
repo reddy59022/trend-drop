@@ -10,7 +10,7 @@ const Order = require('../models/Order');
 const { carriers, normalizeCarrier } = require('../config/shipping');
 const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundRules, returnEligibility, evidenceRequirements, disputeProcess, isValidTransition, getAllowedActions } = require('../config/orderLifecycle');
 const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
-const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings } = require('../utils/balances');
+const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings, sellerSaleTotal } = require('../utils/balances');
 const { claimTransaction } = require('../utils/claims');
 const { isValidObjectId } = require('../utils/validators');
 // Viewer-aware transaction shaping (seller earnings column + boost privacy).
@@ -553,7 +553,9 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
     }
 
     // ---- STEP 3: LEDGER UNWIND (no gain, no loss for anyone) -------------
-    const clawback = Math.round((claimed.paymentBreakdown?.sellerEarnings || 0) * 100) / 100;
+    // Reverse EXACTLY what the sale credited (earnings + shipping
+    // reimbursement) — sellerSaleTotal detects the row's ledger shape.
+    const clawback = sellerSaleTotal(claimed.paymentBreakdown);
 
     // 3a. Seller: claw back the EXACT amount credited at checkout (already
     //     net of any boost fee — parity with payments.js). Never negative.
@@ -733,7 +735,7 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
       });
     }
 
-    const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+    const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
 
     // CRITICAL FIX #2 & #3: Apply seller reserve and new seller hold
     const seller = await User.findById(txn.seller);
@@ -852,7 +854,10 @@ router.post('/:transactionId/auto-complete', auth, validateOrderAccess, async (r
       const commissionAmount = Number.isFinite(storedCommission) && storedCommission > 0
         ? storedCommission
         : Math.round(itemPrice * commissionRate * 100) / 100;
-      const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
+      // Payout rows keep the raw earnings leg — their parity contract is
+      // salePrice ≡ commissionAmount + payoutAmount (shipping reimbursement
+      // is not part of the sale split; see utils/balances.js).
+      const payoutAmount = txn.paymentBreakdown?.sellerEarnings || 0;
 
       if (!existingPayout) {
         await Payout.create({
@@ -1116,7 +1121,7 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
     // Transition to completed after rejection (return_rejected -> completed)
     if (isValidTransition(txn.status, orderStates.COMPLETED)) {
       // Update seller balance and create payout (same as auto-complete)
-      const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+      const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
       const seller = await User.findById(txn.seller);
       let settlementApplied = true;
       if (seller) {
@@ -1180,7 +1185,10 @@ router.post('/:transactionId/reject-return', auth, validateOrderAccess, async (r
         const commissionAmount = Number.isFinite(storedCommission) && storedCommission > 0
           ? storedCommission
           : Math.round(itemPrice * commissionRate * 100) / 100;
-        const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
+        // Payout rows keep the raw earnings leg — their parity contract is
+        // salePrice ≡ commissionAmount + payoutAmount (shipping reimbursement
+        // is not part of the sale split; see utils/balances.js).
+        const payoutAmount = txn.paymentBreakdown?.sellerEarnings || 0;
 
         if (!existingPayout) {
           await Payout.create({
@@ -1252,7 +1260,7 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
 
     // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
     const refundAmount = txn.paymentBreakdown.totalPaid || 0;
-    const sellerEarnings = txn.paymentBreakdown.sellerEarnings || 0;
+    const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
 
     // Issue proper Stripe refund
     const paymentIntentId = txn.payout?.transactionId;
@@ -1379,7 +1387,7 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
 
     // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
     const refundAmount = txn.paymentBreakdown.totalPaid || 0;
-    const sellerEarnings = txn.paymentBreakdown.sellerEarnings || 0;
+    const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
 
     // Issue proper Stripe refund
     const paymentIntentId = txn.payout?.transactionId;
@@ -1560,7 +1568,7 @@ router.post('/:transactionId/resolve-dispute', auth, validateOrderAccess, async 
       await markPayoutRefunded(txn);
 
       const refundAmount = txn.paymentBreakdown.totalPaid || 0;
-      const sellerEarnings = txn.paymentBreakdown.sellerEarnings || 0;
+      const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
 
       let stripeRefundResult = null;
       const paymentIntentId = txn.payout?.transactionId;
@@ -1744,7 +1752,7 @@ router.post('/auto-process', async (req, res) => {
         // moved can double-apply. Never paying the seller (the alternative) is
         // strictly worse, so the claim is released.
         try {
-          const sellerEarnings = txn.paymentBreakdown?.sellerEarnings || 0;
+          const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
   
           // Release funds to seller with 10% rolling reserve
           const seller = await User.findById(txn.seller);
@@ -1847,7 +1855,10 @@ router.post('/auto-process', async (req, res) => {
             if (!existingPayout) {
               const itemPrice = txn.paymentBreakdown?.subtotal || txn.paymentBreakdown?.totalPaid || txn.itemPrice || 0;
               const commissionAmount = txn.paymentBreakdown?.platformFee || 0;
-              const payoutAmount = txn.paymentBreakdown?.sellerEarnings || sellerEarnings;
+              // Payout rows keep the raw earnings leg — their parity contract is
+              // salePrice ≡ commissionAmount + payoutAmount (shipping reimbursement
+              // is not part of the sale split; see utils/balances.js).
+              const payoutAmount = txn.paymentBreakdown?.sellerEarnings || 0;
               // Funds withheld by a hold are not paid yet; recording them as
               // 'completed' reports the money as available while it is still
               // escrowed. releaseHeldSettlements upgrades this row later.

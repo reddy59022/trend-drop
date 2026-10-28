@@ -186,3 +186,58 @@ round 1; Android back-button minimizes at root; no new findings.
 
 Round 3 verification: server suite green (727 tests incl. 3 new),
 294 E2E scenarios green (incl. checkout specs), 4/4 race-probe invariants.
+
+## 9. Round 4 — money matrix: offer pricing, stranded intents, shipping pass-through
+
+End-to-end accounting validation ("money matrix") of the full sale lifecycle
+against an independent policy oracle, driven over real HTTP:
+sale → ship → deliver → confirm → settle → payout, plus cancel, offer
+purchases and return/refund paths. Every scenario asserts fee accuracy to the
+cent AND zero-sum conservation — every dollar leaving one party lands on
+another ("no loss to anyone"). Three real bugs found and fixed:
+
+1. **Offer purchases rejected (or mis-priced) on single-item confirm.**
+   `/api/payments/confirm` priced every order from `listing.price`, but
+   `create-intent` authorizes accepted offers at the negotiated price — so
+   every offer purchase failed the amount gate (and would have credited
+   list-price earnings against an offer-price capture). Fix: confirm matches
+   the authorization against BOTH legitimate server-computed prices (list and
+   this buyer's accepted offer) and records whichever the intent was actually
+   authorized for; the accepted offer is then consumed exactly once (parity
+   with `/transactions/offer/:id` and confirm-batch). Regression:
+   `tests/confirmOfferPricing.test.js` MM.1–MM.2.
+
+2. **Stranded charges on terminal refusals.** `create-intent` authorizes (live
+   Stripe charges) up front; a later terminal refusal (amount mismatch, sold
+   out, listing gone) returned a bare 400 and left the buyer's money taken
+   with no order. Fix: `voidStrandedSingleUnitIntent` releases the hold /
+   refunds the charge when the intent funds exactly one unit of exactly one
+   listing (stamped via new `totalUnits` intent metadata) — provably nothing
+   else can consume it. Multi-unit/multi-line cart intents are never touched
+   (confirm-batch owns those); legacy intents without the metadata are never
+   auto-voided. Over-authorization is also capped: capture never exceeds the
+   order total. Regression: MM.3–MM.6, MM.8.
+
+3. **Shipping label reimbursement never reached the seller.** The buyer pays
+   shipping as a label-cost reimbursement ("Shipping label payout — covers
+   your label cost", seller UI) and `routes/shipping.js` defines "what the
+   seller receives" = item − fee + shipping — but every balance credit in the
+   payments/transactions/cart family moved only `sellerEarnings` (item − fee),
+   stranding `shippingPayout` on every paid-shipping sale (seller loss).
+   Fix: one shape-aware `sellerSaleTotal(breakdown)` (utils/balances.js) is
+   now the single amount for every credit, settlement release, clawback,
+   escrow reversal and chargeback move. Shape A rows (shipping beside
+   earnings) move earnings + shippingPayout; historic shape-B rows (shipping
+   folded into sellerEarnings) are never double-paid; unmatched historic rows
+   reverse exactly what was credited. Payout rows keep the raw earnings leg —
+   their pinned parity contract `salePrice ≡ commissionAmount + payoutAmount`
+   is unchanged. Regression: MM.9–MM.10.
+
+Probe (35/35 invariants hold): fee accuracy (8% platform clamped, 5% buyer
+protection), shipping charged AND paid out 1:1 (free above the $50 domestic
+threshold, verified both ways), zero-sum on every sale/offer/cancel/return
+path, cancel = full refund with both balances unmoved, completed return =
+seller net zero + buyer net zero, payouts move exactly the requested amount.
+
+Round 4 verification: money-matrix 35/35, `confirmOfferPricing.test.js` 15/15
+(incl. the round-3 idempotency suite), project runner (`test:ci`) green.

@@ -9,7 +9,7 @@ const {
   isWebhookSignatureRequired,
   getWebhookSecret,
 } = require('../config/payments');
-const { clawbackSellerEarnings, reverseEscrowHold } = require('../utils/balances');
+const { clawbackSellerEarnings, reverseEscrowHold, sellerSaleTotal } = require('../utils/balances');
 const { increment } = require('../utils/metrics');
 
 // Transactions created by older checkout paths stored the provider intent only
@@ -138,7 +138,9 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
                 await User.updateOne(
                   { _id: transaction.seller },
                   {
-                    $inc: { 'balance.pending': transaction.paymentBreakdown.sellerEarnings },
+                    // Restore exactly what chargeback_lost debited (earnings
+                    // + shipping reimbursement) — sellerSaleTotal shape-aware.
+                    $inc: { 'balance.pending': sellerSaleTotal(transaction.paymentBreakdown) },
                     $push: {
                       notifications: {
                         $each: [{
@@ -168,7 +170,9 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
                 await User.updateOne(
                   { _id: transaction.seller },
                   {
-                    $inc: { 'balance.pending': -transaction.paymentBreakdown.sellerEarnings },
+                    // Debit the FULL sale take (earnings + shipping
+                    // reimbursement) — symmetric with the chargeback restore.
+                    $inc: { 'balance.pending': -sellerSaleTotal(transaction.paymentBreakdown) },
                     $push: {
                       notifications: {
                         $each: [{
@@ -275,7 +279,7 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
           }
           await transaction.save();
 
-          const sellerEarnings = transaction.paymentBreakdown?.sellerEarnings || 0;
+          const sellerEarnings = sellerSaleTotal(transaction.paymentBreakdown);
           if (sellerEarnings > 0) {
             // A provider refund can arrive before OR after escrow release.
             // Reverse only the ledger that actually contains this sale's

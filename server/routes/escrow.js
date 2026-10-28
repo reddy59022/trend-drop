@@ -8,7 +8,7 @@ const Payout = require('../models/Payout');
 const Order = require('../models/Order');
 const { isValidObjectId } = require('../utils/validators');
 const { findPaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
-const { releaseSellerEarnings, settlementAlreadyApplied, reverseEscrowHold } = require('../utils/balances');
+const { releaseSellerEarnings, settlementAlreadyApplied, reverseEscrowHold, sellerSaleTotal } = require('../utils/balances');
 const { timeWindows } = require('../config/orderLifecycle');
 
 // ===================== ESCROW SERVICE =====================
@@ -106,7 +106,9 @@ const claimEscrowRelease = (transactionId) => Transaction.findOneAndUpdate(
 );
 
 const creditReleasedEscrow = async (transaction) => {
-  const sellerEarnings = transaction.paymentBreakdown?.sellerEarnings || 0;
+  // Money owed to the seller = earnings + the shipping label reimbursement
+  // (round-4 pass-through); sellerSaleTotal detects the row's ledger shape.
+  const sellerEarnings = sellerSaleTotal(transaction.paymentBreakdown);
   const seller = await User.findById(transaction.seller);
   if (!seller) return;
   const reserveAmount = Math.round(sellerEarnings * timeWindows.SELLER_RESERVE_PERCENT * 100) / 100;
@@ -335,7 +337,7 @@ router.post('/resolve-dispute', auth, async (req, res) => {
     const paymentIntentId = transaction.paymentBreakdown?.paymentIntentId
       || transaction.payout?.transactionId;
     const refundAmount = Number(transaction.paymentBreakdown?.totalPaid || 0);
-    const sellerEarnings = Number(transaction.paymentBreakdown?.sellerEarnings || 0);
+    const sellerEarnings = sellerSaleTotal(transaction.paymentBreakdown);
     const quantity = Number.isInteger(transaction.quantity) && transaction.quantity > 0 ? transaction.quantity : 1;
 
     // Settle with the provider before mutating the ledger. If Stripe rejects

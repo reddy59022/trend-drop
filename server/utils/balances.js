@@ -194,8 +194,34 @@ const withdrawAvailable = async (userId, amount, extraInc = {}) => {
   );
 };
 
+/**
+ * The EXACT amount of seller money one payment-breakdown row moved.
+ *
+ * This is the single amount for every credit, settlement release, clawback,
+ * escrow reversal and chargeback move for a row — credit and reversal must
+ * always be symmetric or money leaks one way or the other.
+ *
+ * Rows recorded since the round-4 shipping fix stamp `sellerCredit`: what the
+ * sale actually credited (net earnings + the shipping label reimbursement the
+ * buyer paid — "Shipping label payout" in the seller UI).
+ *
+ * Rows WITHOUT the stamp are historic: every pre-fix credit path moved the
+ * row's raw `sellerEarnings` (that field is shipping-excluded in the
+ * config/payments.js family and shipping-inclusive in the config/shipping.js
+ * family — either way it is exactly what was credited then). Falling back to
+ * it keeps legacy settlements, refunds and repairs perfectly symmetric —
+ * never add shippingPayout to a legacy row: that money was never credited.
+ */
+const sellerSaleTotal = (bd) => {
+  if (bd && bd.sellerCredit !== undefined && bd.sellerCredit !== null) {
+    return round2(bd.sellerCredit);
+  }
+  return round2(bd?.sellerEarnings || 0);
+};
+
 module.exports = {
   round2,
+  sellerSaleTotal,
   releaseSellerEarnings,
   settlementAlreadyApplied,
   creditAvailable,

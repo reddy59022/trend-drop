@@ -47,6 +47,7 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
 const { releaseSellerSettlement } = require('./settlement');
+const { sellerSaleTotal } = require('./balances');
 const { round2 } = require('./balances');
 const { orderStates, timeWindows } = require('../config/orderLifecycle');
 
@@ -90,7 +91,9 @@ const noticeFor = (seller, transactionId, pattern) =>
 const auditSettlement = ({ txn, seller, now = Date.now() }) => {
   const transactionId = String(txn._id);
   const sellerId = txn.seller ? String(txn.seller) : null;
-  const earnings = round2(txn.paymentBreakdown?.sellerEarnings || 0);
+  // What the repair will actually pay = earnings + the shipping label
+  // reimbursement (sellerSaleTotal) — same amount releaseSellerSettlement moves.
+  const earnings = sellerSaleTotal(txn.paymentBreakdown);
   const evidence = [];
   const blockers = [];
   const result = (verdict) => ({
@@ -248,7 +251,7 @@ const reconcileSettlements = async ({ apply = false, now = Date.now(), limit = 5
         transactionId: String(txn._id),
         sellerId: txn.seller ? String(txn.seller) : null,
         verdict: verdicts.OUT_OF_SCOPE,
-        earnings: round2(txn.paymentBreakdown?.sellerEarnings || 0),
+        earnings: sellerSaleTotal(txn.paymentBreakdown),
         evidence: [],
         blockers: ['payout_refunded'],
       }
