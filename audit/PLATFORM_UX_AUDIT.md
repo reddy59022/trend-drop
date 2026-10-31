@@ -205,3 +205,66 @@ build` compiled successfully.
 
 Verified: `CI=true npm test` 111 suites / **613 tests pass**; `npm run
 build` compiled successfully.
+
+## Deep all-route sweep
+
+Full-coverage QA pass over every route in `client/src/App.js` (~52), driven by
+`artifacts/session-tools/qadeep.cjs` with Playwright: logged-in buyer desktop
+1440×900 in dark **and** light, logged-out desktop in dark **and** light, and
+mobile 390×844 dark + light. Dynamic ids (listing / seller / order / auction)
+were resolved live from the seeded e2e API, never hardcoded. 225 loads
+attempted, **219 loaded** (the rest are dynamic-load variants that resolve to
+guards/404s in a buyer session); screenshots in `artifacts/shots/deep_*.jpg`,
+telemetry in `artifacts/qa-deep-report.json`.
+
+Automated telemetry result across all 219 loads: **zero horizontal overflow,
+zero blank pages, zero unexpected 404s** (the not-found page is the correct
+rendered route), zero page errors. Two console-noise flags:
+
+- `reviews` — `Error: Invalid seller ID` ×2 in each theme: hitting bare
+  `/reviews` with no `:sellerId` param still fired the ratings API, whose
+  `withValidResourceId` guard logs an error into the console. **Fixed**: the
+  bare route now clears state and skips the call (`Reviews.js`).
+- `verifyemail` — `400 /api/auth/verify-email` ×2 in each theme: **expected**
+  for the sweep's fake token; the page's error state renders correctly with
+  resend + back-to-login actions.
+
+Visual review of every previously-unreviewed route in both themes plus mobile
+spot-checks found and fixed 2 real defects:
+
+1. **Seller Onboarding page was completely unstyled**
+   (`/seller/onboarding`) — it shipped with class names (`onboarding-page`,
+   `steps-grid`, `step-card`, `progress-bar`, `progress-fill`, `progress-text`,
+   `completion-banner`, `step-icon`, `check-badge`, `step-action`,
+   `tips-preview`, `tip-item`, `step-completed-badge`, `reset-container`) that
+   **no stylesheet ever defined**, so the whole flow rendered as raw stacked
+   text with default headings. Added a full themed block to
+   `design-haul.css`: capacity header, agreement gate, animated gradient
+   progress meter, auto-fill 2-col step grid with current/completed states,
+   tip previews, completion banner, and a quiet reset action — all design
+   tokens, dark + light, single column and stacking banner at ≤640px.
+   Re-screenshotted: both themes render polished cards. Also orphan-class
+   fixes surfaced by it: `.btn-text` (Reset Onboarding) is now themed with a
+   tertiary→primary hover, and `.btn-link` (CSV "Download Template" on Bulk
+   Listings) previously inherited a dark default-button color and was nearly
+   invisible on dark glass cards — now primary violet with underline hover
+   (re-screenshotted).
+2. **Bulk Listings "Download Template" low contrast** — as above, fixed with
+   the `.btn-link` definition.
+
+Reviewed and already clean (no changes needed): price-suggestion,
+saved-searches, parties, recently-viewed, offer-sharing, video-shopping,
+ar-showrooms, social-commerce, cross-border, seller-communities, loyalty,
+vendors, advanced-shipping, enterprise, auctions, auctions-create,
+auction-detail, order-detail, seller-badges, listing-edit (the auth guard
+correctly toasts "Not authorized to edit this listing" and returns home),
+collections, feed, admin (the buyer session correctly bounces off the
+admin ProtectedRoute to the landing page), listing detail, profile, closet,
+register, forgot, reset-password, unavailable, legal/privacy, not-found,
+and mobile spot-checks of feed, cart, admin and order detail. Note: the
+register page's country select flag emoji renders as tofu boxes only in the
+screenshot sandbox's font set — native OS select rendering on real devices
+uses the emoji font.
+
+Verified: `CI=true npm test` 111 suites / **613 tests pass**; `npm run
+build` compiled successfully.

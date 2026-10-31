@@ -21,6 +21,13 @@ const Reviews = () => {
   useEffect(() => { fetchRatings(); }, [sellerId]); // eslint-disable-line
 
   const fetchRatings = async () => {
+    // No :sellerId route param (bare /reviews) — nothing to load, and calling
+    // the API would just fire a guard error into the console.
+    if (!sellerId) {
+      setData({ averageRating: 0, count: 0, ratings: [] });
+      setLoading(false);
+      return;
+    }
     try {
       const res = await getRatingsBySeller(sellerId);
       // Normalize the shape instead of replacing state wholesale: a partial
