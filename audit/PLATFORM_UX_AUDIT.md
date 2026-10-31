@@ -98,3 +98,33 @@ installable web-app layer, fixed:
 
 Verified: `CI=true npm test` 111 suites / **613 tests pass**;
 `npm run build` clean and ships `build/manifest.json` + `build/img/icons/*`.
+
+## Visual design QA — real-screenshot pass (design-haul layer)
+
+Screenshot review (Playwright headless, `scripts/design-screens.cjs`) of
+home/search/feed across light+dark, desktop+mobile. Two real rendering
+defects found and fixed in `client/src/styles/design-haul.css` (layer 5/6):
+
+1. Light-mode hero contrast — the headline stayed the dark-theme white and
+   the serif "Extraordinary" gradient ended in #fff, leaving both
+   near-invisible on the pearl aurora background (white-on-lavender). Fix:
+   `[data-theme="light"] .hero-content h1` flips to ink
+   (`--td-secondary`) and the serif gradient to a deep-amber ramp
+   (#92400E → #E89B3C → #B45309) that keeps the champagne-gold brand
+   within AA contrast. Verified on re-screenshot (desktop + mobile).
+
+2. Login card geometry — Login.js composes `auth-card glass-card`, a
+   combination no layer ever sized. The card rendered with zero padding
+   while `.glass-card` clips overflow: the "Welcome Back" h1 was cut off at
+   the top and inputs pressed into the card edges. Also, `#root div
+   { max-width: 100% }` (responsive.css element-hack) beat any plain class
+   cap, so the card stretched full-bleed at 1400px. Fix: `.auth-card` sized
+   as a proper glass container (padding, centered text) with the 460px cap
+   written as `#root .auth-card` so it outranks the element-hack. Verified
+   on re-screenshot.
+
+Dark mode (home + browse) reviewed clean — no changes needed. Session
+tooling: `artifacts/session-tools/*.cjs` (screenshot + CSS cascade trace).
+
+Verified: `CI=true npm test` 111 suites / **613 tests pass**; `npm run
+build` clean.

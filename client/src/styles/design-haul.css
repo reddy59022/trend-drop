@@ -638,6 +638,39 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
   animation: heroRise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Login.js composes `auth-card glass-card`, but no layer ever sized that
+   combination: the card rendered with zero padding while `.glass-card`
+   clips overflow, cutting off the h1 and pressing inputs into the edges.
+   Match the .auth-container glass container it was meant to be. */
+.auth-card {
+  width: 100%;
+  padding: var(--td-space-xxl) var(--td-space-xl);
+  text-align: center;
+}
+
+/* responsive.css writes `#root div { max-width: 100% }` and
+   `.glass-card, .form-section ... { max-width: 100% }` — both beat a plain
+   `.auth-card` on cascade level, so the 460px cap is scoped to #root too,
+   where it outranks the element-hack by a class. */
+#root .auth-card {
+  max-width: 460px;
+}
+
+.auth-card h1 {
+  font-size: var(--td-text-3xl);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.auth-card form,
+.auth-card .form-group {
+  text-align: left;
+}
+
+.auth-card .auth-subtitle {
+  margin-bottom: var(--td-space-lg);
+}
+
 .listing-detail-price .current-price {
   background: var(--td-gradient-text);
   -webkit-background-clip: text;
@@ -1195,6 +1228,20 @@ textarea:focus-visible, [tabindex]:focus-visible {
 
 [data-theme="light"] .hero-content p {
   color: var(--td-text-secondary);
+}
+
+/* Headline + serif accent must flip for the pearl background — the dark-mode
+   palette leaves them near-invisible in light mode (white-on-lavender, and
+   the serif gradient ran into its #fff end stop). Ink headline, deep-amber
+   serif gradient keeps the champagne-gold brand within AA contrast. */
+[data-theme="light"] .hero-content h1 {
+  color: var(--td-secondary);
+}
+
+[data-theme="light"] .hero-content h1 .td-serif {
+  background: linear-gradient(115deg, #92400E 0%, #E89B3C 45%, #B45309 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
 }
 
 [data-theme="light"] .hero-badge {
