@@ -116,12 +116,20 @@ const SizeRecommendation = () => {
         </form>
       </div>
 
-      {savedMeasurements && (
+      {/* Only render with a genuine recommendation: an empty/partial GET
+          record (no size, 0% confidence) used to paint a blank gradient
+          badge and a "Size  recommended" title. */}
+      {savedMeasurements && savedMeasurements.recommendedSize && (
         <div className="glass-card" style={{ marginTop: 'var(--td-space-lg)', padding: 'var(--td-space-lg)' }}>
           <h3 style={{ marginBottom: 'var(--td-space-md)' }}>Your Recommended Size</h3>
-          <div style={{ padding: 'var(--td-space-md)', background: 'var(--td-primary)', color: '#fff', borderRadius: 'var(--td-radius-md)' }}>
-            <div style={{ fontSize: 24, fontWeight: 700 }}>Size {savedMeasurements.recommendedSize}</div>
-            <div style={{ fontSize: 14, opacity: 0.9 }}>Confidence: {savedMeasurements.confidenceScore}%</div>
+          <div className="size-result">
+            <div className="size-result-badge" aria-hidden="true">{savedMeasurements.recommendedSize}</div>
+            <div className="size-result-info">
+              <div className="size-result-title">Size {savedMeasurements.recommendedSize} recommended</div>
+              <div className="size-result-confidence">Confidence: {savedMeasurements.confidenceScore}%</div>
+              <div className="size-result-meter" role="img" aria-label={`Confidence ${savedMeasurements.confidenceScore}%`}
+                ><span className="size-result-meter-fill" style={{ width: `${Math.max(0, Math.min(100, savedMeasurements.confidenceScore || 0))}%` }} /></div>
+            </div>
           </div>
         </div>
       )}

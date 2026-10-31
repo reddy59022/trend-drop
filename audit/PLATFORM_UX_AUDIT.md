@@ -184,3 +184,24 @@ returns, wishlist, reviews, legal, inventory.
 
 Verified: `CI=true npm test` 111 suites / **613 tests pass**; `npm run
 build` compiled successfully.
+
+## Remaining-gaps cleanup (follow-up to full sweep)
+
+1. **Cart qty controls line** — previously reflowed via `margin-left: auto`,
+   which floated the stepper mid-air with uneven gaps at 390px. Measured the
+   real geometry: row content is 324px and tap-size rules force stepper
+   buttons and the remove button to 44px each (mine/plus/`×` are 128px + remove
+   44px), so the planned 84px info-column indent (353px demand) overflows and
+   pushed remove onto a third line. Now the stepper left-aligns (8px) and
+   price + remove right-align — one tidy line, re-screenshotted dark mobile.
+2. **Size Recommendation result card** — replaced the inline full-bleed
+   `var(--td-primary)` slab with a themed glass result: gradient size badge,
+   title + confidence line, and a bounded meter (`size-result*` classes in
+   `design-haul.css`, light/dark tokens, ≤480px tightening). Fixed the
+   underlying empty-state bug: a stale GET record with no size and 0% confidence
+   used to paint a blank badge and a "Size ␣ recommended" placeholder; the card
+   now renders only when `recommendedSize` exists (verified both the empty
+   record hides, and the saved flow shows "Size S / Confidence 85%").
+
+Verified: `CI=true npm test` 111 suites / **613 tests pass**; `npm run
+build` compiled successfully.

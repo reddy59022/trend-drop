@@ -1541,9 +1541,92 @@ textarea:focus-visible, [tabindex]:focus-visible {
     flex-basis: calc(100% - 84px) !important;
   }
 
+  /* Stepper left-aligned under the image; price + remove right-align as
+     a unit. Measured budget on a 390px phone: content 324px, minimum
+     demand 277px (stepper 128 — tap targets are min 44px — + price ~73 +
+     remove 44 + gaps), so an 84px info-column indent would not fit and
+     pushed the remove button onto a third line. */
   .cart-item-row .cart-item-qty {
+    margin-left: 8px;
+  }
+
+  .cart-item-row .cart-item-price {
     margin-left: auto;
   }
+}
+
+/* =====================================================
+   SIZE RECOMMENDATION — result card (QA follow-up)
+   The result was a full-bleed saturated primary slab with
+   inline styles: loud in both themes and unreadable as a
+   "placeholder" when confidence was low. Now a themed glass
+   result: gradient size badge, title + confidence line, and
+   a bounded meter instead of a decorative color block.
+   ===================================================== */
+.size-result {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-md);
+  padding: var(--td-space-md) var(--td-space-lg);
+  background: linear-gradient(135deg, rgba(var(--td-primary-rgb), 0.10), rgba(var(--td-primary-rgb), 0.04));
+  border: 1px solid rgba(var(--td-primary-rgb), 0.22);
+  border-radius: var(--td-radius-md, 12px);
+}
+
+.size-result-badge {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--td-text-inverse);
+  background: linear-gradient(135deg, var(--td-primary), var(--td-aurora-rose, #FF6BC1));
+  border-radius: 18px;
+  box-shadow: var(--td-shadow-glow);
+}
+
+.size-result-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.size-result-title {
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--td-text-primary);
+}
+
+.size-result-confidence {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--td-text-secondary);
+}
+
+.size-result-meter {
+  display: block;
+  margin-top: 10px;
+  max-width: 220px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(var(--td-primary-rgb), 0.15);
+  overflow: hidden;
+}
+
+.size-result-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--td-primary), var(--td-aurora-rose, #FF6BC1));
+}
+
+@media (max-width: 480px) {
+  .size-result { padding: var(--td-space-md); gap: 12px; }
+  .size-result-badge { width: 52px; height: 52px; font-size: 20px; border-radius: 14px; }
+  .size-result-title { font-size: 16px; }
+  .size-result-meter { max-width: none; }
 }
 
 /* =====================================================
