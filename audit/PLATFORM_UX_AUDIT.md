@@ -76,3 +76,25 @@ green run.
    (tooling advisories), live money flows (need Stripe test keys).
 3. Platform-native niceties not reachable without device tooling: App Store /
    Play Store screenshot sets, native splash animation, iPad layout tuning.
+
+## Platform shell addendum — install/metadata pass (this session)
+
+Full page-level audit re-run across all 66 routes: pages share a hardened
+baseline (alt text, aria labels, confirm-modals via ConfirmContext, safe-area
+insets, theme-synced `meta[theme-color]` + native status bar, numeric
+keyboards) — no per-page regressions found. The remaining gap was the
+installable web-app layer, fixed:
+
+1. `client/public/manifest.json` — name/short_name, standalone display,
+   start_url/scope, 5 icons (SVG any, 192/512 any PNG, maskable 512).
+   Regenerable via `scripts/generate-app-icons.cjs` (pure-JS rasterizer of
+   `app-icon.svg`, no browser/image tooling needed).
+2. `client/public/index.html` — manifest link, `mobile-web-app-capable`,
+   `apple-mobile-web-app-{capable,title,status-bar-style}`, apple-touch-icon
+   (180 full-bleed PNG; iOS composites its own corners), SVG+PNG favicons,
+   OG/Twitter share-card meta, `fonts.gstatic.com` preconnect (crossorigin).
+3. Native iOS/Android icon assets (xcassets / mipmap) already existed and are
+   unchanged — the gap was web-only.
+
+Verified: `CI=true npm test` 111 suites / **613 tests pass**;
+`npm run build` clean and ships `build/manifest.json` + `build/img/icons/*`.
