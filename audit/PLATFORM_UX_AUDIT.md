@@ -128,3 +128,59 @@ tooling: `artifacts/session-tools/*.cjs` (screenshot + CSS cascade trace).
 
 Verified: `CI=true npm test` 111 suites / **613 tests pass**; `npm run
 build` clean.
+
+## Full-route screenshot sweep (all remaining pages)
+
+Second pass (`artifacts/session-tools/qapages.cjs`, `qamobile.cjs` + fix
+re-shots): 25 desktop routes × dark+light and 7 mobile routes × dark+light,
+logged in as the seeded E2E buyer, real Chromium captures in
+`artifacts/shots/`. All buyer/seller surfaces reviewed page by page.
+Findings and fixes (all in `client/src/styles/design-haul.css`, one tiny
+class-hook edit in `client/src/pages/Cart.js`):
+
+1. **Seller Analytics page rendered UNSTYLED** (worst defect in the app) —
+   `SellerAnalytics.js` ships a full class vocabulary (`period-selector`,
+   `metrics-grid`, `metric-card`, `charts-row`, `activity-item`, …) that no
+   CSS layer ever styled; the page was raw stacked text. Fix: complete
+   analytics stylesheet added to the design-haul layer — glass stat cards
+   with gradient medallions, pill period-selector with gradient active
+   state, chart/recent-activity cards, `no-data` empty states; 3-col→2-col→
+   1-col responsive grids with tuned phone typography. Verified desktop
+   dark+light AND mobile.
+
+2. **Forgot-password card stretched edge-to-edge** on desktop —
+   `ForgotPassword.js` uses `.auth-container` with no width cap (Register
+   gets an inline 480px, Login has `.auth-card`), and `#root div
+   { max-width: 100% }` beat any earlier cap. Fix: `#root .auth-container
+   { max-width: 460px; margin-inline: auto }` (ID+class outranks the
+   element-hack). Verified logged-out re-screenshot.
+
+3. **Cart item rows collapsed on phones** — the inline-styled flex row
+   (image + title + qty stepper + price + remove) overflowed 390px; the
+   stepper broke apart behind the title. Fix: class hooks
+   (`cart-item-row/-info/-qty/-price/-remove`) on the row in `Cart.js` +
+   design-haul rule that wraps ≤640px into two clean lines (title row, then
+   right-aligned stepper/price/remove; `!important` needed because the row's
+   inline `flex: 1` sets flex-basis 0%). Verified mobile re-screenshot.
+
+4. **Floating tab dock too translucent** — `--td-glass-bg` (72% alpha)
+   let page text read straight through the dock where backdrop-filter is
+   weak/unsupported (mobile listing/cart/dashboard captures). Fix: near-solid
+   dock background on ≤768px (dark 92% / light 94%), both themes verified.
+
+5. Navbar "US · USD" prefs pill now has breathing room from the hamburger
+   on phones.
+
+Bottom-clearance audit: `.main-content` correctly reserves 84px+safe-area
+for the dock (footer clears it); the "text behind the bar" in single-frame
+captures is ordinary scroll-under, not overlap. Register captures during
+the sweep rendered Home because logged-in users are redirected off auth
+routes — register/forgot re-verified logged out.
+
+Not changed (reviewed, already clean): sell, dashboard, profile, offers,
+transactions, messages, notifications, settings, AI stylist, trends, live
+events, virtual try-on, size recommendation, subscriptions, referrals,
+returns, wishlist, reviews, legal, inventory.
+
+Verified: `CI=true npm test` 111 suites / **613 tests pass**; `npm run
+build` compiled successfully.

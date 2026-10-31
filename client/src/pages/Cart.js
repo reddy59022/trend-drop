@@ -418,18 +418,18 @@ const Cart = () => {
                 </div>
                 
                 {pkg.items.map((item, i) => (
-                  <div key={item.listingId} style={{ 
+                  <div key={item.listingId} className="cart-item-row" style={{ 
                     display: 'flex', gap: 16, padding: 16, alignItems: 'center',
                     borderTop: i > 0 ? '1px solid var(--td-border-light)' : 'none'
                   }}>
                     <img src={listingImage(item.thumbnail)} alt={item.title}
                       style={{ width: 72, height: 72, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover', flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="cart-item-info" style={{ flex: 1, minWidth: 0 }}>
                       <h4 style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{item.title}</h4>
                       {item.negotiatedPrice && <span className="badge badge-success" style={{ marginBottom: 4, fontSize: 11 }}>Negotiated</span>}
                       <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>{formatPrice(item.price, item.currency)} each</div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div className="cart-item-qty" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button className="btn btn-icon btn-ghost" onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
                         aria-label={`Decrease quantity of ${item.title || 'item'}`}
                         disabled={item.quantity <= 1}
@@ -440,10 +440,10 @@ const Cart = () => {
                         else toast.error(`Only ${item.available} available`);
                       }} aria-label={`Increase quantity of ${item.title || 'item'}`} style={{ width: 28, height: 28 }}><FaPlus size={10} /></button>
                     </div>
-                    <div style={{ textAlign: 'right', minWidth: 70 }}>
+                    <div className="cart-item-price" style={{ textAlign: 'right', minWidth: 70 }}>
                       <div style={{ fontWeight: 700, color: 'var(--td-primary)', fontSize: 14 }}>{formatPrice(item.price * item.quantity, item.currency)}</div>
                     </div>
-                    <button className="btn btn-icon btn-ghost" onClick={() => removeFromCart(item.listingId)}
+                    <button className="btn btn-icon btn-ghost cart-item-remove" onClick={() => removeFromCart(item.listingId)}
                       style={{ color: 'var(--td-error)', width: 32, height: 32 }} title="Remove" aria-label={`Remove ${item.title || 'item'} from cart`}><FaTrash size={12} /></button>
                   </div>
                 ))}

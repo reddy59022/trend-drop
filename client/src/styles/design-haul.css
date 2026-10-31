@@ -1262,3 +1262,314 @@ textarea:focus-visible, [tabindex]:focus-visible {
   border-color: var(--td-glass-border);
   background: var(--td-glass-bg);
 }
+
+/* =====================================================
+   SELLER ANALYTICS PAGE — full styling (QA sweep finding)
+   SellerAnalytics.js ships a complete class vocabulary
+   (`period-selector`, `metrics-grid`, `metric-card`,
+   `charts-row`, `activity-item`, …) that no CSS layer ever
+   styled, so the page rendered as raw text. This block gives
+   it the same card/stat language as the seller dashboard.
+   Scoped under `.analytics-page` to avoid touching globals.
+   ===================================================== */
+.analytics-page {
+  width: 100%;
+  padding: var(--td-space-lg) var(--td-space-lg) calc(var(--td-space-xxl) + 24px);
+}
+
+.analytics-page .container {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.analytics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--td-space-md);
+  margin-bottom: var(--td-space-lg);
+}
+
+.analytics-header h1 {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--td-text);
+  margin: 0;
+}
+
+.period-selector {
+  display: inline-flex;
+  padding: 4px;
+  gap: 2px;
+  background: var(--td-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--td-glass-border);
+  border-radius: var(--td-radius-full, 999px);
+  box-shadow: var(--td-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+}
+
+.period-selector button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--td-text-secondary);
+  padding: 8px 16px;
+  border-radius: var(--td-radius-full, 999px);
+  cursor: pointer;
+  transition: background var(--td-transition-fast, 0.15s), color var(--td-transition-fast, 0.15s);
+}
+
+.period-selector button:hover { color: var(--td-text); }
+
+.period-selector button.active {
+  background: var(--td-gradient-brand, linear-gradient(135deg, #6C3BFF, #AB3BFF));
+  color: #fff;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--td-space-md);
+  margin-bottom: var(--td-space-lg);
+}
+
+.metric-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px;
+  background: var(--td-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--td-glass-border);
+  border-radius: var(--td-radius-lg, 20px);
+  box-shadow: var(--td-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+  transition: transform var(--td-transition-normal, 0.2s), box-shadow var(--td-transition-normal, 0.2s);
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--td-shadow-card-hover, 0 12px 40px rgba(0, 0, 0, 0.25));
+}
+
+.metric-icon {
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  border-radius: 14px;
+  background: var(--td-gradient-brand-soft, rgba(108, 59, 255, 0.12));
+  color: var(--td-primary);
+}
+
+.metric-content { min-width: 0; }
+
+.metric-label {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--td-text-tertiary);
+}
+
+.metric-value {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--td-text);
+}
+
+.metric-subtext {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--td-text-tertiary);
+}
+
+.charts-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--td-space-md);
+  margin-bottom: var(--td-space-lg);
+}
+
+.chart-card {
+  padding: var(--td-space-lg, 24px);
+  background: var(--td-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--td-glass-border);
+  border-radius: var(--td-radius-lg, 20px);
+  box-shadow: var(--td-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+}
+
+.chart-card h3,
+.recent-activity h3 {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--td-text);
+}
+
+.chart-container { max-height: 340px; overflow-y: auto; }
+
+.revenue-data, .top-listings-data {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.revenue-item, .listing-item {
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--td-text-secondary);
+  border: 1px solid var(--td-border-light, transparent);
+  border-radius: 12px;
+  background: var(--td-gradient-brand-soft, rgba(108, 59, 255, 0.06));
+}
+
+.no-data {
+  margin: 0;
+  padding: 32px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--td-text-tertiary);
+}
+
+.recent-activity {
+  padding: var(--td-space-lg, 24px);
+  background: var(--td-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--td-glass-border);
+  border-radius: var(--td-radius-lg, 20px);
+  box-shadow: var(--td-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.activity-item + .activity-item { border-top: 1px solid var(--td-border-light); }
+
+.activity-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--td-primary);
+}
+
+.activity-buyer { margin: 0; font-size: 14px; font-weight: 700; color: var(--td-text); }
+.activity-date { margin: 0; font-size: 12px; color: var(--td-text-tertiary); }
+
+.activity-amount {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--td-success, #2FBF71);
+}
+
+@media (max-width: 768px) {
+  .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-value { font-size: 20px; }
+  .charts-row { grid-template-columns: 1fr; }
+  .analytics-header { flex-direction: column; align-items: flex-start; }
+  .analytics-page { padding: var(--td-space-md) 16px calc(96px + var(--td-safe-area-bottom, 0px)); }
+}
+
+@media (max-width: 480px) {
+  /* 2-col phone grid is tight: smaller medallions + values stop the
+     labels wrapping to three lines and the cards going uneven. */
+  .metric-card { padding: 14px; gap: 10px; }
+  .metric-icon { width: 36px; height: 36px; font-size: 14px; border-radius: 10px; }
+  .metric-value { font-size: 18px; }
+  .metric-label { letter-spacing: 0.3px; }
+}
+
+@media (max-width: 380px) {
+  .metrics-grid { grid-template-columns: 1fr; }
+}
+
+/* =====================================================
+   AUTH CONTAINER — width cap (QA sweep finding)
+   Register.js caps `.auth-container` at 480px inline, but
+   ForgotPassword.js uses the same class with NO cap, so the
+   forgot-password card stretched edge-to-edge on desktop.
+   The ID-scoped rule (1 id + 1 class) also outranks
+   responsive.css `#root div { max-width: 100% }`.
+   ===================================================== */
+#root .auth-container {
+  max-width: 460px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* =====================================================
+   CART ITEM ROWS — mobile reflow (QA sweep finding)
+   The inline-style row (image + info + stepper + price +
+   remove) cannot fit 390px; controls wrapped into a jumble
+   behind the title. On ≤640px the row wraps cleanly:
+   line 1 = image + title block, line 2 = controls pushed
+   to the right edge.
+   ===================================================== */
+@media (max-width: 640px) {
+  .cart-item-row {
+    flex-wrap: wrap;
+    row-gap: 12px;
+    column-gap: 12px;
+  }
+
+  .cart-item-info {
+    /* Inline `flex: 1` (flex-basis 0%) in Cart.js beats a plain
+       stylesheet declaration — !important is required here. */
+    flex-basis: calc(100% - 84px) !important;
+  }
+
+  .cart-item-row .cart-item-qty {
+    margin-left: auto;
+  }
+}
+
+/* =====================================================
+   MOBILE TAB BAR — opacity floor (QA sweep finding)
+   --td-glass-bg (0.72) + backdrop blur lets page text read
+   straight through the floating dock where backdrop-filter
+   is unsupported or blurred less than expected. Raises the
+   dock near-solid on both themes so it never looks broken.
+   ===================================================== */
+@media (max-width: 768px) {
+  [data-theme="dark"] .mobile-tab-bar,
+  .mobile-tab-bar {
+    background: rgba(20, 20, 43, 0.92);
+  }
+
+  [data-theme="light"] .mobile-tab-bar {
+    background: rgba(255, 255, 255, 0.94);
+  }
+}
+
+/* =====================================================
+   NAVBAR mobile — prefs pill breathing room (QA sweep)
+   "US · USD" sat hard against the hamburger at 390px.
+   ===================================================== */
+@media (max-width: 768px) {
+  .navbar .prefs-trigger {
+    margin-right: 6px;
+  }
+}
