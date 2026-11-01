@@ -226,8 +226,14 @@ describe('Financial Life-Cycle Integrity (zero leakage)', () => {
     const s1 = await User.findById(seller1._id);
     expect(s1.balance.pending).toBeGreaterThan(0);
     expect(s1.balance.available).toBe(0);
-    // 3 × (60 − 4.8) = 165.6
-    expect(s1.balance.pending).toBeCloseTo(165.6, 1);
+    // 3 × (60 − 4.8) = 165.6 in sale earnings; the escrowed balance also
+    // carries the shipping-label reimbursement credited in the same write,
+    // i.e. exactly the transactions' paymentBreakdown.sellerCredit.
+    const usdTxns = await Transaction.find({ seller: seller1._id });
+    const earnings = Math.round(usdTxns.reduce((sum, t) => sum + (t.paymentBreakdown?.sellerEarnings || 0), 0) * 100) / 100;
+    const credit = Math.round(usdTxns.reduce((sum, t) => sum + (t.paymentBreakdown?.sellerCredit || 0), 0) * 100) / 100;
+    expect(earnings).toBeCloseTo(165.6, 2);
+    expect(s1.balance.pending).toBeCloseTo(credit, 2);
   });
 
   test('10. LABEL generated per transaction', async () => {

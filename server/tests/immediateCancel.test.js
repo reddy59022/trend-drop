@@ -150,7 +150,9 @@ describe('A. buyer immediate cancel → full refund, zero-sum unwind', () => {
     expect(l.sold).toBe(true);
     expect(l.available).toBe(false);
     const s = await User.findById(seller._id);
-    expect(s.balance.pending).toBeCloseTo(fresh.paymentBreakdown.sellerEarnings, 2);
+    // Escrowed credit = sale earnings PLUS the shipping-label reimbursement,
+    // which is exactly what the route records as paymentBreakdown.sellerCredit.
+    expect(s.balance.pending).toBeCloseTo(fresh.paymentBreakdown.sellerCredit, 2);
     expect(s.balance.available).toBe(0);
   });
 
@@ -535,7 +537,7 @@ describe('I. Stripe refund failure rolls the cancellation back', () => {
     expect((await Transaction.findById(txn._id)).status).toBe('cancelled_by_buyer');
     expect((await Listing.findById(listing._id)).quantity).toBe(3);
     expect((await User.findById(seller._id)).balance.pending)
-      .toBeCloseTo(sBefore - txn.paymentBreakdown.sellerEarnings, 2);
+      .toBeCloseTo(sBefore - fresh.paymentBreakdown.sellerCredit, 2);
   });
 });
 
@@ -554,7 +556,7 @@ describe('J. boosted listing cancel reverses the boost fee', () => {
     const fresh = await Transaction.findById(txn._id);
     expect(fresh.paymentBreakdown.boostFee).toBe(15); // premium = 15% of 100
     const afterCheckout = (await User.findById(seller._id)).balance.pending;
-    expect(afterCheckout).toBeCloseTo(pBefore + fresh.paymentBreakdown.sellerEarnings, 2);
+    expect(afterCheckout).toBeCloseTo(pBefore + fresh.paymentBreakdown.sellerCredit, 2);
 
     const r = await cancel(txn._id, buyerToken);
     expect(r.status).toBe(200);
