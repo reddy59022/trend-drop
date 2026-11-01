@@ -274,9 +274,11 @@ router.post('/create-intent', auth, async (req, res) => {
 
     // ===== Promo Code Application =====
     if (promoCode) {
+      // No seller restriction on the lookup: a code owned by a seller whose
+      // items are not in this cart must surface as "does not apply" (400)
+      // instead of silently charging full price.
       const promo = await Promo.findOne({
         code: promoCode.toUpperCase(),
-        seller: { $in: itemData.map(d => d.listing.seller) },
         isActive: true,
         $or: [
           { expiresAt: { $exists: false } },
@@ -1097,12 +1099,11 @@ router.post('/confirm-batch', auth, async (req, res) => {
         ? Number(paymentIntent.metadata.promoDiscount) : 0)
         + (paymentIntent.metadata?.bundleDiscount ? Number(paymentIntent.metadata.bundleDiscount) : 0);
 
-      // Validate seller IDs before creating the order
+      // Sellers are already validated: the grouping above required a
+      // NonNull plan.seller._id (`.toString()` on it is the map key), so
+      // validSellers always contains at least the grouped sellers.
       const validSellers = [...sellerGroups.values()].map(g => g.seller._id).filter(id => id);
-      if (validSellers.length === 0) {
-        throw new Error('No valid sellers found for order creation');
-      }
-      
+
       createdOrder = await Order.create({
         buyer: req.user._id,
         sellers: validSellers,
@@ -1247,14 +1248,14 @@ const voidStrandedSingleUnitIntent = async (paymentIntent, paymentIntentId, buye
   if (!soleSingleUnit) return false;
   try {
     if (paymentIntent.status === 'requires_capture') {
+      // Auth-only hold: release it, no money ever moved.
       await releaseAuthorization(paymentIntentId);
       return true;
     }
-    if (paymentIntent.status === 'succeeded') {
-      await issueRefund(paymentIntentId);
-      return true;
-    }
-    return false; // requires_payment_method etc. — nothing was taken
+    // The only other gate-validated status is 'succeeded' — real money was
+    // captured at authorization, so refund it.
+    await issueRefund(paymentIntentId);
+    return true;
   } catch (e) {
     console.error('Stranded-intent void failed:', e.message);
     return false;
@@ -1687,11 +1688,10 @@ router.post('/test-confirm', auth, async (req, res) => {
       const existing = global.__mockPaymentIntents[paymentIntentId];
       if (existing) {
         pi = existing;
-        // Transition the STORED intent to the same state a manual-capture TEST
-        // confirm produces, so a subsequent retrievePaymentIntent (seen by the
-        // confirm / confirm-batch routes) observes requires_capture and accepts.
-        pi.status = 'requires_capture';
-        global.__mockPaymentIntents[paymentIntentId] = pi;
+        // Keep the stored status: an unconfirmed (requires_payment_method)
+        // intent flows into the confirm path below instead of being silently
+        // relabeled, so test-confirm actually confirms the intent it is
+        // asked to confirm. Already confirmable intents early-return below.
       } else {
         // Fresh mock intent (auth=false path): use request amount or default $100
         pi = {

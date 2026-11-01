@@ -207,9 +207,12 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/GBP/EUR) + 1 order + 5 shipmen
       expect(round2(payout.payoutAmount)).toBe(exp.pending);
       expect(payout.status).toBe('pending');
 
-      // Seller pending balance exact in own currency
+      // Seller pending balance exact in own currency. The escrowed amount is
+      // the sale earnings PLUS the shipping-label reimbursement, recorded on
+      // the transaction as sellerCredit.
       const seller = await User.findById(s.user._id);
-      expect(round2(seller.balance.pending)).toBe(exp.pending);
+      expect(round2(txn.paymentBreakdown.sellerCredit)).toBe(round2(exp.pending + exp.shipping));
+      expect(round2(seller.balance.pending)).toBe(round2(txn.paymentBreakdown.sellerCredit));
       expect(seller.balance.currency).toBe(exp.currency);
     }
   });
@@ -340,7 +343,10 @@ describe('DIRECTION MATRIX: every seller→buyer country pair charges/settles EX
 
       const seller = await User.findById(p.sellerId);
       expect(seller.balance.currency).toBe(exp.currency);
-      expect(round2(seller.balance.pending)).toBe(exp.pending);
+      // Escrow carries the sale earnings PLUS the shipping-label reimbursement
+      // (paymentBreakdown.sellerCredit), paid in the seller's own currency.
+      expect(round2(txn.paymentBreakdown.sellerCredit)).toBe(round2(exp.pending + exp.shipping));
+      expect(round2(seller.balance.pending)).toBe(round2(txn.paymentBreakdown.sellerCredit));
 
       const listing = await Listing.findById(p.listingId);
       expect(listing.quantity).toBe(4); // 5-1 exact
@@ -425,7 +431,11 @@ describe('ROBUSTNESS: no leaks on failure paths', () => {
     // Seller pending credited for qty 2
     let seller = await User.findById(s.user._id);
     const exp = expectedBreakdown('US', 'US', 50, 2, 1);
-    expect(round2(seller.balance.pending)).toBe(exp.pending);
+    const txnDoc = await Transaction.findById(txn._id);
+    // Escrow = sale earnings + shipping-label reimbursement (sellerCredit).
+    expect(round2(txnDoc.paymentBreakdown.sellerEarnings)).toBe(exp.pending);
+    expect(round2(txnDoc.paymentBreakdown.sellerCredit)).toBe(round2(exp.pending + exp.shipping));
+    expect(round2(seller.balance.pending)).toBe(round2(txnDoc.paymentBreakdown.sellerCredit));
 
     // Buyer cancels via lifecycle endpoint BEFORE shipment (pi is mocked 'succeeded' → refund path)
     const cancel = await request(app)
