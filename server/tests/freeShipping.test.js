@@ -24,6 +24,10 @@ async function createUser(name, email) {
     authProvider: 'email',
     country: 'US',
     currency: 'USD',
+    shippingAddress: {
+      fullName: name, street1: '1 Test St', city: 'Austin', state: 'TX',
+      postalCode: '78701', country: 'US',
+    },
     balance: { available: 0, pending: 0, totalEarned: 0, totalPaidOut: 0, currency: 'USD' },
     stats: { totalSales: 0, totalPurchases: 0, totalListings: 0, avgRating: 0, ratingCount: 0, responseRate: 100, shipTime: 3, strikes: 0 },
   });

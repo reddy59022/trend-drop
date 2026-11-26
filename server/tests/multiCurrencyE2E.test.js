@@ -207,11 +207,11 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/GBP/EUR) + 1 order + 5 shipmen
       expect(round2(payout.payoutAmount)).toBe(exp.pending);
       expect(payout.status).toBe('pending');
 
-      // Seller pending balance exact in own currency. The escrowed amount is
-      // the sale earnings PLUS the shipping-label reimbursement, recorded on
-      // the transaction as sellerCredit.
+      // Seller pending balance exact in own currency. Postage is platform
+      // revenue, so the escrowed amount is sale earnings only.
       const seller = await User.findById(s.user._id);
-      expect(round2(txn.paymentBreakdown.sellerCredit)).toBe(round2(exp.pending + exp.shipping));
+      expect(round2(txn.paymentBreakdown.shippingPayout)).toBe(0);
+      expect(round2(txn.paymentBreakdown.sellerCredit)).toBe(round2(exp.pending));
       expect(round2(seller.balance.pending)).toBe(round2(txn.paymentBreakdown.sellerCredit));
       expect(seller.balance.currency).toBe(exp.currency);
     }
@@ -278,7 +278,9 @@ describe('GLOBAL MATRIX: 1 buyer + 5 sellers (USD/GBP/EUR) + 1 order + 5 shipmen
     expect(ship.status).toBe(200);
     expect(ship.body.order.status).toBe('partially_shipped');
     expect(ship.body.order.shipments[2].status).toBe('shipped');
-    expect(ship.body.order.shipments[2].trackingNumber).toBe('GB123');
+    // Platform EasyPost tracking wins over the seller-supplied number.
+    expect(ship.body.order.shipments[2].trackingNumber).toBeTruthy();
+    expect(ship.body.order.shipments[2].trackingNumber).not.toBe('GB123');
 
     // Ship all remaining → order becomes 'shipped'
     for (let i = 0; i < 5; i++) {
@@ -343,9 +345,9 @@ describe('DIRECTION MATRIX: every seller→buyer country pair charges/settles EX
 
       const seller = await User.findById(p.sellerId);
       expect(seller.balance.currency).toBe(exp.currency);
-      // Escrow carries the sale earnings PLUS the shipping-label reimbursement
-      // (paymentBreakdown.sellerCredit), paid in the seller's own currency.
-      expect(round2(txn.paymentBreakdown.sellerCredit)).toBe(round2(exp.pending + exp.shipping));
+      // Escrow carries sale earnings only; the platform owns postage.
+      expect(round2(txn.paymentBreakdown.shippingPayout)).toBe(0);
+      expect(round2(txn.paymentBreakdown.sellerCredit)).toBe(round2(exp.pending));
       expect(round2(seller.balance.pending)).toBe(round2(txn.paymentBreakdown.sellerCredit));
 
       const listing = await Listing.findById(p.listingId);
@@ -432,9 +434,10 @@ describe('ROBUSTNESS: no leaks on failure paths', () => {
     let seller = await User.findById(s.user._id);
     const exp = expectedBreakdown('US', 'US', 50, 2, 1);
     const txnDoc = await Transaction.findById(txn._id);
-    // Escrow = sale earnings + shipping-label reimbursement (sellerCredit).
+    // Escrow = sale earnings only (platform-owned postage).
     expect(round2(txnDoc.paymentBreakdown.sellerEarnings)).toBe(exp.pending);
-    expect(round2(txnDoc.paymentBreakdown.sellerCredit)).toBe(round2(exp.pending + exp.shipping));
+    expect(round2(txnDoc.paymentBreakdown.shippingPayout)).toBe(0);
+    expect(round2(txnDoc.paymentBreakdown.sellerCredit)).toBe(round2(exp.pending));
     expect(round2(seller.balance.pending)).toBe(round2(txnDoc.paymentBreakdown.sellerCredit));
 
     // Buyer cancels via lifecycle endpoint BEFORE shipment (pi is mocked 'succeeded' → refund path)

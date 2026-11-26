@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const Payout = require('../models/Payout');
-const { carriers, calculateShipping, generateLabel, trackingStatuses, simulateTrackingUpdate, getPreferredCarrier, normalizeCarrier } = require('../config/shipping');
+const { carriers, calculateShipping, trackingStatuses, simulateTrackingUpdate } = require('../config/shipping');
 const { currencies, convertPrice, formatPrice } = require('../config/currencies');
 const { countries, getCountry } = require('../config/countries');
 const Transaction = require('../models/Transaction');
@@ -10,7 +10,15 @@ const Return = require('../models/Return');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const { isValidObjectId } = require('../utils/validators');
-const { generateLabelBuffer } = require('../config/labelGenerator');
+const {
+  createShippingLabel,
+  getTracker,
+  mapTrackerStatus,
+  refundShippingLabel,
+  shippingLabelPayload,
+  ShippingProviderError,
+  isMockMode,
+} = require('../services/easypostService');
 
 // GET /api/shipping/carriers - Get all carriers
 router.get('/carriers', (req, res) => {
@@ -229,7 +237,8 @@ router.post('/calculate-breakdown', (req, res) => {
         itemPrice: price,
         platformFee,
         platformFeePercent: feePercent,
-        shippingPayout: shippingCost,
+        // Postage is a platform service; the seller is paid for the item only.
+        shippingPayout: 0,
         sellerEarnings,
       },
       // Shipping details
@@ -250,6 +259,51 @@ router.post('/calculate-breakdown', (req, res) => {
     res.status(500).json({ message: 'Error calculating breakdown' });
   }
 });
+
+const labelErrorResponse = (res, error) => {
+  const status = error instanceof ShippingProviderError
+    ? (error.status >= 400 && error.status < 500 ? 422 : 502)
+    : 502;
+  return res.status(status).json({
+    code: error.code || 'SHIPPING_LABEL_FAILED',
+    message: error.code === 'EASYPOST_NOT_CONFIGURED'
+      ? 'Shipping is temporarily unavailable. Please try again later.'
+      : (error.code === 'SHIPPING_ADDRESS_INVALID' ? error.message : 'Shipping label could not be created.'),
+    retryable: error.retryable !== false,
+  });
+};
+
+// Single source of truth for a transaction's platform-purchased label.
+// Existing live labels are reused; a missing or voided label is repurchased.
+async function ensureTransactionLabel(transaction) {
+  if (transaction.shipping?.trackingNumber && !transaction.shipping?.voided) {
+    return transaction.shipping;
+  }
+  let sellerName = transaction.seller?.name;
+  if (!sellerName && transaction.seller) {
+    const seller = await User.findById(transaction.seller).select('name');
+    sellerName = seller?.name;
+  }
+  const label = await createShippingLabel({
+    // sellerAddress stores the parcel origin, not the display name.
+    fromAddress: { ...(transaction.sellerAddress || {}), name: sellerName },
+    toAddress: transaction.shippingAddress || {},
+    weightKg: transaction.shipping?.weight || 0.5,
+    reference: `transaction:${transaction._id}`,
+    declaredValue: transaction.itemPrice || 0,
+  });
+  transaction.shipping = {
+    ...transaction.shipping,
+    ...shippingLabelPayload(label),
+    weight: transaction.shipping?.weight || 0.5,
+    voided: false,
+    voidedAt: null,
+    voidedBy: null,
+    labelRefunded: false,
+  };
+  await transaction.save();
+  return label;
+}
 
 // POST /api/shipping/label/:transactionId - Create/generate shipping label for transaction
 router.post('/label/:transactionId', auth, async (req, res) => {
@@ -274,34 +328,13 @@ router.post('/label/:transactionId', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only the seller can generate shipping labels' });
     }
 
-    // A voided label must be replaceable; only a live label blocks generation.
-    if (transaction.shipping?.trackingNumber && !transaction.shipping?.voided) {
-      return res.status(400).json({ message: 'Label already generated for this transaction' });
-    }
+    // Labels are platform-owned and normally already exist by the time a
+    // seller opens this endpoint. Reuse it; only a missing/voided label is
+    // repurchased.
+    const label = await ensureTransactionLabel(transaction);
 
-    const sellerCountry = transaction.sellerAddress?.country || transaction.seller?.shippingAddress?.country || 'US';
-    const toCountry = transaction.shippingAddress?.country || 'US';
-    const carrierCode = getPreferredCarrier(toCountry, sellerCountry === toCountry);
-    const label = generateLabel({
-      shippingAddress: transaction.shippingAddress,
-      sellerAddress: transaction.sellerAddress,
-      weight: transaction.shipping?.weight || 0.5,
-    }, carrierCode);
-
-    transaction.shipping = {
-      ...transaction.shipping,
-      ...label,
-      labelCreated: true,
-      labelCreatedDate: new Date(),
-      voided: false,
-      voidedAt: null,
-      voidedBy: null,
-    };
     // Creating/printing a label is not proof that the carrier accepted the
-    // parcel. Keep the paid state until the seller dispatches it through the
-    // order lifecycle or a trusted tracking event.
-    await transaction.save();
-
+    // parcel. Keep the paid state until a trusted carrier event advances it.
     const transactionId = req.params.transactionId;
     res.json({
       ...label,
@@ -310,8 +343,8 @@ router.post('/label/:transactionId', auth, async (req, res) => {
       labelPdfUrl: `${req.protocol}://${req.get('host')}/api/shipping/label/${transactionId}`,
     });
   } catch (error) {
-    console.error('Label creation error:', error);
-    res.status(500).json({ message: 'Error creating label' });
+    console.error('Label creation error:', error.code || error.message);
+    return labelErrorResponse(res, error);
   }
 });
 
@@ -346,18 +379,25 @@ router.post('/void/:transactionId', auth, async (req, res) => {
       return res.status(400).json({ message: 'No label to void' });
     }
 
-    // A mock label has no carrier charge and therefore must not be treated as
-    // a sale cancellation or a buyer shipping refund. In particular, the
-    // transaction's shippingCost is the buyer's checkout charge, not proof
-    // that postage was purchased. Real carrier adapters will replace this
-    // branch once credentials are configured and will record a provider
-    // refund idempotency key before refunding money.
     if (transaction.shipping.voided) {
       return res.json({
         voided: true,
-        refunded: false,
-        refundAmount: 0,
-        message: 'Label was already voided; no financial changes were made.',
+        refunded: Boolean(transaction.shipping.labelRefunded),
+        refundAmount: transaction.shipping.labelRefunded ? transaction.shipping.labelCost || 0 : 0,
+        message: 'Label was already voided; no second refund was requested.',
+      });
+    }
+
+    // Refund the platform's postage at EasyPost first. If the provider refuses,
+    // keep the label live so support can retry instead of silently losing it.
+    let providerRefund;
+    try {
+      providerRefund = await refundShippingLabel(transaction.shipping.shipmentId);
+    } catch (error) {
+      console.error('EasyPost label refund failed:', error.code || error.message);
+      return res.status(502).json({
+        code: error.code || 'SHIPPING_REFUND_FAILED',
+        message: 'Carrier refund could not be requested. The label is still active.',
       });
     }
 
@@ -366,14 +406,18 @@ router.post('/void/:transactionId', auth, async (req, res) => {
       voided: true,
       voidedAt: new Date(),
       voidedBy: req.user._id,
+      labelRefunded: Boolean(providerRefund.refunded),
     };
     await transaction.save();
 
     res.json({
       voided: true,
-      refunded: false,
-      refundAmount: 0,
-      message: 'Mock label voided. No carrier postage charge was incurred.',
+      refunded: Boolean(providerRefund.refunded),
+      refundStatus: providerRefund.status,
+      refundAmount: providerRefund.refunded ? (transaction.shipping.labelCost || 0) : 0,
+      message: providerRefund.refunded
+        ? 'Label voided and carrier postage refund requested.'
+        : 'Label voided; the carrier did not accept a refund.',
     });
   } catch (error) {
     console.error('Label void error:', error);
@@ -409,94 +453,25 @@ router.get('/label/:transactionId', auth, async (req, res) => {
       return res.status(410).json({ message: 'Shipping label has been voided; generate a new label before downloading.' });
     }
 
-    // If no real label data (or the previous label was voided), generate it
-    if (!transaction.shipping?.trackingNumber || transaction.shipping?.voided) {
-      const { getPreferredCarrier: gpc } = require('../config/shipping');
-      const sellerCountry = transaction.sellerAddress?.country || transaction.seller?.shippingAddress?.country || 'US';
-      const toCountry = transaction.shippingAddress?.country || 'US';
-      const carrierCode = gpc(toCountry, sellerCountry === toCountry);
-      const label = require('../config/shipping').generateLabel({
-        shippingAddress: transaction.shippingAddress,
-        sellerAddress: transaction.sellerAddress,
-        weight: transaction.shipping?.weight || 0.5,
-      }, carrierCode);
-
-      transaction.shipping = {
-        ...transaction.shipping,
-        ...label,
-        labelCreated: true,
-        labelCreatedDate: new Date(),
-        voided: false,
-        voidedAt: null,
-        voidedBy: null,
-      };
-      await transaction.save();
+    const label = await ensureTransactionLabel(transaction);
+    if (!label.labelUrl) {
+      return res.status(404).json({ message: 'This label has no printable file.' });
     }
-
-    // Build order data for label generation
-    const buyer = transaction.buyer || {};
-    const seller = transaction.seller || {};
-    const fromAddr = transaction.sellerAddress || seller.shippingAddress || {};
-    const toAddr = transaction.shippingAddress || {};
-    const trackingNum = transaction.shipping?.trackingNumber || '';
-
-    const orderData = {
-      transactionId: transaction._id.toString(),
-      trackingNumber: trackingNum,
-      carrier: transaction.shipping?.carrier || 'USPS',
-      carrierService: transaction.shipping?.service || 'Priority Mail',
-      trackingUrl: transaction.shipping?.trackingUrl || '',
-      fromAddress: {
-        name: seller.name || 'Seller',
-        fullName: fromAddr.fullName || seller.name || 'Seller',
-        street1: fromAddr.street1 || '',
-        street2: fromAddr.street2 || '',
-        city: fromAddr.city || '',
-        state: fromAddr.state || '',
-        postalCode: fromAddr.postalCode || '',
-        country: fromAddr.country || 'US',
-        phone: fromAddr.phone || '',
-      },
-      toAddress: {
-        name: buyer.name || 'Buyer',
-        fullName: toAddr.fullName || buyer.name || 'Buyer',
-        street1: toAddr.street1 || '',
-        street2: toAddr.street2 || '',
-        city: toAddr.city || '',
-        state: toAddr.state || '',
-        postalCode: toAddr.postalCode || '',
-        country: toAddr.country || 'US',
-        phone: toAddr.phone || '',
-      },
-      weight: transaction.shipping?.weight || 0.5,
-      service: transaction.shipping?.service || 'Priority Mail',
-    };
-
-    // Generate PDF label
-    const pdfBuffer = await generateLabelBuffer(orderData);
-
-    // Send PDF
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="trenddrop-label-${trackingNum}.pdf"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
-    res.send(pdfBuffer);
-
+    // EasyPost hosts the purchased label (PDF/PNG). Redirect after auth instead
+    // of proxying arbitrary remote content through the API.
+    return res.redirect(302, label.labelUrl);
   } catch (error) {
-    console.error('Label download error:', error);
-    res.status(500).json({ message: 'Error generating label PDF' });
+    console.error('Label download error:', error.code || error.message);
+    return labelErrorResponse(res, error);
   }
 });
 
 // POST /api/shipping/generate-label - Generate shipping label for a transaction
 router.post('/generate-label', auth, async (req, res) => {
   try {
-    const { transactionId, carrier } = req.body;
+    const { transactionId } = req.body;
     if (!transactionId || !isValidObjectId(transactionId)) {
       return res.status(400).json({ message: 'Invalid transactionId' });
-    }
-    const requestedCarrier = carrier === undefined ? undefined : normalizeCarrier(carrier);
-    if (carrier !== undefined && !requestedCarrier) {
-      return res.status(400).json({ message: 'Unsupported carrier' });
     }
 
     const transaction = await Transaction.findById(transactionId);
@@ -510,58 +485,19 @@ router.post('/generate-label', auth, async (req, res) => {
     return res.status(403).json({ message: 'Only the seller can generate shipping labels' });
   }
 
-    const sellerCountry = transaction.sellerAddress?.country || 'US';
-    const buyerCountry = transaction.shippingAddress?.country || 'US';
-    const carrierCode = requestedCarrier || getPreferredCarrier(buyerCountry, sellerCountry === buyerCountry);
-
-    if (transaction.shipping?.trackingNumber && !transaction.shipping?.voided) {
-      return res.json({
-        trackingNumber: transaction.shipping.trackingNumber,
-        carrier: transaction.shipping.carrier,
-        trackingUrl: transaction.shipping.trackingUrl,
-        service: transaction.shipping.service,
-        labelPdfUrl: `${req.protocol}://${req.get('host')}/api/shipping/label/${transactionId}`,
-        message: 'Shipping label already generated',
-      });
-    }
-
-    const label = generateLabel({
-      shippingAddress: transaction.shippingAddress,
-      sellerAddress: transaction.sellerAddress,
-      weight: transaction.shipping?.weight || 0.5,
-    }, carrierCode);
-
-    // Update transaction with label info
-    transaction.shipping = {
-      ...transaction.shipping,
-      carrier: label.carrier,
-      trackingNumber: label.trackingNumber,
-      trackingUrl: label.trackingUrl,
-      labelCreated: true,
-      labelCreatedDate: new Date(),
-      estimatedDelivery: new Date(label.estimatedDelivery),
-      service: label.service,
-      trackingHistory: label.statusHistory,
-      voided: false,
-      voidedAt: null,
-      voidedBy: null,
-    };
-    // Label creation is not dispatch confirmation. Keep the transaction paid
-    // until the seller ships it or a trusted carrier event advances it.
-    await transaction.save();
-
-    // Generate label URL for response
-    const labelUrl = `${req.protocol}://${req.get('host')}/api/shipping/label/${transactionId}`;
+    const label = await ensureTransactionLabel(transaction);
 
     res.json({
       ...label,
-      labelPdfUrl: labelUrl,
-      message: 'Shipping label generated. Download from:', 
-      downloadUrl: labelUrl,
+      toAddress: transaction.shippingAddress,
+      fromAddress: transaction.sellerAddress,
+      labelPdfUrl: `${req.protocol}://${req.get('host')}/api/shipping/label/${transactionId}`,
+      downloadUrl: `${req.protocol}://${req.get('host')}/api/shipping/label/${transactionId}`,
+      message: 'Shipping label is ready to download.',
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error generating label' });
+    console.error('Generate label error:', error.code || error.message);
+    return labelErrorResponse(res, error);
   }
 });
 
@@ -636,37 +572,95 @@ router.post('/auto-track', async (req, res) => {
     });
 
     let updated = 0;
-    for (const txn of activeTransactions) {
-      const labelDate = txn.shipping?.labelCreatedDate || txn.createdAt;
-      const daysSince = Math.floor((Date.now() - new Date(labelDate)) / (1000 * 60 * 60 * 24));
-      const currentStatus = txn.status === 'shipped' ? 'picked_up' : txn.status;
-      const newStatus = simulateTrackingUpdate(currentStatus, daysSince);
+    let skipped = 0;
+    let failed = 0;
+    const mock = isMockMode();
 
-      if (newStatus !== currentStatus) {
-        txn.status = newStatus === 'delivered' ? 'delivered' : newStatus;
+    for (const txn of activeTransactions) {
+      if (txn.status === 'delivered') continue;
+      let newStatus = null;
+      let detail = {};
+
+      if (mock) {
+        // Development/demo only. Production NEVER advances a shipment from a
+        // timer: delivery must be proven by the carrier tracker below.
+        const labelDate = txn.shipping?.labelCreatedDate || txn.createdAt;
+        const daysSince = Math.floor((Date.now() - new Date(labelDate)) / (1000 * 60 * 60 * 24));
+        const currentStatus = txn.status === 'shipped' ? 'picked_up' : txn.status;
+        newStatus = simulateTrackingUpdate(currentStatus, daysSince);
+      } else {
+        if (!txn.shipping?.trackerId) { skipped += 1; continue; }
+        try {
+          const tracker = await getTracker(txn.shipping.trackerId);
+          newStatus = mapTrackerStatus(tracker?.status);
+          const latest = Array.isArray(tracker?.tracking_details)
+            ? tracker.tracking_details[tracker.tracking_details.length - 1]
+            : null;
+          if (latest) {
+            detail = {
+              description: latest.message || '',
+              timestamp: latest.datetime ? new Date(latest.datetime) : new Date(),
+              location: [latest.tracking_location?.city, latest.tracking_location?.state]
+                .filter(Boolean).join(', ') || null,
+            };
+          }
+        } catch (providerError) {
+          // One unreachable tracker must not block the rest of the batch.
+          failed += 1;
+          console.error(`Tracker poll failed for ${txn.shipping.trackerId}:`, providerError.code || providerError.message);
+          continue;
+        }
+      }
+
+      const newIndex = trackingStatuses.findIndex(s => s.code === newStatus);
+      const terminal = ['exception', 'returned'].includes(newStatus);
+      const currentIndex = trackingStatuses.findIndex(s => s.code === txn.status);
+      // `exception` is a tracking milestone, not a Transaction.status enum
+      // value. Keep the lifecycle state (and payout safety) unchanged while
+      // still recording the carrier exception in tracking history.
+      const advances = newStatus && newStatus !== 'exception' && newStatus !== txn.status && (
+        terminal
+          ? txn.status !== 'delivered'
+          : (currentIndex === -1 || newIndex > currentIndex)
+      );
+
+      if (advances) {
+        // `picked_up` and `in_transit_local` are tracking milestones; the
+        // Transaction enum uses `shipped` and `in_transit` for those states.
+        txn.status = newStatus === 'picked_up'
+          ? 'shipped'
+          : (newStatus === 'in_transit_local' ? 'in_transit' : newStatus);
         if (newStatus === 'delivered') {
-          txn.shipping.actualDelivery = new Date();
-          // Bug B5: the old code called deliveryDate.setDate(...) which is not
-          // a JS Date method and would throw here. Schedule the next auto-check
-          // (the buyer-confirmation window is enforced by /api/orders/auto-process).
+          txn.shipping.actualDelivery = detail.timestamp || new Date();
           txn.autoTracking.nextCheck = new Date(Date.now() + 24 * 60 * 60 * 1000);
         }
+        txn.shipping.trackingHistory = txn.shipping.trackingHistory || [];
         txn.shipping.trackingHistory.push({
           status: newStatus,
           label: trackingStatuses.find(s => s.code === newStatus)?.label || newStatus,
-          description: trackingStatuses.find(s => s.code === newStatus)?.description || '',
-          timestamp: new Date(),
-          location: 'Auto-updated',
+          description: detail.description || trackingStatuses.find(s => s.code === newStatus)?.description || '',
+          timestamp: detail.timestamp || new Date(),
+          location: detail.location || (mock ? 'Auto-updated' : 'EasyPost'),
         });
-        txn.autoTracking.lastChecked = new Date();
-        txn.autoTracking.nextCheck = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        txn.autoTracking.attempts += 1;
-        await txn.save();
+        txn.shipping.trackingHistory = txn.shipping.trackingHistory.slice(-50);
         updated++;
       }
+
+      // Record the poll itself so operations can see liveness even when the
+      // carrier has no new event.
+      txn.autoTracking.lastChecked = new Date();
+      txn.autoTracking.nextCheck = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      txn.autoTracking.attempts += 1;
+      await txn.save();
     }
 
-    res.json({ message: `Auto-tracking completed. ${updated} transactions updated.`, updated });
+    res.json({
+      message: `Auto-tracking completed. ${updated} transactions updated.`,
+      updated,
+      skipped,
+      failed,
+      source: mock ? 'mock' : 'easypost',
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error running auto-tracking' });

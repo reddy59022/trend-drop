@@ -258,14 +258,18 @@ describe('Enterprise Order Model & API', () => {
       .send({ shipmentIndex: 1, trackingNumber: 'ZB123', carrier: 'USPS' });
     expect(forbidden.status).toBe(403);
 
-    // Seller A can ship their own shipment
+    // The platform owns tracking. Seed the EasyPost label on the transaction
+    // and prove a seller-supplied number cannot replace it.
+    await Transaction.findByIdAndUpdate(txnA1._id, {
+      $set: { 'shipping.trackingNumber': 'TD-PLATFORM-A', 'shipping.carrier': 'USPS' },
+    });
     const res = await request(app)
       .post(`/api/orders/${order._id}/ship`)
       .set('Authorization', `Bearer ${sellerAToken}`)
       .send({ shipmentIndex: 0, trackingNumber: 'ZA123', carrier: 'USPS' });
     expect(res.status).toBe(200);
     expect(res.body.order.shipments[0].status).toBe('shipped');
-    expect(res.body.order.shipments[0].trackingNumber).toBe('ZA123');
+    expect(res.body.order.shipments[0].trackingNumber).toBe('TD-PLATFORM-A');
 
     // Partial shipment → order is partially_shipped
     expect(res.body.order.status).toBe('partially_shipped');

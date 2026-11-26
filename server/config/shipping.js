@@ -309,38 +309,6 @@ const normalizeCarrier = (value) => {
   return match || null;
 };
 
-// Generate shipping label data
-const generateLabel = (order, carrierCode) => {
-  const canonicalCarrierCode = normalizeCarrier(carrierCode) || 'DHL';
-  const carrier = carriers[canonicalCarrierCode];
-  const trackingPrefix = canonicalCarrierCode.substring(0, 2).toUpperCase();
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-  const trackingNumber = `${trackingPrefix}${timestamp}${random}`;
-
-  return {
-    trackingNumber,
-    carrier: carrier.name,
-    carrierCode: canonicalCarrierCode,
-    service: carrier.services[0],
-    trackingUrl: `${carrier.trackingUrl}${trackingNumber}`,
-    labelUrl: null,
-    status: 'label_created',
-    statusHistory: [{
-      status: 'label_created',
-      label: 'Label Created',
-      description: 'Shipping label has been created',
-      timestamp: new Date().toISOString(),
-      location: null,
-    }],
-    estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    shippingAddress: order.shippingAddress,
-    fromAddress: order.sellerAddress,
-    weight: order.weight || 0.5,
-    dimensions: order.dimensions || null,
-  };
-};
-
 // Auto-tracking status progression
 const trackingStatuses = [
   { code: 'label_created', label: 'Label Created', description: 'Shipping label has been created', sortOrder: 0 },
@@ -395,7 +363,6 @@ module.exports = {
   calculateShipping,
   getPreferredCarrier,
   normalizeCarrier,
-  generateLabel,
   trackingStatuses,
   simulateTrackingUpdate,
   isInternationalAllowed,

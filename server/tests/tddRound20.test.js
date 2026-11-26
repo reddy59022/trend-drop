@@ -330,7 +330,6 @@ const HOSTILE = [
   ['post', '/api/shipping/calculate', { weight: 'heavy' }],
   ['post', '/api/shipping-insurance/calculate', { transactionId: 'not-an-id', coverageType: 'bogus' }],
   ['post', '/api/cart/items', { listingId: 'not-an-id', quantity: 'many' }],
-  ['post', '/api/advanced-shipping/rates', { weight: 'x', toCountry: 42 }],
   ['post', '/api/mobile/barcode-lookup', { barcode: 42 }],
   ['post', '/api/mobile/push-token', { token: 42 }],
   ['put', '/api/mobile/preferences', { preferences: 'nope' }],

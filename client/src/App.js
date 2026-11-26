@@ -65,7 +65,6 @@ const SellerCommunitiesPage = lazy(() => import('./pages/SellerCommunities'));
 const InventoryManagementPage = lazy(() => import('./pages/InventoryManagement'));
 const LoyaltyProgramPage = lazy(() => import('./pages/LoyaltyProgram'));
 const VendorsPage = lazy(() => import('./pages/Vendors'));
-const AdvancedShippingPage = lazy(() => import('./pages/AdvancedShipping'));
 const EnterpriseApiPage = lazy(() => import('./pages/EnterpriseApi'));
 const ReferralsPage = lazy(() => import('./pages/Referrals'));
 const ReturnsCenterPage = lazy(() => import('./pages/ReturnsCenter'));
@@ -275,7 +274,6 @@ function App() {
                 <Route path="/inventory" element={<ProtectedRoute><InventoryManagementPage /></ProtectedRoute>} />
                 <Route path="/loyalty" element={<ProtectedRoute><LoyaltyProgramPage /></ProtectedRoute>} />
                 <Route path="/vendors" element={<ProtectedRoute><VendorsPage /></ProtectedRoute>} />
-                <Route path="/advanced-shipping" element={<ProtectedRoute><AdvancedShippingPage /></ProtectedRoute>} />
                 <Route path="/enterprise" element={<ProtectedRoute><EnterpriseApiPage /></ProtectedRoute>} />
                 <Route path="/referrals" element={<ProtectedRoute><ReferralsPage /></ProtectedRoute>} />
                 <Route path="/returns" element={<ProtectedRoute><ReturnsCenterPage /></ProtectedRoute>} />

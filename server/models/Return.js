@@ -71,6 +71,11 @@ const returnSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  // EasyPost tracker for the platform-purchased return label.
+  trackerId: {
+    type: String,
+    default: '',
+  },
   trackingStatus: {
     type: String,
     default: 'label_created',

@@ -16,6 +16,12 @@ describe('Payment Currency & Amount Validation', () => {
       email: 'payment@test.com',
       password: 'password123',
       role: 'user',
+      country: 'US',
+      currency: 'USD',
+      shippingAddress: {
+        fullName: 'Payment Test User', street1: '9 Seller Rd', city: 'Austin',
+        state: 'TX', postalCode: '78702', country: 'US',
+      },
     });
 
     // Create test listing with non-USD currency

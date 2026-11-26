@@ -609,10 +609,10 @@ describe('RULE 22: Label Download Restriction', () => {
     labelTxn = await buy(buyerToken, l._id);
   });
 
-  test('22a Seller can download label', async () => {
+  test('22a Seller is redirected to the platform-purchased label', async () => {
     const r = await request(app).get(`/api/shipping/label/${labelTxn._id}`).set('Authorization', `Bearer ${sellerToken}`);
-    expect(r.status).toBe(200);
-    expect(r.headers['content-type']).toBe('application/pdf');
+    expect(r.status).toBe(302);
+    expect(r.headers.location).toContain('easypost.test');
   });
 
   test('22b Buyer cannot download label', async () => {
@@ -778,9 +778,10 @@ describe('RULE 24: Multi-Currency Scenarios', () => {
     expect(r.body.seller.platformFee).toBe(12); // 8% of 150
   });
 
-  test('24t Shipping payout = shipping cost (pass-through)', async () => {
+  test('24t Postage is platform revenue and never paid to the seller', async () => {
     const r = await request(app).post('/api/payments/breakdown').send({ itemPrice: 100, fromCountry: 'US', toCountry: 'GB', weightKg: 1 });
-    expect(r.body.seller.shippingPayout).toBe(r.body.buyer.shippingCost);
+    expect(r.body.seller.shippingPayout).toBe(0);
+    expect(r.body.buyer.shippingCost).toBeGreaterThan(0);
   });
 
   test('24u Different weights affect shipping cost', async () => {
@@ -1382,11 +1383,13 @@ describe('RULE 32: Payment Deduction Rules', () => {
     expect(txn.paymentBreakdown.sellerEarnings).toBe(92);
   });
 
-  test('32e Shipping cost passed through to seller', async () => {
+  test('32e Platform owns postage; seller is credited item earnings only', async () => {
     const l = await createListing(sellerId, { price: 100, quantity: 1, title: 'E2E Test ShipPass' });
     const t = await buy(buyerToken, l._id);
     const txn = await Transaction.findById(t._id);
-    expect(txn.paymentBreakdown.shippingPayout).toBe(txn.paymentBreakdown.shippingCost);
+    expect(txn.paymentBreakdown.shippingCost).toBeGreaterThan(0);
+    expect(txn.paymentBreakdown.shippingPayout).toBe(0);
+    expect(txn.paymentBreakdown.sellerCredit).toBe(txn.paymentBreakdown.sellerEarnings);
   });
 
   test('32f Buyer protection fee collected', async () => {

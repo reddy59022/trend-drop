@@ -25,6 +25,7 @@ const { claimTransaction } = require('../utils/claims');
 const { releaseSellerSettlement } = require('../utils/settlement');
 const { retrievePaymentIntent, findPaymentIntent, issueRefund, releaseAuthorization } = require('./payments');
 const { trackingStatuses, simulateTrackingUpdate } = require('./shipping');
+const { getTracker, mapTrackerStatus, isMockMode } = require('../services/easypostService');
 const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
 
 // ──────────────────────────────────────────────
@@ -529,15 +530,33 @@ async function autoProcessReturnTracking(now = Date.now()) {
   let updated = 0;
   let settled = 0;
   const labels = new Map(trackingStatuses.map((s) => [s.code, s]));
+  const mock = isMockMode();
 
   for (const txn of transactions) {
     const returnRequest = txn.returnDetails?.returnId ? await Return.findById(txn.returnDetails.returnId) : null;
     if (!returnRequest || returnRequest.status === 'refunded') continue;
-    const shippedAt = txn.returnDetails?.buyerShippedAt ? new Date(txn.returnDetails.buyerShippedAt).getTime() : now;
-    const daysSinceShipment = Math.max(0, Math.floor((now - shippedAt) / (24 * 60 * 60 * 1000)));
     const current = returnRequest.trackingStatus || 'picked_up';
-    const next = simulateTrackingUpdate(current, daysSinceShipment);
-    if (next !== current) {
+    let next;
+
+    if (mock) {
+      // Development/demo only. A production refund must be backed by a
+      // carrier-confirmed return delivery, never a day counter.
+      const shippedAt = txn.returnDetails?.buyerShippedAt ? new Date(txn.returnDetails.buyerShippedAt).getTime() : now;
+      const daysSinceShipment = Math.max(0, Math.floor((now - shippedAt) / (24 * 60 * 60 * 1000)));
+      next = simulateTrackingUpdate(current, daysSinceShipment);
+    } else {
+      const trackerId = returnRequest.trackerId || txn.returnDetails?.trackerId;
+      if (!trackerId) continue;
+      try {
+        const tracker = await getTracker(trackerId);
+        next = mapTrackerStatus(tracker?.status);
+      } catch (error) {
+        console.error(`[CRON] Return tracker poll failed for ${trackerId}:`, error.code || error.message);
+        continue;
+      }
+    }
+
+    if (next && next !== current) {
       const currentIndex = trackingStatuses.findIndex((s) => s.code === current);
       const nextIndex = trackingStatuses.findIndex((s) => s.code === next);
       returnRequest.trackingStatus = next;

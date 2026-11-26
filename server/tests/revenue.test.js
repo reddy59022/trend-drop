@@ -163,15 +163,15 @@ describe('Complete Transaction Revenue Flow', () => {
     expect(txn.paymentBreakdown.sellerEarnings).toBeGreaterThanOrEqual(0);
   });
 
-  test('TF.4 Shipping cost pass-through: seller gets shipping payout', async () => {
+  test('TF.4 Postage is platform revenue: seller gets no shipping payout', async () => {
     const listing = await createListing(sellerId, { price: 75, quantity: 3, weight: 5 });
     const txn = await buy(buyerToken, listing._id);
 
-    // Shipping is passed to seller
-    expect(txn.paymentBreakdown.shippingPayout).toBeGreaterThan(0);
+    expect(txn.paymentBreakdown.shippingPayout).toBe(0);
     expect(txn.paymentBreakdown.shippingCost).toBeGreaterThan(0);
-    // Seller earnings = item price - 8% platform fee (shipping is separate)
+    // Seller earnings = item price - 8% platform fee (postage excluded)
     expect(txn.paymentBreakdown.sellerEarnings).toBeGreaterThan(0);
+    expect(txn.paymentBreakdown.sellerCredit).toBe(txn.paymentBreakdown.sellerEarnings);
   });
 });
 
@@ -477,11 +477,12 @@ describe('Multi-Currency Revenue Protection', () => {
     expect(b.buyer.buyerProtectionFee).toBe(5);
   });
 
-  test('MC.7 Seller earnings = itemPrice - platformFee (shipping passes through)', () => {
+  test('MC.7 Seller earnings = itemPrice - platformFee; postage stays with the platform', () => {
     const b = calculatePaymentBreakdown(75, 'US', 'GB', 2);
     const expectedEarnings = Math.round((75 - b.seller.platformFee) * 100) / 100;
     expect(b.seller.sellerEarnings).toBe(expectedEarnings);
-    expect(b.seller.shippingPayout).toBe(b.buyer.shippingCost);
+    expect(b.buyer.shippingCost).toBeGreaterThan(0);
+    expect(b.seller.shippingPayout).toBe(0);
   });
 
   test('MC.8 $5000 US item: 8% = $400, under maxFee $500', () => {

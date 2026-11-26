@@ -7,8 +7,12 @@ const Offer = require('../models/Offer');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
-const { calculatePaymentBreakdown } = require('../config/payments');
-const { getPreferredCarrier, generateLabel } = require('../config/shipping');
+const { calculatePaymentBreakdown, releaseAuthorization, issueRefund } = require('../config/payments');
+const {
+  createShippingLabel,
+  refundShippingLabel,
+  shippingLabelPayload,
+} = require('../services/easypostService');
 const { isValidObjectId } = require('../utils/validators');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
@@ -212,7 +216,8 @@ router.post('/checkout', auth, async (req, res) => {
   // multi-item cart (the tracker is populated after the payment gate passes).
   const rollback = createPurchaseRollback();
   try {
-    const { shippingAddress, paymentIntentId } = req.body;
+    const { paymentIntentId } = req.body;
+    const shippingAddress = req.body.shippingAddress || req.user.shippingAddress || {};
 
     // ============================================================
     // PAYMENT GATE (Bug B2): a cart must never be fulfilled without a real,
@@ -421,6 +426,50 @@ router.post('/checkout', auth, async (req, res) => {
       return res.status(400).json({ message: amountCheck.reason });
     }
 
+    // BUY PLATFORM POSTAGE BEFORE ANY ORDER STATE. All labels are purchased
+    // first so a single failure aborts the whole cart with no partial orders.
+    const labelByListing = new Map();
+    for (const [index, item] of cart.items.entries()) {
+      const planned = plannedLines[index];
+      if (!planned) continue;
+      const qty = Math.max(1, Math.floor(item.quantity || 1));
+      const seller = await User.findById(planned.listing.seller);
+      const sellerCountry = seller?.country || planned.listing.shipsFrom || 'US';
+      const sellerAddress = seller?.shippingAddress ? {
+        fullName: seller.shippingAddress.fullName || seller.name,
+        street1: seller.shippingAddress.street1,
+        city: seller.shippingAddress.city,
+        state: seller.shippingAddress.state,
+        postalCode: seller.shippingAddress.postalCode,
+        country: seller.shippingAddress.country || sellerCountry,
+      } : { fullName: seller?.name, country: sellerCountry };
+      try {
+        const label = await createShippingLabel({
+          fromAddress: sellerAddress,
+          toAddress: { fullName: shippingAddress?.fullName || buyer.name, ...shippingAddress },
+          weightKg: planned.listing.weight || 0.5,
+          reference: `cart:${pi.id}:${planned.listing._id}`,
+          declaredValue: (planned.offerPrice || planned.listing.price) * qty,
+        });
+        labelByListing.set(String(planned.listing._id), label);
+        rollback.track.addLabel(label.shipmentId);
+      } catch (labelError) {
+        console.error('Cart shipping label failed:', labelError.code || labelError.message);
+        for (const purchased of labelByListing.values()) {
+          try { await refundShippingLabel(purchased.shipmentId); } catch (e) {}
+        }
+        try {
+          if (pi.status === 'succeeded') await issueRefund(pi.id);
+          else await releaseAuthorization(pi.id);
+        } catch (e) { console.error('Cart payment release failed:', e.message); }
+        return res.status(502).json({
+          code: labelError.code || 'SHIPPING_LABEL_FAILED',
+          message: 'Shipping label could not be created. Your payment was not captured.',
+          retryable: labelError.retryable !== false,
+        });
+      }
+    }
+
     // Process each item in cart
     const createdTransactions = [];
 
@@ -444,19 +493,19 @@ router.post('/checkout', auth, async (req, res) => {
         computeCartLineFinancials(listing, seller, sellerCountry, toCountry, qty, salePrice);
 
       const sellerAddress = seller?.shippingAddress ? {
+        fullName: seller.shippingAddress.fullName || seller.name,
         street1: seller.shippingAddress.street1,
         city: seller.shippingAddress.city,
         state: seller.shippingAddress.state,
         postalCode: seller.shippingAddress.postalCode,
         country: seller.shippingAddress.country || sellerCountry,
-      } : { country: sellerCountry };
+      } : { fullName: seller?.name, country: sellerCountry };
 
-      const carrierCode = getPreferredCarrier(toCountry, sellerCountry === toCountry);
-      const label = generateLabel({
-        shippingAddress: { fullName: shippingAddress?.fullName || buyer.name, ...shippingAddress },
-        sellerAddress,
-        weight: combinedWeight,
-      }, carrierCode);
+      const label = labelByListing.get(String(listing._id));
+      if (!label) {
+        await rollback.run();
+        return res.status(502).json({ code: 'SHIPPING_LABEL_FAILED', message: 'Shipping label missing for an item in your cart.' });
+      }
 
       const transaction = await Transaction.create({
         listing: listing._id,
@@ -474,11 +523,9 @@ router.post('/checkout', auth, async (req, res) => {
           totalPaid: lineTotal,
           platformFee: platformTotal,
           platformFeePercent: breakdown.seller.platformFeePercent,
-          shippingPayout: breakdown.seller.shippingPayout,
+          shippingPayout: 0,
           sellerEarnings: earningsTotal,
-          // Round 4: the exact amount credited to the seller's balance
-          // (earnings + shipping label reimbursement) — utils/balances.js.
-          sellerCredit: Math.round((earningsTotal + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
+          sellerCredit: earningsTotal,
           // TDD-B1: canonical provider id (never the raw client string) so one
           // authorization can never fund a second purchase / confirm-batch replay.
           paymentIntentId: pi.id,
@@ -493,16 +540,7 @@ router.post('/checkout', auth, async (req, res) => {
           country: toCountry,
           phone: shippingAddress?.phone,
         },
-        shipping: {
-          carrier: label.carrier,
-          trackingNumber: label.trackingNumber,
-          trackingUrl: label.trackingUrl,
-          labelCreated: true,
-          labelCreatedDate: new Date(),
-          estimatedDelivery: new Date(label.estimatedDelivery),
-          service: label.service,
-          trackingHistory: label.statusHistory,
-        },
+        shipping: { ...shippingLabelPayload(label), weight: combinedWeight },
         status: 'shipped',
         payout: { status: 'pending', transactionId: pi.id },
       });
@@ -535,16 +573,14 @@ router.post('/checkout', auth, async (req, res) => {
         await User.updateOne(
           { _id: seller._id },
           {
-            // SHIPPING REIMBURSEMENT (round 4): earnings + the shipping label
-            // reimbursement the buyer paid for this seller's label.
-            $inc: { 'balance.pending': Math.round((earningsTotal + (breakdown.seller.shippingPayout || 0)) * 100) / 100 },
+            $inc: { 'balance.pending': earningsTotal },
             $push: {
               notifications: {
                 $each: [saleNotification({
                   from: req.user._id,
                   listing: listing._id,
                   transaction: transaction._id,
-                  message: `Item sold from cart! You'll earn ${Math.round((earningsTotal + (breakdown.seller.shippingPayout || 0)) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
+                  message: `Item sold from cart! You'll earn ${earningsTotal} ${breakdown.sellerCurrency}. Shipping label ready.`,
                 })],
                 $position: 0,
               },
@@ -552,7 +588,7 @@ router.post('/checkout', auth, async (req, res) => {
           }
         );
         // Only revertible once persisted — no phantom pending earnings.
-        rollback.track.addSellerCredit(seller._id, Math.round((earningsTotal + (breakdown.seller.shippingPayout || 0)) * 100) / 100);
+        rollback.track.addSellerCredit(seller._id, earningsTotal);
       }
 
       // Create payout record

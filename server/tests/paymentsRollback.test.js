@@ -49,6 +49,7 @@ test('Phase-4 seller save failure after inventory decrement fully restores listi
       name: 'Rollback Seller', email: mkEmail('rb_seller'), password: 'password123',
       country: 'US', authProvider: 'email', emailVerified: true,
       location: 'San Diego, CA, US',
+      shippingAddress: { fullName: 'Rollback Seller', street1: '9 Seller Rd', city: 'Austin', state: 'TX', postalCode: '78702', country: 'US' },
       balance: { available: 0, pending: 0, currency: 'USD' },
       stats: { totalSales: 0, totalPurchases: 0, strikes: 0 },
     });
@@ -98,6 +99,7 @@ test('Phase-4 seller save failure after inventory decrement fully restores listi
     const seller = await User.create({
       name: 'Atomic Claim Seller', email: mkEmail('rb_claim_seller'), password: 'password123',
       country: 'US', authProvider: 'email', emailVerified: true,
+      shippingAddress: { fullName: 'Atomic Claim Seller', street1: '9 Seller Rd', city: 'Austin', state: 'TX', postalCode: '78702', country: 'US' },
       balance: { available: 0, pending: 0, currency: 'USD' },
     });
     const listing = await Listing.create({
@@ -144,6 +146,7 @@ test('Phase-4 seller save failure after inventory decrement fully restores listi
     const seller = await User.create({
       name: 'LegacyOk Seller', email: mkEmail('rb_ok'), password: 'password123',
       country: 'US', authProvider: 'email', emailVerified: true,
+      shippingAddress: { fullName: 'LegacyOk Seller', street1: '9 Seller Rd', city: 'Austin', state: 'TX', postalCode: '78702', country: 'US' },
       balance: { available: 0, pending: 0, currency: 'USD' },
     });
     await User.collection.updateOne({ _id: seller._id }, {

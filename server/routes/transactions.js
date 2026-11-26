@@ -7,8 +7,13 @@ const Offer = require('../models/Offer');
 const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
 const { isValidObjectId } = require('../utils/validators');
-const { calculateShipping, getPreferredCarrier } = require('../config/shipping');
-const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding, verifyIntentAmount, releaseAuthorization } = require('../config/payments');
+const { calculateShipping } = require('../config/shipping');
+const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding, verifyIntentAmount, releaseAuthorization, issueRefund } = require('../config/payments');
+const {
+  createShippingLabel,
+  refundShippingLabel,
+  shippingLabelPayload,
+} = require('../services/easypostService');
 const { boostConfig } = require('../config/boost');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
@@ -188,7 +193,7 @@ router.post('/guest', async (req, res) => {
     }
 
     // Validate shipping address
-    if (!shippingAddress.fullName || !shippingAddress.street1 || !shippingAddress.city ||
+    if (!shippingAddress.fullName || !(shippingAddress.street1 || shippingAddress.street) || !shippingAddress.city ||
         !shippingAddress.state || !shippingAddress.postalCode || !shippingAddress.country) {
       return res.status(400).json({ message: 'Complete shipping address is required' });
     }
@@ -232,7 +237,7 @@ router.post('/guest', async (req, res) => {
         currency: 'USD',
         shippingAddress: {
           fullName: buyerName,
-          street1: shippingAddress.street1,
+          street1: shippingAddress.street1 || shippingAddress.street,
           street2: shippingAddress.street2 || '',
           city: shippingAddress.city,
           state: shippingAddress.state,
@@ -264,13 +269,39 @@ router.post('/guest', async (req, res) => {
     const boostFee = getBoostFee(listing, listing.price);
 
     const sellerAddress = seller?.shippingAddress ? {
+      fullName: seller.shippingAddress.fullName || seller.name,
       street1: seller.shippingAddress.street1,
       street2: seller.shippingAddress.street2,
       city: seller.shippingAddress.city,
       state: seller.shippingAddress.state,
       postalCode: seller.shippingAddress.postalCode,
       country: seller.shippingAddress.country || sellerCountry,
-    } : { country: sellerCountry };
+    } : { fullName: seller?.name, country: sellerCountry };
+
+    // Platform postage before any order state. A guest has already authorized
+    // the card through the payment gate; if EasyPost cannot buy the label the
+    // stream is released/refunded and no transaction is created.
+    let label;
+    try {
+      label = await createShippingLabel({
+        fromAddress: sellerAddress,
+        toAddress: { fullName: shippingAddress.fullName, ...shippingAddress },
+        weightKg,
+        reference: `guest:${gate.pi.id}:${listing._id}`,
+        declaredValue: listing.price,
+      });
+    } catch (labelError) {
+      console.error('Guest shipping label failed:', labelError.code || labelError.message);
+      try {
+        if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
+        else await releaseAuthorization(gate.pi.id);
+      } catch (e) { console.error('Guest payment release failed:', e.message); }
+      return res.status(502).json({
+        code: labelError.code || 'SHIPPING_LABEL_FAILED',
+        message: 'Shipping label could not be created. Your payment was not captured.',
+        retryable: labelError.retryable !== false,
+      });
+    }
 
     const transaction = await Transaction.create({
       listing: listingId,
@@ -287,11 +318,9 @@ router.post('/guest', async (req, res) => {
         totalPaid: breakdown.buyer.totalPaid,
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
-        shippingPayout: breakdown.seller.shippingPayout,
+        shippingPayout: 0,
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
-        // Round 4: the exact amount credited to the seller's balance
-        // (earnings + shipping label reimbursement) — utils/balances.js.
-        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
+        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100,
         boostFee,
         boostTier: listing.boost?.tier || '',
         // TDD-B1: record the funding intent so a single authorization can
@@ -301,7 +330,7 @@ router.post('/guest', async (req, res) => {
       },
       shippingAddress: {
         fullName: shippingAddress.fullName,
-        street1: shippingAddress.street1,
+        street1: shippingAddress.street1 || shippingAddress.street,
         street2: shippingAddress.street2 || '',
         city: shippingAddress.city,
         state: shippingAddress.state,
@@ -310,11 +339,7 @@ router.post('/guest', async (req, res) => {
         phone: buyerPhone || shippingAddress.phone || '',
       },
       sellerAddress,
-      shipping: {
-        weight: weightKg,
-        carrier: getPreferredCarrier(buyerShipCountry, sellerCountry === buyerShipCountry),
-        estimatedDelivery: new Date(Date.now() + (breakdown.shipping?.estimatedDays?.max || 7) * 24 * 60 * 60 * 1000),
-      },
+      shipping: { ...shippingLabelPayload(label), weight: weightKg },
       payout: { status: 'pending' },
       autoTracking: {
         enabled: true,
@@ -350,7 +375,13 @@ router.post('/guest', async (req, res) => {
       // the orphan and release the authorization; never report a successful
       // purchase or credit the seller without inventory.
       await Transaction.deleteOne({ _id: transaction._id });
-      try { await releaseAuthorization(gate.pi.id); } catch (releaseError) {
+      try { await refundShippingLabel(label.shipmentId); } catch (refundError) {
+        console.error('Failed to refund guest checkout label:', refundError.message);
+      }
+      try {
+        if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
+        else await releaseAuthorization(gate.pi.id);
+      } catch (releaseError) {
         console.error('Failed to release guest checkout authorization:', releaseError.message);
       }
       return res.status(409).json({ message: 'Listing sold out while completing checkout' });
@@ -362,7 +393,7 @@ router.post('/guest', async (req, res) => {
     // Update seller pending balance (earnings + the shipping label
     // reimbursement the buyer paid — round-4 shipping pass-through)
     await User.findByIdAndUpdate(listing.seller, {
-      $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100 }
+      $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100 }
     });
 
     res.status(201).json({
@@ -387,7 +418,11 @@ router.post('/', auth, async (req, res) => {
     // purchase (the tracker is populated once the payment gate passes).
     const rollback = createPurchaseRollback();
     try {
-      const { listingId, shippingAddress, buyerCountry } = req.body;
+      const { listingId, buyerCountry } = req.body;
+      // Buyers may rely on the address saved on their account; an explicit
+      // checkout address still wins. Incomplete addresses fail closed when the
+      // platform label is purchased, before any money moves.
+      const shippingAddress = req.body.shippingAddress || req.user.shippingAddress || {};
 
       // Hostile-input guard: a truthy-but-uncastable id (123, {}, "abc") used to
       // reach findById() and throw a CastError -> 500.
@@ -453,13 +488,39 @@ router.post('/', auth, async (req, res) => {
 
     // Get seller's address
     const sellerAddress = seller?.shippingAddress ? {
+      fullName: seller.shippingAddress.fullName || seller.name,
       street1: seller.shippingAddress.street1,
       street2: seller.shippingAddress.street2,
       city: seller.shippingAddress.city,
       state: seller.shippingAddress.state,
       postalCode: seller.shippingAddress.postalCode,
       country: seller.shippingAddress.country || sellerCountry,
-    } : { country: sellerCountry };
+    } : { fullName: seller?.name, country: sellerCountry };
+
+      // Buy platform postage while the card is only authorized. Failure aborts
+      // the order and releases the hold before any transaction exists.
+      let label;
+      try {
+        label = await createShippingLabel({
+          fromAddress: sellerAddress,
+          toAddress: { fullName: shippingAddress?.fullName || req.user.name, ...shippingAddress },
+          weightKg,
+          reference: `buy:${gate.pi.id}:${listing._id}`,
+          declaredValue: finalPrice,
+        });
+      } catch (labelError) {
+        console.error('Shipping label failed:', labelError.code || labelError.message);
+        try {
+          if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
+          else await releaseAuthorization(gate.pi.id);
+        } catch (e) { console.error('Payment release after label failure failed:', e.message); }
+        return res.status(502).json({
+          code: labelError.code || 'SHIPPING_LABEL_FAILED',
+          message: 'Shipping label could not be created. Your payment was not captured.',
+          retryable: labelError.retryable !== false,
+        });
+      }
+      rollback.track.addLabel(label.shipmentId);
 
       const transaction = await Transaction.create({
         listing: listingId,
@@ -476,11 +537,9 @@ router.post('/', auth, async (req, res) => {
         totalPaid: breakdown.buyer.totalPaid,
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
-        shippingPayout: breakdown.seller.shippingPayout,
+        shippingPayout: 0,
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
-        // Round 4: the exact amount credited to the seller's balance
-        // (earnings + shipping label reimbursement) — utils/balances.js.
-        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
+        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100,
         boostFee,
         boostTier: listing.boost?.tier || '',
         paymentIntentId: gate.pi.id,
@@ -499,11 +558,7 @@ router.post('/', auth, async (req, res) => {
       negotiatedPrice,
       isNegotiated,
       sellerAddress,
-      shipping: {
-        weight: weightKg,
-        carrier: getPreferredCarrier(buyerShipCountry, sellerCountry === buyerShipCountry),
-        estimatedDelivery: new Date(Date.now() + (breakdown.shipping?.estimatedDays?.max || 7) * 24 * 60 * 60 * 1000),
-      },
+      shipping: { ...shippingLabelPayload(label), weight: weightKg },
       payout: {
         status: 'pending',
       },
@@ -546,7 +601,7 @@ router.post('/', auth, async (req, res) => {
     // Update seller's pending balance and notification
     // SHIPPING REIMBURSEMENT (round 4): the buyer's shipping charge is a
     // label-cost reimbursement owed to the seller (see utils/balances.js).
-    const finalSellerEarnings = Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100;
+    const finalSellerEarnings = Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100;
     if (seller) {
       // ATOMIC credit ($inc + prepend): concurrent purchases of the same
       // seller's items used to race on document versioning here — the loser
@@ -689,7 +744,8 @@ router.post('/offer/:offerId', auth, async (req, res) => {
 
     const seller = await User.findById(listing.seller);
     const sellerCountry = seller?.country || listing.shipsFrom || 'US';
-    const buyerCountry = req.user.country || 'US';
+    const shippingAddress = req.body?.shippingAddress || req.user.shippingAddress || {};
+    const buyerCountry = shippingAddress.country || req.user.country || 'US';
     const weightKg = listing.weight || 0.5;
     const { calculateShipping } = require('../config/shipping');
     const { calculatePaymentBreakdown } = require('../config/payments');
@@ -706,6 +762,39 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     // Boost fee: flat % of sale price, charged only upon successful sale
     const boostFee = getBoostFee(listing, finalPrice);
 
+    const sellerAddress = seller?.shippingAddress ? {
+      fullName: seller.shippingAddress.fullName || seller.name,
+      street1: seller.shippingAddress.street1,
+      street2: seller.shippingAddress.street2,
+      city: seller.shippingAddress.city,
+      state: seller.shippingAddress.state,
+      postalCode: seller.shippingAddress.postalCode,
+      country: seller.shippingAddress.country || sellerCountry,
+    } : { fullName: seller?.name, country: sellerCountry };
+
+    let label;
+    try {
+      label = await createShippingLabel({
+        fromAddress: sellerAddress,
+        toAddress: { fullName: shippingAddress.fullName || req.user.name, ...shippingAddress },
+        weightKg,
+        reference: `offer:${offerGate.pi.id}:${listing._id}`,
+        declaredValue: finalPrice,
+      });
+    } catch (labelError) {
+      console.error('Offer shipping label failed:', labelError.code || labelError.message);
+      try {
+        if (offerGate.pi.status === 'succeeded') await issueRefund(offerGate.pi.id);
+        else await releaseAuthorization(offerGate.pi.id);
+      } catch (e) { console.error('Payment release after label failure failed:', e.message); }
+      return res.status(502).json({
+        code: labelError.code || 'SHIPPING_LABEL_FAILED',
+        message: 'Shipping label could not be created. Your payment was not captured.',
+        retryable: labelError.retryable !== false,
+      });
+    }
+    rollback.track.addLabel(label.shipmentId);
+
     const transaction = await Transaction.create({
       listing: listing._id,
       buyer: req.user._id,
@@ -721,20 +810,26 @@ router.post('/offer/:offerId', auth, async (req, res) => {
         totalPaid: breakdown.buyer.totalPaid,
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
-        shippingPayout: breakdown.seller.shippingPayout,
+        shippingPayout: 0,
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
-        // Round 4: the exact amount credited to the seller's balance
-        // (earnings + shipping label reimbursement) — utils/balances.js.
-        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
+        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100,
         boostFee,
         boostTier: listing.boost?.tier || '',
         // TDD-B1: funding intent recorded so it cannot be replayed.
         paymentIntentId: offerGate.pi.id,
       },
       shippingAddress: {
-        fullName: req.user.name,
+        fullName: shippingAddress.fullName || req.user.name,
+        street1: shippingAddress.street1 || shippingAddress.street,
+        street2: shippingAddress.street2,
+        city: shippingAddress.city,
+        state: shippingAddress.state,
+        postalCode: shippingAddress.postalCode,
         country: buyerCountry,
+        phone: shippingAddress.phone,
       },
+      sellerAddress,
+      shipping: { ...shippingLabelPayload(label), weight: weightKg },
       offer: offer._id,
       negotiatedPrice: finalPrice,
       isNegotiated: true,
@@ -778,7 +873,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       await User.updateOne(
         { _id: seller._id },
         {
-          $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100 },
+          $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100 },
           $push: {
             notifications: {
               $each: [saleNotification({
@@ -794,7 +889,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       );
       // Only revertible once persisted — a rolled-back purchase leaves the
       // seller with no phantom pending earnings.
-      rollback.track.addSellerCredit(seller._id, Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100);
+      rollback.track.addSellerCredit(seller._id, Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100);
     }
 
     // Notify buyer of purchase (atomic prepend — the same buyer may have

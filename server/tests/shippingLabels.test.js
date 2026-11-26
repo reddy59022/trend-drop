@@ -128,8 +128,8 @@ describe('Shipping Labels (EasyPost Integration)', () => {
 
     expect(voidRes.status).toBe(200);
     expect(voidRes.body.voided).toBe(true);
-    expect(voidRes.body.refunded).toBe(false);
-    expect(voidRes.body.refundAmount).toBe(0);
+    // The mock provider accepts the carrier refund; the sale itself is untouched.
+    expect(voidRes.body.refunded).toBe(true);
     const afterTxn = await Transaction.findById(txn._id).lean();
     expect(afterTxn.status).toBe('paid');
     expect(afterTxn.shipping.voided).toBe(true);
@@ -183,12 +183,12 @@ describe('Shipping Labels (EasyPost Integration)', () => {
     expect(labelRes.body.fromAddress.country).toBe('US');
   });
 
-  test('SL.6 Uses the seller origin when selecting the carrier for cross-border labels', async () => {
+  test('SL.6 Cross-border labels are purchased by the platform through EasyPost', async () => {
     const txn = await Transaction.create({
       listing: testListing._id, buyer: buyerId, seller: sellerId, itemPrice: 50,
       currency: 'USD', paymentBreakdown: { subtotal: 50, totalPaid: 60, sellerEarnings: 45 },
       shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'London', state: 'England', postalCode: 'SW1A 1AA', country: 'GB' },
-      sellerAddress: { street1: '123 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' },
+      sellerAddress: { fullName: 'Seller', street1: '123 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' },
       status: 'paid',
     });
 
@@ -197,15 +197,17 @@ describe('Shipping Labels (EasyPost Integration)', () => {
       .set('Authorization', `Bearer ${sellerToken}`);
 
     expect(labelRes.status).toBe(200);
-    expect(labelRes.body.carrier).toBe('DHL Express');
+    expect(labelRes.body.provider).toBe('mock');
+    expect(labelRes.body.trackingNumber).toBeDefined();
+    expect(labelRes.body.labelUrl).toContain('easypost.test');
   });
 
-  test('SL.7 Rejects unknown carriers instead of silently generating a fallback label', async () => {
+  test('SL.7 Carrier selection is not seller-controlled; the platform label is authoritative', async () => {
     const txn = await Transaction.create({
       listing: testListing._id, buyer: buyerId, seller: sellerId, itemPrice: 50,
       currency: 'USD', paymentBreakdown: { subtotal: 50, totalPaid: 60, sellerEarnings: 45 },
       shippingAddress: { fullName: 'Buyer', street1: '456 St', city: 'London', state: 'England', postalCode: 'SW1A 1AA', country: 'GB' },
-      sellerAddress: { street1: '123 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' },
+      sellerAddress: { fullName: 'Seller', street1: '123 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' },
       status: 'paid',
     });
 
@@ -214,19 +216,18 @@ describe('Shipping Labels (EasyPost Integration)', () => {
       .set('Authorization', `Bearer ${sellerToken}`)
       .send({ transactionId: txn._id, carrier: 'NOT_A_CARRIER' });
 
-    expect(labelRes.status).toBe(400);
+    expect(labelRes.status).toBe(200);
+    expect(labelRes.body.provider).toBe('mock');
+    expect(labelRes.body.trackingNumber).toBeDefined();
   });
 
-  test('SL.8 PDF download returns a print-ready PDF only to the seller', async () => {
+  test('SL.8 Label download redirects to the EasyPost-hosted label only for the seller', async () => {
     const pdfRes = await request(app)
       .get(`/api/shipping/label/${testTransaction._id}`)
       .set('Authorization', `Bearer ${sellerToken}`);
 
-    expect(pdfRes.status).toBe(200);
-    expect(pdfRes.headers['content-type']).toContain('application/pdf');
-    expect(pdfRes.headers['content-disposition']).toMatch(/attachment; filename="trenddrop-label-.+\.pdf"/);
-    expect(pdfRes.body.subarray(0, 4).toString()).toBe('%PDF');
-    expect(pdfRes.body.length).toBeGreaterThan(1000);
+    expect(pdfRes.status).toBe(302);
+    expect(pdfRes.headers.location).toContain('easypost.test');
   });
 
   test('SL.9 Repeated void requests are idempotent and do not create a second refund', async () => {
@@ -271,11 +272,15 @@ describe('Shipping Labels (EasyPost Integration)', () => {
 
     // Carrier slugs from the seller UI are case-insensitive but persisted
     // canonically, so a valid mock shipment is not rejected in production.
+    await Transaction.findByIdAndUpdate(txn._id, {
+      $set: { 'shipping.trackingNumber': 'TD-PLATFORM-TRACK', 'shipping.carrier': 'USPS' },
+    });
     const valid = await request(app)
       .post(`/api/orders/${order._id}/ship`)
       .set('Authorization', `Bearer ${sellerToken}`)
       .send({ shipmentIndex: 0, trackingNumber: 'TRACK-VALID', carrier: 'usps' });
     expect(valid.status).toBe(200);
+    expect(valid.body.order.shipments[0].trackingNumber).toBe('TD-PLATFORM-TRACK');
     expect(valid.body.order.shipments[0].carrier).toBe('USPS');
   });
 

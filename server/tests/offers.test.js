@@ -46,6 +46,10 @@ beforeAll(async () => {
     emailVerified: true,
     country: 'US',
     currency: 'USD',
+    shippingAddress: {
+      fullName: 'TestSeller', street1: '9 Seller Rd', city: 'Austin', state: 'TX',
+      postalCode: '78702', country: 'US',
+    },
   });
   testUserIds.push(seller._id);
   buyer = await User.create({
@@ -55,6 +59,10 @@ beforeAll(async () => {
     emailVerified: true,
     country: 'US',
     currency: 'USD',
+    shippingAddress: {
+      fullName: 'TestBuyer', street1: '1 Buyer St', city: 'Austin', state: 'TX',
+      postalCode: '78701', country: 'US',
+    },
   });
   testUserIds.push(buyer._id);
   

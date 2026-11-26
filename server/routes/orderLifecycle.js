@@ -265,9 +265,30 @@ router.post('/:id/ship', auth, async (req, res) => {
       return res.status(400).json({ message: 'Shipment was cancelled — nothing to ship' });
     }
 
+    // TRACKING IS PLATFORM-OWNED. Sellers mark a parcel dispatched; they do
+    // not type a tracking number. The only accepted values are the label
+    // TrendDrop purchased from EasyPost, so a seller cannot inject a random
+    // number to fake shipment. Client-supplied tracking/carrier are ignored.
+    let platformTracking = shipment.trackingNumber || '';
+    let platformCarrier = shipment.carrier || '';
+    if (!platformTracking) {
+      const labelTxn = await Transaction.findOne({ _id: { $in: shipment.items } })
+        .select('shipping');
+      if (labelTxn?.shipping?.trackingNumber && !labelTxn.shipping.voided) {
+        platformTracking = labelTxn.shipping.trackingNumber;
+        platformCarrier = labelTxn.shipping.carrier || '';
+      }
+    }
+    if (!platformTracking) {
+      return res.status(409).json({
+        code: 'SHIPPING_LABEL_NOT_READY',
+        message: 'This shipment has no platform shipping label yet. Please retry once the label is issued.',
+      });
+    }
+
     shipment.status = 'shipped';
-    if (trackingNumber) shipment.trackingNumber = trackingNumber;
-    if (requestedCarrier) shipment.carrier = requestedCarrier;
+    shipment.trackingNumber = platformTracking;
+    if (platformCarrier) shipment.carrier = platformCarrier;
     shipment.shippedAt = new Date();
     await order.save();
 
@@ -282,8 +303,8 @@ router.post('/:id/ship', auth, async (req, res) => {
         {
           $set: {
             status: 'shipped',
-            'shipping.trackingNumber': trackingNumber || '',
-            'shipping.carrier': requestedCarrier || '',
+            'shipping.trackingNumber': platformTracking,
+            ...(platformCarrier ? { 'shipping.carrier': platformCarrier } : {}),
           },
         }
       );
@@ -298,7 +319,7 @@ router.post('/:id/ship', auth, async (req, res) => {
         // shipping — refuse the dispatch so money and goods never diverge.
         if (shippedCount > 0) {
           await Transaction.updateMany(
-            { _id: { $in: shipment.items }, status: 'shipped', 'shipping.trackingNumber': trackingNumber || '' },
+            { _id: { $in: shipment.items }, status: 'shipped', 'shipping.trackingNumber': platformTracking },
             { $set: { status: 'paid' } }
           );
         }

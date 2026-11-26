@@ -95,8 +95,18 @@ const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg =
   
   return {
     buyer: { itemPrice, shippingCost, buyerProtectionFee, buyerProtectionPercent, totalPaid, buyerChargeAmount, exchangeRate },
-    seller: { itemPrice, platformFee: clampedPlatformFee, platformFeePercent, shippingPayout: shippingCost, sellerEarnings, sellerSettlementAmount },
-    platform: { commission: clampedPlatformFee, stripeFee, buyerProtectionFee, netRevenue: calculatePlatformNet(clampedPlatformFee, buyerProtectionFee, stripeFee) },
+    // SHIPPING IS A PLATFORM SERVICE. The buyer pays postage, the platform buys
+    // the EasyPost label, and the seller receives ONLY sale earnings. Keeping
+    // shippingPayout as a 0-valued field preserves the receipt shape without
+    // paying sellers for postage they no longer purchase.
+    seller: { itemPrice, platformFee: clampedPlatformFee, platformFeePercent, shippingPayout: 0, sellerEarnings, sellerSettlementAmount },
+    platform: {
+      commission: clampedPlatformFee,
+      stripeFee,
+      buyerProtectionFee,
+      shippingRevenue: shippingCost,
+      netRevenue: calculatePlatformNet(clampedPlatformFee, buyerProtectionFee, stripeFee),
+    },
     fromCountry, toCountry,
     sellerCurrency: sellerCommission.currency,
     buyerCurrency: buyerCommission.currency,

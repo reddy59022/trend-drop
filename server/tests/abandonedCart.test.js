@@ -24,6 +24,10 @@ async function createUser(email) {
     role: 'user',
     country: 'US',
     currency: 'USD',
+    shippingAddress: {
+      fullName: 'TestUser', street1: '1 Test St', city: 'Austin', state: 'TX',
+      postalCode: '78701', country: 'US',
+    },
   });
 }
 

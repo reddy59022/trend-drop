@@ -210,7 +210,7 @@ describeRevenue('35 · customer/seller/platform revenue invariants', () => {
     expect(listingAfter.data.listing.available).toBe(true);
   });
 
-  test('paid shipping is a fully accounted pass-through and is refunded exactly once', async () => {
+  test('platform-owned postage is collected once and refunded exactly once', async () => {
     const before = await api.req('get', '/api/users/me', { token: sellerToken });
     expect(before.status).toBe(200);
 
@@ -258,18 +258,18 @@ describeRevenue('35 · customer/seller/platform revenue invariants', () => {
     const boost = cents(bd.boostFee || 0);
 
     expect(shipping).toBeGreaterThan(0);
-    expect(cents(bd.shippingPayout)).toBe(shipping);
+    // TrendDrop buys the EasyPost label; the seller is never paid postage.
+    expect(cents(bd.shippingPayout)).toBe(0);
     expect(gross).toBe(cents(item + shipping + protection));
     // Every customer-paid cent is assigned: item → seller/platform/boost,
-    // shipping → shipping payout, protection → platform gross.
+    // shipping → platform, protection → platform gross.
     expect(cents(seller + platform + boost + shipping + protection)).toBe(gross);
 
     const sellerAfter = await api.req('get', '/api/users/me', { token: sellerToken });
     expect(sellerAfter.status).toBe(200);
-    // The seller's balance gains BOTH legs they are owed: net earnings + the
-    // shipping label reimbursement the buyer paid (the seller buys the
-    // label). The refund below must then reverse exactly this amount.
-    expect(cents(sellerAfter.data.balance.pending - before.data.balance.pending)).toBe(cents(seller + shipping));
+    // The seller's balance gains net earnings only; postage belongs to the
+    // platform. The refund below must reverse exactly this credit.
+    expect(cents(sellerAfter.data.balance.pending - before.data.balance.pending)).toBe(cents(seller));
 
     const cancelled = await api.req('post', `/api/orders/${transaction._id}/cancel`, {
       token: buyerToken,

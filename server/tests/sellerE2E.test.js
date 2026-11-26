@@ -306,12 +306,17 @@ describe('SELLER TYPE A — Full Sale Pipeline (Sell, Ship, Deliver, Complete, C
     expect(Array.isArray(r.body.order.allowedActions)).toBe(true);
   });
 
-  test('S4. Seller ships the item (shipmentIndex 0 + tracking)', async () => {
+  test('S4. Seller dispatches; platform EasyPost tracking is authoritative', async () => {
+    const before = await Transaction.findById(txnId);
+    const platformTracking = before.shipping.trackingNumber;
+    expect(platformTracking).toBeTruthy();
+    // A seller-supplied number is ignored: only platform postage is trusted.
     const r = await request(app).post(`/api/orders/${orderId}/ship`).set('Authorization', `Bearer ${sellerToken}`)
       .send({ shipmentIndex: 0, trackingNumber: '1Z999AA10123456784', carrier: 'UPS' });
     expect(r.status).toBe(200);
     expect(r.body.order.shipments[0].status).toBe('shipped');
-    expect(r.body.order.shipments[0].trackingNumber).toBe('1Z999AA10123456784');
+    expect(r.body.order.shipments[0].trackingNumber).toBe(platformTracking);
+    expect(r.body.order.shipments[0].trackingNumber).not.toBe('1Z999AA10123456784');
     // Underlying transaction synced to shipped
     const txn = await Transaction.findById(txnId);
     expect(txn.status).toBe('shipped');

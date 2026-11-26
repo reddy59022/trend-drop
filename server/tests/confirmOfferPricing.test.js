@@ -315,8 +315,8 @@ describe('MM.7 — create-intent stamps totalUnits (the void-safety contract)', 
   });
 });
 
-describe('MM.9 — the shipping label reimbursement reaches the seller', () => {
-  test('a paid-shipping sale credits earnings + shippingPayout (the buyer paid both)', async () => {
+describe('MM.9 — postage belongs to the platform, not the seller', () => {
+  test('a paid-shipping sale credits earnings only; the platform keeps postage', async () => {
     const seller = await makeUser('MM9 seller', `mm9_seller_${Date.now()}@test.com`);
     const buyer = await makeUser('MM9 buyer', `mm9_buyer_${Date.now()}@test.com`);
     // $20 is below the $50 domestic free-shipping threshold → shipping charged
@@ -338,14 +338,14 @@ describe('MM.9 — the shipping label reimbursement reaches the seller', () => {
     const sellerAfter = (await User.findById(seller.user._id)).balance?.pending || 0;
     const credited = round2(sellerAfter - sellerBefore);
 
-    // The seller receives earnings + the label-cost reimbursement the buyer
-    // paid — never just the earnings leg (that stranded the shipping money).
-    expect(pb.shippingPayout).toBe(bd.buyer.shippingCost);
-    expect(credited).toBe(round2(pb.sellerEarnings + pb.shippingPayout));
-    expect(credited).toBe(round2(bd.seller.sellerEarnings + bd.buyer.shippingCost));
+    // TrendDrop buys and owns the label; the seller is paid only for the item.
+    expect(bd.seller.shippingPayout).toBe(0);
+    expect(pb.shippingPayout).toBe(0);
+    expect(credited).toBe(round2(pb.sellerEarnings));
+    expect(credited).toBe(round2(bd.seller.sellerEarnings));
     // The row stamps the credited amount so every later release/clawback is
     // symmetric with this credit.
-    expect(pb.sellerCredit).toBe(round2(pb.sellerEarnings + pb.shippingPayout));
+    expect(pb.sellerCredit).toBe(round2(pb.sellerEarnings));
   });
 });
 
@@ -401,7 +401,8 @@ describe('MM.8 — multi-unit confirm never over-charges (capture capped at the 
     // The order total is what the seller/platform accounting is built on —
     // the extra authorization headroom is never booked as revenue.
     expect(round2(tx.paymentBreakdown.sellerEarnings + tx.paymentBreakdown.shippingPayout
-      + tx.paymentBreakdown.platformFee + tx.paymentBreakdown.buyerProtectionFee))
+      + tx.paymentBreakdown.platformFee + tx.paymentBreakdown.buyerProtectionFee
+      + tx.paymentBreakdown.shippingCost))
       .toBe(round2(tx.paymentBreakdown.totalPaid));
   });
 });

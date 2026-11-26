@@ -247,30 +247,39 @@ router.put('/:id/approve', auth, async (req, res) => {
     if (returnRequest.status !== 'pending') {
       return res.status(400).json({ message: 'Return is not in pending status' });
     }
-    returnRequest.status = 'approved';
-    // ENTERPRISE STANDARD: generate a return shipping label the moment the
-    // seller approves. The label (URL + return tracking number) is stored on
-    // the return record; the URL is visible only to the buyer, the tracking
-    // number is visible to BOTH buyer and seller for inbound tracking.
+    // ENTERPRISE STANDARD: a return is approved only after TrendDrop has
+    // purchased the EasyPost return label. Approving without postage leaves
+    // the buyer unable to ship and the platform without a shipment record.
     let label;
     try {
       const { generateReturnLabel } = require('../services/returnLabelService');
       label = await generateReturnLabel(returnRequest);
-      returnRequest.returnLabel = label.labelUrl || '';
-      returnRequest.returnTrackingNumber = label.trackingNumber || '';
-      returnRequest.labelCarrier = label.label || '';
-      returnRequest.labelCost = label.cost || 0;
-      returnRequest.labelGeneratedAt = new Date();
-      await returnRequest.save();
     } catch (labelErr) {
-      console.error('Return label generation failed (approval continues):', labelErr.message);
+      console.error('Return label generation failed:', labelErr.code || labelErr.message, labelErr.message);
+      return res.status(502).json({
+        code: labelErr.code || 'SHIPPING_LABEL_FAILED',
+        message: 'Return label could not be created. The return is still pending; please retry.',
+        retryable: labelErr.retryable !== false,
+      });
     }
+    returnRequest.status = 'approved';
+    returnRequest.returnLabel = label.labelUrl || '';
+    returnRequest.returnTrackingNumber = label.trackingNumber || '';
+    returnRequest.trackerId = label.trackerId || '';
+    returnRequest.labelCarrier = label.label || '';
+    returnRequest.labelCost = label.cost || 0;
+    returnRequest.labelGeneratedAt = new Date();
     await returnRequest.save();
     // Sync to Transaction lifecycle
     const txn = await Transaction.findById(returnRequest.transaction);
     if (txn && isValidTransition(txn.status, orderStates.RETURN_ACCEPTED)) {
       txn.status = orderStates.RETURN_ACCEPTED;
-      txn.returnDetails = { ...txn.returnDetails, approvedAt: new Date() };
+      txn.returnDetails = {
+        ...txn.returnDetails,
+        approvedAt: new Date(),
+        trackingNumber: label.trackingNumber || txn.returnDetails?.trackingNumber,
+        trackerId: label.trackerId || txn.returnDetails?.trackerId,
+      };
       await txn.save();
     }
     try {

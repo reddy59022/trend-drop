@@ -109,6 +109,15 @@ const transactionSchema = new mongoose.Schema({
     carrier: { type: String, default: '' },
     trackingNumber: { type: String, default: '' },
     trackingUrl: { type: String, default: '' },
+    // EasyPost label artifacts. The platform buys postage; these fields are
+    // the authoritative label record for printing, refunds and support.
+    labelUrl: { type: String, default: '' },
+    provider: { type: String, default: '' },
+    shipmentId: { type: String, default: '' },
+    rateId: { type: String, default: '' },
+    trackerId: { type: String, default: '' },
+    labelCost: { type: Number, default: 0 },
+    labelRefunded: { type: Boolean, default: false },
     labelCreated: { type: Boolean, default: false },
     labelCreatedDate: { type: Date },
     estimatedDelivery: { type: Date },
@@ -204,6 +213,7 @@ const transactionSchema = new mongoose.Schema({
     sellerInspectionProof: [String],
     inspectionNotes: String,
     trackingNumber: String,
+    trackerId: String,
     autoRefunded: { type: Boolean, default: false },
     autoRefundedAt: Date,
     refundAmount: Number,

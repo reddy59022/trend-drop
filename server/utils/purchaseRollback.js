@@ -17,6 +17,7 @@ const User = require('../models/User');
 const Offer = require('../models/Offer');
 const Cart = require('../models/Cart');
 const { releaseAuthorization, issueRefund } = require('../config/payments');
+const { refundShippingLabel } = require('../services/easypostService');
 
 function createPurchaseRollback() {
   const state = {
@@ -28,6 +29,7 @@ function createPurchaseRollback() {
     sellerCredits: [], // { sellerId, amount }
     offers: [], // { offerId, previousStatus }
     carts: [], // cartIds that must return to 'active'
+    labels: [], // EasyPost shipments purchased for this purchase
   };
 
   const track = {
@@ -69,6 +71,12 @@ function createPurchaseRollback() {
     // the terminal 'purchased' state with nothing actually bought.
     addCart(cartId) {
       if (cartId) state.carts.push(cartId);
+      return track;
+    },
+    // Platform-purchased postage must be refunded when the sale does not
+    // happen. Track the provider shipment id, not the tracking number.
+    addLabel(shipmentId) {
+      if (shipmentId) state.labels.push(shipmentId);
       return track;
     },
   };
@@ -196,7 +204,17 @@ function createPurchaseRollback() {
       }
     }
 
-    // 6. Money — last, so a DB compensation failure cannot leave the buyer
+    // 6. Platform postage — labels are bought by TrendDrop, so a failed
+    //    purchase must request a carrier refund for each label.
+    for (const shipmentId of state.labels) {
+      try {
+        await refundShippingLabel(shipmentId);
+      } catch (e) {
+        console.error('Purchase rollback: shipping label refund failed:', e.message);
+      }
+    }
+
+    // 7. Money — last, so a DB compensation failure cannot leave the buyer
     //    charged while the rollback aborts early.
     await releaseMoney();
   };

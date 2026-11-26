@@ -48,6 +48,15 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      # Platform-owned shipping. Orders fail closed until this key is present.
+      - key: EASYPOST_API_KEY
+        sync: false
+      # HMAC secret configured on the EasyPost tracker webhook.
+      - key: EASYPOST_WEBHOOK_SECRET
+        sync: false
+      # Signed carrier tracking webhook (never use the development default in production).
+      - key: TRACKING_WEBHOOK_SECRET
+        sync: false
       # Email (Brevo)
       - key: BREVO_API_KEY
         sync: false

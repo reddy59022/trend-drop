@@ -118,6 +118,8 @@ app.use(cors({
 
 // Stripe webhook MUST use raw body - mount before express.json()
 app.use('/api/payments/webhook', require('./routes/stripeWebhook'));
+// EasyPost tracker webhook also needs the raw body for HMAC verification.
+app.use('/api/shipping/easypost-webhook', require('./routes/easypostWebhook'));
 
 // Body parsing with optimized limits
 app.use(express.json({ limit: '2mb' }));
@@ -325,7 +327,6 @@ app.use('/api/loyalty', require('./routes/loyalty'));
 // Vendors routes (v58.0)
 app.use('/api/vendors', require('./routes/vendors'));
 // Advanced Shipping routes (v59.0)
-app.use('/api/advanced-shipping', require('./routes/advancedShipping'));
 // Enterprise API routes (v60.0)
 app.use('/api/enterprise', require('./routes/enterpriseApi'));
 // Trend Tracking routes (v61.0)

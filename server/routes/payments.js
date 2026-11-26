@@ -35,6 +35,16 @@ const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require(
 const { boostConfig } = require('../config/boost');
 const { isValidMoneyInput, isPositiveIntegerQuantity } = require('../criticalRules');
 const { sellerSaleTotal } = require('../utils/balances');
+const {
+  refundShippingLabel,
+  shippingLabelPayload,
+  ShippingProviderError,
+} = require('../services/easypostService');
+const {
+  purchaseBatchLabels,
+  purchaseSingleLabel,
+  sellerParcelAddress,
+} = require('../services/shippingPurchase');
 
 // Flat per-sale boost fee: price × tier.feePercent / 100
 // Charged ONLY upon successful sale (never upfront)
@@ -414,13 +424,17 @@ router.post('/confirm-batch', auth, async (req, res) => {
   const createdTransactions = [];
   const createdPayouts = [];
   const inventoryChanges = [];
+  // Postage purchased by the platform for this checkout. Every one of these
+  // must be carrier-refunded if the sale does not commit.
+  const purchasedLabels = [];
   const sellerBalanceUpdates = [];
   const revertedOffers = [];
   let captured = false;
   let claimedPromoId = null;
 
   try {
-    const { paymentIntentId, items, shippingAddress } = req.body;
+    const { paymentIntentId, items } = req.body;
+    const shippingAddress = req.body.shippingAddress || req.user.shippingAddress;
     if (!paymentIntentId || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Missing paymentIntentId or items' });
     }
@@ -491,7 +505,6 @@ router.post('/confirm-batch', auth, async (req, res) => {
     };
 
     // ========== PHASE 1: Validate + Build (NO DB WRITES) ==========
-    const { generateLabel, getPreferredCarrier } = require('../config/shipping');
     const orderPlans = [];
 
     for (const item of items) {
@@ -599,23 +612,11 @@ router.post('/confirm-batch', auth, async (req, res) => {
       const shippingCostTotal = Math.round(breakdown.buyer.shippingCost * 100) / 100;
       const totalPaidTotal = Math.round((itemSubtotal + shippingCostTotal + protectionTotal) * 100) / 100;
 
-      const sellerAddress = seller?.shippingAddress ? {
-        street1: seller.shippingAddress.street1,
-        city: seller.shippingAddress.city,
-        state: seller.shippingAddress.state,
-        postalCode: seller.shippingAddress.postalCode,
-        country: seller.shippingAddress.country || sellerCountry,
-      } : { country: sellerCountry };
-
-      const carrierCode = getPreferredCarrier(toCountry, sellerCountry === toCountry);
-      const label = generateLabel({
-        shippingAddress: { fullName: shippingAddress?.fullName || req.user.name, ...shippingAddress },
-        sellerAddress,
-        weight: combinedWeight,
-      }, carrierCode);
+      const sellerAddress = sellerParcelAddress(seller, sellerCountry);
 
       orderPlans.push({
-        listing, seller, sellerCountry, toCountry, salePrice, breakdown, label,
+        listing, seller, sellerCountry, toCountry, salePrice, breakdown,
+        sellerAddress,
         offer, isNegotiated, combinedWeight,
         qty, itemSubtotal, platformFeeTotal, protectionTotal,
         sellerEarningsTotal, shippingCostTotal, totalPaidTotal,
@@ -749,6 +750,32 @@ router.post('/confirm-batch', auth, async (req, res) => {
       claimedPromoId = claimedPromo._id;
     }
 
+    // ========== PHASE 2A: BUY POSTAGE (buyer authorized, not charged) ==========
+    // TrendDrop is the shipper. Every line needs a real EasyPost label before
+    // the capture below. A failure here releases the authorization and writes
+    // no order/inventory/seller state, so the buyer is never charged for a
+    // shipment the platform could not create.
+    try {
+      const labels = await purchaseBatchLabels({
+        plans: orderPlans,
+        buyerAddress: shippingAddress,
+        buyerName: req.user.name,
+        paymentIntentId,
+      });
+      purchasedLabels.push(...labels);
+    } catch (labelError) {
+      console.error('Batch shipping label failed:', labelError.message);
+      // If compensation itself fails, the outer catch retries it and the
+      // buyer still receives an error; never report a successful order.
+      if (paymentIntent.status === 'succeeded') await issueRefund(paymentIntentId);
+      else await releaseAuthorization(paymentIntentId);
+      return res.status(502).json({
+        code: labelError.code,
+        message: 'Shipping label could not be created. Your payment was not captured.',
+        retryable: labelError.retryable,
+      });
+    }
+
     // ========== PHASE 2: Capture Payment ==========
     // Partial capture (R32.9/R32.10): when the buyer trimmed their cart between
     // authorization and fulfilment, the intent was authorized for MORE than the
@@ -837,11 +864,11 @@ router.post('/confirm-batch', auth, async (req, res) => {
           totalPaid: Math.round((plan.totalPaidTotal - discountAmount) * 100) / 100,
           platformFee: platformFeeTotal,
           platformFeePercent: breakdown.seller.platformFeePercent,
-          shippingPayout: plan.shippingCostTotal,
+          // Postage belongs to the platform: the seller is paid only for the
+          // item. The buyer still sees the shipping charge on the receipt.
+          shippingPayout: 0,
         sellerEarnings: sellerEarningsWithBoost,
-        // Round 4: the exact amount credited to the seller's balance
-        // (earnings + shipping label reimbursement) — utils/balances.js.
-        sellerCredit: Math.round((sellerEarningsWithBoost + plan.shippingCostTotal) * 100) / 100,
+        sellerCredit: sellerEarningsWithBoost,
         boostFee,
           boostTier: listing.boost?.tier || '',
           paymentIntentId,
@@ -856,16 +883,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
           country: toCountry,
           phone: shippingAddress?.phone,
         },
-        shipping: {
-          carrier: label.carrier,
-          trackingNumber: label.trackingNumber,
-          trackingUrl: label.trackingUrl,
-          labelCreated: true,
-          labelCreatedDate: new Date(),
-          estimatedDelivery: new Date(label.estimatedDelivery),
-          service: label.service,
-          trackingHistory: label.statusHistory,
-        },
+        shipping: shippingLabelPayload(label),
         // LIFECYCLE: born as 'paid' so buyer can cancel BEFORE shipment.
         // Move to 'shipped' only when a seller dispatches (order/:id/ship).
         // Label is auto-created but dispatch is manual — that is the cancel window.
@@ -954,7 +972,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // payoutAmount and the reimbursement is not part of the sale split.
       sellerBalanceUpdates.push({
         sellerDoc: seller,
-        earnings: Math.round((sellerEarningsWithBoost + plan.shippingCostTotal) * 100) / 100,
+        earnings: sellerEarningsWithBoost,
         listingId: listing._id,
         transactionId: txn._id,
         sellerCurrency: breakdown.sellerCurrency,
@@ -1068,6 +1086,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
           currency: first.plan.breakdown.sellerCurrency || 'USD',
           labelStatus: 'created',
           status: 'pending',
+          carrier: first.plan.label?.carrier || '',
+          trackingNumber: first.plan.label?.trackingNumber || '',
+          trackingUrl: first.plan.label?.trackingUrl || '',
+          labelUrl: first.plan.label?.labelUrl || '',
         });
 
         for (const g of group.txns) {
@@ -1168,6 +1190,9 @@ router.post('/confirm-batch', auth, async (req, res) => {
       try {
         await Promo.updateOne({ _id: claimedPromoId, usageCount: { $gt: 0 } }, { $inc: { usageCount: -1 } });
       } catch (e) { console.error('Promo usage rollback failed:', e.message); }
+    }
+    for (const label of purchasedLabels) {
+      try { await refundShippingLabel(label.shipmentId); } catch (e) { console.error('Label refund rollback failed:', e.message); }
     }
     if (captured && req.body.paymentIntentId) {
       try { await issueRefund(req.body.paymentIntentId); } catch (e) { console.error('Refund rollback failed:', e.message); }
@@ -1270,9 +1295,11 @@ router.post('/confirm', auth, async (req, res) => {
   let boostFeeRecorded = false;
   let sellerCredited = false;
   let boostFee = 0;
+  let createdLabel = null;
 
   try {
-    const { paymentIntentId, listingId, shippingAddress } = req.body;
+    const { paymentIntentId, listingId } = req.body;
+    const shippingAddress = req.body.shippingAddress || req.user.shippingAddress;
 
     if (!paymentIntentId) return res.status(400).json({ message: 'Missing paymentIntentId' });
 
@@ -1412,21 +1439,32 @@ router.post('/confirm', auth, async (req, res) => {
       ? orderCents
       : null;
 
-    const { generateLabel, getPreferredCarrier } = require('../config/shipping');
-    const sellerAddress = seller?.shippingAddress ? {
-      street1: seller.shippingAddress.street1,
-      city: seller.shippingAddress.city,
-      state: seller.shippingAddress.state,
-      postalCode: seller.shippingAddress.postalCode,
-      country: seller.shippingAddress.country || sellerCountry,
-    } : { country: sellerCountry };
+    const sellerAddress = sellerParcelAddress(seller, sellerCountry);
 
-    const carrierCode = getPreferredCarrier(toCountry, sellerCountry === toCountry);
-    const label = generateLabel({
-      shippingAddress: { fullName: shippingAddress?.fullName || req.user.name, ...shippingAddress },
-      sellerAddress,
-      weight: listing.weight || 0.5,
-    }, carrierCode);
+    // Platform-purchased postage, before capture. If this fails the buyer's
+    // authorization is released below and no order is written.
+    try {
+      createdLabel = await purchaseSingleLabel({
+        sellerAddress,
+        buyerAddress: shippingAddress,
+        buyerName: req.user.name,
+        weightKg: listing.weight,
+        reference: `single:${paymentIntentId}:${listing._id}`,
+        declaredValue: salePrice,
+      });
+    } catch (labelError) {
+      console.error('Single-order shipping label failed:', labelError.message);
+      // If compensation itself fails, the outer catch retries it and the buyer
+      // still receives an error; never report a successful order.
+      if (paymentIntent.status === 'succeeded') await issueRefund(paymentIntentId);
+      else await releaseAuthorization(paymentIntentId);
+      return res.status(502).json({
+        code: labelError.code,
+        message: 'Shipping label could not be created. Your payment was not captured.',
+        retryable: labelError.retryable,
+      });
+    }
+    const label = createdLabel;
 
     // Boost fee: flat % of sale price, charged only upon successful sale
     // (offer purchases: the negotiated sale price, not list price)
@@ -1451,11 +1489,9 @@ router.post('/confirm', auth, async (req, res) => {
         totalPaid: breakdown.buyer.totalPaid,
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
-        shippingPayout: breakdown.seller.shippingPayout,
+        shippingPayout: 0,
         sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
-        // Round 4: the exact amount credited to the seller's balance
-        // (earnings + shipping label reimbursement) — utils/balances.js.
-        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100,
+        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100,
         boostFee,
         boostTier: listing.boost?.tier || '',
         paymentIntentId,
@@ -1470,16 +1506,7 @@ router.post('/confirm', auth, async (req, res) => {
         country: toCountry,
         phone: shippingAddress?.phone,
       },
-      shipping: {
-        carrier: label.carrier,
-        trackingNumber: label.trackingNumber,
-        trackingUrl: label.trackingUrl,
-        labelCreated: true,
-        labelCreatedDate: new Date(),
-        estimatedDelivery: new Date(label.estimatedDelivery),
-        service: label.service,
-        trackingHistory: label.statusHistory,
-      },
+      shipping: shippingLabelPayload(label),
       // LIFECYCLE: born as 'paid' for pre-shipment cancellation (R3 fix same as batch)
       status: 'paid',
       payout: { status: 'pending', transactionId: paymentIntentId },
@@ -1521,15 +1548,14 @@ router.post('/confirm', auth, async (req, res) => {
       await User.updateOne(
         { _id: seller._id },
         {              // SHIPPING REIMBURSEMENT (round 4): earnings + the shipping
-              // label reimbursement the buyer paid for this seller.
-              $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100 },
+              $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100 },
           $push: {
             notifications: {
               $each: [saleNotification({
                 from: req.user._id,
                 listing: listing._id,
                 transaction: createdTransaction._id,
-                message: `Item sold! You'll earn ${Math.round((breakdown.seller.sellerEarnings - boostFee + (breakdown.seller.shippingPayout || 0)) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
+                message: `Item sold! You'll earn ${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
               })],
               $position: 0,
             },
@@ -1582,6 +1608,8 @@ router.post('/confirm', auth, async (req, res) => {
         trackingNumber: label.trackingNumber,
         trackingUrl: label.trackingUrl,
         carrier: label.carrier,
+        labelUrl: label.labelUrl,
+        provider: label.provider,
       },
     });
 
@@ -1624,6 +1652,11 @@ router.post('/confirm', auth, async (req, res) => {
           { $inc: { 'boost.feeLedger.owed': -boostFee } },
         );
       } catch (e) { console.error('Boost ledger rollback failed:', e.message); }
+    }
+    if (createdLabel) {
+      try { await refundShippingLabel(createdLabel.shipmentId); } catch (e) {
+        console.error('Label refund rollback failed:', e.message);
+      }
     }
     if (createdTransaction) {
       try { await Transaction.findByIdAndDelete(createdTransaction._id); } catch (e) {}

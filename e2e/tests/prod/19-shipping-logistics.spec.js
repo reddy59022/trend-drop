@@ -45,30 +45,12 @@ test.describe('19 - Shipping & logistics (production)', () => {
     expect(r.data).toBeTruthy();
   });
 
-  test('advanced-shipping: add carrier integration + rate + label + tracking', async () => {
-    var add = await api.req('post', '/api/advanced-shipping', {
+  test('seller carrier integrations are removed; postage is platform-owned', async () => {
+    var removed = await api.req('post', '/api/advanced-shipping', {
       token: alexToken,
       body: { carrier: 'fedex', apiKey: 'e2e-key', accountNumber: 'e2e-account' },
     });
-    // Carrier names are normalized case-insensitively server-side
-    // ('fedex' -> 'FedEx'), so a valid integration always lands as 201;
-    // the historical 500 tolerance is gone since TDD round 23.
-    expect(add.status).toBe(201);
-    if (add.status !== 201) return;
-    var rate = await api.req('post', '/api/advanced-shipping/rates', {
-      token: alexToken,
-      body: { carrier: 'fedex', weight: 1, fromZip: '90001', toZip: '10001' },
-    });
-    expect(rate.status).toBe(200);
-    expect(rate.data.estimatedCost).toBeGreaterThan(0);
-    var label = await api.req('post', '/api/advanced-shipping/label', {
-      token: alexToken,
-      body: { carrier: 'fedex', service: 'Ground', toAddress: '123 Main St', weight: 1 },
-    });
-    expect(label.status).toBe(200);
-    expect(label.data.trackingNumber).toBeTruthy();
-    var tr = await api.req('get', '/api/advanced-shipping/tracking/' + label.data.trackingNumber, { token: alexToken });
-    expect(tr.status).toBe(200);
+    expect(removed.status).toBe(404);
   });
 
   test('cross-border: settings get/update, countries list', async () => {
