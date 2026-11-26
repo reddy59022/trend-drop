@@ -1830,6 +1830,11 @@ router.post('/payout', auth, async (req, res) => {
       return res.status(422).json({ message: 'Payout amount exceeds available balance' });
     }
     const roundedAmount = Math.round((amount + Number.EPSILON) * 100) / 100;
+    // Sub-cent requests round to zero; they would issue an empty transfer and
+    // still count as a payout. Require a payable amount after rounding.
+    if (roundedAmount < 0.01) {
+      return res.status(400).json({ message: 'Minimum payout amount is 0.01' });
+    }
     // ATOMIC CASH-OUT (round 25): the legacy read-modify-write let two
     // concurrent cash-outs (double-click / retry) both pass the balance check
     // and both deduct — paying the seller twice from one balance. The guarded

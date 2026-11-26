@@ -14,6 +14,15 @@ const { timeWindows } = require('../config/orderLifecycle');
 // ===================== ESCROW SERVICE =====================
 // For high-value items (>$500), hold funds in escrow until both parties confirm satisfaction
 
+// Escrow is a post-payment custody mechanism. Terminal/refunded/chargeback or
+// unpaid states must never enter it: confirming both sides would otherwise
+// credit the seller for money that was already returned (or never captured).
+const ESCROW_ELIGIBLE_STATUSES = new Set([
+  'paid', 'processing', 'shipped', 'in_transit', 'out_for_delivery',
+  'delivered', 'completed', 'buyer_confirmed',
+]);
+const isEscrowEligible = (transaction) => ESCROW_ELIGIBLE_STATUSES.has(transaction.status);
+
 // POST /api/escrow/initiate - Initiate escrow for a high-value transaction
 router.post('/initiate', auth, async (req, res) => {
   try {
@@ -34,6 +43,10 @@ router.post('/initiate', auth, async (req, res) => {
     // Only buyer can initiate escrow on their transaction
     if (String(transaction.buyer) !== String(req.user._id)) {
       return res.status(403).json({ message: 'Only buyer can initiate escrow' });
+    }
+
+    if (!isEscrowEligible(transaction)) {
+      return res.status(400).json({ message: 'Escrow is only available for paid, active transactions' });
     }
     
     // Check transaction value threshold (evaluated on the verified amount so
@@ -173,6 +186,9 @@ router.post('/confirm-buyer', auth, async (req, res) => {
     if (transaction.escrow?.status !== 'active') {
       return res.status(400).json({ message: 'Escrow not active for this transaction' });
     }
+    if (!isEscrowEligible(transaction)) {
+      return res.status(400).json({ message: 'Transaction is no longer eligible for escrow release' });
+    }
     
     const updated = await Transaction.findOneAndUpdate(
       { _id: transaction._id, 'escrow.status': 'active' },
@@ -220,6 +236,9 @@ router.post('/confirm-seller', auth, async (req, res) => {
     if (transaction.escrow?.status !== 'active') {
       return res.status(400).json({ message: 'Escrow not active for this transaction' });
     }
+    if (!isEscrowEligible(transaction)) {
+      return res.status(400).json({ message: 'Transaction is no longer eligible for escrow release' });
+    }
     
     const updated = await Transaction.findOneAndUpdate(
       { _id: transaction._id, 'escrow.status': 'active' },
@@ -266,6 +285,9 @@ router.post('/dispute', auth, async (req, res) => {
     // Check escrow is active
     if (transaction.escrow?.status !== 'active') {
       return res.status(400).json({ message: 'Escrow not active for this transaction' });
+    }
+    if (!isEscrowEligible(transaction)) {
+      return res.status(400).json({ message: 'Transaction is no longer eligible for an escrow dispute' });
     }
     
     if (!reason) {
