@@ -87,7 +87,9 @@ router.put('/seller-badges/:userId/verification', async (req, res) => {
 router.get('/dashboard', async (req, res) => {
   try {
     const [totalUsers, totalListings, totalTransactions, totalReports, totalRevenue] = await Promise.all([
-      User.countDocuments(),
+      // Anonymized accounts stay in the collection so order history resolves;
+      // they are not active users and must not inflate the dashboard.
+      User.countDocuments({ deletedAt: null }),
       Listing.countDocuments(),
       Transaction.countDocuments(),
       Report.countDocuments({ status: 'pending' }),

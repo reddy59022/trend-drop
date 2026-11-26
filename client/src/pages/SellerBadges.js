@@ -72,7 +72,6 @@ const SellerBadges = () => {
   const [updatingStats, setUpdatingStats] = useState(false);
   const verificationInFlight = useRef(false);
   const statsUpdateInFlight = useRef(false);
-  const [form, setForm] = useState({ salesCount: 0, avgRating: 0, responseRate: 0, returnRate: 0 });
 
   useEffect(() => {
     fetchBadge();
@@ -84,14 +83,6 @@ const SellerBadges = () => {
       const normalizedBadge = normalizeBadge(res.data?.badge);
       setBadge(normalizedBadge);
       setLoadError(false);
-      if (normalizedBadge) {
-        setForm({
-          salesCount: normalizedBadge.salesCount ?? 0,
-          avgRating: normalizedBadge.avgRating ?? 0,
-          responseRate: normalizedBadge.responseRate ?? 0,
-          returnRate: normalizedBadge.returnRate ?? 0,
-        });
-      }
       return true;
     } catch (error) {
       console.error('Failed to fetch badge:', error);
@@ -119,23 +110,18 @@ const SellerBadges = () => {
     }
   };
 
+  // Stats are computed by the server from completed sales, buyer ratings and
+  // realized returns. The client only asks for a recalculation; it never sends
+  // numbers, so a seller cannot promote themselves to a higher tier.
   const handleUpdateStats = async () => {
     if (statsUpdateInFlight.current) return;
-    const validStats = Number.isInteger(form.salesCount) && form.salesCount >= 0
-      && Number.isFinite(form.avgRating) && form.avgRating >= 0 && form.avgRating <= 5
-      && Number.isFinite(form.responseRate) && form.responseRate >= 0 && form.responseRate <= 1
-      && Number.isFinite(form.returnRate) && form.returnRate >= 0 && form.returnRate <= 1;
-    if (!validStats) {
-      toast.error('Enter valid stats: sales must be a whole number, rating 0–5, and rates 0–1.');
-      return;
-    }
 
     statsUpdateInFlight.current = true;
     setUpdatingStats(true);
     try {
-      await updateSellerBadgeStats(form);
+      await updateSellerBadgeStats();
       if (await fetchBadge()) {
-        toast.success('Seller stats updated — tier recalculated!');
+        toast.success('Seller stats refreshed — tier recalculated!');
       }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update stats');
@@ -262,66 +248,13 @@ const SellerBadges = () => {
         </div>
       </div>
 
-      {/* Update Stats (for tier recalculation) */}
+      {/* Tier recalculation (server-derived stats) */}
       <div className="glass-card" style={{ padding: 'var(--td-space-lg)' }}>
-        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Update Seller Stats</h3>
+        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Recalculate Tier</h3>
         <p style={{ fontSize: 13, color: 'var(--td-text-secondary)', marginBottom: 12 }}>
-          Enter your latest selling metrics to recalculate your tier.
+          Your stats are calculated automatically from completed sales, buyer ratings and accepted returns.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
-          <div>
-            <label htmlFor="seller-sales-count" style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}>Sales Count</label>
-            <input
-              id="seller-sales-count"
-              className="form-input"
-              type="number"
-              min={0}
-              step={1}
-              value={form.salesCount}
-              onChange={(e) => setForm({ ...form, salesCount: Number(e.target.value) })}
-            />
-          </div>
-          <div>
-            <label htmlFor="seller-avg-rating" style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}>Avg Rating</label>
-            <input
-              id="seller-avg-rating"
-              className="form-input"
-              type="number"
-              min={0}
-              max={5}
-              step={0.1}
-              value={form.avgRating}
-              onChange={(e) => setForm({ ...form, avgRating: Number(e.target.value) })}
-            />
-          </div>
-          <div>
-            <label htmlFor="seller-response-rate" style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}>Response Rate (0–1)</label>
-            <input
-              id="seller-response-rate"
-              className="form-input"
-              type="number"
-              min={0}
-              max={1}
-              step={0.01}
-              value={form.responseRate}
-              onChange={(e) => setForm({ ...form, responseRate: Number(e.target.value) })}
-            />
-          </div>
-          <div>
-            <label htmlFor="seller-return-rate" style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}>Return Rate (0–1)</label>
-            <input
-              id="seller-return-rate"
-              className="form-input"
-              type="number"
-              min={0}
-              max={1}
-              step={0.01}
-              value={form.returnRate}
-              onChange={(e) => setForm({ ...form, returnRate: Number(e.target.value) })}
-            />
-          </div>
-        </div>
-        <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={handleUpdateStats} disabled={updatingStats}>
+        <button className="btn btn-primary" onClick={handleUpdateStats} disabled={updatingStats}>
           {updatingStats ? 'Recalculating...' : 'Recalculate Tier'}
         </button>
       </div>

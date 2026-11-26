@@ -63,6 +63,19 @@ const userSchema = new mongoose.Schema({
     enum: ['user', 'admin', 'moderator', 'legal_counsel', 'suspended'],
     default: 'user',
   },
+  // Session generation. Every JWT carries the value it was signed with; a
+  // password reset increments this so tokens minted before the reset stop
+  // working immediately instead of remaining valid for their full 30 days.
+  tokenVersion: {
+    type: Number,
+    default: 0,
+  },
+  // Accounts are anonymized, not hard-deleted: transaction/order history must
+  // keep a resolvable seller reference for buyers, payouts and audits.
+  deletedAt: {
+    type: Date,
+    default: null,
+  },
   authProvider: {
     type: String,
     enum: ['email', 'google', 'apple', 'facebook', 'guest'],
@@ -373,7 +386,11 @@ userSchema.methods.generateAuthToken = function () {
   const jwt = require('jsonwebtoken');
   const { getJwtSecret } = require('../config/security');
   // Token expiry consistent with other auth routes (30 days)
-  return jwt.sign({ id: this._id }, getJwtSecret(), { expiresIn: '30d' });
+  return jwt.sign(
+    { id: this._id, tv: this.tokenVersion || 0 },
+    getJwtSecret(),
+    { expiresIn: '30d' },
+  );
 };
 
 module.exports = mongoose.model('User', userSchema);

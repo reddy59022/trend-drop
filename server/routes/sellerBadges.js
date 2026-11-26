@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const SellerBadge = require('../models/SellerBadge');
 const { auth } = require('../middleware/auth');
+const { computeSellerStats, tierForStats } = require('../utils/sellerStats');
 
 const getOrCreateBadge = async (userId) => {
   try {
@@ -21,10 +22,30 @@ const getOrCreateBadge = async (userId) => {
   }
 };
 
+// Recompute every derived field from platform records and persist it. Used by
+// the authenticated read and the manual recalculation so both always expose
+// the same authoritative tier.
+const refreshBadge = async (badge, userId) => {
+  const stats = await computeSellerStats(userId);
+  badge.salesCount = stats.salesCount;
+  badge.avgRating = stats.avgRating;
+  badge.responseRate = stats.responseRate;
+  badge.returnRate = stats.returnRate;
+
+  const tier = tierForStats(stats);
+  badge.tier = tier;
+  badge.benefits.featuredListings = tier === 'gold' || tier === 'platinum';
+  await badge.save();
+  return badge;
+};
+
 // GET /api/seller-badges/me - Get current user's badge
+// Stats are refreshed on read; otherwise a seller's tier stays frozen at
+// whatever it was the last time they manually recalculated.
 router.get('/me', auth, async (req, res) => {
   try {
     const badge = await getOrCreateBadge(req.user._id);
+    await refreshBadge(badge, req.user._id);
     res.json({ badge });
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch badge' });
@@ -42,8 +63,25 @@ router.get('/:userId', async (req, res) => {
     if (!badge) {
       return res.json({ badge: { tier: 'none' } });
     }
-    
-    res.json({ badge });
+
+    // Legacy badges may still carry stats a seller entered before tiers became
+    // server-derived. Refresh at most hourly so profile views repair stale
+    // records without turning a public read into an unbounded write path.
+    const BADGE_REFRESH_MS = 60 * 60 * 1000;
+    const lastUpdated = badge.updatedAt ? new Date(badge.updatedAt).getTime() : 0;
+    if (Date.now() - lastUpdated > BADGE_REFRESH_MS) {
+      await refreshBadge(badge, badge.userId);
+    }
+
+    // Public view: never expose internal review metadata (which admin reviewed
+    // the request, private rejection reasons) to arbitrary visitors.
+    const publicBadge = badge.toObject();
+    delete publicBadge.verificationReviewedBy;
+    delete publicBadge.verificationRejectionReason;
+    delete publicBadge.verificationReviewedAt;
+    delete publicBadge.userId;
+
+    res.json({ badge: publicBadge });
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch badge' });
   }
@@ -77,46 +115,14 @@ router.put('/verify', auth, async (req, res) => {
   }
 });
 
-// PUT /api/seller-badges/update-stats - Update seller stats (internal/cron)
+// PUT /api/seller-badges/update-stats - Recalculate the caller's stats
+// Stats are derived from transactions, ratings and realized returns. The
+// request body is intentionally ignored: accepting client numbers here let a
+// seller self-assign platinum placement, reduced fees and priority support.
 router.put('/update-stats', auth, async (req, res) => {
   try {
     const badge = await getOrCreateBadge(req.user._id);
-    const { salesCount, avgRating, responseRate, returnRate } = req.body;
-    const providedStats = { salesCount, avgRating, responseRate, returnRate };
-    const validators = {
-      salesCount: (value) => Number.isInteger(value) && value >= 0,
-      avgRating: (value) => Number.isFinite(value) && value >= 0 && value <= 5,
-      responseRate: (value) => Number.isFinite(value) && value >= 0 && value <= 1,
-      returnRate: (value) => Number.isFinite(value) && value >= 0 && value <= 1,
-    };
-
-    for (const [field, value] of Object.entries(providedStats)) {
-      if (value !== undefined && (!validators[field](value) || typeof value !== 'number')) {
-        return res.status(400).json({ message: `${field} must be a valid normalized number` });
-      }
-      if (value !== undefined) badge[field] = value;
-    }
-
-    // Recompute tier benefits from the new authoritative stats. Without
-    // resetting this flag, a former gold/platinum seller keeps featured
-    // placement after dropping to a lower tier.
-    badge.benefits.featuredListings = false;
-
-    // Calculate tier
-    if (badge.avgRating >= 4.8 && badge.salesCount >= 200 && badge.returnRate <= 0.02) {
-      badge.tier = 'platinum';
-      badge.benefits.featuredListings = true;
-    } else if (badge.avgRating >= 4.7 && badge.salesCount >= 50 && badge.returnRate <= 0.05) {
-      badge.tier = 'gold';
-      badge.benefits.featuredListings = true;
-    } else if (badge.avgRating >= 4.5 && badge.salesCount >= 10 && badge.returnRate <= 0.10) {
-      badge.tier = 'silver';
-    } else {
-      badge.tier = 'bronze';
-    }
-    
-    await badge.save();
-    
+    await refreshBadge(badge, req.user._id);
     res.json({ badge });
   } catch (error) {
     res.status(500).json({ message: 'Failed to update stats' });

@@ -137,7 +137,7 @@ describe('SellerBadges page', () => {
     });
   });
 
-  test('rejects fractional sales counts before sending stats to the API', async () => {
+  test('requests a server-side recalculation without sending client-supplied stats', async () => {
     getMySellerBadge.mockResolvedValue({ data: { badge: {
       tier: 'bronze', isVerified: false, verificationRequested: false,
       salesCount: 1, avgRating: 4, responseRate: 0.5, returnRate: 0.1,
@@ -145,11 +145,10 @@ describe('SellerBadges page', () => {
     } } });
 
     renderPage(<SellerBadges />);
-    const salesInput = await screen.findByLabelText('Sales Count');
-    fireEvent.change(salesInput, { target: { value: '1.5' } });
-    fireEvent.click(screen.getByRole('button', { name: /Recalculate Tier/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Recalculate Tier/i }));
 
-    expect(updateSellerBadgeStats).not.toHaveBeenCalled();
+    await waitFor(() => expect(updateSellerBadgeStats).toHaveBeenCalledWith());
+    expect(screen.queryByLabelText('Sales Count')).not.toBeInTheDocument();
   });
 
   test('does not submit duplicate stats updates while one is pending', async () => {

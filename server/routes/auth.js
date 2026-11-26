@@ -16,7 +16,11 @@ const { isCountryPolicyPublished } = require('../config/legalRuntime');
 // Always signs with the SAME secret the auth middleware verifies with
 // (config/security.js), so logins can never produce tokens that 401.
 const generateToken = (user) => {
-  return jwt.sign({ id: user._id }, getJwtSecret(), { expiresIn: '30d' });
+  return jwt.sign(
+    { id: user._id, tv: user.tokenVersion || 0 },
+    getJwtSecret(),
+    { expiresIn: '30d' },
+  );
 };
 
 // Authoritative user shape returned to the client after login/verification.
@@ -804,6 +808,9 @@ router.post('/reset-password', async (req, res) => {
     user.password = password;
     user.verificationToken = null;
     user.verificationTokenExpires = null;
+    // Invalidate every JWT issued before this reset. A stolen/leftover session
+    // must not outlive the password it was created with.
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
     await user.save();
 
     res.json({ message: 'Password reset successful. You can now login with your new password.' });
@@ -984,13 +991,69 @@ router.put('/avatar', auth, upload.single('avatar'), async (req, res) => {
 // ============================================================
 router.delete('/account', auth, async (req, res) => {
   try {
-    const User = require('../models/User');
     const Listing = require('../models/Listing');
+    const PushDevice = require('../models/PushDevice');
     const userId = req.user._id;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Money owed to the seller must be withdrawn before the account can be
+    // closed; anonymizing the only payout identity would strand the balance.
+    const available = Number(user.balance?.available) || 0;
+    const pending = Number(user.balance?.pending) || 0;
+    if (available > 0 || pending > 0) {
+      return res.status(400).json({
+        message: 'Withdraw your available balance and wait for pending sales to settle before deleting your account.',
+      });
+    }
 
     // Deactivate listings instead of deleting (preserve marketplace integrity)
     await Listing.updateMany({ seller: userId }, { $set: { status: 'deleted', available: false } });
-    await User.findByIdAndDelete(userId);
+    // Revoke registered push tokens so a deleted account receives no further
+    // notifications (and its device identifiers are not retained).
+    await PushDevice.deleteMany({ userId });
+
+    // Anonymize rather than hard-delete. Transactions, orders, returns and
+    // payouts keep the seller ObjectId, so historical records stay resolvable
+    // instead of displaying a null seller forever. All PII and credentials are
+    // removed, the deleted marker blocks token auth, and tokenVersion is bumped
+    // so any already-issued JWT is rejected immediately.
+    await User.updateOne(
+      { _id: userId },
+      {
+        $set: {
+          name: 'Deleted User',
+          email: `deleted+${userId}@deleted.trenddrop.invalid`,
+          password: null,
+          avatar: '',
+          bio: '',
+          phone: '',
+          location: '',
+          closetName: '',
+          socialLinks: {},
+          store: {},
+          shippingAddress: {},
+          payoutMethod: { type: '' },
+          googleId: null,
+          appleId: null,
+          facebookId: null,
+          emailVerified: false,
+          isVerified: false,
+          role: 'user',
+          verificationToken: null,
+          verificationTokenExpires: null,
+          notifications: [],
+          followers: [],
+          following: [],
+          deletedAt: new Date(),
+          'balance.available': 0,
+          'balance.pending': 0,
+          'balance.reserve': 0,
+          'balance.reserveReleaseDate': [],
+        },
+        $inc: { tokenVersion: 1 },
+      },
+    );
 
     res.json({ message: 'Account deleted' });
   } catch (error) {

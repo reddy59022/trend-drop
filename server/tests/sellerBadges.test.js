@@ -3,12 +3,17 @@ const request = require('supertest');
 const app = require('../server');
 const User = require('../models/User');
 const SellerBadge = require('../models/SellerBadge');
+const Listing = require('../models/Listing');
+const Transaction = require('../models/Transaction');
+const Rating = require('../models/Rating');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 
 let user;
+let buyer;
 let userToken;
+let testListing;
 
 beforeAll(async () => {
   if (mongoose.connection.readyState !== 1) {
@@ -22,11 +27,38 @@ beforeAll(async () => {
     country: 'US', currency: 'USD', emailVerified: true, authProvider: 'email',
     shippingAddress: { fullName: 'Seller', street1: '123 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' },
   });
+  buyer = await User.create({
+    name: 'Badge Buyer', email: `${seedBase}buyer@test.com`, password: 'password123',
+    country: 'US', currency: 'USD', emailVerified: true, authProvider: 'email',
+    shippingAddress: { fullName: 'Buyer', street1: '123 St', city: 'City', state: 'CA', postalCode: '90210', country: 'US' },
+  });
+  testListing = await Listing.create({
+    title: 'Badge fixture listing', description: 'Fixture', price: 10, category: 'Women',
+    condition: 'Good', images: ['https://example.com/item.jpg'], seller: user._id,
+    quantity: 1, status: 'active', available: true,
+  });
   userToken = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' });
 });
 
+const seedSales = async (count) => {
+  const docs = Array.from({ length: count }, () => ({
+    listing: testListing._id,
+    buyer: buyer._id,
+    seller: user._id,
+    itemPrice: 10,
+    currency: 'USD',
+    status: 'completed',
+    paymentBreakdown: { subtotal: 10, totalPaid: 10.8, sellerEarnings: 9.2 },
+  }));
+  await Transaction.insertMany(docs);
+};
+
 afterAll(async () => {
+  await Transaction.deleteMany({ seller: user._id });
+  await Rating.deleteMany({ seller: user._id });
+  if (testListing) await Listing.findByIdAndDelete(testListing._id);
   if (user) await User.findByIdAndDelete(user._id);
+  if (buyer) await User.findByIdAndDelete(buyer._id);
   await SellerBadge.deleteMany({ userId: user._id });
   await mongoose.connection.close();
 });
@@ -75,18 +107,22 @@ describe('v39.0 Verified Badges & Seller Levels', () => {
     expect(res.body.badge.benefits.prioritySupport).toBe(false);
   });
 
-  test('v39.4 - Should update stats and calculate tier', async () => {
+  test('v39.4 - Should derive stats from sales and ratings and calculate tier', async () => {
+    await seedSales(50);
+    await Rating.create({ listing: testListing._id, reviewer: buyer._id, seller: user._id, rating: 4.7 });
+
     const res = await request(app)
       .put('/api/seller-badges/update-stats')
       .set('Authorization', `Bearer ${userToken}`)
       .send({
-        salesCount: 50,
-        avgRating: 4.7,
-        responseRate: 0.95,
-        returnRate: 0.04,
+        salesCount: 9999,
+        avgRating: 5,
+        responseRate: 1,
+        returnRate: 0,
       });
     
     expect(res.status).toBe(200);
+    expect(res.body.badge.salesCount).toBe(50);
     expect(res.body.badge.tier).toBe('gold');
   });
 
@@ -129,43 +165,55 @@ describe('v39.0 Verified Badges & Seller Levels', () => {
     expect(res.status).toBe(401);
   });
 
-  test('v39.9 - Should calculate platinum tier for high stats', async () => {
+  test('v39.9 - Should calculate platinum tier from authoritative high stats', async () => {
+    await seedSales(200);
+    const extraListing = await Listing.create({
+      title: 'Second badge fixture', description: 'Fixture', price: 10, category: 'Women',
+      condition: 'Good', images: ['https://example.com/item2.jpg'], seller: user._id,
+      quantity: 1, status: 'active', available: true,
+    });
+    await Rating.create({ listing: extraListing._id, reviewer: buyer._id, seller: user._id, rating: 4.9 });
+
     const res = await request(app)
       .put('/api/seller-badges/update-stats')
       .set('Authorization', `Bearer ${userToken}`)
       .send({
-        salesCount: 250,
-        avgRating: 4.9,
-        responseRate: 0.98,
-        returnRate: 0.01,
+        salesCount: 5000,
+        avgRating: 5,
+        responseRate: 1,
+        returnRate: 0,
       });
     
     expect(res.status).toBe(200);
+    expect(res.body.badge.salesCount).toBe(250);
+    expect(res.body.badge.avgRating).toBeCloseTo(4.8, 2);
     expect(res.body.badge.tier).toBe('platinum');
     expect(res.body.badge.benefits.featuredListings).toBe(true);
+
+    await Listing.findByIdAndDelete(extraListing._id);
   });
 
-  test('v39.10 - Should reject response rates outside the normalized 0..1 contract', async () => {
+  test('v39.10 - Ignores a client-supplied response rate outside the normalized contract', async () => {
     const res = await request(app)
       .put('/api/seller-badges/update-stats')
       .set('Authorization', `Bearer ${userToken}`)
       .send({ responseRate: 95 });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.badge.responseRate).toBeLessThanOrEqual(1);
+    expect(res.body.badge.responseRate).not.toBe(95);
   });
 
-  test('v39.11 - Should preserve intentional zero stats updates', async () => {
+  test('v39.11 - Client zeroed stats cannot erase authoritative sales', async () => {
     const res = await request(app)
       .put('/api/seller-badges/update-stats')
       .set('Authorization', `Bearer ${userToken}`)
       .send({ salesCount: 0, avgRating: 0, responseRate: 0, returnRate: 0 });
 
     expect(res.status).toBe(200);
-    expect(res.body.badge.salesCount).toBe(0);
-    expect(res.body.badge.avgRating).toBe(0);
-    expect(res.body.badge.responseRate).toBe(0);
-    expect(res.body.badge.returnRate).toBe(0);
-    expect(res.body.badge.benefits.featuredListings).toBe(false);
+    expect(res.body.badge.salesCount).toBe(250);
+    expect(res.body.badge.tier).toBe('platinum');
+    expect(res.body.badge.benefits.featuredListings).toBe(true);
   });
 
   test('v39.12 - Should not grant verification benefits before admin approval', async () => {

@@ -2,9 +2,12 @@ const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
-const { asNumber } = require('../utils/validators');
+const { asNumber, isValidObjectId } = require('../utils/validators');
 const LiveEvent = require('../models/LiveEvent');
 const Listing = require('../models/Listing');
+const Transaction = require('../models/Transaction');
+const { SALE_STATUSES } = require('../utils/sellerStats');
+const { currencies } = require('../config/currencies');
 
 // GET /api/live-events - List all live events (with pagination)
 router.get('/', async (req, res) => {
@@ -56,13 +59,43 @@ router.get('/upcoming', auth, async (req, res) => {
 // GET /api/live-events/stats/:hostId - Get host statistics (must be BEFORE /:id route)
 router.get('/stats/:hostId', async (req, res) => {
   try {
-    const events = await LiveEvent.find({ host: req.params.hostId });
-    
+    if (!isValidObjectId(req.params.hostId)) {
+      return res.status(400).json({ message: 'Invalid host id' });
+    }
+
+    const hostId = new mongoose.Types.ObjectId(req.params.hostId);
+    const events = await LiveEvent.find({ host: hostId }).select('listings status viewCount').lean();
+
+    // Revenue is realized seller earnings from settled orders for listings the
+    // host featured in a live event — never a per-listing estimate. Checkout
+    // does not yet persist an event reference, so listing ownership is the
+    // strongest attribution available; cancelled/refunded orders are excluded.
+    const listingIds = [...new Set(events.flatMap((e) => (e.listings || []).map(String)))]
+      .filter((id) => isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    let totalRevenue = 0;
+    if (listingIds.length > 0) {
+      // Group by currency and normalize to USD so a JPY sale cannot be added
+      // to a USD sale as if the numbers were the same unit.
+      const revenueByCurrency = await Transaction.aggregate([
+        { $match: { seller: hostId, listing: { $in: listingIds }, status: { $in: SALE_STATUSES } } },
+        { $group: { _id: '$currency', total: { $sum: '$paymentBreakdown.sellerEarnings' } } },
+      ]);
+      const usdCents = revenueByCurrency.reduce((cents, row) => {
+        const rate = currencies[row._id]?.rate || 1;
+        return cents + Math.round((row.total / rate) * 100);
+      }, 0);
+      totalRevenue = Math.round(usdCents) / 100;
+    }
+
     const stats = {
       totalEvents: events.length,
       liveEvents: events.filter(e => e.status === 'live').length,
       totalViewers: events.reduce((sum, e) => sum + (e.viewCount || 0), 0),
-      totalRevenue: events.reduce((sum, e) => sum + (e.listings?.length || 0) * 100, 0), // Placeholder
+      totalRevenue,
+      currency: 'USD',
+      reportingCurrency: 'USD',
     };
     
     res.json(stats);
