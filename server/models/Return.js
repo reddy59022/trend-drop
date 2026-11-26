@@ -104,6 +104,12 @@ const returnSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  // Postage recovered from a seller-responsibility return (return label +
+  // consumed outbound label). Audit trail for the platform's shipping P&L.
+  postageChargedToSeller: {
+    type: Number,
+    default: 0,
+  },
   labelGeneratedAt: {
     type: Date,
     default: null,

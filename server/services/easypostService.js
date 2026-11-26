@@ -22,13 +22,16 @@ const DEFAULT_PARCEL = {
 const KG_TO_OZ = 35.27396195;
 
 class ShippingProviderError extends Error {
-  constructor(message, { code = 'SHIPPING_LABEL_FAILED', status = null, retryable = false, cause = null } = {}) {
+  constructor(message, { code = 'SHIPPING_LABEL_FAILED', status = null, retryable = false, cause = null, ...details } = {}) {
     super(message);
     this.name = 'ShippingProviderError';
     this.code = code;
     this.status = status;
     this.retryable = retryable;
     if (cause) this.cause = cause;
+    // Preserve compensation metadata (shipmentId/labelRefunded) so callers
+    // can audit a post-purchase failure instead of losing the trail.
+    Object.assign(this, details);
   }
 }
 
@@ -131,6 +134,19 @@ const chooseRate = (rates, preferredCarrier) => {
       || rate.carrier.toLowerCase().startsWith(`${wanted} `))
     : usable;
   return (scoped.length ? scoped : usable).sort((a, b) => a.amount - b.amount)[0];
+};
+
+/**
+ * EasyPost's selected rate amount is postage only. Buying insurance adds a
+ * separate InsuranceFee (1% of declared value, $1 minimum), so using the rate
+ * as the platform's cost under-reported every insured label. The fees array is
+ * the authoritative charged amount; fall back to the rate for older responses.
+ */
+const labelCostFromFees = (fees, fallbackRate) => {
+  const charged = (Array.isArray(fees) ? fees : [])
+    .filter((fee) => fee && fee.charged !== false && fee.refunded !== true)
+    .reduce((sum, fee) => sum + (Number(fee.amount) || 0), 0);
+  return Math.round((charged > 0 ? charged : (Number(fallbackRate) || 0)) * 100) / 100;
 };
 
 const estimatedDelivery = (rate, now = Date.now()) => {
@@ -283,8 +299,21 @@ const createShippingLabel = async ({
   const trackingNumber = clean(bought?.tracking_code);
   const labelUrl = clean(bought?.postage_label?.label_url);
   if (!trackingNumber || !labelUrl) {
+    // Postage was charged but the response is unusable. Request the refund
+    // here: the caller has no label object/shipment id to compensate with.
+    const purchasedId = clean(bought?.id) || clean(shipment.id);
+    let refunded = false;
+    if (purchasedId) {
+      try {
+        const refund = await requestJson(`/shipments/${encodeURIComponent(purchasedId)}/refund`, { body: {} });
+        const status = clean(refund?.status).toLowerCase();
+        refunded = !['rejected', 'error', 'failed', 'canceled', 'cancelled'].includes(status);
+      } catch (refundError) {
+        console.error('EasyPost incomplete-label refund failed:', refundError.message);
+      }
+    }
     throw new ShippingProviderError('EasyPost purchased no printable label.', {
-      code: 'SHIPPING_LABEL_INCOMPLETE', status: 502,
+      code: 'SHIPPING_LABEL_INCOMPLETE', status: 502, shipmentId: purchasedId, labelRefunded: refunded,
     });
   }
 
@@ -297,7 +326,7 @@ const createShippingLabel = async ({
     trackingUrl: publicUrl || `https://www.easypost.com/track?tracking_code=${encodeURIComponent(trackingNumber)}`,
     labelUrl,
     labelPdfUrl: labelUrl,
-    cost: Number(rate.amount) || 0,
+    cost: labelCostFromFees(bought?.fees, rate.amount),
     provider: 'easypost',
     shipmentId: String(bought.id || shipment.id),
     rateId: rate.id,
@@ -346,11 +375,12 @@ const refundShippingLabel = async (shipmentId) => {
     throw new ShippingProviderError('Shipping is not configured.', { code: 'EASYPOST_NOT_CONFIGURED', status: 503 });
   }
   const result = await requestJson(`/shipments/${encodeURIComponent(shipmentId)}/refund`, { body: {} });
-  return {
-    refunded: true,
-    status: clean(result?.status) || 'submitted',
-    shipmentId,
-  };
+  const status = clean(result?.status).toLowerCase() || 'submitted';
+  // EasyPost can answer 200 with a rejected refund (for example a label already
+  // scanned by the carrier). Treating that as recovered postage would hide a
+  // permanent platform loss, so only an accepted/submitted refund counts.
+  const refunded = !['rejected', 'error', 'failed', 'canceled', 'cancelled'].includes(status);
+  return { refunded, status, shipmentId };
 };
 
 const shippingLabelPayload = (label) => ({
@@ -380,6 +410,7 @@ module.exports = {
   refundShippingLabel,
   shippingLabelPayload,
   chooseRate,
+  labelCostFromFees,
   normalizeAddress,
   parseParcel,
   isMockMode,

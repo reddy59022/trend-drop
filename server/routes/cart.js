@@ -16,6 +16,8 @@ const {
 const { isValidObjectId } = require('../utils/validators');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
+const { requirePostageFunded } = require('../utils/postageFunding');
+const boostConfig = require('../config/boost');
 // Viewer-aware transaction shaping: a cart receipt is a BUYER payload.
 const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require('../utils/transactionView');
 
@@ -26,6 +28,25 @@ const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require(
 // charged per label on the COMBINED weight. `price` is the resolved price
 // basis (list price, or the accepted-offer price the buyer actually paid for)
 // — see the PRICE BASIS section in POST /checkout.
+// Flat per-sale boost fee: price × tier.feePercent / 100. Charged only on a
+// successful sale and always deducted from THAT line's seller earnings.
+const BOOST_FEE_TIERS = boostConfig.tiers;
+const getBoostFee = (listing, salePrice = 0) => {
+  if (!listing?.boost?.active) return 0;
+  const tier = BOOST_FEE_TIERS[listing.boost.tier] || BOOST_FEE_TIERS.standard;
+  return Math.round(salePrice * (tier.feePercent / 100) * 100) / 100;
+};
+
+const recordBoostFeeOwed = async (listingId, boostFee, saleQuantity = 1) => {
+  if (!boostFee || boostFee <= 0) return null;
+  const totalFee = Math.round(boostFee * saleQuantity * 100) / 100;
+  return Listing.findByIdAndUpdate(
+    listingId,
+    { $inc: { 'boost.feeLedger.owed': totalFee } },
+    { new: true },
+  );
+};
+
 const computeCartLineFinancials = (listing, seller, sellerCountry, toCountry, qty, price) => {
   const salePrice = price != null ? price : listing.price;
   const combinedWeight = Math.round(((listing.weight || 0.5) * qty) * 1000) / 1000;
@@ -33,14 +54,18 @@ const computeCartLineFinancials = (listing, seller, sellerCountry, toCountry, qt
     salePrice,
     sellerCountry,
     toCountry,
-    combinedWeight
+    combinedWeight,
+    1,
+    { freeShipping: !!listing.shipping?.freeShipping },
   );
   const itemSubtotal = Math.round(salePrice * qty * 100) / 100;
   const protectionTotal = Math.round(breakdown.buyer.buyerProtectionFee * qty * 100) / 100;
   const lineTotal = Math.round((itemSubtotal + breakdown.buyer.shippingCost + protectionTotal) * 100) / 100;
   const platformTotal = Math.round(breakdown.seller.platformFee * qty * 100) / 100;
   const earningsTotal = Math.round(breakdown.seller.sellerEarnings * qty * 100) / 100;
-  return { combinedWeight, breakdown, itemSubtotal, protectionTotal, lineTotal, platformTotal, earningsTotal };
+  const boostFee = Math.round(getBoostFee(listing, salePrice) * qty * 100) / 100;
+  const netEarnings = Math.round((earningsTotal - boostFee) * 100) / 100;
+  return { combinedWeight, breakdown, itemSubtotal, protectionTotal, lineTotal, platformTotal, earningsTotal, boostFee, netEarnings };
 };
 
 // The only thing that may legitimately lower a cart line's charge is an
@@ -447,9 +472,12 @@ router.post('/checkout', auth, async (req, res) => {
         const label = await createShippingLabel({
           fromAddress: sellerAddress,
           toAddress: { fullName: shippingAddress?.fullName || buyer.name, ...shippingAddress },
-          weightKg: planned.listing.weight || 0.5,
+          // One label covers the whole line: declare the COMBINED weight so
+          // the carrier does not later bill an overweight adjustment the
+          // platform never collected from the buyer.
+          weightKg: Math.round(((planned.listing.weight || 0.5) * qty) * 1000) / 1000,
           reference: `cart:${pi.id}:${planned.listing._id}`,
-          declaredValue: (planned.offerPrice || planned.listing.price) * qty,
+          declaredValue: (plannedPriceByListing.get(String(planned.listing._id)) || planned.listing.price) * qty,
         });
         labelByListing.set(String(planned.listing._id), label);
         rollback.track.addLabel(label.shipmentId);
@@ -457,6 +485,9 @@ router.post('/checkout', auth, async (req, res) => {
         console.error('Cart shipping label failed:', labelError.code || labelError.message);
         for (const purchased of labelByListing.values()) {
           try { await refundShippingLabel(purchased.shipmentId); } catch (e) {}
+        }
+        if (labelError.shipmentId && !labelError.labelRefunded) {
+          try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Cart incomplete label refund retry failed:', e.message); }
         }
         try {
           if (pi.status === 'succeeded') await issueRefund(pi.id);
@@ -489,7 +520,7 @@ router.post('/checkout', auth, async (req, res) => {
         ? plannedPriceByListing.get(String(listing._id))
         : listing.price;
 
-      const { combinedWeight, breakdown, itemSubtotal, protectionTotal, lineTotal, platformTotal, earningsTotal } =
+      const { combinedWeight, breakdown, itemSubtotal, protectionTotal, lineTotal, platformTotal, earningsTotal, boostFee, netEarnings } =
         computeCartLineFinancials(listing, seller, sellerCountry, toCountry, qty, salePrice);
 
       const sellerAddress = seller?.shippingAddress ? {
@@ -506,6 +537,30 @@ router.post('/checkout', auth, async (req, res) => {
         await rollback.run();
         return res.status(502).json({ code: 'SHIPPING_LABEL_FAILED', message: 'Shipping label missing for an item in your cart.' });
       }
+
+      let postageFunding;
+      try {
+        postageFunding = requirePostageFunded({
+          labelCost: label.cost || 0,
+          buyerShipping: breakdown.buyer.shippingCost,
+          // Boost fees are platform revenue and never fund postage.
+          sellerEarnings: netEarnings,
+        });
+      } catch (fundingError) {
+        await rollback.run();
+        return res.status(fundingError.status || 502).json({
+          code: fundingError.code || 'SHIPPING_BUDGET_INSUFFICIENT',
+          message: 'Shipping for this cart could not be funded. Your payment was not captured.',
+          retryable: false,
+        });
+      }
+      const sellerCredit = postageFunding.sellerEarningsAfterPostage;
+
+      // Reserve the item's boost fee before the transaction. The rollback below
+      // reverses it if any later step fails; without it a cart sale would be
+      // the one checkout path that never charges the listing's boost fee.
+      await recordBoostFeeOwed(listing._id, getBoostFee(listing, salePrice), qty);
+      rollback.track.addBoostFee(listing._id, boostFee);
 
       const transaction = await Transaction.create({
         listing: listing._id,
@@ -524,8 +579,12 @@ router.post('/checkout', auth, async (req, res) => {
           platformFee: platformTotal,
           platformFeePercent: breakdown.seller.platformFeePercent,
           shippingPayout: 0,
-          sellerEarnings: earningsTotal,
-          sellerCredit: earningsTotal,
+          labelCost: postageFunding.labelCost,
+          sellerPostageSubsidy: postageFunding.sellerSubsidy,
+          sellerEarnings: sellerCredit,
+          sellerCredit,
+          boostFee,
+          boostTier: listing.boost?.tier || '',
           // TDD-B1: canonical provider id (never the raw client string) so one
           // authorization can never fund a second purchase / confirm-batch replay.
           paymentIntentId: pi.id,
@@ -541,7 +600,9 @@ router.post('/checkout', auth, async (req, res) => {
           phone: shippingAddress?.phone,
         },
         shipping: { ...shippingLabelPayload(label), weight: combinedWeight },
-        status: 'shipped',
+        // Born 'paid', like every other checkout: the label exists but the
+        // seller has not dispatched, so the buyer keeps the cancel window.
+        status: 'paid',
         payout: { status: 'pending', transactionId: pi.id },
       });
 
@@ -573,14 +634,14 @@ router.post('/checkout', auth, async (req, res) => {
         await User.updateOne(
           { _id: seller._id },
           {
-            $inc: { 'balance.pending': earningsTotal },
+            $inc: { 'balance.pending': sellerCredit },
             $push: {
               notifications: {
                 $each: [saleNotification({
                   from: req.user._id,
                   listing: listing._id,
                   transaction: transaction._id,
-                  message: `Item sold from cart! You'll earn ${earningsTotal} ${breakdown.sellerCurrency}. Shipping label ready.`,
+                  message: `Item sold from cart! You'll earn ${sellerCredit} ${breakdown.sellerCurrency}. Shipping label ready.`,
                 })],
                 $position: 0,
               },
@@ -588,7 +649,7 @@ router.post('/checkout', auth, async (req, res) => {
           }
         );
         // Only revertible once persisted — no phantom pending earnings.
-        rollback.track.addSellerCredit(seller._id, earningsTotal);
+        rollback.track.addSellerCredit(seller._id, sellerCredit);
       }
 
       // Create payout record
@@ -599,7 +660,7 @@ router.post('/checkout', auth, async (req, res) => {
         salePrice: itemSubtotal,
         commissionRate: breakdown.seller.platformFeePercent / 100,
         commissionAmount: platformTotal,
-        payoutAmount: earningsTotal,
+        payoutAmount: sellerCredit,
         status: 'pending',
       });
       rollback.track.addPayout(payout._id);

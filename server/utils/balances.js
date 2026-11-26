@@ -179,6 +179,55 @@ const debitPendingAllowNegative = async (sellerId, amount) =>
   User.updateOne({ _id: sellerId }, { $inc: { 'balance.pending': -round2(amount) } });
 
 /**
+ * Recover platform postage from a seller who is responsible for a return.
+ * Drains available first, then pending (allowing pending to go negative so the
+ * platform records a receivable instead of silently writing the postage off).
+ * Any future sale credit offsets the negative balance before cash-out.
+ */
+const reverseSellerCredits = async (credits = []) => {
+  for (const credit of credits) {
+    try {
+      await User.updateOne({ _id: credit.sellerId }, [
+        {
+          $set: {
+            'balance.pending': {
+              $max: [0, { $subtract: [{ $ifNull: ['$balance.pending', 0] }, credit.amount] }],
+            },
+          },
+        },
+      ]);
+    } catch (e) {
+      console.error('Seller credit rollback failed:', e.message);
+    }
+  }
+};
+
+const chargeSellerPostage = async (sellerId, amount) => {
+  const amt = round2(amount);
+  if (!Number.isFinite(amt) || amt <= 0) return null;
+  const fromAvailable = {
+    $min: [{ $max: [{ $ifNull: ['$balance.available', 0] }, 0] }, amt],
+  };
+  return User.updateOne({ _id: sellerId }, [
+    {
+      $set: {
+        'balance.available': {
+          $subtract: [{ $ifNull: ['$balance.available', 0] }, fromAvailable],
+        },
+        // Pending may go negative: that negative is the platform's receivable
+        // and future sale credits offset it before any cash-out.
+        'balance.pending': {
+          $subtract: [
+            { $ifNull: ['$balance.pending', 0] },
+            { $subtract: [amt, fromAvailable] },
+          ],
+        },
+      },
+    },
+  ]);
+};
+
+/**
  * Atomic cash-out: decrement available ONLY if the balance still covers the
  * amount. Returns the updated doc, or null when the balance was already
  * spent by a concurrent request (the caller answers 422).
@@ -228,5 +277,7 @@ module.exports = {
   clawbackSellerEarnings,
   reverseEscrowHold,
   debitPendingAllowNegative,
+  chargeSellerPostage,
+  reverseSellerCredits,
   withdrawAvailable,
 };

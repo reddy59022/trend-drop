@@ -16,7 +16,7 @@ const Payout = require('../models/Payout');
 const User = require('../models/User');
 const Offer = require('../models/Offer');
 const Cart = require('../models/Cart');
-const { releaseAuthorization, issueRefund } = require('../config/payments');
+const { releaseAuthorization, issueRefund, retrievePaymentIntent } = require('../config/payments');
 const { refundShippingLabel } = require('../services/easypostService');
 
 function createPurchaseRollback() {
@@ -89,7 +89,18 @@ function createPurchaseRollback() {
   const releaseMoney = async () => {
     if (!state.intentId) return;
     const piState = global.__mockPaymentIntents?.[state.intentId];
-    const status = piState?.status;
+    let status = piState?.status;
+    if (!status) {
+      // Real Stripe intent: a captured payment must be REFUNDED, not released.
+      // Calling release on a succeeded intent fails and would leave the buyer
+      // charged for a purchase this rollback just erased.
+      try {
+        const pi = await retrievePaymentIntent(state.intentId);
+        status = pi?.status;
+      } catch (e) {
+        console.error('Purchase rollback: could not retrieve payment intent:', e.message);
+      }
+    }
     if (status && ['cancelled', 'canceled', 'refunded'].includes(status)) return;
     try {
       if (status === 'succeeded') {
@@ -195,10 +206,17 @@ function createPurchaseRollback() {
     //    would corrupt the seller's lifetime earnings.
     for (const c of state.sellerCredits) {
       try {
-        const seller = await User.findById(c.sellerId);
-        if (!seller) continue;
-        seller.balance.pending = Math.max(0, (seller.balance.pending || 0) - c.amount);
-        await seller.save();
+        // Atomic: a concurrent sale credit must not be lost to a
+        // read-modify-write of the seller document.
+        await User.updateOne({ _id: c.sellerId }, [
+          {
+            $set: {
+              'balance.pending': {
+                $max: [0, { $subtract: [{ $ifNull: ['$balance.pending', 0] }, c.amount] }],
+              },
+            },
+          },
+        ]);
       } catch (e) {
         console.error('Purchase rollback: seller balance revert failed:', e.message);
       }
@@ -207,10 +225,14 @@ function createPurchaseRollback() {
     // 6. Platform postage — labels are bought by TrendDrop, so a failed
     //    purchase must request a carrier refund for each label.
     for (const shipmentId of state.labels) {
-      try {
-        await refundShippingLabel(shipmentId);
-      } catch (e) {
-        console.error('Purchase rollback: shipping label refund failed:', e.message);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const result = await refundShippingLabel(shipmentId);
+          if (result?.refunded !== false) break;
+          console.error('Purchase rollback: shipping label refund rejected:', result?.status || 'unknown');
+        } catch (e) {
+          console.error('Purchase rollback: shipping label refund failed:', e.message);
+        }
       }
     }
 

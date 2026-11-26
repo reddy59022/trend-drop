@@ -369,8 +369,10 @@ describe('Tax Calculation Engine', () => {
       expect(res.body.buyer.tax).toBeDefined();
       expect(res.body.buyer.tax.taxAmount).toBeGreaterThan(0);
       expect(res.body.buyer.tax.taxType).toBe('gst_hst');
-      // Seller receives item price minus platform fee plus shipping (shipping passes through)
-      expect(res.body.seller.sellerEarnings).toBeGreaterThan(90);
+      // The platform buys the label, so seller earnings are item price minus
+      // the platform fee; buyer-paid postage is not seller income.
+      expect(res.body.seller.sellerEarnings).toBe(90);
+      expect(res.body.seller.shippingPayout).toBe(0);
       expect(res.body.seller.sellerEarnings).toBeLessThan(res.body.buyer.totalPaid);
     });
   });

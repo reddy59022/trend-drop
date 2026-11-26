@@ -20,6 +20,7 @@ const { calculatePaymentBreakdown } = require('../config/payments');
 const {
   createShippingLabel,
   refundShippingLabel,
+  labelCostFromFees,
   ShippingProviderError,
 } = require('../services/easypostService');
 
@@ -217,6 +218,46 @@ describe('EP.1 provider client', () => {
     } finally {
       process.env.NODE_ENV = previous;
     }
+  });
+
+  test('the recorded label cost includes insurance and other charged fees', () => {
+    expect(labelCostFromFees([
+      { type: 'PostageFee', amount: '7.50000', charged: true, refunded: false },
+      { type: 'InsuranceFee', amount: '1.00000', charged: true, refunded: false },
+    ], 7.5)).toBe(8.5);
+    expect(labelCostFromFees([
+      { type: 'PostageFee', amount: '7.50000', charged: true, refunded: true },
+    ], 7.5)).toBe(7.5);
+  });
+
+  test('an unusable label response refunds the postage before throwing', async () => {
+    global.fetch = jest.fn(async (url) => {
+      if (String(url).endsWith('/shipments')) {
+        return okResponse({
+          id: 'shp_incomplete',
+          rates: [
+            { id: 'rate_incomplete', carrier: 'USPS', service: 'Ground', rate: '7.50' },
+          ],
+        });
+      }
+      if (String(url).includes('/shipments/shp_incomplete/buy')) {
+        return okResponse({ id: 'shp_incomplete', tracking_code: '', postage_label: {} });
+      }
+      if (String(url).endsWith('/refund')) return okResponse({ status: 'submitted' });
+      return errResponse(404);
+    });
+
+    await expect(createShippingLabel({
+      fromAddress: { name: 'Seller', street1: '1 St', city: 'Austin', state: 'TX', zip: '78702', country: 'US' },
+      toAddress: US_ADDRESS,
+      weightKg: 1,
+      reference: 'test:incomplete',
+    })).rejects.toMatchObject({
+      code: 'SHIPPING_LABEL_INCOMPLETE',
+      shipmentId: 'shp_incomplete',
+      labelRefunded: true,
+    });
+    expect(global.fetch.mock.calls.some(([url]) => String(url).endsWith('/refund'))).toBe(true);
   });
 
   test('refunds are requested against the shipment id', async () => {

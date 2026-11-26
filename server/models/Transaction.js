@@ -73,6 +73,13 @@ const transactionSchema = new mongoose.Schema({
     platformFee: { type: Number, default: 0 },
     platformFeePercent: { type: Number, default: 8 },
     shippingPayout: { type: Number, default: 0 },
+    // Postage accounting (platform-owned EasyPost labels). `labelCost` is the
+    // carrier rate actually bought; `sellerPostageSubsidy` is the part of that
+    // cost the seller funded because the buyer's shipping charge (often 0 on a
+    // free-shipping listing) did not cover it. Together they prove the platform
+    // never paid postage out of money it did not collect.
+    labelCost: { type: Number, default: 0 },
+    sellerPostageSubsidy: { type: Number, default: 0 },
     sellerEarnings: { type: Number, required: true },
     // Round 4 (money matrix): the EXACT amount of seller money this sale
     // credited to the seller's balance = net earnings + the shipping label
@@ -118,6 +125,12 @@ const transactionSchema = new mongoose.Schema({
     trackerId: { type: String, default: '' },
     labelCost: { type: Number, default: 0 },
     labelRefunded: { type: Boolean, default: false },
+    // Refund requested but not confirmed/accepted by the carrier yet. The
+    // cancellation cron retries these so an EasyPost outage cannot silently
+    // turn into permanent platform postage loss.
+    labelRefundPending: { type: Boolean, default: false },
+    labelRefundStatus: { type: String, default: '' },
+    labelRefundRequestedAt: { type: Date, default: null },
     labelCreated: { type: Boolean, default: false },
     labelCreatedDate: { type: Date },
     estimatedDelivery: { type: Date },

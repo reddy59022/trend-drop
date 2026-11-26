@@ -7,7 +7,6 @@ const Offer = require('../models/Offer');
 const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
 const { isValidObjectId } = require('../utils/validators');
-const { calculateShipping } = require('../config/shipping');
 const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding, verifyIntentAmount, releaseAuthorization, issueRefund } = require('../config/payments');
 const {
   createShippingLabel,
@@ -17,6 +16,7 @@ const {
 const { boostConfig } = require('../config/boost');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
+const { requirePostageFunded } = require('../utils/postageFunding');
 // Viewer-aware transaction shaping: sellers get the canonical, self-closing
 // earnings column; buyers never receive the seller's boost fee.
 const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require('../utils/transactionView');
@@ -144,8 +144,18 @@ router.post('/batch', auth, async (req, res) => {
       const toCountry = buyerCountry || req.user.country || 'US';
       const weightKg = listing.weight || 0.5;
 
-      const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, weightKg);
-      const itemTotal = breakdown.buyer.totalPaid * quantity;
+      // One label covers the whole quantity, so shipping is charged once on
+      // the combined weight; item and buyer protection scale with quantity.
+      const combinedWeight = Math.round(weightKg * quantity * 1000) / 1000;
+      const breakdown = calculatePaymentBreakdown(
+        listing.price, sellerCountry, toCountry, combinedWeight, 1,
+        { freeShipping: !!listing.shipping?.freeShipping },
+      );
+      const itemTotal = Math.round((
+        breakdown.buyer.itemPrice * quantity
+        + breakdown.buyer.shippingCost
+        + breakdown.buyer.buyerProtectionFee * quantity
+      ) * 100) / 100;
       totalAmount += itemTotal;
       breakdowns.push(breakdown);
     }
@@ -178,6 +188,8 @@ router.post('/batch', auth, async (req, res) => {
 // POST /api/transactions - Create transaction (purchase) with full payment breakdown
   // POST /api/transactions/guest - Allow guest checkout without authentication
 router.post('/guest', async (req, res) => {
+  // Declared outside try so the catch can compensate a partially-built purchase.
+  let rollback;
   try {
     const { listingId, buyerEmail, buyerName, buyerPhone, shippingAddress, buyerCountry } = req.body;
 
@@ -223,6 +235,8 @@ router.post('/guest', async (req, res) => {
     // (validated before any inventory/seller-state mutation).
     const gate = await gateLegacyPayment(req, res, { listingIds: [listingId] });
     if (!gate.ok) return;
+    rollback = createPurchaseRollback();
+    rollback.track.setIntent(gate.pi.id);
 
     // Create or find guest user
     let guestUser = await User.findOne({ email: buyerEmail.toLowerCase() });
@@ -255,7 +269,10 @@ router.post('/guest', async (req, res) => {
     const buyerShipCountry = shippingAddress.country || buyerCountry || 'US';
     const weightKg = listing.weight || 0.5;
 
-    const breakdown = calculatePaymentBreakdown(listing.price, sellerCountry, buyerShipCountry, weightKg);
+    const breakdown = calculatePaymentBreakdown(
+      listing.price, sellerCountry, buyerShipCountry, weightKg, 1,
+      { freeShipping: !!listing.shipping?.freeShipping },
+    );
     // AMOUNT PARITY (round 25): the authorized intent must cover exactly what
     // this order charges — a cheap authorization must never fulfil this
     // listing if its price rose after authorization. Delegated to the shared
@@ -292,6 +309,9 @@ router.post('/guest', async (req, res) => {
       });
     } catch (labelError) {
       console.error('Guest shipping label failed:', labelError.code || labelError.message);
+      if (labelError.shipmentId && !labelError.labelRefunded) {
+        try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Guest incomplete label refund retry failed:', e.message); }
+      }
       try {
         if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
         else await releaseAuthorization(gate.pi.id);
@@ -302,6 +322,31 @@ router.post('/guest', async (req, res) => {
         retryable: labelError.retryable !== false,
       });
     }
+
+    let postageFunding;
+    try {
+      postageFunding = requirePostageFunded({
+        labelCost: label.cost || 0,
+        buyerShipping: breakdown.buyer.shippingCost,
+        sellerEarnings: Math.max(0, Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100),
+      });
+    } catch (fundingError) {
+      console.error('Guest postage funding failed:', fundingError.code || fundingError.message);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try { await refundShippingLabel(label.shipmentId); break; } catch (e) { console.error('Guest label refund failed:', e.message); }
+      }
+      try {
+        if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
+        else await releaseAuthorization(gate.pi.id);
+      } catch (e) { console.error('Guest payment release failed:', e.message); }
+      return res.status(fundingError.status || 502).json({
+        code: fundingError.code || 'SHIPPING_BUDGET_INSUFFICIENT',
+        message: 'Shipping for this order could not be funded. Your payment was not captured.',
+        retryable: false,
+      });
+    }
+    const sellerCredit = postageFunding.sellerEarningsAfterPostage;
+    rollback.track.addLabel(label.shipmentId);
 
     const transaction = await Transaction.create({
       listing: listingId,
@@ -319,8 +364,10 @@ router.post('/guest', async (req, res) => {
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: 0,
-        sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
-        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100,
+        labelCost: postageFunding.labelCost,
+        sellerPostageSubsidy: postageFunding.sellerSubsidy,
+        sellerEarnings: sellerCredit,
+        sellerCredit,
         boostFee,
         boostTier: listing.boost?.tier || '',
         // TDD-B1: record the funding intent so a single authorization can
@@ -340,7 +387,7 @@ router.post('/guest', async (req, res) => {
       },
       sellerAddress,
       shipping: { ...shippingLabelPayload(label), weight: weightKg },
-      payout: { status: 'pending' },
+      payout: { status: 'pending', transactionId: gate.pi.id },
       autoTracking: {
         enabled: true,
         lastChecked: new Date(),
@@ -349,6 +396,7 @@ router.post('/guest', async (req, res) => {
       },
       status: 'paid',
     });
+    rollback.track.addTransaction(transaction._id, gate.pi.id);
 
     // Atomic inventory update
     const inventoryClaim = await Listing.findOneAndUpdate(
@@ -374,27 +422,21 @@ router.post('/guest', async (req, res) => {
       // another buyer claimed the last unit before this atomic update. Remove
       // the orphan and release the authorization; never report a successful
       // purchase or credit the seller without inventory.
-      await Transaction.deleteOne({ _id: transaction._id });
-      try { await refundShippingLabel(label.shipmentId); } catch (refundError) {
-        console.error('Failed to refund guest checkout label:', refundError.message);
-      }
-      try {
-        if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
-        else await releaseAuthorization(gate.pi.id);
-      } catch (releaseError) {
-        console.error('Failed to release guest checkout authorization:', releaseError.message);
-      }
+      await rollback.run();
       return res.status(409).json({ message: 'Listing sold out while completing checkout' });
     }
+    rollback.track.addInventory(listingId, 1);
 
     // Item-level boost fee ledger (this listing only)
     await recordBoostFeeOwed(listing._id, boostFee, 1);
+    rollback.track.addBoostFee(listing._id, boostFee);
 
     // Update seller pending balance (earnings + the shipping label
     // reimbursement the buyer paid — round-4 shipping pass-through)
     await User.findByIdAndUpdate(listing.seller, {
-      $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100 }
+      $inc: { 'balance.pending': sellerCredit }
     });
+    rollback.track.addSellerCredit(listing.seller, sellerCredit);
 
     res.status(201).json({
       // Guest checkout: no authenticated viewer, so this is a buyer-shaped
@@ -409,6 +451,10 @@ router.post('/guest', async (req, res) => {
     });
   } catch (error) {
     console.error('Guest transaction error:', error);
+    // Nothing may survive a failed guest purchase: a captured guest payment
+    // must be refunded, the label refunded, stock restored and the seller
+    // credit/boost reversal applied.
+    if (rollback) await rollback.run();
     res.status(500).json({ message: error.message || 'Server error' });
   }
 });
@@ -472,7 +518,10 @@ router.post('/', auth, async (req, res) => {
       const weightKg = listing.weight || 0.5;
 
       // Use the same calculation engine as the payment flow for consistency
-      const breakdown = calculatePaymentBreakdown(finalPrice, sellerCountry, buyerShipCountry, weightKg);
+      const breakdown = calculatePaymentBreakdown(
+        finalPrice, sellerCountry, buyerShipCountry, weightKg, 1,
+        { freeShipping: !!listing.shipping?.freeShipping },
+      );
 
       // AMOUNT PARITY (round 25): the authorized intent must cover exactly
       // what this order charges (guards price changes between authorize and
@@ -510,6 +559,9 @@ router.post('/', auth, async (req, res) => {
         });
       } catch (labelError) {
         console.error('Shipping label failed:', labelError.code || labelError.message);
+        if (labelError.shipmentId && !labelError.labelRefunded) {
+          try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Incomplete label refund retry failed:', e.message); }
+        }
         try {
           if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
           else await releaseAuthorization(gate.pi.id);
@@ -521,6 +573,13 @@ router.post('/', auth, async (req, res) => {
         });
       }
       rollback.track.addLabel(label.shipmentId);
+
+      const postageFunding = requirePostageFunded({
+        labelCost: label.cost || 0,
+        buyerShipping: breakdown.buyer.shippingCost,
+        sellerEarnings: Math.max(0, Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100),
+      });
+      const sellerCredit = postageFunding.sellerEarningsAfterPostage;
 
       const transaction = await Transaction.create({
         listing: listingId,
@@ -538,8 +597,10 @@ router.post('/', auth, async (req, res) => {
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: 0,
-        sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
-        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100,
+        labelCost: postageFunding.labelCost,
+        sellerPostageSubsidy: postageFunding.sellerSubsidy,
+        sellerEarnings: sellerCredit,
+        sellerCredit,
         boostFee,
         boostTier: listing.boost?.tier || '',
         paymentIntentId: gate.pi.id,
@@ -598,10 +659,10 @@ router.post('/', auth, async (req, res) => {
     await recordBoostFeeOwed(listing._id, boostFee, 1);
     rollback.track.addBoostFee(listing._id, boostFee);
 
-    // Update seller's pending balance and notification
-    // SHIPPING REIMBURSEMENT (round 4): the buyer's shipping charge is a
-    // label-cost reimbursement owed to the seller (see utils/balances.js).
-    const finalSellerEarnings = Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100;
+    // Update seller's pending balance and notification. Postage is platform
+    // revenue, and any unfunded label cost was already deducted from this
+    // seller credit before the transaction was written.
+    const finalSellerEarnings = sellerCredit;
     if (seller) {
       // ATOMIC credit ($inc + prepend): concurrent purchases of the same
       // seller's items used to race on document versioning here — the loser
@@ -747,11 +808,12 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     const shippingAddress = req.body?.shippingAddress || req.user.shippingAddress || {};
     const buyerCountry = shippingAddress.country || req.user.country || 'US';
     const weightKg = listing.weight || 0.5;
-    const { calculateShipping } = require('../config/shipping');
     const { calculatePaymentBreakdown } = require('../config/payments');
-    const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKg, finalPrice);
-    const shippingCost = listing.shipping?.freeShipping ? 0 : shippingResult.cost;
-    const breakdown = calculatePaymentBreakdown(finalPrice, sellerCountry, buyerCountry, weightKg);
+    const breakdown = calculatePaymentBreakdown(
+      finalPrice, sellerCountry, buyerCountry, weightKg, 1,
+      { freeShipping: !!listing.shipping?.freeShipping },
+    );
+    const shippingCost = breakdown.buyer.shippingCost;
     // AMOUNT PARITY (round 25): the accepted-offer intent must cover exactly
     // the offer price + shipping + protection that this purchase charges.
     // Shared helper — see verifyIntentAmount in config/payments.js.
@@ -783,6 +845,9 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       });
     } catch (labelError) {
       console.error('Offer shipping label failed:', labelError.code || labelError.message);
+      if (labelError.shipmentId && !labelError.labelRefunded) {
+        try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Offer incomplete label refund retry failed:', e.message); }
+      }
       try {
         if (offerGate.pi.status === 'succeeded') await issueRefund(offerGate.pi.id);
         else await releaseAuthorization(offerGate.pi.id);
@@ -794,6 +859,13 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       });
     }
     rollback.track.addLabel(label.shipmentId);
+
+    const postageFunding = requirePostageFunded({
+      labelCost: label.cost || 0,
+      buyerShipping: breakdown.buyer.shippingCost,
+      sellerEarnings: Math.max(0, Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100),
+    });
+    const sellerCredit = postageFunding.sellerEarningsAfterPostage;
 
     const transaction = await Transaction.create({
       listing: listing._id,
@@ -811,8 +883,10 @@ router.post('/offer/:offerId', auth, async (req, res) => {
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: 0,
-        sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
-        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100,
+        labelCost: postageFunding.labelCost,
+        sellerPostageSubsidy: postageFunding.sellerSubsidy,
+        sellerEarnings: sellerCredit,
+        sellerCredit,
         boostFee,
         boostTier: listing.boost?.tier || '',
         // TDD-B1: funding intent recorded so it cannot be replayed.
@@ -834,7 +908,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       negotiatedPrice: finalPrice,
       isNegotiated: true,
       status: 'paid',
-      payout: { status: 'pending' },
+      payout: { status: 'pending', transactionId: offerGate.pi.id },
       autoTracking: { enabled: true, lastChecked: new Date(), nextCheck: new Date(Date.now() + 86400000), attempts: 0 },
     });
     rollback.track
@@ -873,14 +947,14 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       await User.updateOne(
         { _id: seller._id },
         {
-          $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100 },
+          $inc: { 'balance.pending': sellerCredit },
           $push: {
             notifications: {
               $each: [saleNotification({
                 from: req.user._id,
                 listing: listing._id,
                 transaction: transaction._id,
-                message: `"${listing.title}" sold via offer for $${finalPrice}! You'll earn $${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} after platform fees.`,
+                message: `"${listing.title}" sold via offer for $${finalPrice}! You'll earn $${sellerCredit} after platform fees.`,
               })],
               $position: 0,
             },
@@ -889,7 +963,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       );
       // Only revertible once persisted — a rolled-back purchase leaves the
       // seller with no phantom pending earnings.
-      rollback.track.addSellerCredit(seller._id, Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100);
+      rollback.track.addSellerCredit(seller._id, sellerCredit);
     }
 
     // Notify buyer of purchase (atomic prepend — the same buyer may have

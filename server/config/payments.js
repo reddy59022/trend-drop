@@ -68,11 +68,24 @@ const stripeFees = {
   default: { percent: 2.9, fixed: 0.30 },
 };
 
-const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg = 0.5, exchangeRate = 1) => {
+const refundOrReleaseIntent = async (intent, paymentIntentId) => {
+  if (intent?.status === 'succeeded') return issueRefund(paymentIntentId);
+  return releaseAuthorization(paymentIntentId);
+};
+
+const calculatePaymentBreakdown = (itemPrice, fromCountry, toCountry, weightKg = 0.5, exchangeRate = 1, options = {}) => {
   const { calculateShipping } = require('./shipping');
   const sellerCommission = countryCommissions[fromCountry] || countryCommissions.default;
   const buyerCommission = countryCommissions[toCountry] || countryCommissions.default;
-  const shippingResult = calculateShipping(fromCountry, toCountry, weightKg, itemPrice);
+  const calculatedShipping = calculateShipping(fromCountry, toCountry, weightKg, itemPrice);
+  // A listing-level free-shipping promise is authoritative. Threshold-based
+  // free shipping is already returned as 0 by calculateShipping, but the
+  // seller's explicit flag was previously ignored by every checkout path, so
+  // buyers were charged shipping on listings advertised as free.
+  const freeShipping = Boolean(options.freeShipping) || calculatedShipping.freeShipping;
+  const shippingResult = freeShipping
+    ? { ...calculatedShipping, cost: 0, freeShipping: true, breakdown: { ...(calculatedShipping.breakdown || {}), total: 0 } }
+    : calculatedShipping;
   const shippingCost = shippingResult.cost;
   const platformFeePercent = sellerCommission.platformFee;
   const buyerProtectionPercent = buyerCommission.buyerProtection;
@@ -531,6 +544,7 @@ module.exports = {
   countryCommissions,
   stripeFees,
   calculatePaymentBreakdown,
+  refundOrReleaseIntent,
   authorizePaymentIntent,
   capturePaymentIntent,
   retrievePaymentIntent,

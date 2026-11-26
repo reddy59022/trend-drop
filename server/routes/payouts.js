@@ -25,6 +25,16 @@ const usdNormalized = (amount, currency) => {
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 const round2 = (v) => Math.round((num(v) + Number.EPSILON) * 100) / 100;
 
+// `sellerEarnings` of 0 is legitimate (for example, postage funding consumed
+// the whole seller credit). The old `|| fallback` treated that zero as missing
+// and re-paid the seller from sale price, leaking platform money.
+const sellerPayout = (transaction, salePrice, commissionAmount) => {
+  const stored = transaction.paymentBreakdown?.sellerEarnings;
+  return typeof stored === 'number' && Number.isFinite(stored)
+    ? stored
+    : Math.round((salePrice - commissionAmount) * 100) / 100;
+};
+
 // Integer-cents helpers. Float rounding at every step (0.1+0.2 style error)
 // is what corrupts money totals when many payouts are summed — so every sum
 // in this file is accumulated in whole cents and rounded ONCE at the end.
@@ -68,6 +78,11 @@ function normalizePayout(docLike) {
   let salePrice = round2(num(doc.salePrice));
   let commissionAmount = round2(num(doc.commissionAmount));
   let payoutAmount = round2(num(doc.payoutAmount));
+  // A stored zero is real money (postage funding can consume the whole seller
+  // credit). Only inferred values may be backfilled; never turn zero into a
+  // payout the platform never credited.
+  const payoutMissing = doc.payoutAmount === undefined || doc.payoutAmount === null;
+  const commissionMissing = doc.commissionAmount === undefined || doc.commissionAmount === null;
 
   if (hasAmount) {
     const saleEqualsNet = salePrice > 0 && Math.abs(salePrice - amount) < 0.01;
@@ -89,11 +104,11 @@ function normalizePayout(docLike) {
     const legs = exactPayoutLegs(fromCents(toCents(commissionAmount) + toCents(payoutAmount)), payoutAmount);
     salePrice = legs.salePrice;
   }
-  if (payoutAmount === 0 && salePrice > 0 && commissionAmount > 0) {
+  if (payoutMissing && salePrice > 0 && commissionAmount > 0) {
     const legs = exactPayoutLegs(salePrice, fromCents(toCents(salePrice) - toCents(commissionAmount)));
     payoutAmount = legs.payoutAmount;
   }
-  if (commissionAmount === 0 && salePrice > 0 && payoutAmount > 0) {
+  if (commissionMissing && salePrice > 0 && payoutAmount > 0) {
     const legs = exactPayoutLegs(salePrice, payoutAmount);
     commissionAmount = legs.platformCut;
   }
@@ -284,7 +299,7 @@ router.post('/process/:transactionId', auth, async (req, res) => {
       // payout with 200 so the client sees the money was already credited.
       const salePrice = transaction.paymentBreakdown?.subtotal || transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
       const commissionAmount = transaction.paymentBreakdown?.platformFee || Math.round(salePrice * COMMISSION_RATE * 100) / 100;
-      const payoutAmount = transaction.paymentBreakdown?.sellerEarnings || Math.round((salePrice - commissionAmount) * 100) / 100;
+      const payoutAmount = sellerPayout(transaction, salePrice, commissionAmount);
       await existingPayout.populate(['listing', 'transaction']).catch(() => {});
       return res.json({
         message: 'Payout already processed',
@@ -302,7 +317,7 @@ router.post('/process/:transactionId', auth, async (req, res) => {
     // commission is on item price only, NOT on shipping + buyer protection
     const salePrice = transaction.paymentBreakdown?.subtotal || transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
     const commissionAmount = transaction.paymentBreakdown?.platformFee || Math.round(salePrice * COMMISSION_RATE * 100) / 100;
-    const payoutAmount = transaction.paymentBreakdown?.sellerEarnings || Math.round((salePrice - commissionAmount) * 100) / 100;
+    const payoutAmount = sellerPayout(transaction, salePrice, commissionAmount);
 
     let payout;
     try {
@@ -387,7 +402,7 @@ router.post('/auto-create', auth, async (req, res) => {
     // CRITICAL: Use actual breakdown values, NOT recalculated from totalPaid
     const salePrice = transaction.paymentBreakdown?.subtotal || transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || transaction.listing?.price || 0;
     const commissionAmount = transaction.paymentBreakdown?.platformFee || Math.round(salePrice * COMMISSION_RATE * 100) / 100;
-    const payoutAmount = transaction.paymentBreakdown?.sellerEarnings || Math.round((salePrice - commissionAmount) * 100) / 100;
+    const payoutAmount = sellerPayout(transaction, salePrice, commissionAmount);
 
     let payout;
     try {

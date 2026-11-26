@@ -19,6 +19,7 @@ const {
   ShippingProviderError,
   isMockMode,
 } = require('../services/easypostService');
+const { TERMINAL_STATUSES } = require('../services/shippingPurchase');
 
 // GET /api/shipping/carriers - Get all carriers
 router.get('/carriers', (req, res) => {
@@ -105,6 +106,11 @@ router.post('/calculate', (req, res) => {
       parsedNumbers.itemPrice,
       options && typeof options === 'object' && !Array.isArray(options) ? options : {}
     );
+    if (req.body.freeShipping === true) {
+      result.cost = 0;
+      result.freeShipping = true;
+      if (result.breakdown) result.breakdown = { ...result.breakdown, total: 0 };
+    }
 
     // Convert to buyer's currency if different
     if (buyerCurrency && buyerCurrency !== 'USD') {
@@ -181,9 +187,11 @@ router.post('/calculate-breakdown', (req, res) => {
     const price = parsedNumbers.itemPrice;
     const weightKgSafe = parsedNumbers.weightKg;
 
-    // Calculate shipping
+    // Calculate shipping. A listing-level free-shipping promise overrides the
+    // rate table, exactly as checkout does.
+    const freeShipping = req.body.freeShipping === true;
     const shippingResult = calculateShipping(sellerCountry, buyerCountry, weightKgSafe, price);
-    const shippingCost = shippingResult.cost;
+    const shippingCost = freeShipping ? 0 : shippingResult.cost;
 
     // Platform fee (paid by seller)
     const feePercent = parsedNumbers.platformFeePercent;
@@ -202,7 +210,10 @@ router.post('/calculate-breakdown', (req, res) => {
     const totalPaid = Math.round((price + shippingCost + buyerProtectionFee + taxAmount) * 100) / 100;
 
     // Seller earnings (does NOT include tax - tax is remitted to government)
-    const sellerEarnings = Math.round((price - platformFee + shippingCost) * 100) / 100;
+    // Seller earnings exclude postage: TrendDrop buys the label. Quoting the
+    // old shipping pass-through here made the seller dashboard promise money
+    // the ledger never credits.
+    const sellerEarnings = Math.round((price - platformFee) * 100) / 100;
 
     // Convert to local currency if needed
     let localBreakdown = null;
@@ -247,9 +258,9 @@ router.post('/calculate-breakdown', (req, res) => {
         carrierName: carriers[shippingResult.carrier]?.name || shippingResult.carrier,
         estimatedDays: shippingResult.estimatedDays,
         isDomestic: shippingResult.isDomestic,
-        freeShipping: shippingResult.freeShipping,
+        freeShipping,
         zone: shippingResult.zone,
-        breakdown: shippingResult.breakdown,
+        breakdown: freeShipping ? { ...shippingResult.breakdown, total: 0 } : shippingResult.breakdown,
       },
       // Local currency conversion
       local: localBreakdown,
@@ -262,7 +273,7 @@ router.post('/calculate-breakdown', (req, res) => {
 
 const labelErrorResponse = (res, error) => {
   const status = error instanceof ShippingProviderError
-    ? (error.status >= 400 && error.status < 500 ? 422 : 502)
+    ? (error.status === 409 ? 409 : (error.status >= 400 && error.status < 500 ? 422 : 502))
     : 502;
   return res.status(status).json({
     code: error.code || 'SHIPPING_LABEL_FAILED',
@@ -276,6 +287,23 @@ const labelErrorResponse = (res, error) => {
 // Single source of truth for a transaction's platform-purchased label.
 // Existing live labels are reused; a missing or voided label is repurchased.
 async function ensureTransactionLabel(transaction) {
+  // A cancelled/refunded order must never buy postage again. Without this a
+  // seller could re-open a closed order from the label screen and make the
+  // platform pay for a second label that no sale funds.
+  const status = String(transaction.status || '').toLowerCase();
+  if (TERMINAL_STATUSES.has(status) || transaction.shipping?.labelRefundPending) {
+    throw new ShippingProviderError('This order is closed and cannot purchase another shipping label.', {
+      code: 'SHIPPING_ORDER_CLOSED', status: 409, retryable: false,
+    });
+  }
+  // Only a sale that actually holds money may buy platform postage. A pending
+  // auction/order has no captured payment, so buying a label there would be a
+  // pure platform loss.
+  if (!['paid', 'processing', 'shipped'].includes(status)) {
+    throw new ShippingProviderError('Shipping labels can only be purchased for a paid order.', {
+      code: 'SHIPPING_ORDER_NOT_PAID', status: 409, retryable: false,
+    });
+  }
   if (transaction.shipping?.trackingNumber && !transaction.shipping?.voided) {
     return transaction.shipping;
   }
@@ -368,9 +396,11 @@ router.post('/void/:transactionId', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only the seller can void labels' });
     }
 
-    // Cannot void delivered orders
-    const deliveredStatuses = ['delivered', 'completed', 'refunded'];
-    if (deliveredStatuses.includes(transaction.status)) {
+    // A label can only be refunded before the parcel is handed to the carrier.
+    // Allowing a void after dispatch would let the platform buy a second label
+    // for a shipment that was already sent.
+    const voidableStatuses = ['pending', 'paid', 'processing'];
+    if (!voidableStatuses.includes(transaction.status)) {
       return res.status(400).json({ message: `Cannot void label for ${transaction.status} order` });
     }
 

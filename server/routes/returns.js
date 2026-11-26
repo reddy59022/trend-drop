@@ -9,7 +9,8 @@ const Listing = require('../models/Listing');
 const { orderStates, isValidTransition } = require('../config/orderLifecycle');
 const { isValidObjectId } = require('../utils/validators');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
-const { clawbackSellerEarnings, sellerSaleTotal } = require('../utils/balances');
+const { clawbackSellerEarnings, sellerSaleTotal, chargeSellerPostage } = require('../utils/balances');
+const { refundShippingLabel } = require('../services/easypostService');
 
 // Reuse the listing image pipeline (Cloudinary in prod, deterministic mock in test).
 const { uploadListingImages } = (() => {
@@ -235,18 +236,30 @@ router.get('/:id', auth, async (req, res) => {
 
 // PUT /api/returns/:id/approve - Seller approves return request
 router.put('/:id/approve', auth, async (req, res) => {
+  let returnRequest;
+  let generatedLabel = null;
+  let labelSaved = false;
   try {
     if (!isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'Invalid return ID' });
     }
-    const returnRequest = await Return.findById(req.params.id);
+    returnRequest = await Return.findById(req.params.id);
     if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
     if (returnRequest.seller.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
-    if (returnRequest.status !== 'pending') {
+    // Atomic approval claim: two seller clicks must never buy two EasyPost
+    // labels. The claim moves pending → approved before postage is bought; a
+    // label failure or a later save failure reverts it to pending.
+    const claimedForLabel = await Return.findOneAndUpdate(
+      { _id: returnRequest._id, seller: req.user._id, status: 'pending' },
+      { $set: { status: 'approved' } },
+      { new: true },
+    );
+    if (!claimedForLabel) {
       return res.status(400).json({ message: 'Return is not in pending status' });
     }
+    returnRequest = claimedForLabel;
     // ENTERPRISE STANDARD: a return is approved only after TrendDrop has
     // purchased the EasyPost return label. Approving without postage leaves
     // the buyer unable to ship and the platform without a shipment record.
@@ -254,7 +267,12 @@ router.put('/:id/approve', auth, async (req, res) => {
     try {
       const { generateReturnLabel } = require('../services/returnLabelService');
       label = await generateReturnLabel(returnRequest);
+      generatedLabel = label;
     } catch (labelErr) {
+      await Return.updateOne(
+        { _id: returnRequest._id, status: 'approved' },
+        { $set: { status: 'pending' } },
+      ).catch(() => {});
       console.error('Return label generation failed:', labelErr.code || labelErr.message, labelErr.message);
       return res.status(502).json({
         code: labelErr.code || 'SHIPPING_LABEL_FAILED',
@@ -270,8 +288,32 @@ router.put('/:id/approve', auth, async (req, res) => {
     returnRequest.labelCost = label.cost || 0;
     returnRequest.labelGeneratedAt = new Date();
     await returnRequest.save();
-    // Sync to Transaction lifecycle
+    labelSaved = true;
+    // Postage recovery: on a seller-responsibility return the seller bears the
+    // return label and the outbound label the platform already bought. The
+    // charge is recorded on the return even if the seller has to go negative;
+    // otherwise a seller-fault return would silently cost the platform both
+    // carrier labels.
+    let postageCharged = 0;
     const txn = await Transaction.findById(returnRequest.transaction);
+    if (txn && (returnRequest.returnShippingResponsibility || 'seller') !== 'buyer') {
+      // Free-shipping labels were already funded by the seller at checkout;
+      // only an outbound label the buyer paid for is refunded-and-recharged.
+      // Only the platform-funded portion of the outbound label is recoverable;
+      // a free-shipping sale already charged the seller for it.
+      const outboundPostage = Math.max(0,
+        (Number(txn.shipping?.labelCost) || 0) - (Number(txn.paymentBreakdown?.sellerPostageSubsidy) || 0));
+      postageCharged = Math.round(((Number(label.cost) || 0) + outboundPostage) * 100) / 100;
+      if (postageCharged > 0) {
+        try {
+          await chargeSellerPostage(returnRequest.seller, postageCharged);
+          returnRequest.postageChargedToSeller = postageCharged;
+          await returnRequest.save();
+        } catch (chargeErr) {
+          console.error('Return postage charge failed:', chargeErr.message);
+        }
+      }
+    }
     if (txn && isValidTransition(txn.status, orderStates.RETURN_ACCEPTED)) {
       txn.status = orderStates.RETURN_ACCEPTED;
       txn.returnDetails = {
@@ -298,6 +340,26 @@ router.put('/:id/approve', auth, async (req, res) => {
     approvedObj.returnLabel = undefined;
     res.json(approvedObj);
   } catch (error) {
+    // If the label was bought but its record never persisted, refund it before
+    // reverting the claim; otherwise a retry buys a second label at platform
+    // expense.
+    if (generatedLabel && !labelSaved && generatedLabel.shipmentId) {
+      try { await refundShippingLabel(generatedLabel.shipmentId); } catch (refundErr) {
+        console.error('Orphaned return label refund failed:', refundErr.message);
+      }
+    }
+    // A claimed approval whose label was never recorded must be retryable; do
+    // not leave the return stuck in approved without postage.
+    if (returnRequest?._id) {
+      try {
+        await Return.updateOne(
+          { _id: returnRequest._id, status: 'approved', returnTrackingNumber: { $in: ['', null] } },
+          { $set: { status: 'pending' } },
+        );
+      } catch (restoreError) {
+        console.error('Return approval claim rollback failed:', restoreError.message);
+      }
+    }
     console.error('Approve return error:', error);
     res.status(500).json({ message: 'Failed to approve return' });
   }
@@ -436,7 +498,12 @@ router.put('/:id/receive', auth, async (req, res) => {
     const responsibility = returnRequest.returnShippingResponsibility || 'seller';
     const totalPaid = txn.paymentBreakdown?.totalPaid || 0;
     const itemPrice = txn.itemPrice || txn.paymentBreakdown?.subtotal || 0;
-    const buyerRefund = Math.round((responsibility === 'buyer' ? itemPrice : (totalPaid || returnRequest.refundAmount)) * 100) / 100;
+    const returnLabelCost = Number(returnRequest.labelCost) || 0;
+    // Buyer-responsibility returns: the buyer pays return postage. Withhold it
+    // from the item refund (the prepaid label was bought with platform money).
+    const buyerRefund = responsibility === 'buyer'
+      ? Math.max(0, Math.round((itemPrice - returnLabelCost) * 100) / 100)
+      : Math.round((totalPaid || returnRequest.refundAmount) * 100) / 100;
     // Reverse EXACTLY what the sale credited (earnings + shipping
     // reimbursement) — sellerSaleTotal detects the row's ledger shape.
     const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
@@ -451,7 +518,7 @@ router.put('/:id/receive', auth, async (req, res) => {
       try {
         const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
         const pi = await retrievePaymentIntent(paymentIntentId);
-        if (pi.status === 'succeeded') {
+        if (pi.status === 'succeeded' && (responsibility !== 'buyer' || buyerRefund > 0)) {
           await issueRefund(paymentIntentId, responsibility === 'buyer' ? buyerRefund : undefined);
         }
         else if (pi.status === 'requires_capture') { await releaseAuthorization(paymentIntentId); }
@@ -486,6 +553,17 @@ router.put('/:id/receive', auth, async (req, res) => {
       const seller = await User.findById(txn.seller).select('_id').lean();
       if (seller) {
         await clawbackSellerEarnings(seller._id, sellerEarnings);
+        // Legacy returns approved before label-cost recovery existed: charge
+        // now so the seller-fault labels are not a permanent platform loss.
+        if (responsibility !== 'buyer' && !(returnRequest.postageChargedToSeller > 0)) {
+          const outboundPostage = Math.max(0,
+            (Number(txn.shipping?.labelCost) || 0) - (Number(txn.paymentBreakdown?.sellerPostageSubsidy) || 0));
+          const postage = Math.round((returnLabelCost + outboundPostage) * 100) / 100;
+          if (postage > 0) {
+            await chargeSellerPostage(seller._id, postage);
+            returnRequest.postageChargedToSeller = postage;
+          }
+        }
         await User.updateOne(
           { _id: seller._id },
           {

@@ -76,9 +76,13 @@ const buildSellerBreakdown = (txn) => {
   const boostFee = round2(b.boostFee);
   const boostTier = String(b.boostTier || '');
   const shippingPayout = round2(b.shippingPayout);
+  // Uncovered EasyPost postage funded by the seller (free shipping or a rate
+  // above the buyer's shipping charge). It is a deduction from seller
+  // earnings, not a platform fee, and must be shown so the column reconciles.
+  const sellerPostageSubsidy = round2(b.sellerPostageSubsidy);
   const sellerEarnings = round2(b.sellerEarnings);
 
-  const shippingExcluded = round2(itemPrice - platformFee - boostFee);
+  const shippingExcluded = round2(itemPrice - platformFee - boostFee - sellerPostageSubsidy);
   const shippingIncluded = round2(shippingExcluded + shippingPayout);
 
   const matchesExcluded = Math.abs(shippingExcluded - sellerEarnings) <= CENT;
@@ -98,6 +102,7 @@ const buildSellerBreakdown = (txn) => {
     // Only label a boost that was actually charged — a $0 row is not a boost.
     boostTierLabel: boostFee > 0 ? boostTierLabel(boostTier) : '',
     shippingPayout,
+    sellerPostageSubsidy,
     shippingIncludedInEarnings,
     sellerEarnings,
     expectedEarnings,

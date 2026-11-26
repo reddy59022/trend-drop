@@ -24,6 +24,7 @@ const {
   verifyIntentAmount,
   processSellerPayout,
   issueRefund,
+  refundOrReleaseIntent,
   fetchExchangeRate,
 } = require('../config/payments');
 const { isInternationalAllowed } = require('../config/shipping');
@@ -34,7 +35,10 @@ const { increment } = require('../utils/metrics');
 const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require('../utils/transactionView');
 const { boostConfig } = require('../config/boost');
 const { isValidMoneyInput, isPositiveIntegerQuantity } = require('../criticalRules');
-const { sellerSaleTotal } = require('../utils/balances');
+const { sellerSaleTotal, reverseSellerCredits } = require('../utils/balances');
+const { requirePostageFunded, postageFundingFailure } = require('../utils/postageFunding');
+const { reverseTrackedBoostEntries } = require('../utils/boostLedger');
+const { releasePromoUse } = require('../utils/promoUsage');
 const {
   refundShippingLabel,
   shippingLabelPayload,
@@ -44,6 +48,9 @@ const {
   purchaseBatchLabels,
   purchaseSingleLabel,
   sellerParcelAddress,
+  compensateFailedLabels,
+  refundClosedTransactionLabel,
+  refundLabelWithRetry,
 } = require('../services/shippingPurchase');
 
 // Flat per-sale boost fee: price × tier.feePercent / 100
@@ -53,6 +60,31 @@ const getBoostFee = (listing, salePrice = 0) => {
   if (!listing?.boost?.active) return 0;
   const tier = BOOST_FEE_TIERS[listing.boost.tier] || BOOST_FEE_TIERS.standard;
   return Math.round(salePrice * (tier.feePercent / 100) * 100) / 100;
+};
+
+// One source of truth for a batch line's discounted fees, boost and seller
+// credit. The authorization path and the commit path MUST produce identical
+// cents; postage funding also uses this result before the card is captured.
+const batchLineMath = (plan) => {
+  const { listing, breakdown } = plan;
+  const discountAmount = plan.discountAmount || 0;
+  const discountedSubtotal = Math.round((plan.itemSubtotal - discountAmount) * 100) / 100;
+  const discountedUnitPrice = Math.round((discountedSubtotal / plan.qty) * 100) / 100;
+  const discountedBreakdown = discountAmount > 0
+    ? calculatePaymentBreakdown(
+      discountedUnitPrice, plan.sellerCountry, plan.toCountry,
+      plan.combinedWeight || listing.weight || 0.5, 1,
+      { freeShipping: !!listing.shipping?.freeShipping },
+    )
+    : breakdown;
+  const platformFeeTotal = Math.round(discountedBreakdown.seller.platformFee * plan.qty * 100) / 100;
+  const sellerEarningsBeforeBoost = Math.round((discountedSubtotal - platformFeeTotal) * 100) / 100;
+  const boostFee = Math.round(getBoostFee(listing, discountedUnitPrice) * plan.qty * 100) / 100;
+  const sellerEarningsWithBoost = Math.round((sellerEarningsBeforeBoost - boostFee) * 100) / 100;
+  return {
+    discountAmount, discountedSubtotal, discountedUnitPrice, discountedBreakdown,
+    platformFeeTotal, sellerEarningsBeforeBoost, boostFee, sellerEarningsWithBoost,
+  };
 };
 
 // ITEM-LEVEL BOOST LEDGER: record a boost fee against the listing.
@@ -268,7 +300,10 @@ router.post('/create-intent', auth, async (req, res) => {
       // One label per listing quantity → shipping on COMBINED weight;
       // item subtotal + buyer protection scale linearly with qty.
       const combinedWeight = Math.round(((listing.weight || 0.5) * qty) * 1000) / 1000;
-      const breakdown = calculatePaymentBreakdown(salePrice, sellerCountry, toCountry, combinedWeight, exchangeRate);
+      const breakdown = calculatePaymentBreakdown(
+        salePrice, sellerCountry, toCountry, combinedWeight, exchangeRate,
+        { freeShipping: !!listing.shipping?.freeShipping },
+      );
       const itemSubtotal = Math.round(salePrice * qty * 100) / 100;
       const shippingCostTotal = Math.round(breakdown.buyer.shippingCost * 100) / 100;
       const protectionTotal = Math.round(breakdown.buyer.buyerProtectionFee * qty * 100) / 100;
@@ -423,6 +458,8 @@ router.post('/create-intent', auth, async (req, res) => {
 router.post('/confirm-batch', auth, async (req, res) => {
   const createdTransactions = [];
   const createdPayouts = [];
+  const sellerCreditsApplied = [];
+  const boostLedgerEntries = [];
   const inventoryChanges = [];
   // Postage purchased by the platform for this checkout. Every one of these
   // must be carrier-refunded if the sale does not commit.
@@ -603,7 +640,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // breakdown computed on the COMBINED weight so shipping is correct,
       // then platform fees scaled by qty.
       const combinedWeight = Math.round(((listing.weight || 0.5) * qty) * 1000) / 1000;
-      const breakdown = calculatePaymentBreakdown(salePrice, sellerCountry, toCountry, combinedWeight);
+      const breakdown = calculatePaymentBreakdown(
+        salePrice, sellerCountry, toCountry, combinedWeight, 1,
+        { freeShipping: !!listing.shipping?.freeShipping },
+      );
 
       const itemSubtotal = Math.round(salePrice * qty * 100) / 100;
       const platformFeeTotal = Math.round(breakdown.seller.platformFee * qty * 100) / 100;
@@ -765,8 +805,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
       purchasedLabels.push(...labels);
     } catch (labelError) {
       console.error('Batch shipping label failed:', labelError.message);
-      // If compensation itself fails, the outer catch retries it and the
-      // buyer still receives an error; never report a successful order.
+      // Second compensation pass for labels whose first refund attempt failed.
+      // The buyer is never captured, but unrefunded postage is a platform loss.
+      await compensateFailedLabels(labelError);
+      await releasePromoUse(claimedPromoId);
       if (paymentIntent.status === 'succeeded') await issueRefund(paymentIntentId);
       else await releaseAuthorization(paymentIntentId);
       return res.status(502).json({
@@ -774,6 +816,28 @@ router.post('/confirm-batch', auth, async (req, res) => {
         message: 'Shipping label could not be created. Your payment was not captured.',
         retryable: labelError.retryable,
       });
+    }
+
+    // FUNDING GATE: postage is a platform cost. The buyer's shipping charge and
+    // the seller's earnings for each line must cover the actual EasyPost rate;
+    // otherwise abort before capture and refund the labels already bought.
+    try {
+      for (const plan of orderPlans) {
+        plan.math = batchLineMath(plan);
+        plan.postageFunding = requirePostageFunded({
+          labelCost: plan.label?.cost || 0,
+          buyerShipping: plan.shippingCostTotal,
+          sellerEarnings: plan.math.sellerEarningsWithBoost,
+        });
+      }
+    } catch (fundingError) {
+      console.error('Batch postage funding failed:', fundingError.message);
+      for (const label of purchasedLabels) {
+        await refundLabelWithRetry(label.shipmentId);
+      }
+      await releasePromoUse(claimedPromoId);
+      await refundOrReleaseIntent(paymentIntent, paymentIntentId);
+      return res.status(postageFundingFailure(fundingError).status).json(postageFundingFailure(fundingError));
     }
 
     // ========== PHASE 2: Capture Payment ==========
@@ -824,22 +888,20 @@ router.post('/confirm-batch', auth, async (req, res) => {
     // ========== PHASE 3: Commit all writes ==========
     for (const plan of orderPlans) {
       const { listing, seller, toCountry, salePrice, breakdown, label, offer, isNegotiated } = plan;
-      const discountAmount = plan.discountAmount || 0;
-      const discountedSubtotal = Math.round((plan.itemSubtotal - discountAmount) * 100) / 100;
-      const discountedUnitPrice = Math.round((discountedSubtotal / plan.qty) * 100) / 100;
-      const discountedBreakdown = discountAmount > 0
-        ? calculatePaymentBreakdown(discountedUnitPrice, plan.sellerCountry, plan.toCountry, plan.combinedWeight || listing.weight || 0.5)
-        : breakdown;
-      const platformFeeTotal = Math.round(discountedBreakdown.seller.platformFee * plan.qty * 100) / 100;
-      const sellerEarningsBeforeBoost = Math.round((discountedSubtotal - platformFeeTotal) * 100) / 100;
+      const {
+        discountAmount, discountedSubtotal, discountedUnitPrice, discountedBreakdown,
+        platformFeeTotal, sellerEarningsWithBoost, boostFee,
+      } = plan.math;
+      const postageFunding = plan.postageFunding;
+      const sellerCreditAfterPostage = postageFunding.sellerEarningsAfterPostage;
 
-      // Boost fees are also based on the discounted sale price so the seller
-      // and platform never record a fee on money the buyer did not pay.
-      const boostFee = Math.round(getBoostFee(listing, discountedUnitPrice) * plan.qty * 100) / 100;
-      const sellerEarningsWithBoost = Math.round((sellerEarningsBeforeBoost - boostFee) * 100) / 100;
-
-      // Item-level boost fee ledger (this listing only)
+      // Item-level boost fee ledger (this listing only). Track the exact amount
+      // so ANY later failure in this request reverses it; otherwise a failed
+      // sale leaves the seller owing a boost fee for an order that never
+      // existed.
+      const lineBoostFee = Math.round(getBoostFee(listing, discountedUnitPrice) * plan.qty * 100) / 100;
       await recordBoostFeeOwed(listing._id, getBoostFee(listing, discountedUnitPrice), plan.qty);
+      if (lineBoostFee > 0) boostLedgerEntries.push({ listingId: listing._id, amount: lineBoostFee });
 
       const appliedPromoId = paymentIntent.metadata?.appliedPromoId
         ? paymentIntent.metadata.appliedPromoId
@@ -867,9 +929,11 @@ router.post('/confirm-batch', auth, async (req, res) => {
           // Postage belongs to the platform: the seller is paid only for the
           // item. The buyer still sees the shipping charge on the receipt.
           shippingPayout: 0,
-        sellerEarnings: sellerEarningsWithBoost,
-        sellerCredit: sellerEarningsWithBoost,
-        boostFee,
+          labelCost: postageFunding.labelCost,
+          sellerPostageSubsidy: postageFunding.sellerSubsidy,
+          sellerEarnings: sellerCreditAfterPostage,
+          sellerCredit: sellerCreditAfterPostage,
+          boostFee,
           boostTier: listing.boost?.tier || '',
           paymentIntentId,
         },
@@ -933,22 +997,16 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // and removes the staged transaction/payout instead of crediting a seller
       // for stock this request did not reserve.
       if (!updated) {
-        // The boost ledger was reserved before the stock claim. Undo that
-        // reservation immediately when the claim loses a race; otherwise a
-        // failed sale leaves platform fees owed forever.
-        if (boostFee > 0) {
-          await Listing.findOneAndUpdate(
-            { _id: listing._id, 'boost.feeLedger.owed': { $gte: boostFee } },
-            { $inc: { 'boost.feeLedger.owed': -boostFee, 'boost.feeLedger.reversed': boostFee } },
-          );
-        }
+        // The boost ledger is reversed by the request rollback via the exact
+        // boostLedgerEntries recorded above — never here, where a second
+        // reversal could consume another sale's owed fee.
         const inventoryError = new Error('Item sold out while completing checkout');
         inventoryError.code = 'INVENTORY_CLAIM_FAILED';
         throw inventoryError;
       }
       // Rollback metadata: restore the EXACT quantity taken and revert any
       // boost-fee ledger entry written for this item.
-      inventoryChanges.push({ listingId: listing._id, updated, qty: plan.qty, boostFee });
+      inventoryChanges.push({ listingId: listing._id, updated, qty: plan.qty });
 
       const payout = await Payout.create({
         seller: listing.seller,
@@ -957,7 +1015,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
         salePrice: discountedSubtotal,
         commissionRate: discountedBreakdown.seller.platformFeePercent / 100,
         commissionAmount: platformFeeTotal,
-        payoutAmount: sellerEarningsWithBoost,
+        payoutAmount: sellerCreditAfterPostage,
         status: 'pending',
         // ZERO-LEAKAGE IDEMPOTENCY: store the payment intent so confirm-batch
         // dedupe actually finds it (R1 critical fix — prevents double charge).
@@ -972,7 +1030,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       // payoutAmount and the reimbursement is not part of the sale split.
       sellerBalanceUpdates.push({
         sellerDoc: seller,
-        earnings: sellerEarningsWithBoost,
+        earnings: sellerCreditAfterPostage,
         listingId: listing._id,
         transactionId: txn._id,
         sellerCurrency: breakdown.sellerCurrency,
@@ -1031,6 +1089,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
           },
         ]
       );
+      // Record the exact credit so a later failure in this same request can
+      // reverse it. Without this, a rollback deleted the transactions/payouts
+      // but left the seller with phantom pending balance the platform must pay.
+      sellerCreditsApplied.push({ sellerId: sellerDoc._id, amount: earnings });
     }
 
     // Populate all transactions
@@ -1201,6 +1263,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       try { await releaseAuthorization(req.body.paymentIntentId); } catch (e) { console.error('Release rollback failed:', e.message); }
     }
 
+    await reverseSellerCredits(sellerCreditsApplied);
     for (const payout of createdPayouts) {
       try { await Payout.findByIdAndDelete(payout._id); } catch (e) {}
     }
@@ -1218,14 +1281,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
       if (change.updated) {
         try {
           // Full inventory rollback: restore the EXACT quantity taken (qty,
-          // not a hardcoded 1 — a qty=3 line must put all 3 units back) AND
-          // clear the sold/available flags AND revert the boost-fee ledger
-          // entry recorded for this item, so a rolled-back purchase is
-          // buyable again and the seller owes no boost fee for it.
+          // not a hardcoded 1 — a qty=3 line must put all 3 units back) and
+          // clear the sold/available flags, so a rolled-back purchase is
+          // buyable again. Boost entries are reversed in their own loop below.
           const inc = { quantity: change.qty || 1, quantitySold: -(change.qty || 1) };
-          if (change.boostFee && change.boostFee > 0) {
-            inc['boost.feeLedger.owed'] = -change.boostFee;
-          }
           await Listing.findOneAndUpdate(
             { _id: change.listingId },
             {
@@ -1237,6 +1296,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
         } catch (e) {}
       }
     }
+    await reverseTrackedBoostEntries(boostLedgerEntries);
     for (const r of revertedOffers) {
       try {
         r.offer.status = r.previousStatus || 'accepted';
@@ -1395,12 +1455,17 @@ router.post('/confirm', auth, async (req, res) => {
       + (Number(paymentIntent.metadata?.bundleDiscount) || 0);
     const expectedCentsFor = (bd) => Math.round((bd.buyer.totalPaid - metaDiscount) * 100);
 
-    const listBreakdown = calculatePaymentBreakdown(listing.price, sellerCountry, toCountry, listing.weight || 0.5);
+    const freeShipping = !!listing.shipping?.freeShipping;
+    const listBreakdown = calculatePaymentBreakdown(
+      listing.price, sellerCountry, toCountry, listing.weight || 0.5, 1, { freeShipping },
+    );
     const candidates = [{ salePrice: listing.price, breakdown: listBreakdown }];
     if (offerPrice != null && offerPrice !== listing.price) {
       candidates.push({
         salePrice: offerPrice,
-        breakdown: calculatePaymentBreakdown(offerPrice, sellerCountry, toCountry, listing.weight || 0.5),
+        breakdown: calculatePaymentBreakdown(
+          offerPrice, sellerCountry, toCountry, listing.weight || 0.5, 1, { freeShipping },
+        ),
         offer: acceptedOffer,
       });
     }
@@ -1454,8 +1519,10 @@ router.post('/confirm', auth, async (req, res) => {
       });
     } catch (labelError) {
       console.error('Single-order shipping label failed:', labelError.message);
-      // If compensation itself fails, the outer catch retries it and the buyer
-      // still receives an error; never report a successful order.
+      // EasyPost may have purchased (and failed to refund) a label before its
+      // response was unusable. Retry that exact shipment; otherwise the
+      // platform absorbs postage for an order that never existed.
+      await compensateFailedLabels(labelError);
       if (paymentIntent.status === 'succeeded') await issueRefund(paymentIntentId);
       else await releaseAuthorization(paymentIntentId);
       return res.status(502).json({
@@ -1469,6 +1536,24 @@ router.post('/confirm', auth, async (req, res) => {
     // Boost fee: flat % of sale price, charged only upon successful sale
     // (offer purchases: the negotiated sale price, not list price)
     boostFee = getBoostFee(listing, salePrice);
+
+    // Postage funding gate: free shipping and carrier rates above the buyer's
+    // shipping charge are funded from this sale's seller earnings. If even that
+    // cannot cover the label, abort before capture and refund the postage.
+    let postageFunding;
+    try {
+      postageFunding = requirePostageFunded({
+        labelCost: label.cost || 0,
+        buyerShipping: breakdown.buyer.shippingCost,
+        sellerEarnings: Math.max(0, Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100),
+      });
+    } catch (fundingError) {
+      console.error('Single-order postage funding failed:', fundingError.message);
+      await refundLabelWithRetry(label.shipmentId);
+      await refundOrReleaseIntent(paymentIntent, paymentIntentId);
+      return res.status(postageFundingFailure(fundingError).status).json(postageFundingFailure(fundingError));
+    }
+    const sellerCredit = postageFunding.sellerEarningsAfterPostage;
 
     // Item-level boost fee ledger (this listing only)
     await recordBoostFeeOwed(listing._id, boostFee, 1);
@@ -1490,8 +1575,10 @@ router.post('/confirm', auth, async (req, res) => {
         platformFee: breakdown.seller.platformFee,
         platformFeePercent: breakdown.seller.platformFeePercent,
         shippingPayout: 0,
-        sellerEarnings: breakdown.seller.sellerEarnings - boostFee,
-        sellerCredit: Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100,
+        labelCost: postageFunding.labelCost,
+        sellerPostageSubsidy: postageFunding.sellerSubsidy,
+        sellerEarnings: sellerCredit,
+        sellerCredit,
         boostFee,
         boostTier: listing.boost?.tier || '',
         paymentIntentId,
@@ -1528,6 +1615,10 @@ router.post('/confirm', auth, async (req, res) => {
 
     if (!inventoryUpdate) {
       await issueRefund(paymentIntentId);
+      // The buyer was refunded, but the label was already bought. Request the
+      // carrier refund before marking the transaction closed; otherwise this
+      // race permanently leaks platform postage.
+      await refundClosedTransactionLabel(createdTransaction);
       if (boostFee > 0) {
         await Listing.findOneAndUpdate(
           { _id: listingId, 'boost.feeLedger.owed': { $gte: boostFee } },
@@ -1548,14 +1639,14 @@ router.post('/confirm', auth, async (req, res) => {
       await User.updateOne(
         { _id: seller._id },
         {              // SHIPPING REIMBURSEMENT (round 4): earnings + the shipping
-              $inc: { 'balance.pending': Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100 },
+              $inc: { 'balance.pending': sellerCredit },
           $push: {
             notifications: {
               $each: [saleNotification({
                 from: req.user._id,
                 listing: listing._id,
                 transaction: createdTransaction._id,
-                message: `Item sold! You'll earn ${Math.round((breakdown.seller.sellerEarnings - boostFee) * 100) / 100} ${breakdown.sellerCurrency}. Shipping label ready.`,
+                message: `Item sold! You'll earn ${sellerCredit} ${breakdown.sellerCurrency}. Shipping label ready.`,
               })],
               $position: 0,
             },
@@ -1575,7 +1666,7 @@ router.post('/confirm', auth, async (req, res) => {
           salePrice: breakdown.buyer.itemPrice,
           commissionRate: breakdown.seller.platformFeePercent / 100,
           commissionAmount: breakdown.seller.platformFee,
-          payoutAmount: breakdown.seller.sellerEarnings - boostFee,
+          payoutAmount: sellerCredit,
           status: 'pending',
           // R1 idempotency: tie payout to payment intent for dedupe
           paymentIntentId,

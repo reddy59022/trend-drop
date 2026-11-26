@@ -20,12 +20,13 @@ const Return = require('../models/Return');
 const Offer = require('../models/Offer');
 
 const { orderStates, timeWindows } = require('./orderLifecycle');
-const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings, sellerSaleTotal } = require('../utils/balances');
+const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings, chargeSellerPostage, sellerSaleTotal } = require('../utils/balances');
 const { claimTransaction } = require('../utils/claims');
 const { releaseSellerSettlement } = require('../utils/settlement');
 const { retrievePaymentIntent, findPaymentIntent, issueRefund, releaseAuthorization } = require('./payments');
 const { trackingStatuses, simulateTrackingUpdate } = require('./shipping');
 const { getTracker, mapTrackerStatus, isMockMode } = require('../services/easypostService');
+const { refundTransactionLabel } = require('../services/shippingPurchase');
 const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
 
 // ──────────────────────────────────────────────
@@ -103,14 +104,11 @@ async function autoCancelUnshippedOrders(now = Date.now()) {
         throw new Error(`Payment provider returned non-refundable status: ${intent.status}`);
       }
 
-      // Label creation is not shipment. Void it so a cancelled order cannot
-      // later be printed or handed to a carrier under the old authorization.
-      claimed.shipping = {
-        ...claimed.shipping,
-        voided: Boolean(claimed.shipping?.labelCreated || claimed.shipping?.trackingNumber),
-        voidedAt: claimed.shipping?.labelCreated || claimed.shipping?.trackingNumber ? new Date() : claimed.shipping?.voidedAt,
-        labelCreated: false,
-      };
+      // Label creation is not shipment. Request the carrier refund so a
+      // cancelled order cannot later be printed or handed to a carrier under
+      // the old authorization, and the platform recovers its postage. If
+      // EasyPost is down the label is marked pending for the retry job.
+      await refundTransactionLabel(claimed);
       claimed.cancellation = {
         cancelledBy: 'system',
         reason: 'Seller did not obtain carrier acceptance within 7 calendar days',
@@ -462,11 +460,19 @@ async function settleDeliveredReturn(txn, returnRequest, now) {
     const responsibility = returnRequest.returnShippingResponsibility || 'seller';
     const totalPaid = claimed.paymentBreakdown?.totalPaid || 0;
     const itemPrice = claimed.itemPrice || claimed.paymentBreakdown?.subtotal || 0;
-    const refundAmount = Math.round((responsibility === 'buyer' ? itemPrice : totalPaid) * 100) / 100;
+    const returnLabelCost = Number(returnRequest.labelCost) || 0;
+    // Buyer-remorse returns pay for the prepaid return label out of the item
+    // refund; seller-fault returns refund in full and charge that postage to
+    // the seller below.
+    const refundAmount = responsibility === 'buyer'
+      ? Math.max(0, Math.round((itemPrice - returnLabelCost) * 100) / 100)
+      : Math.round(totalPaid * 100) / 100;
 
     if (!returnRequest.providerRefunded) {
       if (intent.status === 'requires_capture') await releaseAuthorization(paymentIntentId);
-      else if (intent.status === 'succeeded') await issueRefund(paymentIntentId, responsibility === 'buyer' ? refundAmount : undefined);
+      else if (intent.status === 'succeeded' && (responsibility !== 'buyer' || refundAmount > 0)) {
+        await issueRefund(paymentIntentId, responsibility === 'buyer' ? refundAmount : undefined);
+      }
       else if (!['canceled', 'cancelled', 'refunded'].includes(intent.status)) throw new Error(`Non-settleable provider status: ${intent.status}`);
       returnRequest.providerRefunded = true;
       await returnRequest.save();
@@ -495,6 +501,16 @@ async function settleDeliveredReturn(txn, returnRequest, now) {
       await clawbackSellerEarnings(claimed.seller, returnClawbackAmount);
       returnRequest.sellerLedgerClawedBack = true;
       await returnRequest.save();
+    }
+    if (responsibility !== 'buyer' && !(returnRequest.postageChargedToSeller > 0)) {
+      const outboundPostage = Math.max(0,
+        (Number(claimed.shipping?.labelCost) || 0) - (Number(claimed.paymentBreakdown?.sellerPostageSubsidy) || 0));
+      const postage = Math.round((returnLabelCost + outboundPostage) * 100) / 100;
+      if (postage > 0) {
+        await chargeSellerPostage(claimed.seller, postage);
+        returnRequest.postageChargedToSeller = postage;
+        await returnRequest.save();
+      }
     }
 
     returnRequest.status = 'refunded';
@@ -846,6 +862,27 @@ async function autoProcessReturns() {
 // ──────────────────────────────────────────────
 // JOB 4 (renumbered): Clean Expired Verification Tokens (Daily)
 // ──────────────────────────────────────────────
+// ──────────────────────────────────────────────
+// JOB 2B: Retry carrier refunds for cancelled labels
+// ──────────────────────────────────────────────
+// A cancellation must not wait on EasyPost. Labels whose refund request
+// failed are retried here until the platform recovers its postage.
+async function retryPendingLabelRefunds(limit = 50) {
+  const pending = await Transaction.find({
+    'shipping.labelRefundPending': true,
+    'shipping.shipmentId': { $nin: ['', null] },
+  }).limit(limit);
+  let recovered = 0;
+  for (const txn of pending) {
+    const result = await refundTransactionLabel(txn);
+    if (result.requested) {
+      await txn.save();
+      if (result.refunded) recovered++;
+    }
+  }
+  return recovered;
+}
+
 async function cleanExpiredTokens() {
   try {
     const now = new Date();
@@ -1043,6 +1080,12 @@ function initCronJobs() {
   });
   console.log('[CRON] Order auto-processing scheduled (every hour)');
 
+  // Retry failed postage refunds every hour, staggered from order processing.
+  cron.schedule('15 * * * *', () => {
+    retryPendingLabelRefunds();
+  });
+  console.log('[CRON] Postage refund retry scheduled (every hour)');
+
   // Job 3: Release reserves daily at 2:00 AM
   // '0 2 * * *' = at 2:00 AM every day
   cron.schedule('0 2 * * *', () => {
@@ -1104,6 +1147,7 @@ module.exports = {
   initCronJobs,
   expireListings,
   autoCancelUnshippedOrders,
+  retryPendingLabelRefunds,
   autoProcessOrders,
   autoProcessReturns,
   autoProcessReturnTracking,

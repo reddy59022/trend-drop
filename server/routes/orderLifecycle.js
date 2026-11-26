@@ -7,11 +7,13 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Payout = require('../models/Payout');
 const Order = require('../models/Order');
+const Return = require('../models/Return');
 const { carriers, normalizeCarrier } = require('../config/shipping');
 const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundRules, returnEligibility, evidenceRequirements, disputeProcess, isValidTransition, getAllowedActions } = require('../config/orderLifecycle');
 const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
-const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings, sellerSaleTotal } = require('../utils/balances');
+const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings, chargeSellerPostage, sellerSaleTotal } = require('../utils/balances');
 const { claimTransaction } = require('../utils/claims');
+const { refundTransactionLabel } = require('../services/shippingPurchase');
 const { isValidObjectId } = require('../utils/validators');
 // Viewer-aware transaction shaping (seller earnings column + boost privacy).
 const { sanitizeTransactionForViewer } = require('../utils/transactionView');
@@ -530,7 +532,10 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
     claimed.status = cancelState;          // align memory with the claimed DB state
 
     // ---- STEP 2: FULL REFUND TO THE BUYER (original payment method) ------
-    const paymentIntentId = claimed.payout?.transactionId;
+    // Guest and single-item purchases record the funding intent only in
+    // paymentBreakdown; using payout.transactionId alone silently skipped the
+    // buyer refund and still cancelled the order.
+    const paymentIntentId = claimed.payout?.transactionId || claimed.paymentBreakdown?.paymentIntentId;
     const refundAmount = Math.round((claimed.paymentBreakdown?.totalPaid || 0) * 100) / 100;
     let stripeRefundResult = null;
     try {
@@ -572,6 +577,12 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
         message: 'Refund could not be processed right now. The order was NOT cancelled — please try again.',
       });
     }
+
+    // ---- STEP 2B: RECOVER PLATFORM POSTAGE ------------------------------
+    // The sale is cancelled before carrier acceptance, so the unused EasyPost
+    // label must be refunded. A provider failure is retried by cron and never
+    // blocks the buyer's refund.
+    await refundTransactionLabel(claimed);
 
     // ---- STEP 3: LEDGER UNWIND (no gain, no loss for anyone) -------------
     // Reverse EXACTLY what the sale credited (earnings + shipping
@@ -1279,19 +1290,32 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
 
     const { condition, inspectionNotes, sellerPackingProof } = req.body;
 
-    // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
-    const refundAmount = txn.paymentBreakdown.totalPaid || 0;
+    // Return postage policy: a seller-fault return refunds the buyer in full;
+    // a buyer-remorse return refunds the item price minus the prepaid return
+    // label the platform already bought. Without the deduction the platform
+    // would fund a buyer-responsibility return label on every claim.
+    const returnDoc = await Return.findOne({ transaction: txn._id });
+    const responsibility = returnDoc?.returnShippingResponsibility || 'seller';
+    const returnLabelCost = Number(returnDoc?.labelCost) || 0;
+    const totalPaid = txn.paymentBreakdown.totalPaid || 0;
+    const itemPrice = txn.itemPrice || txn.paymentBreakdown?.subtotal || 0;
+    const refundAmount = responsibility === 'buyer'
+      ? Math.max(0, Math.round((itemPrice - returnLabelCost) * 100) / 100)
+      : totalPaid;
     const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
 
     // Issue proper Stripe refund
-    const paymentIntentId = txn.payout?.transactionId;
+    const paymentIntentId = txn.payout?.transactionId || txn.paymentBreakdown?.paymentIntentId;
     let stripeRefundResult = null;
     if (paymentIntentId) {
       try {
         const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
         const pi = await retrievePaymentIntent(paymentIntentId);
-        if (pi.status === 'succeeded') {
-          stripeRefundResult = await issueRefund(paymentIntentId);
+        if (pi.status === 'succeeded' && (responsibility !== 'buyer' || refundAmount > 0)) {
+          stripeRefundResult = await issueRefund(
+            paymentIntentId,
+            responsibility === 'buyer' ? refundAmount : undefined,
+          );
         } else if (pi.status === 'requires_capture') {
           stripeRefundResult = await releaseAuthorization(paymentIntentId);
         }
@@ -1329,6 +1353,15 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
       // ATOMIC (round 25): the available→pending split is computed server-side
       // inside one update, so concurrent refunds can never over-refund.
       await clawbackSellerEarnings(seller._id, sellerEarnings);
+      if (responsibility !== 'buyer' && !(returnDoc?.postageChargedToSeller > 0)) {
+        const outboundPostage = Math.max(0,
+          (Number(txn.shipping?.labelCost) || 0) - (Number(txn.paymentBreakdown?.sellerPostageSubsidy) || 0));
+        const postage = Math.round((returnLabelCost + outboundPostage) * 100) / 100;
+        if (postage > 0) {
+          await chargeSellerPostage(seller._id, postage);
+          if (returnDoc) await Return.updateOne({ _id: returnDoc._id }, { $set: { postageChargedToSeller: postage } });
+        }
+      }
       seller.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
@@ -1406,19 +1439,32 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
 
     const { condition, inspectionNotes, sellerPackingProof } = req.body;
 
-    // Calculate refund: buyer gets back totalPaid (item + shipping + protection)
-    const refundAmount = txn.paymentBreakdown.totalPaid || 0;
+    // Return postage policy: a seller-fault return refunds the buyer in full;
+    // a buyer-remorse return refunds the item price minus the prepaid return
+    // label the platform already bought. Without the deduction the platform
+    // would fund a buyer-responsibility return label on every claim.
+    const returnDoc = await Return.findOne({ transaction: txn._id });
+    const responsibility = returnDoc?.returnShippingResponsibility || 'seller';
+    const returnLabelCost = Number(returnDoc?.labelCost) || 0;
+    const totalPaid = txn.paymentBreakdown.totalPaid || 0;
+    const itemPrice = txn.itemPrice || txn.paymentBreakdown?.subtotal || 0;
+    const refundAmount = responsibility === 'buyer'
+      ? Math.max(0, Math.round((itemPrice - returnLabelCost) * 100) / 100)
+      : totalPaid;
     const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
 
     // Issue proper Stripe refund
-    const paymentIntentId = txn.payout?.transactionId;
+    const paymentIntentId = txn.payout?.transactionId || txn.paymentBreakdown?.paymentIntentId;
     let stripeRefundResult = null;
     if (paymentIntentId) {
       try {
         const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
         const pi = await retrievePaymentIntent(paymentIntentId);
-        if (pi.status === 'succeeded') {
-          stripeRefundResult = await issueRefund(paymentIntentId);
+        if (pi.status === 'succeeded' && (responsibility !== 'buyer' || refundAmount > 0)) {
+          stripeRefundResult = await issueRefund(
+            paymentIntentId,
+            responsibility === 'buyer' ? refundAmount : undefined,
+          );
         } else if (pi.status === 'requires_capture') {
           stripeRefundResult = await releaseAuthorization(paymentIntentId);
         }
@@ -1455,6 +1501,15 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
     if (seller) {
       // ATOMIC (round 25): server-side split, no lost updates.
       await clawbackSellerEarnings(seller._id, sellerEarnings);
+      if (responsibility !== 'buyer' && !(returnDoc?.postageChargedToSeller > 0)) {
+        const outboundPostage = Math.max(0,
+          (Number(txn.shipping?.labelCost) || 0) - (Number(txn.paymentBreakdown?.sellerPostageSubsidy) || 0));
+        const postage = Math.round((returnLabelCost + outboundPostage) * 100) / 100;
+        if (postage > 0) {
+          await chargeSellerPostage(seller._id, postage);
+          if (returnDoc) await Return.updateOne({ _id: returnDoc._id }, { $set: { postageChargedToSeller: postage } });
+        }
+      }
       seller.notifications.unshift({
         type: 'sale',
         listing: txn.listing,
@@ -1592,7 +1647,7 @@ router.post('/:transactionId/resolve-dispute', auth, validateOrderAccess, async 
       const sellerEarnings = sellerSaleTotal(txn.paymentBreakdown);
 
       let stripeRefundResult = null;
-      const paymentIntentId = txn.payout?.transactionId;
+      const paymentIntentId = txn.payout?.transactionId || txn.paymentBreakdown?.paymentIntentId;
       if (paymentIntentId) {
         try {
           const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
