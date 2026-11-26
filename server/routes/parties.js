@@ -58,7 +58,15 @@ router.get('/:id', optionalAuth, async (req, res) => {
       return res.status(404).json({ message: 'Party not found' });
     }
 
-    res.json(party);
+    // Attendee identities are private. Everyone sees the public count; only the
+    // host sees the participant list (used to moderate the room).
+    const payload = party.toObject();
+    payload.participantCount = Array.isArray(payload.participants)
+      ? payload.participants.length
+      : payload.participantCount;
+    if (!isHost) delete payload.participants;
+
+    res.json(payload);
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch party' });
   }
@@ -69,8 +77,31 @@ router.post('/', auth, async (req, res) => {
   try {
     const {
       title, description, coverImage, category,
-      startTime, endTime, discountPercent, listingIds
+      startTime, endTime, discountPercent, listingIds, isPublic
     } = req.body;
+
+    if (typeof title !== 'string' || !title.trim() || title.trim().length > 100) {
+      return res.status(400).json({ message: 'title must be between 1 and 100 characters' });
+    }
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    if (!startTime || !endTime || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return res.status(400).json({ message: 'startTime and endTime must be valid dates' });
+    }
+    if (end <= start) {
+      return res.status(400).json({ message: 'endTime must be after startTime' });
+    }
+
+    const discountValue = discountPercent === undefined ? 10 : discountPercent;
+    if (typeof discountValue !== 'number' || !Number.isFinite(discountValue)
+      || discountValue < 5 || discountValue > 30) {
+      return res.status(400).json({ message: 'discountPercent must be a number between 5 and 30' });
+    }
+
+    if (isPublic !== undefined && typeof isPublic !== 'boolean') {
+      return res.status(400).json({ message: 'isPublic must be a boolean' });
+    }
 
     if (listingIds !== undefined && !Array.isArray(listingIds)) {
       return res.status(400).json({ message: 'listingIds must be an array' });
@@ -90,14 +121,16 @@ router.post('/', auth, async (req, res) => {
       hostId: req.user._id,
       hostName: req.user.name,
       hostAvatar: req.user.avatar,
-      title,
+      title: title.trim(),
       description,
       coverImage,
       category,
-      startTime,
-      endTime,
-      discountPercent,
+      startTime: start,
+      endTime: end,
+      discountPercent: discountValue,
       listingIds: ids,
+      // Previously discarded, so every "private" party was public.
+      isPublic: isPublic !== false,
     });
     
     await party.save();
@@ -121,12 +154,31 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
     
-    const allowedFields = ['title', 'description', 'coverImage', 'category', 'startTime', 'endTime', 'discountPercent'];
+    const nextStart = req.body.startTime !== undefined ? new Date(req.body.startTime) : new Date(party.startTime);
+    const nextEnd = req.body.endTime !== undefined ? new Date(req.body.endTime) : new Date(party.endTime);
+    if (Number.isNaN(nextStart.getTime()) || Number.isNaN(nextEnd.getTime())) {
+      return res.status(400).json({ message: 'startTime and endTime must be valid dates' });
+    }
+    if (nextEnd <= nextStart) {
+      return res.status(400).json({ message: 'endTime must be after startTime' });
+    }
+    if (req.body.title !== undefined && (typeof req.body.title !== 'string' || !req.body.title.trim())) {
+      return res.status(400).json({ message: 'title must not be empty' });
+    }
+    if (req.body.discountPercent !== undefined
+      && (typeof req.body.discountPercent !== 'number'
+        || req.body.discountPercent < 5 || req.body.discountPercent > 30)) {
+      return res.status(400).json({ message: 'discountPercent must be a number between 5 and 30' });
+    }
+
+    const allowedFields = ['title', 'description', 'coverImage', 'category', 'discountPercent'];
     for (const field of allowedFields) {
       if (Object.prototype.hasOwnProperty.call(req.body, field)) {
-        party[field] = req.body[field];
+        party[field] = field === 'title' ? req.body[field].trim() : req.body[field];
       }
     }
+    party.startTime = nextStart;
+    party.endTime = nextEnd;
     await party.save();
     
     res.json({ party });
@@ -156,11 +208,30 @@ router.post('/:id/share', auth, async (req, res) => {
 // POST /api/parties/:id/join - Join a party (increment participant count)
 router.post('/:id/join', auth, async (req, res) => {
   try {
+    const party = await Party.findById(req.params.id);
+    if (!party) {
+      return res.status(404).json({ message: 'Party not found' });
+    }
+
+    const isHost = String(party.hostId) === String(req.user._id);
+    if (party.isPublic === false && !isHost) {
+      // Do not reveal that a private party exists.
+      return res.status(404).json({ message: 'Party not found' });
+    }
+    if (['ended', 'cancelled'].includes(party.status)) {
+      return res.status(400).json({ message: 'Party has ended' });
+    }
+
     // Atomic unique join: only a first-time participant increments the count.
     // The previous read-modify-write incremented on every click/reconnect, so
-    // one user could inflate a party's public attendance arbitrarily.
+    // one user could inflate a party's public attendance arbitrarily. The
+    // status filter closes the race with a concurrent cancellation.
     const joined = await Party.findOneAndUpdate(
-      { _id: req.params.id, participants: { $ne: req.user._id } },
+      {
+        _id: req.params.id,
+        status: { $in: ['scheduled', 'active'] },
+        participants: { $ne: req.user._id },
+      },
       { $addToSet: { participants: req.user._id }, $inc: { participantCount: 1 } },
       { new: true }
     );
@@ -168,12 +239,15 @@ router.post('/:id/join', auth, async (req, res) => {
       return res.json({ participantCount: joined.participantCount });
     }
 
-    const party = await Party.findById(req.params.id).select('participantCount');
-    if (!party) {
+    const latest = await Party.findById(req.params.id).select('participantCount status');
+    if (!latest) {
       return res.status(404).json({ message: 'Party not found' });
     }
+    if (['ended', 'cancelled'].includes(latest.status)) {
+      return res.status(400).json({ message: 'Party has ended' });
+    }
     // Already joined — idempotent success with the unchanged count.
-    return res.json({ participantCount: party.participantCount });
+    return res.json({ participantCount: latest.participantCount });
   } catch (error) {
     res.status(500).json({ message: 'Failed to join party' });
   }

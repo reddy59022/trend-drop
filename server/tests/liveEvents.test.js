@@ -97,8 +97,10 @@ describe('v47.0 Live Shopping Events', () => {
     expect(res.body.viewers).toBeGreaterThan(0);
   });
 
-  test('v47.5 - Should get host statistics', async () => {
-    const res = await request(app).get(`/api/live-events/stats/${user._id}`);
+  test('v47.5 - Should get host statistics for the host', async () => {
+    const res = await request(app)
+      .get(`/api/live-events/stats/${user._id}`)
+      .set('Authorization', `Bearer ${userToken}`);
     expect(res.status).toBe(200);
     expect(res.body.totalEvents).toBeGreaterThan(0);
   });

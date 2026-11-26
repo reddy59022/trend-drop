@@ -181,7 +181,7 @@ const LiveEvents = () => {
                   </div>
                   <div style={{ display: 'flex', gap: 24, fontSize: 14, color: 'var(--td-text-tertiary)' }}>
                     <span><FaClock /> {formatDateTime(event.startTime)}</span>
-                    <span><FaUsers /> {event.viewers?.length || 0} viewers</span>
+                    <span><FaUsers /> {event.viewerCount ?? event.viewers?.length ?? 0} viewers</span>
                     {event.discount > 0 && <span><FaTag /> {event.discount}% off</span>}
                   </div>
                 </div>
@@ -214,7 +214,7 @@ const LiveEvents = () => {
                     <span className="badge badge-success">LIVE</span>
                   </div>
                   <div style={{ display: 'flex', gap: 24, fontSize: 14, color: 'var(--td-text-tertiary)', marginBottom: 12 }}>
-                    <span><FaUsers /> {event.viewers?.length || 0} watching</span>
+                    <span><FaUsers /> {event.viewerCount ?? event.viewers?.length ?? 0} watching</span>
                     {event.discount > 0 && <span><FaTag /> {event.discount}% off</span>}
                   </div>
                   <button

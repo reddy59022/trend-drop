@@ -174,7 +174,9 @@ describe('PR.2 live-event statistics report realized revenue', () => {
     await makeSale({ seller: host._id, buyer: buyer._id, listing: otherListing, sellerEarnings: 900 });
     await makeSale({ seller: host._id, buyer: buyer._id, listing: eventListing, status: 'refunded', sellerEarnings: 500 });
 
-    const res = await request(app).get(`/api/live-events/stats/${host._id}`);
+    const res = await request(app)
+      .get(`/api/live-events/stats/${host._id}`)
+      .set('Authorization', `Bearer ${tokenFor(host._id)}`);
 
     expect(res.status).toBe(200);
     expect(res.body.totalEvents).toBe(1);
@@ -184,7 +186,10 @@ describe('PR.2 live-event statistics report realized revenue', () => {
   });
 
   test('malformed host ids are rejected instead of throwing a cast error', async () => {
-    const res = await request(app).get('/api/live-events/stats/not-an-object-id');
+    const host = await makeUser('stats_bad_id');
+    const res = await request(app)
+      .get('/api/live-events/stats/not-an-object-id')
+      .set('Authorization', `Bearer ${tokenFor(host._id)}`);
     expect(res.status).toBe(400);
   });
 });

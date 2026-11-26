@@ -11,6 +11,7 @@ const { getJwtSecret } = require('../config/security');
 const { CURRENT_VERSIONS, requiredConsentTypes } = require('../config/legal');
 const LegalAcceptance = require('../models/LegalAcceptance');
 const { isCountryPolicyPublished } = require('../config/legalRuntime');
+const { currencies } = require('../config/currencies');
 
 // Helper: Generate JWT + user response
 // Always signs with the SAME secret the auth middleware verifies with
@@ -904,6 +905,35 @@ router.put('/profile', auth, async (req, res) => {
       if (max !== undefined && value.trim().length > max) {
         return res.status(400).json({ message: `${field} must be at most ${max} characters` });
       }
+      if (field === 'name' && value.trim().length === 0) {
+        return res.status(400).json({ message: 'name must not be empty' });
+      }
+    }
+
+    // Market availability is enforced at registration; profile updates must
+    // not let an account move itself into an unapproved jurisdiction.
+    if (req.body.country !== undefined) {
+      const country = req.body.country.trim().toUpperCase();
+      if (!/^[A-Z]{2}$/.test(country)) {
+        return res.status(400).json({ message: 'country must be a 2-letter country code' });
+      }
+      if (!(await isCountryPolicyPublished(country))) {
+        return res.status(400).json({
+          message: 'TrendDrop is not available in that country yet.',
+          code: 'REGION_NOT_SUPPORTED',
+        });
+      }
+      req.body.country = country;
+    }
+
+    // Only configured ISO currencies can be selected; an unknown code would
+    // break every price formatter that reads the currency table.
+    if (req.body.currency !== undefined) {
+      const currency = req.body.currency.trim().toUpperCase();
+      if (!Object.prototype.hasOwnProperty.call(currencies, currency)) {
+        return res.status(400).json({ message: 'currency is not supported' });
+      }
+      req.body.currency = currency;
     }
     if (req.body.shippingAddress !== undefined
       && (req.body.shippingAddress === null

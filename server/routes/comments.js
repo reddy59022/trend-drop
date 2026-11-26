@@ -118,6 +118,12 @@ router.post('/:listingId', auth, async (req, res) => {
       if (parent.listingId.toString() !== listingId.toString()) {
         return res.status(400).json({ message: 'Parent comment belongs to a different listing' });
       }
+      // Threads are rendered one level deep: a reply to a reply would be stored
+      // with a parentId that the listing feed never expands, producing a
+      // comment nobody can see.
+      if (parent.parentId) {
+        return res.status(400).json({ message: 'Replies can only be one level deep' });
+      }
     }
     
     const comment = await Comment.create({

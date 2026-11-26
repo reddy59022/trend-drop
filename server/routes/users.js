@@ -72,21 +72,23 @@ router.get('/feed', auth, async (req, res) => {
     else if (sort === 'popular') sortOption = { likesCount: -1 };
     else if (sort === 'newest') sortOption = { createdAt: -1 };
 
-    const listings = await Listing.find({
+    // Match the public closet: drafts and out-of-stock items are not catalog
+    // content and must never appear in a followed-seller feed.
+    const feedFilter = {
       seller: { $in: user.following },
+      status: 'active',
       available: true,
       sold: false,
-    })
+      quantity: { $gt: 0 },
+    };
+
+    const listings = await Listing.find(feedFilter)
       .populate('seller', 'name avatar')
       .sort(sortOption)
       .limit(limit)
       .skip((page - 1) * limit);
 
-    const total = await Listing.countDocuments({
-      seller: { $in: user.following },
-      available: true,
-      sold: false,
-    });
+    const total = await Listing.countDocuments(feedFilter);
 
     res.json({
       listings: listings.map((l) => {
@@ -251,21 +253,23 @@ router.get('/:id/closet', async (req, res) => {
     const pageNum = Math.max(1, Math.min(Number(page) || 1, 100));
     const limitNum = Math.max(1, Math.min(Number(limit) || 20, 50));
 
-    const listings = await Listing.find({
+    // The public closet must show exactly what the profile count counts:
+    // active, unsold, in-stock listings. Drafts previously leaked here.
+    const closetFilter = {
       seller: req.params.id,
+      status: 'active',
       sold: false,
       available: true,
-    })
+      quantity: { $gt: 0 },
+    };
+
+    const listings = await Listing.find(closetFilter)
       .populate('seller', 'name avatar')
       .sort(sortOption)
       .limit(limitNum)
       .skip((pageNum - 1) * limitNum);
 
-    const total = await Listing.countDocuments({
-      seller: req.params.id,
-      sold: false,
-      available: true,
-    });
+    const total = await Listing.countDocuments(closetFilter);
 
     res.json({
       listings,
