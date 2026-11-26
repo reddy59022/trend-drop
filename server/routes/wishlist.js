@@ -13,7 +13,11 @@ router.get('/', auth, async (req, res) => {
     if (!wishlist) wishlist = { items: [] };
     // GA-2 self-heal: entries written before the listingId guard (or with a
     // missing listing) would 500 the client render — drop them from the view.
-    res.json((wishlist.items || []).filter((i) => i.listing));
+    // Hidden listings (draft/soft-deleted) must not appear even if they were
+    // wishlisted before the seller unpublished them.
+    res.json((wishlist.items || []).filter(
+      (i) => i.listing && !['draft', 'deleted'].includes(i.listing.status),
+    ));
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -38,8 +42,9 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Invalid listingId' });
     }
 
-    const listing = await Listing.findById(listingId).select('_id');
-    if (!listing) {
+    const listing = await Listing.findById(listingId).select('_id status');
+    // Do not confirm the existence of unpublished or removed listings.
+    if (!listing || ['draft', 'deleted'].includes(listing.status)) {
       return res.status(404).json({ message: 'Listing not found' });
     }
 

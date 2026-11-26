@@ -4,6 +4,7 @@ const { auth, optionalAuth } = require('../middleware/auth');
 const Auction = require('../models/Auction');
 const Listing = require('../models/Listing');
 const { isValidObjectId, asNumber } = require('../utils/validators');
+const { currencies } = require('../config/currencies');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 
@@ -37,15 +38,40 @@ router.post('/', auth, async (req, res) => {
     if (!listing) {
       return res.status(404).json({ message: 'Listing not found' });
     }
+    if (listing.status !== 'active') {
+      return res.status(400).json({ message: 'Only active listings can be auctioned' });
+    }
     
     // Only seller can create auction for their listing
     if (String(listing.seller) !== String(req.user._id)) {
       return res.status(403).json({ message: 'Only seller can create auction for their listing' });
     }
     
-    // Validate times
-    if (new Date(endTime) <= new Date(startTime)) {
+    // Validate times. Invalid date strings yield NaN, and NaN comparisons are
+    // always false, so parse explicitly before comparing.
+    const parsedStart = new Date(startTime);
+    const parsedEnd = new Date(endTime);
+    if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) {
+      return res.status(400).json({ message: 'startTime and endTime must be valid dates' });
+    }
+    if (parsedEnd <= parsedStart) {
       return res.status(400).json({ message: 'end time must be after start time' });
+    }
+
+    // A malformed reserve used to reach Mongoose, turning a client error into
+    // a 500; a negative reserve would seed a negative currentBid.
+    let normalizedReserve = listing.price;
+    if (reservePrice !== undefined && reservePrice !== null && reservePrice !== '') {
+      const parsedReserve = Number(reservePrice);
+      if (!Number.isFinite(parsedReserve) || parsedReserve < 0) {
+        return res.status(400).json({ message: 'reservePrice must be a non-negative number' });
+      }
+      normalizedReserve = parsedReserve;
+    }
+
+    const auctionCurrency = (currency || listing.currency || 'USD').toUpperCase();
+    if (!Object.prototype.hasOwnProperty.call(currencies, auctionCurrency)) {
+      return res.status(400).json({ message: 'Unsupported currency' });
     }
     
     // Only a live, in-stock listing can be auctioned. Without this check a
@@ -55,24 +81,44 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Listing is not available for auction' });
     }
 
-    // Check if auction already exists for this listing
+    // Only an auction that is still live blocks a new one: a cancelled or
+    // closed auction must not permanently prevent re-listing the item. The
+    // model keeps a unique index on `listing`, so a finished auction record is
+    // reset in place instead of inserting a second document.
     const existingAuction = await Auction.findOne({ listing: listingId });
+    const nextStatus = parsedStart <= new Date() ? 'active' : 'scheduled';
     if (existingAuction) {
-      return res.status(400).json({ message: 'Auction already exists for this listing' });
+      if (!['cancelled', 'closed'].includes(existingAuction.status)) {
+        return res.status(400).json({ message: 'Auction already exists for this listing' });
+      }
+      existingAuction.set({
+        seller: req.user._id,
+        startTime: parsedStart,
+        endTime: parsedEnd,
+        reservePrice: normalizedReserve,
+        currency: auctionCurrency,
+        currentBid: normalizedReserve,
+        status: nextStatus,
+        bids: [],
+        winner: undefined,
+        winningBid: 0,
+        winningCurrency: auctionCurrency,
+        closeFinalized: false,
+        streamInfo: undefined,
+      });
+      await existingAuction.save();
+      return res.status(201).json({ auction: existingAuction });
     }
-    
-    // Use listing currency if not provided, otherwise validate it matches listing
-    const auctionCurrency = (currency || listing.currency || 'USD').toUpperCase();
     
     const auction = await Auction.create({
       listing: listingId,
       seller: req.user._id,
       startTime,
       endTime,
-      reservePrice: reservePrice || listing.price,
+      reservePrice: normalizedReserve,
       currency: auctionCurrency,
-      currentBid: reservePrice || listing.price,
-      status: new Date(startTime) <= new Date() ? 'active' : 'scheduled',
+      currentBid: normalizedReserve,
+      status: parsedStart <= new Date() ? 'active' : 'scheduled',
     });
     
     res.status(201).json({ auction });

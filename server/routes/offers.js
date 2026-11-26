@@ -30,6 +30,17 @@ async function assertListingPurchasable(offer, res) {
   return true;
 }
 
+// An offer that passed its deadline must not be accepted or countered just
+// because the expiry cron has not run yet. Answering 400 leaves the document
+// untouched so the scheduled job can mark it expired.
+function assertOfferNotExpired(offer, res) {
+  if (offer.expiresAt && new Date(offer.expiresAt).getTime() <= Date.now()) {
+    res.status(400).json({ message: 'This offer has expired' });
+    return false;
+  }
+  return true;
+}
+
 // ============================================================
 // OFFER STATE MACHINE (v14.0 - Full Counter-Offer Chain Support)
 // ============================================================
@@ -66,7 +77,9 @@ router.post('/', auth, async (req, res) => {
     }
 
     const listing = await Listing.findById(listingId);
-    if (!listing) {
+    // Unpublished/removed listings are not publicly retrievable, so they must
+    // not accept offers either (nor confirm that they exist).
+    if (!listing || ['draft', 'deleted'].includes(listing.status)) {
       return res.status(404).json({ message: 'Listing not found' });
     }
 
@@ -553,6 +566,7 @@ router.patch('/:id/accept', auth, async (req, res) => {
     if (offer.status !== 'pending') {
       return res.status(400).json({ message: 'Only pending offers can be accepted' });
     }
+    if (!assertOfferNotExpired(offer, res)) return;
 
     // GA-3b: no accepting offers on items that can no longer be purchased.
     if (!(await assertListingPurchasable(offer, res))) return;
@@ -619,6 +633,7 @@ router.patch('/:id/counter', auth, async (req, res) => {
         message: 'Cannot counter in current state: ' + offer.status + '. Seller can counter from pending or buyer_countered states.' 
       });
     }
+    if (!assertOfferNotExpired(offer, res)) return;
 
     // Validate counter amount
     const numericCounter = Number(counterAmount);
@@ -718,6 +733,7 @@ router.patch('/:id/buyer-counter', auth, async (req, res) => {
     if (offer.status !== 'countered') {
       return res.status(400).json({ message: 'You can only counter when the seller has countered. Current status: ' + offer.status });
     }
+    if (!assertOfferNotExpired(offer, res)) return;
 
     const numericCounter = Number(counterAmount);
     if (isNaN(numericCounter) || numericCounter <= 0) {
@@ -798,6 +814,7 @@ router.patch('/:id/accept-counter', auth, async (req, res) => {
     if (offer.status !== 'countered') {
       return res.status(400).json({ message: 'The seller has not made a counter to accept. Current status: ' + offer.status });
     }
+    if (!assertOfferNotExpired(offer, res)) return;
 
     // GA-3b: no accepting counters on items that can no longer be purchased.
     if (!(await assertListingPurchasable(offer, res))) return;
@@ -849,6 +866,7 @@ router.patch('/:id/seller-accept-buyer-counter', auth, async (req, res) => {
     if (offer.status !== 'buyer_countered') {
       return res.status(400).json({ message: 'Offer is not in buyer_countered state. Current status: ' + offer.status });
     }
+    if (!assertOfferNotExpired(offer, res)) return;
 
     // GA-3b: no accepting counters on items that can no longer be purchased.
     if (!(await assertListingPurchasable(offer, res))) return;
@@ -900,6 +918,7 @@ router.patch('/:id/seller-accept', auth, async (req, res) => {
     if (offer.status !== 'pending') {
       return res.status(400).json({ message: 'Only pending offers can be accepted' });
     }
+    if (!assertOfferNotExpired(offer, res)) return;
 
     // GA-3b: no accepting offers on items that can no longer be purchased.
     if (!(await assertListingPurchasable(offer, res))) return;

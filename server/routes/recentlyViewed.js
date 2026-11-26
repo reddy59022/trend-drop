@@ -2,18 +2,22 @@ const express = require('express');
 const router = express.Router();
 const RecentlyViewed = require('../models/RecentlyViewed');
 const { auth } = require('../middleware/auth');
-const { asNumber } = require('../utils/validators');
+const { asNumber, isValidObjectId } = require('../utils/validators');
 
 // POST /api/recently-viewed/:listingId - Record a view
 router.post('/:listingId', auth, async (req, res) => {
   try {
     const { listingId } = req.params;
 
-    // The listing must exist: a valid-but-nonexistent id would otherwise
-    // persist an orphan view row whose populated listing resolves to null.
+    if (!isValidObjectId(listingId)) {
+      return res.status(400).json({ message: 'Invalid listingId' });
+    }
+
+    // The listing must exist AND be publicly visible: drafts and deleted
+    // listings must not leak into a viewer's history.
     const Listing = require('../models/Listing');
-    const listing = await Listing.findById(listingId);
-    if (!listing) {
+    const listing = await Listing.findById(listingId).select('_id status');
+    if (!listing || ['draft', 'deleted'].includes(listing.status)) {
       return res.status(404).json({ message: 'Listing not found' });
     }
 
@@ -66,13 +70,15 @@ router.get('/', auth, async (req, res) => {
     const recentViews = await RecentlyViewed.find({ userId: req.user._id })
       .sort({ viewedAt: -1 })
       .limit(limit)
-      .populate('listingId', 'title price images available category');
+      .populate('listingId', 'title price images available category status');
 
     // Drop entries whose listing was since deleted (populate resolves to null):
     // a null in the array crashes/shrinks the client grid. Same self-heal the
     // wishlist endpoint performs (see routes/wishlist.js).
     res.json({
-      items: recentViews.map(v => v.listingId).filter(Boolean),
+      items: recentViews
+        .map(v => v.listingId)
+        .filter((listing) => listing && !['draft', 'deleted'].includes(listing.status)),
     });
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch recently viewed' });
