@@ -48,6 +48,14 @@ const auctionSchema = new mongoose.Schema({
     // Cron explicitly writes false for its intermediate state.
     default: true,
   },
+  // Short lease that serializes concurrent /close requests. Only the holder
+  // may pick a winner and create the order; everyone else gets 409. The lease
+  // is released explicitly on success/failure and expires on its own if the
+  // process dies mid-close.
+  closeLease: {
+    token: { type: String, default: null },
+    expiresAt: { type: Date, default: null },
+  },
   bids: [{
     bidder: {
       type: mongoose.Schema.Types.ObjectId,

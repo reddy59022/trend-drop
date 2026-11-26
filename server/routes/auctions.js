@@ -428,8 +428,21 @@ router.get('/:id/stream', async (req, res) => {
 
 // POST /api/auctions/:id/close - Close expired auction with order creation (seller/admin only)
 router.post('/:id/close', auth, async (req, res) => {
+  let closeToken = null;
+  const releaseCloseLease = async () => {
+    if (!closeToken) return;
+    try {
+      await Auction.updateOne(
+        { _id: req.params.id, 'closeLease.token': closeToken },
+        { $unset: { closeLease: '' } },
+      );
+    } catch (leaseErr) {
+      console.error('Release auction close lease error:', leaseErr.message);
+    }
+  };
+
   try {
-    const auction = await Auction.findById(req.params.id).populate('listing').populate('seller');
+    let auction = await Auction.findById(req.params.id).populate('listing').populate('seller');
     if (!auction) {
       return res.status(404).json({ message: 'Auction not found' });
     }
@@ -456,6 +469,34 @@ router.post('/:id/close', auth, async (req, res) => {
     if (new Date() <= auction.endTime) {
       return res.status(400).json({ message: 'Auction has not ended yet' });
     }
+
+    // Serialize concurrent closes with a short lease. Without it, two requests
+    // could both pick a winner; the loser could overwrite the winner with null
+    // or create a second order.
+    closeToken = require('crypto').randomUUID();
+    const now = new Date();
+    const claimedAuction = await Auction.findOneAndUpdate(
+      {
+        _id: auction._id,
+        status: { $in: ['active', 'scheduled', 'closed'] },
+        endTime: { $lt: now },
+        $and: [
+          { $or: [{ status: { $ne: 'closed' } }, { status: 'closed', closeFinalized: false }] },
+          { $or: [
+            { 'closeLease.token': null },
+            { 'closeLease.token': { $exists: false } },
+            { 'closeLease.expiresAt': { $lt: now } },
+          ] },
+        ],
+      },
+      { $set: { 'closeLease.token': closeToken, 'closeLease.expiresAt': new Date(Date.now() + 2 * 60 * 1000) } },
+      { new: true },
+    ).populate('listing').populate('seller');
+    if (!claimedAuction) {
+      return res.status(409).json({ message: 'Auction close is already being processed' });
+    }
+    auction = claimedAuction;
+    const isRecoveryClaim = auction.status === 'closed' && auction.closeFinalized === false;
     
     // Determine winner. On a recovery pass the winner is already stored, and
     // the listing is already claimed (sold), so it must not be claimed again.
@@ -464,7 +505,7 @@ router.post('/:id/close', auth, async (req, res) => {
     let winningCurrency = auction.currency || 'USD';
     let noWinnerReason = 'reserve price not met or no bids';
 
-    if (isRecovery && auction.winner) {
+    if (isRecoveryClaim && auction.winner) {
       winner = auction.winner;
       winningBid = auction.winningBid;
       winningCurrency = auction.winningCurrency || auction.currency || 'USD';
@@ -517,6 +558,7 @@ router.post('/:id/close', auth, async (req, res) => {
     if (winner) {
       const listing = await Listing.findById(auction.listing._id || auction.listing).populate('seller');
       if (!listing) {
+        await releaseCloseLease();
         return res.status(500).json({ message: 'Auction listing could not be loaded' });
       }
 
@@ -593,6 +635,7 @@ router.post('/:id/close', auth, async (req, res) => {
       // The order now exists; mark the auction terminal.
       auction.closeFinalized = true;
       await auction.save();
+      await releaseCloseLease();
       
       // Return auction with transaction info
       const populatedAuction = await Auction.findById(auction._id)
@@ -615,12 +658,14 @@ router.post('/:id/close', auth, async (req, res) => {
       });
     } else {
       // No winner — reserve not met, no bids, or the item is no longer available
+      await releaseCloseLease();
       res.json({ 
         auction,
         message: `Auction closed without a winner (${noWinnerReason})`,
       });
     }
   } catch (error) {
+    await releaseCloseLease();
     console.error('Close auction error:', error);
     res.status(500).json({ message: 'Failed to close auction' });
   }

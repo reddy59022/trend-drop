@@ -176,7 +176,8 @@ describe('Seller Shipping Insurance', () => {
 
       expect([first.statusCode, second.statusCode].sort()).toEqual([200, 400]);
       const seller = await User.findById(sellerId);
-      expect(seller.balance.available).toBe(before + 100);
+      // Legacy approved payouts are gross; the $2 premium is now collected.
+      expect(seller.balance.available).toBe(before + 98);
     });
   });
 

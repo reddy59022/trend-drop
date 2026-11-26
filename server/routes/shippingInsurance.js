@@ -5,6 +5,7 @@ const ShippingInsurance = require('../models/ShippingInsurance');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const { isValidObjectId } = require('../utils/validators');
+const { adminAuth } = require('../middleware/admin');
 
 // ===================== SELLER SHIPPING INSURANCE =====================
 // Optional insurance for sellers to protect against shipping loss/damage
@@ -178,6 +179,68 @@ router.post('/:id/claim', auth, async (req, res) => {
   }
 });
 
+// PUT /api/shipping-insurance/:id/claim/review - Admin approves or denies a claim.
+// Without this route every filed claim stayed 'pending' forever, so an approved
+// refund could never be reached. The payout is credited net of the premium so
+// coverage is not free.
+router.put('/:id/claim/review', auth, adminAuth, async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid insurance ID' });
+    }
+    const { status, payoutAmount, notes } = req.body;
+    if (!['approved', 'denied'].includes(status)) {
+      return res.status(400).json({ message: 'status must be approved or denied' });
+    }
+
+    const insurance = await ShippingInsurance.findById(req.params.id);
+    if (!insurance) {
+      return res.status(404).json({ message: 'Insurance not found' });
+    }
+    if (insurance.status !== 'claimed' || insurance.claim?.status !== 'pending') {
+      return res.status(400).json({ message: 'No pending claim to review' });
+    }
+
+    insurance.claim = {
+      ...(insurance.claim || {}),
+      reviewedAt: new Date(),
+      reviewedBy: req.user._id,
+      reviewNotes: typeof notes === 'string' ? notes : '',
+    };
+
+    if (status === 'denied') {
+      insurance.claim.status = 'denied';
+      await insurance.save();
+      return res.json({ insurance });
+    }
+
+    const maxPayout = Math.min(
+      Number(insurance.itemValue) || 0,
+      ShippingInsurance.getCoverageLimit(insurance.coverageType),
+    );
+    const grossPayout = payoutAmount === undefined || payoutAmount === null
+      ? maxPayout
+      : Number(payoutAmount);
+    if (!Number.isFinite(grossPayout) || grossPayout < 0 || grossPayout > maxPayout) {
+      return res.status(400).json({ message: `payoutAmount must be between 0 and ${maxPayout}` });
+    }
+
+    // Collect the premium from the payout (never below zero). `premiumDeducted`
+    // makes the later refund idempotent and avoids deducting it twice.
+    const netPayout = Math.max(0, Math.round((grossPayout - (insurance.premium || 0)) * 100) / 100);
+    insurance.claim.status = 'approved';
+    insurance.claim.payoutAmount = netPayout;
+    insurance.claim.premiumDeducted = true;
+    insurance.claim.payoutCurrency = insurance.currency || 'USD';
+    await insurance.save();
+
+    res.json({ insurance });
+  } catch (error) {
+    console.error('Review insurance claim error:', error);
+    res.status(500).json({ message: 'Failed to review insurance claim' });
+  }
+});
+
 // POST /api/shipping-insurance/:id/refund - Process insurance refund
 router.post('/:id/refund', auth, async (req, res) => {
   try {
@@ -224,8 +287,15 @@ router.post('/:id/refund', auth, async (req, res) => {
       return res.status(400).json({ message: 'Insurance refund already processed' });
     }
 
-    const payoutAmount = claimed.claim?.payoutAmount
-      || Math.min(claimed.itemValue, ShippingInsurance.getCoverageLimit(claimed.coverageType));
+    // New approvals store the net (premium-deducted) amount. Legacy approvals
+    // stored the gross coverage, so deduct the premium unless already done.
+    let payoutAmount = claimed.claim?.payoutAmount;
+    if (payoutAmount === undefined || payoutAmount === null) {
+      payoutAmount = Math.min(claimed.itemValue, ShippingInsurance.getCoverageLimit(claimed.coverageType));
+    }
+    if (!claimed.claim?.premiumDeducted) {
+      payoutAmount = Math.max(0, Math.round((payoutAmount - (claimed.premium || 0)) * 100) / 100);
+    }
     const seller = await User.findOneAndUpdate(
       { _id: req.user._id },
       {
