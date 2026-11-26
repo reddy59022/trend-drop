@@ -56,10 +56,21 @@ router.get('/seller/:sellerId', async (req, res) => {
       seller: req.params.sellerId,
       isActive: true,
     })
-      .populate('listings', 'title price images category condition')
+      .populate('listings', 'title price images category condition status available sold quantity')
       .sort({ sortOrder: 1 });
 
-    res.json(collections);
+    // This endpoint is public: strip the same listings the catalog hides
+    // (drafts, sold, deleted, paused and out-of-stock items) so collection
+    // metadata cannot expose unpublished merchandise.
+    const visible = collections.map((collection) => {
+      const obj = collection.toObject();
+      obj.listings = (obj.listings || []).filter((l) =>
+        l && l.status === 'active' && l.available !== false && l.sold !== true
+        && (l.quantity === undefined || l.quantity > 0));
+      return obj;
+    });
+
+    res.json(visible);
   } catch (error) {
     console.error('Get collections error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -151,11 +162,16 @@ router.put('/:id', auth, async (req, res) => {
       }
       const mongoose = require('mongoose');
       const ids = [];
+      const seen = new Set();
       for (const raw of listings) {
         const id = String(raw);
         if (!mongoose.Types.ObjectId.isValid(id)) {
           return res.status(400).json({ message: 'Invalid listing id in listings array' });
         }
+        // A repeated id is the same listing, not a second one: comparing
+        // found.length to ids.length used to answer 404 for a valid payload.
+        if (seen.has(id)) continue;
+        seen.add(id);
         ids.push(id);
       }
       if (ids.length > 0) {

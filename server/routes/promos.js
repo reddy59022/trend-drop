@@ -16,6 +16,24 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Code, discountType, and discountValue are required' });
     }
 
+    // `code.toUpperCase()` below would throw on a number/object input.
+    if (typeof code !== 'string' || !code.trim()) {
+      return res.status(400).json({ message: 'Code must be a non-empty string' });
+    }
+    if (code.trim().length > 50) {
+      return res.status(400).json({ message: 'Code must be at most 50 characters' });
+    }
+    if (description !== undefined && description !== null && typeof description !== 'string') {
+      return res.status(400).json({ message: 'description must be a string' });
+    }
+    if (expiresAt !== undefined && expiresAt !== null && Number.isNaN(new Date(expiresAt).getTime())) {
+      return res.status(400).json({ message: 'expiresAt must be a valid date' });
+    }
+    if (applicableCategories !== undefined && applicableCategories !== null
+        && (!Array.isArray(applicableCategories) || applicableCategories.some((c) => typeof c !== 'string'))) {
+      return res.status(400).json({ message: 'applicableCategories must be an array of strings' });
+    }
+
     if (!['percentage', 'fixed'].includes(discountType)) {
       return res.status(400).json({ message: 'discountType must be "percentage" or "fixed"' });
     }
@@ -93,10 +111,27 @@ router.put('/:id', auth, async (req, res) => {
       if (typeof discountValue !== 'number' || !Number.isFinite(discountValue) || discountValue <= 0) {
         return res.status(400).json({ message: 'discountValue must be a positive number' });
       }
-      const effectiveType = discountType || promo.discountType;
-      if (effectiveType === 'percentage' && discountValue > 100) {
-        return res.status(400).json({ message: 'percentage discount cannot exceed 100' });
-      }
+    }
+    // Check the EFFECTIVE pair, not only when discountValue is supplied: a
+    // fixed 150 promo switched to percentage without a new value used to
+    // persist a 150% discount.
+    const effectiveType = discountType || promo.discountType;
+    const effectiveValue = discountValue !== undefined ? discountValue : promo.discountValue;
+    if (effectiveType === 'percentage' && effectiveValue > 100) {
+      return res.status(400).json({ message: 'percentage discount cannot exceed 100' });
+    }
+    if (expiresAt !== undefined && expiresAt !== null && Number.isNaN(new Date(expiresAt).getTime())) {
+      return res.status(400).json({ message: 'expiresAt must be a valid date' });
+    }
+    if (isActive !== undefined && typeof isActive !== 'boolean') {
+      return res.status(400).json({ message: 'isActive must be a boolean' });
+    }
+    if (applicableCategories !== undefined && applicableCategories !== null
+        && (!Array.isArray(applicableCategories) || applicableCategories.some((c) => typeof c !== 'string'))) {
+      return res.status(400).json({ message: 'applicableCategories must be an array of strings' });
+    }
+    if (description !== undefined && typeof description !== 'string') {
+      return res.status(400).json({ message: 'description must be a string' });
     }
     if (discountType) promo.discountType = discountType;
     if (discountValue !== undefined) promo.discountValue = discountValue;

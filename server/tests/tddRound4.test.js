@@ -94,6 +94,12 @@ describe('R4.4 referral reward credits exactly once under concurrent claims', ()
     const baseAvail = before.balance.available || 0;
     await request(app).post('/api/referrals/generate').set('Authorization', `Bearer ${sellerToken}`);
     const referral = await Referral.findOne({ referrer: seller._id, status: 'active' });
+    // The bonus is only payable for a completed referral; seed one so this
+    // test still exercises concurrent double-claim protection.
+    await Referral.updateOne(
+      { _id: referral._id },
+      { $set: { referredUsers: [{ user: buyer._id, rewardGiven: false }], uses: 1 } },
+    );
     const reward = referral.rewardAmount;
     const [r1, r2] = await Promise.all([
       request(app).post('/api/referrals/claim').set('Authorization', `Bearer ${sellerToken}`),
