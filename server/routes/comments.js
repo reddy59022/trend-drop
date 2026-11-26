@@ -10,23 +10,16 @@ const { isValidObjectId, asNumber } = require('../utils/validators');
 // GET /api/comments/trending - Get trending hashtags (must be before /:listingId)
 router.get('/trending', async (req, res) => {
   try {
-    // Get all comments
-    const comments = await Comment.find({});
-    
-    // Count hashtag occurrences
-    const hashtagCount = {};
-    comments.forEach(comment => {
-      const tags = comment.hashtags || [];
-      tags.forEach(tag => {
-        hashtagCount[tag] = (hashtagCount[tag] || 0) + 1;
-      });
-    });
-    
-    // Sort by count and return top 20
-    const trending = Object.entries(hashtagCount)
-      .map(([tag, count]) => ({ tag, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20);
+    // Count in the database: loading every comment into memory made this
+    // endpoint grow without bound as the comment collection grew.
+    const trending = await Comment.aggregate([
+      { $match: { hashtags: { $exists: true, $ne: [] } } },
+      { $unwind: '$hashtags' },
+      { $group: { _id: '$hashtags', count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: 20 },
+      { $project: { _id: 0, tag: '$_id', count: 1 } },
+    ]);
     
     res.json(trending);
   } catch (error) {
@@ -42,12 +35,22 @@ router.get('/hashtag/:tag', async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.max(1, Math.min(asNumber(req.query.limit, 50) || 50, 50));
     
-    const comments = await Comment.find({ hashtags: tag.toLowerCase() })
-      .populate('userId', 'name avatar')
-      .populate('listingId', 'title images price')
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
+    // Join the listing so comments on drafts/deleted items cannot leak the
+    // hidden item's title, images or price through the public tag feed.
+    let comments = await Comment.aggregate([
+      { $match: { hashtags: tag.toLowerCase() } },
+      { $lookup: { from: 'listings', localField: 'listingId', foreignField: '_id', as: 'listing' } },
+      { $unwind: '$listing' },
+      { $match: { 'listing.status': { $nin: ['draft', 'deleted'] } } },
+      { $sort: { createdAt: -1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+      { $project: { listing: 0 } },
+    ]);
+    comments = await Comment.populate(comments, [
+      { path: 'userId', select: 'name avatar' },
+      { path: 'listingId', select: 'title images price' },
+    ]);
     
     res.json({ comments });
   } catch (error) {
@@ -61,6 +64,11 @@ router.get('/:listingId', async (req, res) => {
     const { listingId } = req.params;
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.max(1, Math.min(asNumber(req.query.limit, 50) || 50, 50));
+
+    const listing = await Listing.findById(listingId).select('status');
+    if (!listing || listing.status === 'draft' || listing.status === 'deleted') {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
     
     const comments = await Comment.find({ listingId, parentId: null })
       .populate('userId', 'name avatar')

@@ -140,6 +140,32 @@ describe('v46.0 AI Stylist Recommendations', () => {
     expect(res.body.confidence).toBeDefined();
   });
 
+  test('v46.8b - Draft listings never appear in outfit suggestions', async () => {
+    const draft = await Listing.create({
+      title: 'Draft Stylist Item',
+      description: 'Hidden recommendation',
+      price: 20,
+      category: 'Women',
+      condition: 'Good',
+      color: 'Blue',
+      images: [],
+      seller: user._id,
+      quantity: 1,
+      available: true,
+      sold: false,
+      status: 'draft',
+    });
+
+    const res = await request(app)
+      .post('/api/ai-stylist/outfit-suggestion')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ category: 'Men', color: 'Blue' });
+    expect(res.status).toBe(200);
+    expect(res.body.suggestions.map((l) => String(l._id))).not.toContain(String(draft._id));
+
+    await Listing.findByIdAndDelete(draft._id);
+  });
+
   test('v46.9 - Should require authentication for recommendations', async () => {
     const res = await request(app)
       .get('/api/ai-stylist/recommendations');

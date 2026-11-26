@@ -8,7 +8,7 @@ const Offer = require('../models/Offer');
 router.get('/brands', async (req, res) => {
   try {
     const brands = await Listing.aggregate([
-      { $match: { available: true, sold: false } },
+      { $match: { available: true, sold: false, status: 'active' } },
       { $group: { _id: '$brand', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 50 },
@@ -25,7 +25,7 @@ router.get('/brands', async (req, res) => {
 router.get('/colors', async (req, res) => {
   try {
     const { category } = req.query;
-    const match = { available: true, sold: false };
+    const match = { available: true, sold: false, status: 'active' };
     if (category) match.category = category;
     
     const colors = await Listing.aggregate([
@@ -46,7 +46,7 @@ router.get('/colors', async (req, res) => {
 router.get('/sizes', async (req, res) => {
   try {
     const { category } = req.query;
-    const match = { available: true, sold: false };
+    const match = { available: true, sold: false, status: 'active' };
     if (category) match.category = category;
     
     const sizes = await Listing.aggregate([

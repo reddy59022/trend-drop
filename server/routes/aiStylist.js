@@ -42,7 +42,11 @@ router.get('/recommendations', auth, async (req, res) => {
       const stylistNew = await AIStylist.create({ user: req.user._id });
       return res.json([]);
     }
-    res.json(stylist.recommendations || []);
+    // A saved recommendation can outlive the listing; never serve a draft or
+    // deleted item from it.
+    res.json((stylist.recommendations || []).filter((r) => r.listing
+      && !['draft', 'deleted'].includes(r.listing.status)
+      && r.listing.available && !r.listing.sold));
   } catch (error) {
     res.status(500).json({ message: 'Failed to get recommendations' });
   }
@@ -65,6 +69,7 @@ router.post('/generate', auth, async (req, res) => {
     const query = {
       available: true,
       sold: false,
+      status: 'active',
     };
 
     if (stylist.preferences?.categories?.length > 0) {
@@ -176,7 +181,14 @@ router.post('/outfits', auth, async (req, res) => {
 router.get('/outfits', auth, async (req, res) => {
   try {
     const stylist = await AIStylist.findOne({ user: req.user._id }).populate('outfits.items');
-    res.json(stylist?.outfits || []);
+    // Items can be unpublished after the outfit was saved; drop hidden ones.
+    const outfits = (stylist?.outfits || []).map((outfit) => ({
+      ...outfit.toObject(),
+      items: (outfit.items || []).filter((item) => item
+        && !['draft', 'deleted'].includes(item.status)
+        && item.available && !item.sold),
+    }));
+    res.json(outfits);
   } catch (error) {
     res.status(500).json({ message: 'Failed to get outfits' });
   }
@@ -200,7 +212,7 @@ router.get('/trends', async (req, res) => {
       },
     };
     const trends = await Listing.aggregate([
-      { $match: { available: true, sold: false, createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } },
+      { $match: { available: true, sold: false, status: 'active', createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } },
       { $group: { _id: '$category', count: { $sum: 1 }, avgPrice: { $avg: { $divide: ['$price', rateDivisor] } } } },
       { $sort: { count: -1 } },
       { $limit: 10 },
@@ -220,6 +232,7 @@ router.post('/outfit-suggestion', auth, async (req, res) => {
     const query = {
       available: true,
       sold: false,
+      status: 'active',
       category: { $ne: category },
     };
 

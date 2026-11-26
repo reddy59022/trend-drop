@@ -85,6 +85,7 @@ router.get('/', auth, async (req, res) => {
         _id: { $in: rawIds },
         available: true,
         sold: false,
+        status: { $nin: ['draft', 'deleted'] },
       }).select('_id');
       const validIds = new Set(validListings.map(l => l._id.toString()));
       const kept = cart.items.filter(item => item.listing && validIds.has(item.listing.toString()));
@@ -128,7 +129,11 @@ router.post('/items', auth, async (req, res) => {
       return res.status(400).json({ message: 'Cannot add your own listing to cart' });
     }
 
-    // Check if item is available
+    // Check if item is available. Draft/deleted listings are not publicly
+    // retrievable, so their existence and price must not leak through a cart.
+    if (['draft', 'deleted'].includes(listing.status)) {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
     if (!listing.available || listing.sold) {
       return res.status(400).json({ message: 'Item is no longer available' });
     }
@@ -186,7 +191,9 @@ router.delete('/items/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Cart not found' });
     }
 
-    cart.items = cart.items.filter(item => item.listing.toString() !== id);
+    // Legacy entries can have no listing; `.toString()` on one 500s the whole
+    // removal and leaves the user unable to clear the bad line.
+    cart.items = cart.items.filter(item => item.listing && item.listing.toString() !== id);
     await cart.save();
 
     const populatedCart = await Cart.findById(cart._id)
@@ -278,8 +285,11 @@ router.post('/checkout', auth, async (req, res) => {
     // Validate all items are still available
     for (const item of cart.items) {
       const listing = await Listing.findById(item.listing._id || item.listing);
-      if (!listing || !listing.available || listing.sold) {
-        return res.status(400).json({ message: `"${listing?.title || 'Item'}" is no longer available` });
+      if (!listing || ['draft', 'deleted'].includes(listing.status)) {
+        return res.status(400).json({ message: 'An item in your cart is no longer available' });
+      }
+      if (!listing.available || listing.sold) {
+        return res.status(400).json({ message: `"${listing.title}" is no longer available` });
       }
       // TDD-B2 (defense in depth): cart-add blocks self-listings, but a cart
       // written before that guard — or seeded directly — must not be

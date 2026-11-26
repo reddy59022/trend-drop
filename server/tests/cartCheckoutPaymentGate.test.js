@@ -141,6 +141,38 @@ describe('CC · Cart checkout requires a real authorized payment', () => {
     expect(await Transaction.findOne({ listing: l._id })).toBeNull();
   });
 
+  test('CC.7 a draft listing in the cart is rejected at checkout with no side effects', async () => {
+    const l = await mkListing(seller._id);
+    l.status = 'draft';
+    await l.save();
+    await seedCart(l._id);
+    const pi = mockPi('requires_capture');
+    const res = await checkout({ paymentIntentId: pi, shippingAddress: US_ADDRESS });
+    expect(res.status).toBe(400);
+    expect(String(res.body.message)).not.toContain(l.title);
+    expect(await Transaction.findOne({ listing: l._id })).toBeNull();
+    const after = await Listing.findById(l._id);
+    expect(after.quantity).toBe(5);
+    expect(after.sold).toBe(false);
+  });
+
+  test('CC.8 a draft listing cannot be added to or shown in the cart', async () => {
+    const l = await mkListing(seller._id);
+    l.status = 'draft';
+    await l.save();
+
+    const add = await request(app)
+      .post('/api/cart/items')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ listingId: String(l._id), quantity: 1 });
+    expect(add.status).toBe(404);
+
+    await seedCart(l._id);
+    const view = await request(app).get('/api/cart').set('Authorization', `Bearer ${buyerToken}`);
+    expect(view.status).toBe(200);
+    expect(view.body.cart.items).toHaveLength(0);
+  });
+
   test('CC.6 one authorized intent cannot fund a second cart checkout (no replay)', async () => {
     // First purchase consumes the authorization.
     const l1 = await mkListing(seller._id);

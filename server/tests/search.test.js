@@ -59,6 +59,36 @@ describe('v44.0 Advanced Search & Filtering', () => {
     expect(Array.isArray(res.body)).toBe(true);
   });
 
+  test('v44.1b - Draft listings do not contribute public facet values', async () => {
+    const draft = await Listing.create({
+      title: 'Draft Facet Item',
+      description: 'Hidden facet values',
+      price: 10,
+      category: 'Men',
+      condition: 'Good',
+      brand: 'DraftOnlyBrand',
+      color: 'DraftOnlyColor',
+      size: 'DraftOnlySize',
+      images: [],
+      seller: user._id,
+      quantity: 1,
+      available: true,
+      sold: false,
+      status: 'draft',
+    });
+
+    const [brands, colors, sizes] = await Promise.all([
+      request(app).get('/api/search/brands'),
+      request(app).get('/api/search/colors'),
+      request(app).get('/api/search/sizes'),
+    ]);
+    expect(brands.body.map((b) => b.brand)).not.toContain('DraftOnlyBrand');
+    expect(colors.body.map((c) => c.color)).not.toContain('DraftOnlyColor');
+    expect(sizes.body.map((s) => s.size)).not.toContain('DraftOnlySize');
+
+    await Listing.findByIdAndDelete(draft._id);
+  });
+
   test('v44.2 - Should get colors by category', async () => {
     const res = await request(app).get('/api/search/colors?category=Shoes');
     

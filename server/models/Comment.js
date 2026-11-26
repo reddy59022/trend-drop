@@ -20,6 +20,7 @@ const commentSchema = new mongoose.Schema({
   // Hashtags extracted from comment text
   hashtags: [{ 
     type: String,
+    index: true,
   }],
   likes: [{ 
     type: mongoose.Schema.Types.ObjectId, 
@@ -44,7 +45,8 @@ commentSchema.pre('save', function(next) {
   if (this.isModified('text') || this.isNew) {
     const hashtagRegex = /#(\w+)/g;
     const matches = this.text.match(hashtagRegex) || [];
-    this.hashtags = matches.map(m => m.substring(1).toLowerCase());
+    // A tag repeated in one comment is still one comment talking about it.
+    this.hashtags = [...new Set(matches.map(m => m.substring(1).toLowerCase()))];
   }
   next();
 });

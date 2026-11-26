@@ -140,6 +140,38 @@ describe('v43.0 Community Features', () => {
     
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+    // The same tag twice in one comment is one comment, not two.
+    expect(createRes.body.hashtags.filter((tag) => tag === 'trending')).toHaveLength(1);
+    expect(res.body.find((entry) => entry.tag === 'trending').count).toBe(1);
+  });
+
+  test('v43.7b - Comments on hidden listings are not publicly retrievable', async () => {
+    const draft = await Listing.create({
+      title: 'Secret Draft Comment Listing',
+      description: 'Hidden until published',
+      price: 75,
+      category: 'Women',
+      condition: 'New with tags',
+      images: ['https://example.com/secret.jpg'],
+      seller: seller._id,
+      quantity: 1,
+      status: 'draft',
+    });
+    const comment = await Comment.create({
+      listingId: draft._id,
+      userId: user._id,
+      text: 'Hidden item #draftsecret',
+    });
+
+    const feed = await request(app).get(`/api/comments/${draft._id}`);
+    expect(feed.status).toBe(404);
+
+    const tagged = await request(app).get('/api/comments/hashtag/draftsecret');
+    expect(tagged.status).toBe(200);
+    expect(tagged.body.comments.some((c) => String(c._id) === String(comment._id))).toBe(false);
+
+    await Comment.deleteOne({ _id: comment._id });
+    await Listing.findByIdAndDelete(draft._id);
   });
 
   test('v43.8 - Should delete own comment', async () => {
