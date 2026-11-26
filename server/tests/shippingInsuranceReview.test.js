@@ -76,6 +76,23 @@ afterAll(async () => {
   await mongoose.connection.close();
 });
 
+describe('SIR.0 admin claim queue', () => {
+  test('admins can list pending claims; sellers cannot', async () => {
+    const { seller, admin, policy } = await setup();
+
+    const forbidden = await request(app)
+      .get('/api/shipping-insurance/admin/claims')
+      .set('Authorization', `Bearer ${tokenFor(seller)}`);
+    expect(forbidden.status).toBe(403);
+
+    const listed = await request(app)
+      .get('/api/shipping-insurance/admin/claims')
+      .set('Authorization', `Bearer ${tokenFor(admin)}`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.claims.map((c) => String(c._id))).toContain(String(policy._id));
+  });
+});
+
 describe('SIR.1 only admins review insurance claims', () => {
   test('a non-admin cannot approve a claim', async () => {
     const { seller, policy } = await setup();

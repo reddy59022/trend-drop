@@ -18,6 +18,8 @@ import {
   autoSuspendUsers,
   getPendingSellerVerifications,
   reviewSellerBadge,
+  getInsuranceClaims,
+  reviewInsuranceClaim,
 } from '../services/api';
 import { FaShieldAlt, FaUsers, FaList, FaFlag, FaExchangeAlt, FaSearch, FaTimes, FaCheck, FaBan, FaTrash } from 'react-icons/fa';
 import { formatPrice } from '../utils/helpers';
@@ -33,6 +35,7 @@ const Admin = () => {
   const [reports, setReports] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [sellerVerifications, setSellerVerifications] = useState([]);
+  const [insuranceClaims, setInsuranceClaims] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -66,6 +69,9 @@ const Admin = () => {
       } else if (activeTab === 'verifications') {
         const res = await getPendingSellerVerifications();
         setSellerVerifications(res.data.badges || []);
+      } else if (activeTab === 'insurance') {
+        const res = await getInsuranceClaims({ status: 'pending', limit: 50 });
+        setInsuranceClaims(res.data.claims || []);
       }
     } catch (error) {
       console.error('Admin fetch error:', error);
@@ -172,6 +178,25 @@ const Admin = () => {
     }
   };
 
+  const handleInsuranceReview = async (policyId, status) => {
+    const ok = await confirmDialog({
+      title: status === 'approved' ? 'Approve insurance claim?' : 'Deny insurance claim?',
+      message: status === 'approved'
+        ? 'The payout (net of the premium) will be released to the seller.'
+        : 'The seller will see the claim as denied.',
+      confirmLabel: status === 'approved' ? 'Approve' : 'Deny',
+      danger: status !== 'approved',
+    });
+    if (!ok) return;
+    try {
+      await reviewInsuranceClaim(policyId, { status });
+      toast.success(status === 'approved' ? 'Insurance claim approved' : 'Insurance claim denied');
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to review insurance claim');
+    }
+  };
+
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: <FaShieldAlt /> },
     { id: 'users', label: 'Users', icon: <FaUsers /> },
@@ -179,6 +204,7 @@ const Admin = () => {
     { id: 'reports', label: 'Reports', icon: <FaFlag /> },
     { id: 'transactions', label: 'Transactions', icon: <FaExchangeAlt /> },
     { id: 'verifications', label: 'Verifications', icon: <FaCheck /> },
+    { id: 'insurance', label: 'Insurance', icon: <FaShieldAlt /> },
   ];
 
   if (!user || (user.role !== 'admin' && user.role !== 'moderator')) return null;
@@ -191,7 +217,7 @@ const Admin = () => {
 
       {/* Tab Navigation */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 'var(--td-space-lg)', overflowX: 'auto', paddingBottom: 8 }}>
-        {tabs.filter(tab => tab.id !== 'verifications' || user.role === 'admin').map(tab => (
+        {tabs.filter(tab => !['verifications', 'insurance'].includes(tab.id) || user.role === 'admin').map(tab => (
           <button
             key={tab.id}
             onClick={() => { setActiveTab(tab.id); setPage(1); }}
@@ -496,6 +522,51 @@ const Admin = () => {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Insurance Claims Tab */}
+      {activeTab === 'insurance' && (
+        <div>
+          {loading ? (
+            <div className="skeleton" style={{ height: 200, borderRadius: 'var(--td-radius-lg)' }} />
+          ) : (
+            <div className="glass-card" style={{ overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Seller</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Item value</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Premium</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Reason</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {insuranceClaims.length === 0 ? (
+                    <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: 'var(--td-text-tertiary)' }}>No pending insurance claims</td></tr>
+                  ) : (
+                    insuranceClaims.map((c, i) => (
+                      <tr key={c._id} style={{ borderBottom: '1px solid var(--td-border-light)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                        <td style={{ padding: '12px 16px' }}>{c.seller?.name || 'Unknown'}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 600 }}>{formatPrice(c.itemValue || 0, c.currency || 'USD')}</td>
+                        <td style={{ padding: '12px 16px' }}>{formatPrice(c.premium || 0, c.currency || 'USD')}</td>
+                        <td style={{ padding: '12px 16px', color: 'var(--td-text-tertiary)' }}>{c.claim?.reason || 'N/A'}</td>
+                        <td style={{ padding: '12px 16px', display: 'flex', gap: 8 }}>
+                          <button onClick={() => handleInsuranceReview(c._id, 'approved')} className="btn btn-sm btn-primary">
+                            <FaCheck size={12} /> Approve
+                          </button>
+                          <button onClick={() => handleInsuranceReview(c._id, 'denied')} className="btn btn-sm btn-outline" style={{ color: 'var(--td-error)' }}>
+                            <FaTimes size={12} /> Deny
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

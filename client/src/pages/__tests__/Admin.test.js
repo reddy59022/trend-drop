@@ -23,6 +23,7 @@ import {
   getAdminDashboard, getAdminUsers, updateUserRole, suspendUser, unsuspendUser,
   getAdminListings, deleteAdminListing, getAdminReports, updateAdminReportStatus,
   getAdminTransactions, adminRefundTransaction, autoSuspendUsers, getPendingSellerVerifications, reviewSellerBadge,
+  getInsuranceClaims, reviewInsuranceClaim,
 } from '../../services/api';
 import { setAuth, setThemeStore, setCartStore, setConfirm, resetTestState, resetApiMock, renderPage, authUser } from '../../test-utils';
 
@@ -46,6 +47,8 @@ beforeEach(() => {
   autoSuspendUsers.mockResolvedValue({ data: { message: '2 users suspended' } });
   getPendingSellerVerifications.mockResolvedValue({ data: { badges: [] } });
   reviewSellerBadge.mockResolvedValue({ data: { badge: {} } });
+  getInsuranceClaims.mockResolvedValue({ data: { claims: [] } });
+  reviewInsuranceClaim.mockResolvedValue({ data: { insurance: {} } });
 });
 
 describe('Admin page', () => {
@@ -69,6 +72,19 @@ describe('Admin page', () => {
     expect(await screen.findByText('Pending Seller')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Approve/ }));
     await waitFor(() => expect(reviewSellerBadge).toHaveBeenCalledWith('seller-1', { decision: 'approve' }));
+  });
+
+  test('admins can review a pending insurance claim', async () => {
+    const policyId = '507f1f77bcf86cd799439011';
+    getInsuranceClaims.mockResolvedValue({ data: { claims: [{
+      _id: policyId, seller: { name: 'Ins Seller' }, itemValue: 100, premium: 2, currency: 'USD',
+      claim: { reason: 'Lost shipment' },
+    }] } });
+    renderPage(<Admin />);
+    fireEvent.click(await screen.findByRole('button', { name: /Insurance/ }));
+    expect(await screen.findByText('Ins Seller')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Approve/ }));
+    await waitFor(() => expect(reviewInsuranceClaim).toHaveBeenCalledWith(policyId, { status: 'approved' }));
   });
 
   test('renders all five management tabs', async () => {

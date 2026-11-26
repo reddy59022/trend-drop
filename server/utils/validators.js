@@ -116,7 +116,7 @@ const assertObjectId = (req, res, next) => {
     [/^\/transactions\/offer\/([^/]+)/, 'offerId'],
     [/^\/transactions\/(?!batch(?:\/|$)|guest(?:\/|$)|offer(?:\/|$))([^/]+)/, 'transactionId'],
     [/^\/shop-boost\/status\/([^/]+)/, 'sellerId'],
-    [/^\/shipping-insurance\/([^/]+)\/(?:claim|refund)/, 'id'],
+    [/^\/shipping-insurance\/([^/]+)\/(?:claim|refund)(?:\/|$)/, 'id'],
   ];
 
   const pathParam = pathRules.find(([pattern]) => pattern.test(req.path));

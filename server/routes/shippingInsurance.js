@@ -119,6 +119,27 @@ router.get('/my', auth, async (req, res) => {
   }
 });
 
+// GET /api/shipping-insurance/admin/claims - Admin queue of insurance claims
+router.get('/admin/claims', auth, adminAuth, async (req, res) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : 'pending';
+    if (!['pending', 'approved', 'denied', 'all'].includes(status)) {
+      return res.status(400).json({ message: 'status must be pending, approved, denied or all' });
+    }
+    const limit = Math.max(1, Math.min(Number(req.query.limit) || 50, 100));
+    const query = status === 'all' ? {} : { 'claim.status': status };
+    const claims = await ShippingInsurance.find(query)
+      .populate('seller', 'name email')
+      .populate('transaction', 'status itemPrice currency')
+      .sort({ createdAt: -1 })
+      .limit(limit);
+    res.json({ claims });
+  } catch (error) {
+    console.error('List insurance claims error:', error);
+    res.status(500).json({ message: 'Failed to list insurance claims' });
+  }
+});
+
 // POST /api/shipping-insurance/:id/claim - File a claim
 router.post('/:id/claim', auth, async (req, res) => {
   try {

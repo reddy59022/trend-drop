@@ -274,7 +274,8 @@ router.post('/label/:transactionId', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only the seller can generate shipping labels' });
     }
 
-    if (transaction.shipping?.trackingNumber) {
+    // A voided label must be replaceable; only a live label blocks generation.
+    if (transaction.shipping?.trackingNumber && !transaction.shipping?.voided) {
       return res.status(400).json({ message: 'Label already generated for this transaction' });
     }
 
@@ -292,6 +293,9 @@ router.post('/label/:transactionId', auth, async (req, res) => {
       ...label,
       labelCreated: true,
       labelCreatedDate: new Date(),
+      voided: false,
+      voidedAt: null,
+      voidedBy: null,
     };
     // Creating/printing a label is not proof that the carrier accepted the
     // parcel. Keep the paid state until the seller dispatches it through the
@@ -405,8 +409,8 @@ router.get('/label/:transactionId', auth, async (req, res) => {
       return res.status(410).json({ message: 'Shipping label has been voided; generate a new label before downloading.' });
     }
 
-    // If no real label data, generate it
-    if (!transaction.shipping?.trackingNumber) {
+    // If no real label data (or the previous label was voided), generate it
+    if (!transaction.shipping?.trackingNumber || transaction.shipping?.voided) {
       const { getPreferredCarrier: gpc } = require('../config/shipping');
       const sellerCountry = transaction.sellerAddress?.country || transaction.seller?.shippingAddress?.country || 'US';
       const toCountry = transaction.shippingAddress?.country || 'US';
@@ -422,6 +426,9 @@ router.get('/label/:transactionId', auth, async (req, res) => {
         ...label,
         labelCreated: true,
         labelCreatedDate: new Date(),
+        voided: false,
+        voidedAt: null,
+        voidedBy: null,
       };
       await transaction.save();
     }
@@ -507,7 +514,7 @@ router.post('/generate-label', auth, async (req, res) => {
     const buyerCountry = transaction.shippingAddress?.country || 'US';
     const carrierCode = requestedCarrier || getPreferredCarrier(buyerCountry, sellerCountry === buyerCountry);
 
-    if (transaction.shipping?.trackingNumber) {
+    if (transaction.shipping?.trackingNumber && !transaction.shipping?.voided) {
       return res.json({
         trackingNumber: transaction.shipping.trackingNumber,
         carrier: transaction.shipping.carrier,
@@ -535,6 +542,9 @@ router.post('/generate-label', auth, async (req, res) => {
       estimatedDelivery: new Date(label.estimatedDelivery),
       service: label.service,
       trackingHistory: label.statusHistory,
+      voided: false,
+      voidedAt: null,
+      voidedBy: null,
     };
     // Label creation is not dispatch confirmation. Keep the transaction paid
     // until the seller ships it or a trusted carrier event advances it.

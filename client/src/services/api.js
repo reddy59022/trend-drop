@@ -343,6 +343,8 @@ export const purchaseShippingInsurance = (data) => api.post('/shipping-insurance
 export const getMyInsurancePolicies = () => api.get('/shipping-insurance/my');
 export const fileInsuranceClaim = (policyId, data) => withValidResourceId(policyId, 'insurance policy', () => api.post(`/shipping-insurance/${policyId}/claim`, data));
 export const refundShippingInsurance = (policyId) => withValidResourceId(policyId, 'insurance policy', () => api.post(`/shipping-insurance/${policyId}/refund`));
+export const getInsuranceClaims = (params = {}) => api.get('/shipping-insurance/admin/claims', { params });
+export const reviewInsuranceClaim = (policyId, data) => withValidResourceId(policyId, 'insurance policy', () => api.put(`/shipping-insurance/${policyId}/claim/review`, data));
 
 // ====== Cart (v29.0) ======
 export const getCart = () => api.get('/cart');
