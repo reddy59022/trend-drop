@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const Party = require('../models/Party');
 const Listing = require('../models/Listing');
-const { auth } = require('../middleware/auth');
+const { auth, optionalAuth } = require('../middleware/auth');
 const { asNumber } = require('../utils/validators');
 
 // GET /api/parties - List active/scheduled parties with pagination
@@ -42,15 +42,22 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/parties/:id - Get single party details
-router.get('/:id', async (req, res) => {
+router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const party = await Party.findById(req.params.id)
       .populate('listingIds', 'title price images available');
-    
+
     if (!party) {
       return res.status(404).json({ message: 'Party not found' });
     }
-    
+
+    // A private party is visible only to its host. The list endpoint already
+    // omits cancelled parties; detail must not leak hidden ones by id.
+    const isHost = req.user && String(party.hostId) === String(req.user._id);
+    if (party.isPublic === false && !isHost) {
+      return res.status(404).json({ message: 'Party not found' });
+    }
+
     res.json(party);
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch party' });
@@ -149,16 +156,24 @@ router.post('/:id/share', auth, async (req, res) => {
 // POST /api/parties/:id/join - Join a party (increment participant count)
 router.post('/:id/join', auth, async (req, res) => {
   try {
-    const party = await Party.findById(req.params.id);
-    
+    // Atomic unique join: only a first-time participant increments the count.
+    // The previous read-modify-write incremented on every click/reconnect, so
+    // one user could inflate a party's public attendance arbitrarily.
+    const joined = await Party.findOneAndUpdate(
+      { _id: req.params.id, participants: { $ne: req.user._id } },
+      { $addToSet: { participants: req.user._id }, $inc: { participantCount: 1 } },
+      { new: true }
+    );
+    if (joined) {
+      return res.json({ participantCount: joined.participantCount });
+    }
+
+    const party = await Party.findById(req.params.id).select('participantCount');
     if (!party) {
       return res.status(404).json({ message: 'Party not found' });
     }
-    
-    party.participantCount += 1;
-    await party.save();
-    
-    res.json({ participantCount: party.participantCount });
+    // Already joined — idempotent success with the unchanged count.
+    return res.json({ participantCount: party.participantCount });
   } catch (error) {
     res.status(500).json({ message: 'Failed to join party' });
   }

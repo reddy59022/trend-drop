@@ -98,6 +98,13 @@ router.post('/:listingId', auth, async (req, res) => {
     if (!listing) {
       return res.status(404).json({ message: 'Listing not found' });
     }
+
+    // Unpublished/removed listings are not publicly retrievable, so they must
+    // not accept public interactions either (a draft comment leaked the
+    // listing's existence and created social state for a hidden item).
+    if (listing.status === 'draft' || listing.status === 'deleted') {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
     
     // If it's a reply, validate parentId
     if (parentId) {

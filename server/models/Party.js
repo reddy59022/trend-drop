@@ -53,6 +53,12 @@ const PartySchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  // Unique participants, used to make join idempotent: repeated clicks and
+  // reconnects must not inflate the public participant count.
+  participants: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
   shareCount: {
     type: Number,
     default: 0,

@@ -150,7 +150,8 @@ router.post('/:id/join', auth, async (req, res) => {
     
     if (!alreadyJoined) {
       event.viewers.push(req.user._id);
-      event.viewCount = (event.viewers.length || 0) + 1;
+      // viewCount is a lifetime counter: the first viewer is 1, not 2.
+      event.viewCount = (event.viewCount || 0) + 1;
       await event.save();
     }
     

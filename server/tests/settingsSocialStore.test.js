@@ -56,13 +56,15 @@ describe('Settings: Social Links & Store Customization', () => {
     expect(res.body.store.colorTheme).toBe('#FF385C');
   });
 
-  test('SS.4 PUT /api/auth/profile updates isVerified', async () => {
+  test('SS.4 PUT /api/auth/profile cannot self-assign isVerified', async () => {
+    // Verification is a platform trust decision, never a self-service field.
     const res = await request(app)
       .put('/api/auth/profile')
       .set('Authorization', `Bearer ${token}`)
       .send({ isVerified: true });
-    expect(res.status).toBe(200);
-    expect(res.body.isVerified).toBe(true);
+    expect(res.status).toBe(400);
+    const stored = await User.findById(user._id);
+    expect(stored.isVerified).toBe(false);
   });
 
   test('SS.5 Social links persist across fetches', async () => {
@@ -70,7 +72,7 @@ describe('Settings: Social Links & Store Customization', () => {
     expect(res.status).toBe(200);
     expect(res.body.socialLinks.instagram).toBe('testuser');
     expect(res.body.store.tagline).toBe('Best vintage store');
-    expect(res.body.isVerified).toBe(true);
+    expect(res.body.isVerified).toBe(false);
   });
 
   test('SS.6 Partial socialLinks update works', async () => {

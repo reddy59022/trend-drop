@@ -67,13 +67,31 @@ router.get('/seller/:sellerId', async (req, res) => {
 });
 
 // GET /api/collections/:id - Get single collection with listings
-router.get('/:id', async (req, res) => {
+// A deactivated collection is hidden from the storefront (the seller list
+// endpoint already filters on isActive) and must not stay readable by id.
+// Public consumers also only see catalog-visible listings: draft, sold and
+// out-of-stock items are stripped just as they are from the public closet.
+router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const collection = await Collection.findById(req.params.id)
-      .populate('listings', 'title price images category condition likes')
+      .populate('listings', 'title price images category condition likes status available sold quantity')
       .populate('seller', 'name avatar closetName');
 
     if (!collection) return res.status(404).json({ message: 'Collection not found' });
+
+    const isOwner = req.user && String(collection.seller?._id || collection.seller) === String(req.user._id);
+    if (collection.isActive === false && !isOwner) {
+      return res.status(404).json({ message: 'Collection not found' });
+    }
+
+    if (!isOwner) {
+      const obj = collection.toObject();
+      obj.listings = (obj.listings || []).filter((l) =>
+        l && l.status === 'active' && l.available !== false && l.sold !== true
+        && (l.quantity === undefined || l.quantity > 0));
+      return res.json(obj);
+    }
+
     res.json(collection);
   } catch (error) {
     console.error('Get collection error:', error);

@@ -407,7 +407,11 @@ router.get('/:id', optionalAuth, async (req, res) => {
       return res.status(404).json({ message: 'Listing not found' });
     }
 
-    if (listing.status === 'draft' && (!req.user || listing.seller._id.toString() !== req.user._id.toString())) {
+    // Drafts are visible only to their owner. Soft-deleted listings (written
+    // by account deletion) must never be served again — they were previously
+    // still publicly readable by id.
+    const isOwner = req.user && listing.seller._id.toString() === req.user._id.toString();
+    if (listing.status === 'deleted' || (listing.status === 'draft' && !isOwner)) {
       return res.status(404).json({ message: 'Listing not found' });
     }
 

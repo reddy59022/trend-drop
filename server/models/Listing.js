@@ -114,10 +114,14 @@ const listingSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   }],
-  // Listing status: draft (hidden), active (visible), sold (purchased)
+  // Listing status: draft (hidden), active (visible), sold (purchased),
+  // deleted (soft-deleted with the seller's account; never publicly served).
+  // 'deleted' was already written by DELETE /api/auth/account, but was missing
+  // from this enum — any later save() of such a document threw a
+  // ValidationError.
   status: {
     type: String,
-    enum: ['draft', 'active', 'sold'],
+    enum: ['draft', 'active', 'sold', 'deleted'],
     default: 'active',
   },
   sold: {

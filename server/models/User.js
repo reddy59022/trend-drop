@@ -213,7 +213,22 @@ const userSchema = new mongoose.Schema({
     read: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
   }],
-}, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true, transform: stripSensitiveUserFields },
+  toObject: { virtuals: true, transform: stripSensitiveUserFields },
+});
+
+// Never serialize credential material. PUT /api/auth/profile and
+// PUT /api/auth/avatar return the user document directly; without this
+// transform those responses carried the bcrypt password hash and the live
+// email-verification token.
+function stripSensitiveUserFields(_doc, ret) {
+  delete ret.password;
+  delete ret.verificationToken;
+  delete ret.verificationTokenExpires;
+  return ret;
+}
 
 // Virtual 'id' field for client compatibility
 userSchema.virtual('id').get(function () {

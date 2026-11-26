@@ -138,9 +138,15 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    // Must match the public closet exactly (active, in stock, unsold).
+    // Counting every unsold listing inflated the public profile with the
+    // seller's drafts, paused and soft-deleted items.
     const listingsCount = await Listing.countDocuments({
       seller: user._id,
       sold: false,
+      status: 'active',
+      available: true,
+      quantity: { $gt: 0 },
     });
 
     const profile = user.toObject();

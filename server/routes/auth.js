@@ -19,36 +19,43 @@ const generateToken = (user) => {
   return jwt.sign({ id: user._id }, getJwtSecret(), { expiresIn: '30d' });
 };
 
+// Authoritative user shape returned to the client after login/verification.
+// `role` MUST be included: the client's ProtectedRoute gates /admin and
+// /admin/legal on user.role, so omitting it made every role-gated screen
+// unreachable even for administrators.
+const serializeUser = (user) => ({
+  _id: user._id,
+  name: user.name,
+  email: user.email,
+  avatar: user.avatar,
+  bio: user.bio,
+  role: user.role,
+  country: user.country,
+  currency: user.currency,
+  language: user.language,
+  phone: user.phone,
+  phoneCode: user.phoneCode,
+  shippingAddress: user.shippingAddress,
+  balance: user.balance,
+  payoutMethod: user.payoutMethod,
+  stats: user.stats,
+  followers: user.followers,
+  following: user.following,
+  closetName: user.closetName,
+  location: user.location,
+  emailVerified: user.emailVerified,
+  authProvider: user.authProvider,
+  googleId: user.googleId,
+  legalConsent: user.legalConsent,
+  ageConfirmed: user.ageConfirmed,
+  isVerified: user.isVerified,
+  socialLinks: user.socialLinks,
+  store: user.store,
+});
+
 const userResponse = (user, token) => ({
   token,
-  user: {
-    _id: user._id,
-    name: user.name,
-    email: user.email,
-    avatar: user.avatar,
-    bio: user.bio,
-    country: user.country,
-    currency: user.currency,
-    language: user.language,
-    phone: user.phone,
-    phoneCode: user.phoneCode,
-    shippingAddress: user.shippingAddress,
-    balance: user.balance,
-    payoutMethod: user.payoutMethod,
-    stats: user.stats,
-    followers: user.followers,
-    following: user.following,
-    closetName: user.closetName,
-    location: user.location,
-    emailVerified: user.emailVerified,
-    authProvider: user.authProvider,
-    googleId: user.googleId,
-    legalConsent: user.legalConsent,
-    ageConfirmed: user.ageConfirmed,
-    isVerified: user.isVerified,
-    socialLinks: user.socialLinks,
-    store: user.store,
-  },
+  user: serializeUser(user),
 });
 
 // ============================================================
@@ -825,6 +832,7 @@ router.get('/me', auth, async (req, res) => {
       email: user.email,
       avatar: user.avatar,
       bio: user.bio,
+      role: user.role,
       country: user.country,
       currency: user.currency,
       language: user.language,
@@ -861,7 +869,16 @@ router.put('/profile', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const allowed = ['name', 'bio', 'country', 'currency', 'language', 'phone', 'phoneCode', 'closetName', 'location', 'shippingAddress', 'isVerified'];
+    // Trust indicators are server-managed. `isVerified` used to be in this
+    // list, which let any account award itself the public "Verified Seller"
+    // badge. Verification is granted only through admin badge review.
+    if (req.body.isVerified !== undefined) {
+      return res.status(400).json({
+        message: 'isVerified is managed by TrendDrop verification review and cannot be self-assigned',
+      });
+    }
+
+    const allowed = ['name', 'bio', 'country', 'currency', 'language', 'phone', 'phoneCode', 'closetName', 'location', 'shippingAddress'];
 
     // Hostile-input guard. These values are written straight into the schema by
     // the loop below, so a wrong-typed value either throws a CastError ("Cast
@@ -880,9 +897,6 @@ router.put('/profile', auth, async (req, res) => {
       if (max !== undefined && value.trim().length > max) {
         return res.status(400).json({ message: `${field} must be at most ${max} characters` });
       }
-    }
-    if (req.body.isVerified !== undefined && typeof req.body.isVerified !== 'boolean') {
-      return res.status(400).json({ message: 'isVerified must be a boolean' });
     }
     if (req.body.shippingAddress !== undefined
       && (req.body.shippingAddress === null
