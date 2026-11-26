@@ -10,6 +10,7 @@ const { paginate } = require('../utils/pagination');
 const { isInternationalShippingEnabled } = require('../config/features');
 const { hasActiveShopBoost, applyShopBoostToSeller } = require('../services/shopBoostService');
 const { parseAutoRespondBody, buildAutoRespondForCreate } = require('../services/autoRespondService');
+const { getWishlistUserIds, notifyWishlisters } = require('../services/wishlistAlerts');
 
 const LISTING_LIST_FIELDS = 'title price originalPrice images videoUrl seller category brand size condition likes sold createdAt status boost';
 const USER_PUBLIC_FIELDS = 'name avatar';
@@ -773,13 +774,25 @@ router.put('/:id', auth, (req, res, next) => {
         console.error('PriceHistory record error:', histErr);
       }
 
-      // Notify all likers (excluding seller)
+      // Notify likers AND wishlisters (excluding the seller). A user who did
+      // both is deduped so they receive exactly one alert.
       const likers = listing.likes.filter(l => l.toString() !== req.user._id.toString());
-      if (likers.length > 0) {
+      let wishlistUserIds = [];
+      try {
+        wishlistUserIds = await getWishlistUserIds(listing._id, req.user._id);
+      } catch (watchErr) {
+        console.error('Wishlist watcher lookup error:', watchErr);
+      }
+      const recipientIds = [...new Set([
+        ...likers.map((id) => id.toString()),
+        ...wishlistUserIds,
+      ])];
+
+      if (recipientIds.length > 0) {
         const message = `Price drop! "${listing.title}" is now $${newPrice} (was $${oldPrice}, ${dropPercent}% off)`;
-        const bulkOps = likers.map(likerId => ({
+        const bulkOps = recipientIds.map(recipientId => ({
           updateOne: {
-            filter: { _id: likerId },
+            filter: { _id: recipientId },
             update: {
               $push: {
                 notifications: {
@@ -1280,6 +1293,19 @@ router.post('/:id/relist', auth, async (req, res) => {
       quantitySold: 0,
       reserved: 0,
     });
+
+    // A relist is a restock: everyone who wishlisted the sold item is told
+    // the item is available again, pointing at the new listing.
+    try {
+      await notifyWishlisters(source._id, {
+        type: 'restock',
+        message: `Back in stock! "${relisted.title}" has been relisted and is available again.`,
+        excludeUserId: req.user._id,
+        linkListingId: relisted._id,
+      });
+    } catch (notifyErr) {
+      console.error('Relist wishlist notification error:', notifyErr.message);
+    }
 
     // Return wrapped in { listing: ... } for client compatibility and use 200 status
     res.status(200).json({ listing: relisted });

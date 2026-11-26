@@ -44,12 +44,14 @@ const Notifications = () => {
       case 'purchase': return <FaDollarSign size={16} />;
       case 'shipping': return <FaEnvelope size={16} />;
       case 'review': return <FaStar size={16} />;
+      case 'priceDrop': return <FaDollarSign size={16} />;
+      case 'restock': return <FaShoppingBag size={16} />;
       default: return <FaBell size={16} />;
     }
   };
 
   const getIconColor = (type) => {
-    const colors = { like: '#FF4D6D', comment: '#3D9BFF', follow: '#00D4FF', offer: '#FFB86B', sale: '#10D98E', share: '#6C3BFF', purchase: '#10D98E', shipping: '#3D9BFF', review: '#FFD700' };
+    const colors = { like: '#FF4D6D', comment: '#3D9BFF', follow: '#00D4FF', offer: '#FFB86B', sale: '#10D98E', share: '#6C3BFF', purchase: '#10D98E', shipping: '#3D9BFF', review: '#FFD700', priceDrop: '#FF4D6D', restock: '#10D98E' };
     return colors[type] || '#8E8EA0';
   };
 
@@ -57,6 +59,7 @@ const Notifications = () => {
     switch (notification.type) {
       case 'follow': return `/profile/${notification.from?._id || notification.from}`;
       case 'like': case 'comment': case 'offer': case 'sale': case 'share':
+      case 'priceDrop': case 'restock':
         return `/listing/${notification.listing?._id}`;
       default: return '#';
     }

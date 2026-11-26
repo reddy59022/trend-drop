@@ -441,8 +441,11 @@ router.post('/:id/close', auth, async (req, res) => {
     }
 
     // Idempotency: an auction can only be closed once — a replay must never
-    // mint a second winner transaction for the same auction.
-    if (auction.status === 'closed' && auction.closeFinalized !== false) {
+    // mint a second winner transaction for the same auction. A closed auction
+    // with closeFinalized === false is a previous attempt that failed while
+    // creating the order; that state is recoverable, not final.
+    const isRecovery = auction.status === 'closed' && auction.closeFinalized === false;
+    if (auction.status === 'closed' && !isRecovery) {
       return res.status(400).json({ message: 'Auction already closed' });
     }
     if (auction.status === 'cancelled') {
@@ -454,119 +457,142 @@ router.post('/:id/close', auth, async (req, res) => {
       return res.status(400).json({ message: 'Auction has not ended yet' });
     }
     
-    // Determine winner
+    // Determine winner. On a recovery pass the winner is already stored, and
+    // the listing is already claimed (sold), so it must not be claimed again.
     let winner = null;
     let winningBid = 0;
     let winningCurrency = auction.currency || 'USD';
-    let claimedListing = null;
     let noWinnerReason = 'reserve price not met or no bids';
 
-    if (auction.bids.length > 0 && auction.currentBid >= auction.reservePrice) {
-      const highestBid = auction.bids.reduce((max, bid) => bid.amount > max.amount ? bid : max, auction.bids[0]);
+    if (isRecovery && auction.winner) {
+      winner = auction.winner;
+      winningBid = auction.winningBid;
+      winningCurrency = auction.winningCurrency || auction.currency || 'USD';
+    } else {
+      if (auction.bids.length > 0 && auction.currentBid >= auction.reservePrice) {
+        const highestBid = auction.bids.reduce((max, bid) => bid.amount > max.amount ? bid : max, auction.bids[0]);
 
-      // Claim the item ATOMICALLY before declaring a winner. The listing may
-      // have been sold through the normal catalog while the auction was
-      // running; marking it sold again and creating a second transaction would
-      // charge the winner for an item the seller no longer has. A failed claim
-      // (sold / paused / out of stock) closes the auction with no winner.
-      claimedListing = await Listing.findOneAndUpdate(
-        {
-          _id: auction.listing._id || auction.listing,
-          sold: { $ne: true },
-          available: { $ne: false },
-          quantity: { $gt: 0 },
-        },
-        { $set: { sold: true, available: false } },
-        { new: true },
-      );
+        // Claim the item ATOMICALLY before declaring a winner. The listing may
+        // have been sold through the normal catalog while the auction was
+        // running; marking it sold again and creating a second transaction would
+        // charge the winner for an item the seller no longer has. A failed claim
+        // (sold / paused / out of stock) closes the auction with no winner.
+        const claimedListing = await Listing.findOneAndUpdate(
+          {
+            _id: auction.listing._id || auction.listing,
+            sold: { $ne: true },
+            available: { $ne: false },
+            quantity: { $gt: 0 },
+          },
+          { $set: { sold: true, available: false } },
+          { new: true },
+        );
 
-      if (claimedListing) {
-        winner = highestBid.bidder;
-        winningBid = highestBid.amount;
-        winningCurrency = highestBid.currency || auction.currency || 'USD';
-      } else {
-        noWinnerReason = 'the item is no longer available';
+        if (claimedListing) {
+          winner = highestBid.bidder;
+          winningBid = highestBid.amount;
+          winningCurrency = highestBid.currency || auction.currency || 'USD';
+        } else {
+          noWinnerReason = 'the item is no longer available';
+        }
       }
+
+      auction.winner = winner;
+      auction.winningBid = winningBid;
+      auction.winningCurrency = winningCurrency;
+      auction.status = 'closed';
+      // Only final once the winner's order exists. A failed create leaves this
+      // false so /close can be retried instead of stranding the winner.
+      auction.closeFinalized = !winner;
+
+      if (auction.streamInfo) {
+        auction.streamInfo.isLive = false;
+        auction.streamInfo.endedAt = new Date();
+      }
+
+      await auction.save();
     }
-    
-    auction.winner = winner;
-    auction.winningBid = winningBid;
-    auction.winningCurrency = winningCurrency;
-    auction.status = 'closed';
-    auction.closeFinalized = true;
-    
-    // Stop any active stream
-    if (auction.streamInfo) {
-      auction.streamInfo.isLive = false;
-      auction.streamInfo.endedAt = new Date();
-    }
-    
-    await auction.save();
     
     // Create the winner's order (the listing was already claimed above)
     if (winner) {
-      // Create transaction/order server-side (enterprise standard)
-      const listing = await Listing.findById(claimedListing._id).populate('seller');
-      
-      // Calculate fees
-      const platformFeePercent = 8; // 8% platform fee
-      const platformFee = Math.round(winningBid * platformFeePercent / 100 * 100) / 100;
-      const sellerEarnings = Math.round((winningBid - platformFee) * 100) / 100;
-      
-      // Create transaction record
-      // NOTE: 'pending_payment' is NOT in the Transaction status enum and would
-      // throw a ValidationError — use 'pending' (unpaid order). Required fields
-      // itemPrice/paymentBreakdown.subtotal/totalPaid/sellerEarnings must be set.
-      const transaction = await Transaction.create({
-        buyer: winner,
-        seller: listing.seller._id,
-        listing: listing._id,
-        auction: auction._id,
-        quantity: 1,
-        itemPrice: winningBid,
-        currency: winningCurrency,
-        amount: winningBid,
-        platformFee,
-        sellerEarnings,
-        paymentBreakdown: {
-          subtotal: winningBid,
-          shippingCost: 0,
-          buyerProtectionFee: 0,
-          tax: 0,
-          totalPaid: winningBid,
+      const listing = await Listing.findById(auction.listing._id || auction.listing).populate('seller');
+      if (!listing) {
+        return res.status(500).json({ message: 'Auction listing could not be loaded' });
+      }
+
+      // Reuse an order from a previous attempt so a retry is exactly-once.
+      let transaction = await Transaction.findOne({ auction: auction._id });
+      const createdTransaction = !transaction;
+
+      if (!transaction) {
+        // Calculate fees
+        const platformFeePercent = 8; // 8% platform fee
+        const platformFee = Math.round(winningBid * platformFeePercent / 100 * 100) / 100;
+        const sellerEarnings = Math.round((winningBid - platformFee) * 100) / 100;
+
+        // Create transaction record
+        // NOTE: 'pending_payment' is NOT in the Transaction status enum and would
+        // throw a ValidationError — use 'pending' (unpaid order). Required fields
+        // itemPrice/paymentBreakdown.subtotal/totalPaid/sellerEarnings must be set.
+        transaction = await Transaction.create({
+          buyer: winner,
+          seller: listing.seller._id,
+          listing: listing._id,
+          auction: auction._id,
+          quantity: 1,
+          itemPrice: winningBid,
+          currency: winningCurrency,
+          amount: winningBid,
           platformFee,
-          platformFeePercent,
-          shippingPayout: 0,
           sellerEarnings,
-        },
-        status: 'pending', // Winner needs to pay
-        paymentStatus: 'pending',
-        shippingAddress: null, // Will be collected during checkout
-      });
-      
-      // Notify winner
-      const winnerUser = await User.findById(winner);
-      if (winnerUser) {
-        winnerUser.notifications.unshift({
-          type: 'purchase',
-          listing: listing._id,
-          transaction: transaction._id,
-          message: `Congratulations! You won the auction for "${listing.title}" with a bid of $${winningBid}. Please complete payment.`,
+          paymentBreakdown: {
+            subtotal: winningBid,
+            shippingCost: 0,
+            buyerProtectionFee: 0,
+            tax: 0,
+            totalPaid: winningBid,
+            platformFee,
+            platformFeePercent,
+            shippingPayout: 0,
+            sellerEarnings,
+          },
+          status: 'pending', // Winner needs to pay
+          paymentStatus: 'pending',
+          shippingAddress: null, // Will be collected during checkout
         });
-        await winnerUser.save();
       }
-      
-      // Notify seller
-      const sellerUser = await User.findById(listing.seller._id);
-      if (sellerUser) {
-        sellerUser.notifications.unshift({
-          type: 'sale',
-          listing: listing._id,
-          transaction: transaction._id,
-          message: `Your auction for "${listing.title}" ended! Winner bid $${winningBid}. You'll earn $${sellerEarnings} after fees.`,
-        });
-        await sellerUser.save();
+
+      const sellerEarnings = transaction.paymentBreakdown.sellerEarnings;
+
+      if (createdTransaction) {
+        // Notify winner
+        const winnerUser = await User.findById(winner);
+        if (winnerUser) {
+          winnerUser.notifications.unshift({
+            type: 'purchase',
+            listing: listing._id,
+            transaction: transaction._id,
+            message: `Congratulations! You won the auction for "${listing.title}" with a bid of $${winningBid}. Please complete payment.`,
+          });
+          await winnerUser.save();
+        }
+
+        // Notify seller
+        const sellerUser = await User.findById(listing.seller._id);
+        if (sellerUser) {
+          sellerUser.notifications.unshift({
+            type: 'sale',
+            listing: listing._id,
+            transaction: transaction._id,
+            message: `Your auction for "${listing.title}" ended! Winner bid $${winningBid}. You'll earn $${sellerEarnings} after fees.`,
+          });
+          await sellerUser.save();
+        }
       }
+
+      // The order now exists; mark the auction terminal.
+      auction.closeFinalized = true;
+      await auction.save();
       
       // Return auction with transaction info
       const populatedAuction = await Auction.findById(auction._id)

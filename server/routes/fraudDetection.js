@@ -5,9 +5,7 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const { isValidObjectId } = require('../utils/validators');
-
-// In-memory store for velocity tracking (in production, use Redis)
-const velocityTracker = new Map();
+const velocityTracker = require('../utils/velocityTracker');
 
 // ===================== FRAUD DETECTION CHECK =====================
 // POST /api/fraud/check - Check transaction for fraud risk
@@ -40,9 +38,7 @@ router.post('/check', auth, async (req, res) => {
     
     // Check 1: Velocity - Too many transactions in short time
     const userId = req.user._id.toString();
-    const recentTransactions = velocityTracker.get(userId) || [];
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    const recentCount = recentTransactions.filter(t => t > oneHourAgo).length;
+    const recentCount = velocityTracker.count(userId, Date.now());
     
     if (recentCount > 5) {
       risks.push({ type: 'high_velocity', severity: 'medium', count: recentCount });
@@ -81,8 +77,8 @@ router.post('/check', auth, async (req, res) => {
     if (riskScore >= 50) riskLevel = 'high';
     else if (riskScore >= 25) riskLevel = 'medium';
     
-    // Record this transaction for velocity tracking
-    velocityTracker.set(userId, [...recentTransactions, Date.now()]);
+    // Record this check for velocity tracking (bounded window + cap).
+    velocityTracker.record(userId);
     
     res.json({
       riskScore,
