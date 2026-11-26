@@ -19,7 +19,8 @@ const normalizeCarrier = (value) => {
 // GET /api/advanced-shipping - Get shipping integrations
 router.get('/', auth, async (req, res) => {
   try {
-    const integrations = await ShippingIntegration.find({ user: req.user._id });
+    // Carrier credentials are server-side only; never serialize apiKey.
+    const integrations = await ShippingIntegration.find({ user: req.user._id }).select('-apiKey');
     res.json(integrations);
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch shipping integrations' });
@@ -46,14 +47,19 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'accountNumber must be a string' });
     }
 
-    const integration = await ShippingIntegration.create({
-      user: req.user._id,
-      carrier,
-      apiKey,
-      accountNumber
-    });
+    // One integration per carrier: reconnecting must rotate the stored key
+    // instead of leaving a duplicate whose stale key wins /rates lookups.
+    const updates = { apiKey, isActive: true };
+    if (accountNumber !== undefined && accountNumber !== null) updates.accountNumber = accountNumber;
+    const integration = await ShippingIntegration.findOneAndUpdate(
+      { user: req.user._id, carrier },
+      { $set: updates },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
 
-    res.status(201).json(integration);
+    const safeIntegration = integration.toObject();
+    delete safeIntegration.apiKey;
+    res.status(201).json(safeIntegration);
   } catch (error) {
     res.status(500).json({ message: 'Failed to add shipping integration' });
   }
