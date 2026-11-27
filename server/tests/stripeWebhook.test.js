@@ -163,7 +163,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       },
     });
 
-    it('WH.4 "won" re-delivery credits the seller exactly once', async () => {
+    it('WH.4 "won" re-delivery does not pay the seller twice for the same sale', async () => {
       // Setup: transaction must have stripePaymentIntentId AND existing disputeInfo
       tx.stripePaymentIntentId = 'pi_test_123';
       tx.disputeInfo = {
@@ -184,10 +184,95 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(updated.disputeInfo.status).toBe('won');
 
       const s = await User.findById(seller._id);
-      expect(s.balance.pending).toBe(145); // 100 + 45 exactly once
+      // The sale's earnings were already credited when the order was placed and
+      // opening a dispute never debits them, so winning must not credit again.
+      expect(s.balance.pending).toBe(100);
       const disputeNotes = s.notifications.filter((n) => n.type === 'dispute');
       // 1 notification from dispute.updated (won) — no created event in this setup
       expect(disputeNotes.length).toBe(1);
+    });
+
+    const closedEvent = (status) => ({
+      type: 'charge.dispute.closed',
+      data: {
+        object: {
+          id: 'dp_test_1',
+          payment_intent: 'pi_test_123',
+          status,
+          evidence_details: { due_by: 1893456000 },
+        },
+      },
+    });
+
+    it('WH.15 closed(won) settles the order without crediting the sale twice', async () => {
+      // Stripe's real lifecycle: created → updated(under_review) →
+      // funds_reinstated → closed(won). No updated event carries 'won'.
+      tx.status = 'chargeback_open';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
+      await tx.save();
+
+      const first = await postWebhook(closedEvent('won'));
+      expect(first.status).toBe(200);
+      let updated = await Transaction.findById(tx._id);
+      expect(updated.status).toBe('chargeback_won');
+      expect(updated.disputeInfo.status).toBe('won');
+      expect(updated.disputeInfo.closedAt).toBeTruthy();
+      let s = await User.findById(seller._id);
+      expect(s.balance.pending).toBe(100);
+      expect(s.notifications.filter((n) => n.type === 'dispute').length).toBe(1);
+      const closedAt = updated.disputeInfo.closedAt;
+
+      const replay = await postWebhook(closedEvent('won'));
+      expect(replay.status).toBe(200);
+      updated = await Transaction.findById(tx._id);
+      s = await User.findById(seller._id);
+      expect(updated.status).toBe('chargeback_won');
+      expect(String(updated.disputeInfo.closedAt)).toBe(String(closedAt));
+      expect(s.balance.pending).toBe(100);
+      expect(s.notifications.filter((n) => n.type === 'dispute').length).toBe(1);
+    });
+
+    it('WH.16 closed(lost) debits the seller exactly once', async () => {
+      tx.status = 'chargeback_open';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'needs_response' };
+      await tx.save();
+
+      const first = await postWebhook(closedEvent('lost'));
+      expect(first.status).toBe(200);
+      let updated = await Transaction.findById(tx._id);
+      expect(updated.status).toBe('chargeback_lost');
+      let s = await User.findById(seller._id);
+      expect(s.balance.pending).toBe(55); // 100 - 45 exactly once
+      expect(s.notifications.filter((n) => n.type === 'dispute').length).toBe(1);
+
+      const replay = await postWebhook(closedEvent('lost'));
+      expect(replay.status).toBe(200);
+      updated = await Transaction.findById(tx._id);
+      s = await User.findById(seller._id);
+      expect(updated.status).toBe('chargeback_lost');
+      expect(s.balance.pending).toBe(55);
+      expect(s.notifications.filter((n) => n.type === 'dispute').length).toBe(1);
+    });
+
+    it('WH.17 the real created/under_review/closed(won) sequence settles once', async () => {
+      tx.status = 'chargeback_open';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'needs_response' };
+      await tx.save();
+
+      const progress = await postWebhook(disputeEvent('under_review'));
+      expect(progress.status).toBe(200);
+      let updated = await Transaction.findById(tx._id);
+      expect(updated.status).toBe('chargeback_open');
+      expect(updated.disputeInfo.status).toBe('under_review');
+
+      await postWebhook(closedEvent('won'));
+      await postWebhook(closedEvent('won'));
+      updated = await Transaction.findById(tx._id);
+      const s = await User.findById(seller._id);
+      expect(updated.status).toBe('chargeback_won');
+      expect(updated.disputeInfo.status).toBe('won');
+      expect(s.balance.pending).toBe(100);
+      expect(s.notifications.filter((n) => n.type === 'dispute').length).toBe(1);
     });
 
     it('WH.7 provider refund reverses escrow without taking unrelated available funds and restores full quantity', async () => {

@@ -24,6 +24,80 @@ const paymentIntentMatch = (paymentIntentId) => ({
   ],
 });
 
+// Apply a TERMINAL dispute outcome (won/lost) exactly once.
+//
+// Stripe's real lifecycle resolves a dispute through `charge.dispute.closed`
+// carrying the final status (won/lost); an `updated` event with that terminal
+// status is not guaranteed (the observed sequence is created → updated
+// (under_review) → funds_reinstated → closed(won)). Both handlers therefore
+// share this settlement, and the atomic status claim makes retries, replays and
+// a closed-after-updated delivery all no-ops after the first.
+//
+// LEDGER: the sale's earnings are credited when the order is placed and are
+// only reversed when the chargeback is LOST. A won dispute leaves the sale
+// standing, so crediting the seller here would pay them twice for the same
+// sale — opening a dispute never debits them.
+async function settleDisputeOutcome(transaction, dispute) {
+  if (!transaction || !['won', 'lost'].includes(dispute.status)) return false;
+  const nextStatus = dispute.status === 'won' ? 'chargeback_won' : 'chargeback_lost';
+  const claimed = await Transaction.findOneAndUpdate(
+    {
+      _id: transaction._id,
+      status: { $nin: ['chargeback_won', 'chargeback_lost', 'refunded'] },
+    },
+    { $set: { status: nextStatus, 'disputeInfo.status': dispute.status } },
+    { new: true },
+  );
+  if (!claimed) return false;
+
+  if (dispute.status === 'lost') {
+    const earnings = sellerSaleTotal(claimed.paymentBreakdown);
+    if (earnings > 0) {
+      // ATOMIC: a lost dispute intentionally allows the pending balance to go
+      // negative (the seller owes the platform). Keep the debit and the
+      // notification in one update so a stale seller document cannot overwrite
+      // an unrelated balance change.
+      await User.updateOne(
+        { _id: claimed.seller },
+        {
+          $inc: { 'balance.pending': -earnings },
+          $push: {
+            notifications: {
+              $each: [{
+                type: 'dispute',
+                from: claimed.buyer,
+                listing: claimed.listing,
+                transaction: claimed._id,
+                message: 'Chargeback lost. The sale amount has been deducted from your balance.',
+              }],
+              $position: 0,
+            },
+          },
+        },
+      );
+    }
+  } else {
+    await User.updateOne(
+      { _id: claimed.seller },
+      {
+        $push: {
+          notifications: {
+            $each: [{
+              type: 'dispute',
+              from: claimed.buyer,
+              listing: claimed.listing,
+              transaction: claimed._id,
+              message: 'Chargeback resolved in your favor. The sale stands.',
+            }],
+            $position: 0,
+          },
+        },
+      },
+    );
+  }
+  return true;
+}
+
 // Stripe webhook endpoint - handles chargeback events
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
   // Declared OUTSIDE the try: `let` is block-scoped, so the catch block could
@@ -150,75 +224,20 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
             break;
           }
 
-          // If won, restore funds to seller
-          if (dispute.status === 'won') {
-            // IDEMPOTENCY: only credit once — Stripe re-delivers events and
-            // also emits multiple 'updated' events as the dispute progresses.
-            if (transaction.status !== 'chargeback_won') {
-              transaction.status = 'chargeback_won';
-              // Restore seller's pending balance
-              if (transaction.paymentBreakdown?.sellerEarnings) {
-                // Credit and notify atomically. A read-modify-save here could
-                // overwrite a concurrent sale, payout, or refund balance update
-                // with a stale seller document.
-                await User.updateOne(
-                  { _id: transaction.seller },
-                  {
-                    // Restore exactly what chargeback_lost debited (earnings
-                    // + shipping reimbursement) — sellerSaleTotal shape-aware.
-                    $inc: { 'balance.pending': sellerSaleTotal(transaction.paymentBreakdown) },
-                    $push: {
-                      notifications: {
-                        $each: [{
-                          type: 'dispute',
-                          from: transaction.buyer,
-                          listing: transaction.listing,
-                          transaction: transaction._id,
-                          message: 'Chargeback resolved in your favor. Funds restored.',
-                        }],
-                        $position: 0,
-                      },
-                    },
-                  },
-                );
-              }
+          if (['won', 'lost'].includes(dispute.status)) {
+            const settled = await settleDisputeOutcome(transaction, dispute);
+            if (!settled) {
+              increment('trenddrop_webhook_retries_total', { event_type: 'charge.dispute.updated' });
             }
-          } else if (dispute.status === 'lost') {
-            // IDEMPOTENCY: only debit once (see 'won' above).
-            if (transaction.status !== 'chargeback_lost') {
-              transaction.status = 'chargeback_lost';
-              // Deduct from seller's balance if available
-              if (transaction.paymentBreakdown?.sellerEarnings) {
-                // ATOMIC (round 25): a lost dispute intentionally allows the
-                // pending balance to go negative (seller owes the platform).
-                // Keep the debit and notification in one update so a stale
-                // seller document cannot restore unrelated balance changes.
-                await User.updateOne(
-                  { _id: transaction.seller },
-                  {
-                    // Debit the FULL sale take (earnings + shipping
-                    // reimbursement) — symmetric with the chargeback restore.
-                    $inc: { 'balance.pending': -sellerSaleTotal(transaction.paymentBreakdown) },
-                    $push: {
-                      notifications: {
-                        $each: [{
-                          type: 'dispute',
-                          from: transaction.buyer,
-                          listing: transaction.listing,
-                          transaction: transaction._id,
-                          message: 'Chargeback lost. The sale amount has been deducted from your balance.',
-                        }],
-                        $position: 0,
-                      },
-                    },
-                  },
-                );
-              }
-            }
+          } else {
+            // Progress update only (needs_response / under_review). Atomic so a
+            // stale transaction document can never roll back a terminal status
+            // applied by a concurrent closed event.
+            await Transaction.updateOne(
+              { _id: transaction._id },
+              { $set: { 'disputeInfo.status': dispute.status } },
+            );
           }
-          
-          transaction.disputeInfo.status = dispute.status;
-          await transaction.save();
         }
         break;
       }
@@ -226,15 +245,31 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
       case 'charge.dispute.closed': {
         const dispute = event.data.object;
         
-        console.log(`Chargeback closed: ${dispute.id}`);
+        console.log(`Chargeback closed: ${dispute.id} status=${dispute.status}`);
         
         const transaction = await Transaction.findOne({
           'disputeInfo.stripeDisputeId': dispute.id
         });
         
         if (transaction) {
-          transaction.disputeInfo.closedAt = new Date();
-          await transaction.save();
+          // Stripe's real resolution path ends here: the closed event carries
+          // the final won/lost outcome, so the ledger and order status must be
+          // settled from it too (idempotent with any earlier updated event).
+          if (['won', 'lost'].includes(dispute.status)) {
+            const settled = await settleDisputeOutcome(transaction, dispute);
+            if (!settled) {
+              increment('trenddrop_webhook_retries_total', { event_type: 'charge.dispute.closed' });
+            }
+          } else {
+            await Transaction.updateOne(
+              { _id: transaction._id },
+              { $set: { 'disputeInfo.status': dispute.status } },
+            );
+          }
+          await Transaction.updateOne(
+            { _id: transaction._id },
+            { $set: { 'disputeInfo.closedAt': transaction.disputeInfo?.closedAt || new Date() } },
+          );
         }
         break;
       }
