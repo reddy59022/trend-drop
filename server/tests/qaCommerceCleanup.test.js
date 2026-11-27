@@ -81,4 +81,42 @@ describe('QA commerce cleanup planner', () => {
       { transactionId: 't2', sellerId: seller, amount: 11.35 },
     ]);
   });
+
+  test('plans dispute and sale notification removal only for QA transactions', () => {
+    const users = [
+      {
+        _id: 'u1',
+        notifications: [
+          { _id: 'n1', type: 'dispute', transaction: 't1' },
+          { _id: 'n2', type: 'sale', transaction: 't1' },
+          { _id: 'n3', type: 'sale', transaction: 't3' }, // real transaction
+          { _id: 'n4', type: 'support', transaction: 't1' }, // unrelated type
+          { _id: 'n5', type: 'sale' }, // no transaction
+        ],
+      },
+      {
+        _id: 'u2',
+        notifications: [
+          { _id: 'n6', type: 'sale', transaction: 't2' },
+          { _id: 'n7', type: 'dispute', transaction: 't9' },
+        ],
+      },
+    ];
+
+    const plan = planQaCommerce({
+      listings: [qaWebhook, qaChargeback, real],
+      transactions: [
+        txn('t1', 'l1', 'refunded'),
+        txn('t2', 'l2', 'chargeback_won'),
+        txn('t3', 'l3', 'completed'),
+      ],
+      users,
+    });
+
+    expect(plan.notificationCounts).toEqual({ dispute: 1, sale: 2, total: 3 });
+    expect(plan.notificationRemovals).toEqual([
+      { userId: 'u1', notificationIds: ['n1', 'n2'], dispute: 1, sale: 1, total: 2 },
+      { userId: 'u2', notificationIds: ['n6'], dispute: 0, sale: 1, total: 1 },
+    ]);
+  });
 });

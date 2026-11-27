@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Operator entry point: remove the commerce rows left by the QA webhook/chargeback
- * runs (orders, transactions, returns, payouts) and reverse the seller credit for
- * any matched sale that was never refunded.
+ * runs (orders, transactions, returns, payouts), their dispute/sale
+ * notifications, and reverse the seller credit for any matched sale that was
+ * never refunded.
  *
  * Inventory-first — a dry run by default, scoped only to listings titled
  * "QA webhook flow …" / "QA chargeback flow …". Listings themselves are NOT
@@ -26,6 +27,7 @@ const Transaction = require('../models/Transaction');
 const Order = require('../models/Order');
 const Return = require('../models/Return');
 const Payout = require('../models/Payout');
+const User = require('../models/User');
 const { QA_TITLE_PATTERN, planQaCommerce } = require('../utils/qaCommerceCleanup');
 const { applyBalanceAdjustment } = require('../utils/balanceAdjustment');
 
@@ -49,7 +51,7 @@ const main = async () => {
     .lean();
   const transactionIds = ids(transactions);
 
-  const [orders, returns, payouts] = await Promise.all([
+  const [orders, returns, payouts, users] = await Promise.all([
     Order.find({
       $or: [
         { 'items.transaction': { $in: transactionIds } },
@@ -58,9 +60,13 @@ const main = async () => {
     }).select('status items seller').lean(),
     Return.find({ transaction: { $in: transactionIds } }).select('status transaction').lean(),
     Payout.find({ transaction: { $in: transactionIds } }).select('status transaction payoutAmount').lean(),
+    User.find({
+      'notifications.transaction': { $in: transactionIds },
+      'notifications.type': { $in: ['dispute', 'sale'] },
+    }).select('notifications').lean(),
   ]);
 
-  const plan = planQaCommerce({ listings, transactions, orders, returns, payouts });
+  const plan = planQaCommerce({ listings, transactions, orders, returns, payouts, users });
 
   console.log(`QA COMMERCE CLEANUP (${apply ? 'APPLY' : 'DRY RUN'})`);
   console.log(`listings matched:  ${plan.qaListings.length}`);
@@ -68,6 +74,7 @@ const main = async () => {
   console.log(`orders:            ${plan.qaOrders.length}`);
   console.log(`returns:           ${plan.qaReturns.length}`);
   console.log(`payouts:           ${plan.qaPayouts.length}`);
+  console.log(`notifications:     ${plan.notificationCounts.total} (dispute=${plan.notificationCounts.dispute} sale=${plan.notificationCounts.sale})`);
   console.log('');
 
   if (plan.blockedOrders.length) {
@@ -92,6 +99,9 @@ const main = async () => {
   }
   for (const order of plan.qaOrders) {
     console.log(`  order ${String(order._id)}  ${order.status}`);
+  }
+  for (const row of plan.notificationRemovals) {
+    console.log(`  notifications user=${row.userId} total=${row.total} dispute=${row.dispute} sale=${row.sale}`);
   }
 
   if (plan.creditReversals.length) {
@@ -121,7 +131,36 @@ const main = async () => {
     console.log(`  credit ${row.transactionId}: ${state}`);
   }
 
+  // Remove notifications BEFORE the transactions. If the process dies after
+  // this step, the remaining QA commerce rows are still identifiable by their
+  // listings; the reverse order would leave dangling references.
+  let notificationsRemoved = 0;
+  for (const row of plan.notificationRemovals) {
+    if (row.notificationIds.length === 0) continue;
+    await User.updateOne(
+      { _id: row.userId },
+      {
+        $pull: {
+          notifications: {
+            _id: { $in: row.notificationIds },
+            type: { $in: ['dispute', 'sale'] },
+            transaction: { $in: ids(plan.qaTransactions) },
+          },
+        },
+      },
+    );
+    // Count from the resulting document so partial matches are reported
+    // accurately rather than claiming the whole planned batch was removed.
+    const after = await User.findById(row.userId).select('notifications').lean();
+    const remaining = (after?.notifications || []).filter((notification) =>
+      ['dispute', 'sale'].includes(notification.type)
+      && notification.transaction
+      && plan.qaTransactions.some((txn) => String(txn._id) === String(notification.transaction)));
+    notificationsRemoved += Math.max(0, row.total - remaining.length);
+  }
+
   const deleted = {
+    notifications: notificationsRemoved,
     orders: (await Order.deleteMany({ _id: { $in: ids(plan.qaOrders) } })).deletedCount,
     returns: (await Return.deleteMany({ _id: { $in: ids(plan.qaReturns) } })).deletedCount,
     payouts: (await Payout.deleteMany({ _id: { $in: ids(plan.qaPayouts) } })).deletedCount,
@@ -130,7 +169,7 @@ const main = async () => {
 
   console.log('');
   console.log('APPLY — deleted:');
-  console.log(`  orders=${deleted.orders} returns=${deleted.returns} payouts=${deleted.payouts} transactions=${deleted.transactions}`);
+  console.log(`  notifications=${deleted.notifications} orders=${deleted.orders} returns=${deleted.returns} payouts=${deleted.payouts} transactions=${deleted.transactions}`);
   console.log('Listings were left untouched (retire them separately if needed).');
 
   await mongoose.disconnect();
