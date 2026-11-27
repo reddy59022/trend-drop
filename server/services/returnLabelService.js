@@ -13,18 +13,26 @@ const generateReturnLabel = async (returnRequest) => {
   if (!returnRequest) throw new Error('returnRequest is required');
   // ObjectIds are truthy; checking only for presence skipped population and
   // then failed with "seller address incomplete". Require real documents.
-  if (!isPopulated(returnRequest.listing) || !isPopulated(returnRequest.seller) || !isPopulated(returnRequest.buyer)) {
+  if (!isPopulated(returnRequest.listing) || !isPopulated(returnRequest.seller) || !isPopulated(returnRequest.buyer) || !isPopulated(returnRequest.transaction)) {
     const Return = require('../models/Return');
     returnRequest = await Return.findById(returnRequest._id)
       .populate('listing', 'title images weight returnPackage price')
       .populate('seller', 'name email phone shippingAddress')
-      .populate('buyer', 'name email phone shippingAddress');
+      .populate('buyer', 'name email phone shippingAddress')
+      .populate('transaction', 'shippingAddress');
   }
 
   const listing = returnRequest.listing || {};
   const buyer = returnRequest.buyer || {};
   const seller = returnRequest.seller || {};
-  const buyerAddress = buyer.shippingAddress || {};
+  // The address the buyer chose at checkout is authoritative. Falling back to
+  // the profile address broke returns whenever checkout used a different or
+  // more complete address than the one saved on the account.
+  const orderAddress = returnRequest.transaction?.shippingAddress || {};
+  const buyerAddress = {
+    ...(buyer.shippingAddress || {}),
+    ...Object.fromEntries(Object.entries(orderAddress).filter(([, v]) => v)),
+  };
   const sellerAddress = seller.shippingAddress || {};
 
   const label = await createShippingLabel({
