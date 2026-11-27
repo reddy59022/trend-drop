@@ -38,6 +38,20 @@ const paymentIntentMatch = (paymentIntentId) => ({
 // only reversed when the chargeback is LOST. A won dispute leaves the sale
 // standing, so crediting the seller here would pay them twice for the same
 // sale — opening a dispute never debits them.
+//
+// ORDER: a lost chargeback reverses the sale exactly like a provider refund, so
+// the consolidated order must leave "confirmed" too. The shared order sync is
+// idempotent (it only accumulates the refund while the item is still on the
+// order), which lets a replay heal an order left stale by a crash.
+async function syncOrderForLostChargeback(transaction) {
+  if (!transaction) return;
+  await syncOrderFromTransaction(
+    transaction,
+    'refunded',
+    transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0,
+  );
+}
+
 async function settleDisputeOutcome(transaction, dispute) {
   if (!transaction || !['won', 'lost'].includes(dispute.status)) return false;
   const nextStatus = dispute.status === 'won' ? 'chargeback_won' : 'chargeback_lost';
@@ -49,7 +63,16 @@ async function settleDisputeOutcome(transaction, dispute) {
     { $set: { status: nextStatus, 'disputeInfo.status': dispute.status } },
     { new: true },
   );
-  if (!claimed) return false;
+  if (!claimed) {
+    // Already terminal. A lost chargeback may still need its order healed (the
+    // original delivery could have crashed after the status claim); the sync is
+    // idempotent, so only the refund audit is guarded by the item presence.
+    if (dispute.status === 'lost') {
+      const current = await Transaction.findById(transaction._id).lean();
+      if (current?.status === 'chargeback_lost') await syncOrderForLostChargeback(current);
+    }
+    return false;
+  }
 
   if (dispute.status === 'lost') {
     const earnings = sellerSaleTotal(claimed.paymentBreakdown);
@@ -77,6 +100,7 @@ async function settleDisputeOutcome(transaction, dispute) {
         },
       );
     }
+    await syncOrderForLostChargeback(claimed);
   } else {
     await User.updateOne(
       { _id: claimed.seller },

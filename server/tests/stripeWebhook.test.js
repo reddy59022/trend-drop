@@ -305,6 +305,65 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(listingAfter.sold).toBe(false);
     });
 
+    it('WH.20 a lost chargeback reverses the parent order and replay is idempotent', async () => {
+      tx.stripePaymentIntentId = 'pi_test_123';
+      tx.status = 'chargeback_open';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
+      await tx.save();
+      const order = await Order.create({
+        buyer: buyer._id,
+        sellers: [seller._id],
+        status: 'confirmed',
+        items: [{ listing: listing._id, transaction: tx._id, seller: seller._id, title: listing.title, price: 50 }],
+        shipments: [{ seller: seller._id, items: [tx._id], status: 'confirmed' }],
+        payment: { paymentIntentId: 'pi_test_123', status: 'captured', totalHeld: 60 },
+        totals: { subtotal: 50, total: 60 },
+      });
+
+      const first = await postWebhook(closedEvent('lost'));
+      expect(first.status).toBe(200);
+
+      let synced = await Order.findById(order._id);
+      expect(synced.status).toBe('refunded');
+      expect(synced.payment.status).toBe('refunded');
+      expect(synced.items).toHaveLength(0);
+      expect(synced.shipments[0].status).toBe('cancelled');
+      expect(synced.shipments[0].items).toHaveLength(0);
+      expect(synced.cancellation.refundAmount).toBe(60);
+
+      const replay = await postWebhook(closedEvent('lost'));
+      expect(replay.status).toBe(200);
+      synced = await Order.findById(order._id);
+      const s = await User.findById(seller._id);
+      expect(synced.cancellation.refundAmount).toBe(60);
+      expect(s.balance.pending).toBe(55); // debited once
+    });
+
+    it('WH.21 a replay heals an order left confirmed by an earlier lost settlement', async () => {
+      // Simulates a crash after the status/ledger claim but before the order sync.
+      tx.stripePaymentIntentId = 'pi_test_123';
+      tx.status = 'chargeback_lost';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'lost' };
+      await tx.save();
+      const order = await Order.create({
+        buyer: buyer._id,
+        sellers: [seller._id],
+        status: 'confirmed',
+        items: [{ listing: listing._id, transaction: tx._id, seller: seller._id, title: listing.title, price: 50 }],
+        shipments: [{ seller: seller._id, items: [tx._id], status: 'confirmed' }],
+        payment: { paymentIntentId: 'pi_test_123', status: 'captured', totalHeld: 60 },
+        totals: { subtotal: 50, total: 60 },
+      });
+
+      const res = await postWebhook(closedEvent('lost'));
+      expect(res.status).toBe(200);
+
+      const synced = await Order.findById(order._id);
+      expect(synced.status).toBe('refunded');
+      expect(synced.items).toHaveLength(0);
+      expect(synced.cancellation.refundAmount).toBe(60);
+    });
+
     it('WH.18 provider refund marks the parent order refunded and is replay-safe', async () => {
       tx.stripePaymentIntentId = 'pi_refund_order';
       await tx.save();
