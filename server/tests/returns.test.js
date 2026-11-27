@@ -481,6 +481,11 @@ describe('Returns & Refund Management', () => {
     const finalListing = await Listing.findById(claimListing._id);
     expect(finalListing.quantity).toBe(1);
     expect(finalListing.quantitySold || 0).toBe(0);
+    // The route itself must reach the terminal state through the delivered
+    // step, without relying on the charge.refunded webhook to flip it.
+    const finalTxn = await Transaction.findById(claimTxn._id);
+    expect(finalTxn.status).toBe('refunded');
+    expect(finalTxn.payout.status).toBe('refunded');
   });
 
   test('RET.11 - Seller can deny a return request', async () => {

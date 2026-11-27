@@ -630,6 +630,14 @@ router.put('/:id/receive', auth, async (req, res) => {
     returnRequest.status = 'refunded';
     returnRequest.refundAmount = buyerRefund;
     await returnRequest.save();
+    // The seller confirming receipt is proof the parcel arrived, so a return
+    // still marked in transit advances through the delivered step. The state
+    // machine does not allow return_in_transit → refunded; the charge.refunded
+    // webhook used to perform that flip for us (masking the skipped step) until
+    // the refund was claimed before the provider call.
+    if (txn.status === orderStates.RETURN_IN_TRANSIT) {
+      txn.status = orderStates.RETURN_DELIVERED;
+    }
     if (isValidTransition(txn.status, orderStates.REFUNDED)) {
       txn.status = orderStates.REFUNDED;
       txn.returnDetails = { ...txn.returnDetails, receivedAt: new Date(), inspectionNotes: req.body.inspectionNotes || '' };
