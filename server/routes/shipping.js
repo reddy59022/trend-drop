@@ -18,8 +18,19 @@ const {
   shippingLabelPayload,
   ShippingProviderError,
   isMockMode,
+  sandboxSimulationAllowed,
+  shippingProviderStatus,
 } = require('../services/easypostService');
+const { applyOutboundTrackingEvent } = require('../services/shipmentTracking');
 const { TERMINAL_STATUSES } = require('../services/shippingPurchase');
+
+// GET /api/shipping/provider - Safe provider readiness for the client.
+// The platform owns one EasyPost account; Stripe Connect is only the payout
+// rail. Returning the mode makes sandbox/test deployments explicit without
+// exposing keys, shipment ids, or connected-account identifiers.
+router.get('/provider', (req, res) => {
+  res.json(shippingProviderStatus());
+});
 
 // GET /api/shipping/carriers - Get all carriers
 router.get('/carriers', (req, res) => {
@@ -766,6 +777,47 @@ router.post('/mock-deliver', auth, async (req, res) => {
   } catch (error) {
     console.error('Mock delivery error:', error);
     res.status(500).json({ message: 'Error simulating delivery' });
+  }
+});
+
+// POST /api/shipping/sandbox/advance - Authenticated sandbox state driver.
+//
+// The platform-owned EasyPost account is enough for normal fulfillment; this
+// route exists only for non-live sandbox deployments (and the deterministic
+// mock harness) to exercise every carrier milestone before a real carrier
+// scan exists. It is deliberately unavailable in live production.
+router.post('/sandbox/advance', auth, async (req, res) => {
+  try {
+    if (!sandboxSimulationAllowed()) {
+      return res.status(404).json({ message: 'Sandbox shipment simulation is not available' });
+    }
+    const { transactionId, status, trackingNumber, timestamp, location, description } = req.body || {};
+    if (!transactionId || !isValidObjectId(transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
+    }
+    if (!status) return res.status(400).json({ message: 'status is required' });
+
+    const transaction = await Transaction.findById(transactionId);
+    if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
+    const userId = String(req.user._id);
+    if (![String(transaction.buyer), String(transaction.seller)].includes(userId)) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const result = await applyOutboundTrackingEvent(transaction, {
+      status, trackingNumber, timestamp, location, description,
+    });
+    return res.json({
+      message: `Sandbox shipment advanced to '${status}'`,
+      sandbox: true,
+      ...result,
+    });
+  } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error('Sandbox shipment advance error:', error);
+    return res.status(500).json({ message: 'Error advancing sandbox shipment' });
   }
 });
 

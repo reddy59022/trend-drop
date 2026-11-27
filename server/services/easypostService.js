@@ -35,9 +35,32 @@ class ShippingProviderError extends Error {
   }
 }
 
-const apiKey = () => String(process.env.EASYPOST_API_KEY || '').trim();
+const cleanMode = (value) => String(value || '').trim().toLowerCase();
 const isProduction = () => process.env.NODE_ENV === 'production';
 const stripeTestMode = () => String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_');
+
+// EasyPost has one API endpoint and separate Test/Production keys. The mode is
+// explicit so a test key can never be selected accidentally in a live deploy.
+// `sandbox` is EasyPost's Test environment, backed by the SAME platform-owned
+// account (no seller or per-marketplace EasyPost account is created).
+const isSandboxRequested = () => ['sandbox', 'test'].includes(cleanMode(process.env.EASYPOST_MODE));
+const apiKey = () => String(
+  isSandboxRequested()
+    ? (process.env.EASYPOST_TEST_API_KEY || '')
+    : (process.env.EASYPOST_API_KEY || '')
+).trim();
+
+const sandboxAllowed = () => (
+  !isSandboxRequested() || !isProduction() || stripeTestMode()
+);
+
+const assertSandboxAllowed = () => {
+  if (sandboxAllowed()) return;
+  throw new ShippingProviderError(
+    'EasyPost sandbox mode is disabled for live deployments. Use a production EasyPost key.',
+    { code: 'EASYPOST_SANDBOX_FORBIDDEN', status: 503, retryable: false },
+  );
+};
 
 /**
  * Development/demo shipping provider.
@@ -54,8 +77,35 @@ const isMockMode = () => (
   // explicitly. Real deployments never set it.
   process.env.E2E_IN_MEMORY === '1'
   || process.env.SHIPPING_MOCK_MODE === '1'
-  || (!apiKey() && (!isProduction() || stripeTestMode()))
+  // An explicit sandbox selection must fail closed when its test key is
+  // missing; silently falling back to fake labels would hide a bad sandbox
+  // configuration during acceptance testing.
+  || (!isSandboxRequested() && !apiKey() && (!isProduction() || stripeTestMode()))
 );
+
+const shippingMode = () => {
+  if (isMockMode()) return 'mock';
+  return isSandboxRequested() ? 'sandbox' : 'production';
+};
+
+// Only a non-production deployment, the in-memory harness, or a Stripe TEST
+// deployment may expose the state driver. Live production can never advance a
+// shipment from an unauthenticated test control.
+const sandboxSimulationAllowed = () => (
+  isMockMode() || (isSandboxRequested() && sandboxAllowed() && Boolean(apiKey()))
+);
+
+const shippingProviderStatus = () => ({
+  provider: 'easypost',
+  mode: shippingMode(),
+  platformManaged: true,
+  // The marketplace controls postage and labels. Stripe Connect is the
+  // separate seller-payout rail; it never supplies carrier credentials.
+  payoutRail: 'stripe_connect',
+  configured: Boolean(apiKey()) || isMockMode(),
+  // Never expose the key or any account identifier to the client.
+  webhookConfigured: Boolean(process.env.EASYPOST_WEBHOOK_SECRET),
+});
 
 const authHeader = () => `Basic ${Buffer.from(`${apiKey()}:`).toString('base64')}`;
 
@@ -259,9 +309,12 @@ const createShippingLabel = async ({
   if (isMockMode()) {
     return mockLabel({ reference: referenceValue, carrier, service });
   }
+  assertSandboxAllowed();
   if (!apiKey()) {
     throw new ShippingProviderError(
-      'Shipping is not configured. EASYPOST_API_KEY is required before orders can be placed.',
+      isSandboxRequested()
+        ? 'EasyPost sandbox is not configured. EASYPOST_TEST_API_KEY is required for test labels.'
+        : 'Shipping is not configured. EASYPOST_API_KEY is required before orders can be placed.',
       { code: 'EASYPOST_NOT_CONFIGURED', status: 503 },
     );
   }
@@ -351,6 +404,7 @@ const createShippingLabel = async ({
 const getTracker = async (trackerId) => {
   if (!trackerId) throw new ShippingProviderError('A tracker id is required.', { code: 'SHIPPING_TRACKER_MISSING', status: 422 });
   if (isMockMode()) return null;
+  assertSandboxAllowed();
   if (!apiKey()) {
     throw new ShippingProviderError('Shipping is not configured.', { code: 'EASYPOST_NOT_CONFIGURED', status: 503 });
   }
@@ -377,6 +431,7 @@ const mapTrackerStatus = (status) => {
 const refundShippingLabel = async (shipmentId) => {
   if (!shipmentId) return { refunded: false, status: 'no_shipment' };
   if (isMockMode()) return { refunded: true, status: 'refunded' };
+  assertSandboxAllowed();
   if (!apiKey()) {
     throw new ShippingProviderError('Shipping is not configured.', { code: 'EASYPOST_NOT_CONFIGURED', status: 503 });
   }
@@ -421,4 +476,8 @@ module.exports = {
   normalizeAddress,
   parseParcel,
   isMockMode,
+  isSandboxRequested,
+  sandboxSimulationAllowed,
+  shippingMode,
+  shippingProviderStatus,
 };

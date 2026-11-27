@@ -49,7 +49,14 @@ services:
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       # Platform-owned shipping. Orders fail closed until this key is present.
+      # Keep this deployment on the existing production EasyPost account.
+      - key: EASYPOST_MODE
+        value: "production"
       - key: EASYPOST_API_KEY
+        sync: false
+      # Only used when EASYPOST_MODE=sandbox/test, so a production deploy can
+      # exercise test labels without replacing its live key.
+      - key: EASYPOST_TEST_API_KEY
         sync: false
       # HMAC secret configured on the EasyPost tracker webhook.
       - key: EASYPOST_WEBHOOK_SECRET
