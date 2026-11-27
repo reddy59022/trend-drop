@@ -437,6 +437,34 @@ async function releaseReserves() {
 // treated as proof that the buyer returned the item; no seller action is
 // required to release the buyer's refund. Every monetary mutation is behind
 // the transaction returnProcessing claim, so overlapping cron runs settle once.
+// Stripe refund statuses that mean the money-moving call was ACCEPTED.
+// 'pending' is a real refund in flight (bank debit/async method) and retrying
+// would only return the same refund via the idempotency key, so it settles.
+// 'failed'/'canceled' mean the refund was NOT issued and must stay retryable.
+const SETTLED_PROVIDER_REFUND_STATUSES = ['succeeded', 'pending'];
+
+// Record the provider's real refund result on the return. A refund response
+// with a rejected status must never flip `providerRefunded` to true: the
+// buyer's money has not moved, and marking it settled would release the
+// transaction, claw back the seller, and restock inventory around a refund
+// Stripe refused. Throwing leaves the settlement claim retryable instead.
+function applyProviderRefundResult(returnRequest, refund, paymentIntentId) {
+  if (!refund || !refund.id) {
+    throw new Error(`Refund for ${paymentIntentId} returned no provider reference`);
+  }
+  const status = String(refund.status || '').toLowerCase();
+  if (!SETTLED_PROVIDER_REFUND_STATUSES.includes(status)) {
+    throw new Error(`Refund ${refund.id} was not accepted by the provider (status: ${status || 'unknown'})`);
+  }
+  returnRequest.providerRefunded = true;
+  returnRequest.providerRefundId = refund.id;
+  returnRequest.providerRefundStatus = status;
+  const refundedCents = Number(refund.amount);
+  returnRequest.providerRefundAmount = Number.isFinite(refundedCents) ? refundedCents : null;
+  returnRequest.providerRefundedAt = new Date();
+  return returnRequest;
+}
+
 async function settleDeliveredReturn(txn, returnRequest, now) {
   const priorStatus = txn.status;
   // The claim also parks the return in `return_delivered`, so it moves the flag
@@ -469,13 +497,42 @@ async function settleDeliveredReturn(txn, returnRequest, now) {
       : Math.round(totalPaid * 100) / 100;
 
     if (!returnRequest.providerRefunded) {
-      if (intent.status === 'requires_capture') await releaseAuthorization(paymentIntentId);
-      else if (intent.status === 'succeeded' && (responsibility !== 'buyer' || refundAmount > 0)) {
-        await issueRefund(paymentIntentId, responsibility === 'buyer' ? refundAmount : undefined);
+      if (intent.status === 'requires_capture') {
+        // Nothing was ever captured, so there is no money to send back.
+        await releaseAuthorization(paymentIntentId);
+        returnRequest.providerRefunded = true;
+        returnRequest.providerRefundStatus = 'authorization_released';
+        returnRequest.providerRefundedAt = new Date(now);
+        await returnRequest.save();
+      } else if (intent.status === 'succeeded' && (responsibility !== 'buyer' || refundAmount > 0)) {
+        const refund = await issueRefund(
+          paymentIntentId,
+          responsibility === 'buyer' ? refundAmount : undefined,
+        );
+        applyProviderRefundResult(returnRequest, refund, paymentIntentId);
+        await returnRequest.save();
+      } else if (intent.status === 'refunded') {
+        // Refunded outside this job (dashboard/support); nothing left to send.
+        returnRequest.providerRefunded = true;
+        returnRequest.providerRefundStatus = 'already_refunded';
+        returnRequest.providerRefundedAt = new Date(now);
+        await returnRequest.save();
+      } else if (intent.status === 'succeeded') {
+        // Buyer-remorse return whose refund computed to $0 (e.g. the return
+        // label cost consumed the item price). No provider call is owed.
+        returnRequest.providerRefunded = true;
+        returnRequest.providerRefundStatus = 'nothing_to_refund';
+        returnRequest.providerRefundedAt = new Date(now);
+        await returnRequest.save();
+      } else if (!['canceled', 'cancelled'].includes(intent.status)) {
+        throw new Error(`Non-settleable provider status: ${intent.status}`);
+      } else {
+        // A canceled authorization left no captured money behind.
+        returnRequest.providerRefunded = true;
+        returnRequest.providerRefundStatus = 'no_captured_payment';
+        returnRequest.providerRefundedAt = new Date(now);
+        await returnRequest.save();
       }
-      else if (!['canceled', 'cancelled', 'refunded'].includes(intent.status)) throw new Error(`Non-settleable provider status: ${intent.status}`);
-      returnRequest.providerRefunded = true;
-      await returnRequest.save();
     }
 
     if (!returnRequest.inventoryRestored) {

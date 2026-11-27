@@ -96,6 +96,14 @@ const returnSchema = new mongoose.Schema({
   payoutMarkedRefunded: { type: Boolean, default: false },
   sellerLedgerClawedBack: { type: Boolean, default: false },
   providerRefunded: { type: Boolean, default: false },
+  // The provider's actual answer for this return's refund. `providerRefunded`
+  // means the money-moving call was accepted; these fields record WHAT Stripe
+  // returned (refund id, status, amount in minor units) so a settled return
+  // can be audited against the dashboard instead of trusting a boolean.
+  providerRefundId: { type: String, default: '' },
+  providerRefundStatus: { type: String, default: '' },
+  providerRefundAmount: { type: Number, default: null },
+  providerRefundedAt: { type: Date, default: null },
   labelCarrier: {
     type: String,
     default: '',
