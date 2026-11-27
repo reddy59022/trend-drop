@@ -336,6 +336,124 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(closed.refundAmount).toBe(60);
     });
 
+    it('WH.27 a replay after a crash following the status claim finishes fee, stats, return and ledger exactly once', async () => {
+      // Simulate the exact crash window: the status claim and its persisted
+      // settlement inputs landed, but none of the effects did.
+      tx.status = 'chargeback_lost';
+      tx.payout = { status: 'refunded' };
+      tx.disputeInfo = {
+        stripeDisputeId: 'dp_test_1',
+        status: 'lost',
+        wasReleased: true,
+        lostSettlement: { earnings: 45, released: true, refundAmount: 60 },
+      };
+      await tx.save();
+      const payoutDoc = await Payout.create({
+        seller: seller._id,
+        transaction: tx._id,
+        listing: listing._id,
+        salePrice: 50,
+        commissionRate: 0.08,
+        commissionAmount: 4,
+        payoutAmount: 45,
+        status: 'pending',
+      });
+      const order = await Order.create({
+        buyer: buyer._id,
+        sellers: [seller._id],
+        status: 'confirmed',
+        items: [{ listing: listing._id, transaction: tx._id, seller: seller._id, title: listing.title, price: 50 }],
+        shipments: [{ seller: seller._id, items: [tx._id], status: 'confirmed' }],
+        payment: { paymentIntentId: 'pi_test_123', status: 'captured', totalHeld: 60 },
+        totals: { subtotal: 50, total: 60 },
+      });
+      const returnRequest = await Return.create({
+        transaction: tx._id,
+        buyer: buyer._id,
+        seller: seller._id,
+        listing: listing._id,
+        reason: 'Defective',
+        status: 'in_transit',
+      });
+      await User.updateOne({ _id: seller._id }, {
+        $set: {
+          'balance.available': 80,
+          'balance.pending': 100,
+          'stats.totalSales': 5,
+          notifications: [],
+        },
+      });
+
+      const event = closedEvent('lost', {
+        balance_transactions: [{ fee: 1500, currency: 'usd' }],
+      });
+      const res = await postWebhook(event);
+      expect(res.status).toBe(200);
+
+      let s = await User.findById(seller._id);
+      let updated = await Transaction.findById(tx._id);
+      expect(updated.disputeInfo.feeAmount).toBe(15);
+      expect(updated.disputeInfo.feeCurrency).toBe('USD');
+      expect(s.balance.available).toBe(35);
+      expect(s.balance.pending).toBe(100);
+      expect(s.stats.totalSales).toBe(4);
+      expect(s.notifications.filter((n) => n.type === 'dispute')).toHaveLength(1);
+      expect((await Payout.findById(payoutDoc._id)).status).toBe('refunded');
+      expect((await Order.findById(order._id)).status).toBe('refunded');
+      const closedReturn = await Return.findById(returnRequest._id);
+      expect(closedReturn.status).toBe('refunded');
+      expect(closedReturn.closedByChargeback).toBe(true);
+
+      const replay = await postWebhook(event);
+      expect(replay.status).toBe(200);
+      s = await User.findById(seller._id);
+      updated = await Transaction.findById(tx._id);
+      expect(updated.disputeInfo.feeAmount).toBe(15);
+      expect(s.balance.available).toBe(35);
+      expect(s.balance.pending).toBe(100);
+      expect(s.stats.totalSales).toBe(4);
+      expect(s.notifications.filter((n) => n.type === 'dispute')).toHaveLength(1);
+    });
+
+    it('WH.28 a completed sale stays released after dispute.created overwrites its status', async () => {
+      tx.stripePaymentIntentId = 'pi_test_123';
+      tx.status = 'completed';
+      // Deliberately NOT completed: completion paths need not stamp the payout,
+      // so the persisted release marker must carry the decision.
+      tx.payout = { status: 'pending' };
+      await tx.save();
+      await User.updateOne({ _id: seller._id }, {
+        $set: { 'balance.available': 80, 'balance.pending': 100, 'stats.totalSales': 5 },
+      });
+
+      const created = await postWebhook({
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_test_1',
+            payment_intent: 'pi_test_123',
+            reason: 'fraudulent',
+            status: 'needs_response',
+            evidence_details: { due_by: 1893456000 },
+          },
+        },
+      });
+      expect(created.status).toBe(200);
+      let updated = await Transaction.findById(tx._id);
+      expect(updated.status).toBe('chargeback_open');
+      expect(updated.disputeInfo.wasReleased).toBe(true);
+
+      const res = await postWebhook(closedEvent('lost'));
+      expect(res.status).toBe(200);
+      const s = await User.findById(seller._id);
+      updated = await Transaction.findById(tx._id);
+      expect(updated.status).toBe('chargeback_lost');
+      expect(updated.disputeInfo.lostSettlement.released).toBe(true);
+      expect(s.balance.available).toBe(35); // clawed from released funds
+      expect(s.balance.pending).toBe(100);
+      expect(s.stats.totalSales).toBe(4);
+    });
+
     it('WH.20 a lost chargeback reverses the parent order and replay is idempotent', async () => {
       tx.stripePaymentIntentId = 'pi_test_123';
       tx.status = 'chargeback_open';
@@ -371,6 +489,91 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(synced.cancellation.refundAmount).toBe(60);
       expect(s.balance.pending).toBe(55); // debited once
       expect(s.stats.totalSales).toBe(5);
+    });
+
+    it('WH.29 a replay of a pre-marker lost settlement never debits the seller again', async () => {
+      // Shape of a row settled by the previous release: terminal status,
+      // release state recorded, fee/return/order/payout already handled, but
+      // no `lostSettlement` inputs and no `balance.chargebackSettlements`
+      // marker. A replay must heal non-money effects without touching the
+      // ledger or sales count.
+      tx.stripePaymentIntentId = 'pi_test_123';
+      tx.status = 'chargeback_lost';
+      tx.payout = { status: 'refunded' };
+      tx.disputeInfo = {
+        stripeDisputeId: 'dp_test_1',
+        status: 'lost',
+        wasReleased: true,
+      };
+      await tx.save();
+      const payoutDoc = await Payout.create({
+        seller: seller._id,
+        transaction: tx._id,
+        listing: listing._id,
+        salePrice: 50,
+        commissionRate: 0.08,
+        commissionAmount: 4,
+        payoutAmount: 45,
+        status: 'refunded',
+      });
+      const order = await Order.create({
+        buyer: buyer._id,
+        sellers: [seller._id],
+        status: 'refunded',
+        items: [],
+        shipments: [],
+        payment: { paymentIntentId: 'pi_test_123', status: 'captured', totalHeld: 60 },
+        totals: { subtotal: 50, total: 60 },
+      });
+      const returnRequest = await Return.create({
+        transaction: tx._id,
+        buyer: buyer._id,
+        seller: seller._id,
+        listing: listing._id,
+        reason: 'Defective',
+        status: 'refunded',
+        refundAmount: 60,
+        closedByChargeback: true,
+        chargebackClosedAt: new Date(),
+      });
+      await User.updateOne({ _id: seller._id }, {
+        $set: {
+          'balance.available': 35,
+          'balance.pending': 100,
+          'stats.totalSales': 4,
+          notifications: [{
+            type: 'dispute',
+            message: 'Chargeback lost. The sale amount has been deducted from your balance.',
+          }],
+        },
+      });
+
+      const event = closedEvent('lost', {
+        balance_transactions: [{ fee: 1500, currency: 'usd' }],
+      });
+      const res = await postWebhook(event);
+      expect(res.status).toBe(200);
+
+      let s = await User.findById(seller._id);
+      let updated = await Transaction.findById(tx._id);
+      expect(updated.disputeInfo.feeAmount).toBe(15); // non-money heal still runs
+      expect(s.balance.available).toBe(35);
+      expect(s.balance.pending).toBe(100);
+      expect(s.stats.totalSales).toBe(4);
+      expect(s.notifications.filter((n) => n.type === 'dispute')).toHaveLength(1);
+      expect((await Payout.findById(payoutDoc._id)).status).toBe('refunded');
+      expect((await Order.findById(order._id)).status).toBe('refunded');
+      expect((await Return.findById(returnRequest._id)).status).toBe('refunded');
+
+      const replay = await postWebhook(event);
+      expect(replay.status).toBe(200);
+      s = await User.findById(seller._id);
+      updated = await Transaction.findById(tx._id);
+      expect(updated.disputeInfo.feeAmount).toBe(15);
+      expect(s.balance.available).toBe(35);
+      expect(s.balance.pending).toBe(100);
+      expect(s.stats.totalSales).toBe(4);
+      expect(s.notifications.filter((n) => n.type === 'dispute')).toHaveLength(1);
     });
 
     it('WH.21 a replay heals an order left confirmed by an earlier lost settlement', async () => {

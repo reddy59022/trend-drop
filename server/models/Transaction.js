@@ -266,6 +266,20 @@ const transactionSchema = new mongoose.Schema({
     // not debited from the seller.
     feeAmount: { type: Number, default: 0 },
     feeCurrency: { type: String, default: '' },
+    // Whether the sale's money had already been released when the dispute was
+    // opened. `charge.dispute.created` overwrites `status` with
+    // chargeback_open, so the transaction status alone can no longer prove the
+    // sale was completed by the time the dispute is lost. Persist it at open
+    // time (before the overwrite) and use it for the release-aware clawback.
+    wasReleased: { type: Boolean, default: false },
+    // Immutable inputs for the lost-chargeback settlement, written atomically
+    // with the status claim. A webhook replay uses these to finish any side
+    // effect (ledger, stats, return, order) a crash skipped.
+    lostSettlement: {
+      earnings: { type: Number },
+      released: { type: Boolean },
+      refundAmount: { type: Number },
+    },
   },
   // Atomic provider-refund claim. This prevents concurrent admin/support
   // refund requests from issuing duplicate refunds or reversing inventory

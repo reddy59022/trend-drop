@@ -204,6 +204,12 @@ const userSchema = new mongoose.Schema({
     // applied verbatim, so a cast applied on only one side of the comparison
     // would silently fail to match.
     settledTransactions: [{ type: String }],
+    // Transaction ids whose LOST-chargeback settlement (ledger debit, sales
+    // stat reversal, seller notification) has already been applied. Like
+    // settledTransactions it is written in the same atomic update as the
+    // money/stat changes, so a webhook replay after a crash between the status
+    // claim and those effects completes them exactly once.
+    chargebackSettlements: [{ type: String }],
     currency: { type: String, default: 'USD' },
   },
   // Stripe Connect account used for real seller payouts. processSellerPayout

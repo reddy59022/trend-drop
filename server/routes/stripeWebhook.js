@@ -11,7 +11,7 @@ const {
   isWebhookSignatureRequired,
   getWebhookSecret,
 } = require('../config/payments');
-const { clawbackSellerEarnings, reverseEscrowHold, sellerSaleTotal, debitSellerForChargeback } = require('../utils/balances');
+const { clawbackSellerEarnings, reverseEscrowHold, sellerSaleTotal, settleLostChargeback } = require('../utils/balances');
 const { increment } = require('../utils/metrics');
 const restoreListingInventory = require('../utils/restoreListingInventory');
 const { syncOrderFromTransaction } = require('./orderLifecycle');
@@ -51,9 +51,12 @@ const IN_PROGRESS_RETURN_STATUSES = [
 ];
 
 /** Close any live return for a transaction the buyer has charged back. */
-async function closeReturnsForLostChargeback(transaction) {
+async function closeReturnsForLostChargeback(transaction, refundAmountOverride = null) {
   if (!transaction?._id) return;
-  const refundAmount = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0;
+  const refundAmount = refundAmountOverride
+    ?? transaction.paymentBreakdown?.totalPaid
+    ?? transaction.itemPrice
+    ?? 0;
   await Return.updateMany(
     { transaction: transaction._id, status: { $in: IN_PROGRESS_RETURN_STATUSES } },
     {
@@ -89,15 +92,118 @@ async function syncOrderForLostChargeback(transaction) {
   );
 }
 
+/**
+ * Inputs for the lost settlement. New claims persist these atomically with the
+ * status, so a replay after a crash uses exactly what the first delivery saw;
+ * historical rows fall back to the transaction's own data.
+ */
+function lostSettlementContext(transaction) {
+  const settlement = transaction.disputeInfo?.lostSettlement || {};
+  const recordedEarnings = settlement.earnings !== undefined && settlement.earnings !== null
+    && Number.isFinite(Number(settlement.earnings));
+  const earnings = recordedEarnings
+    ? Number(settlement.earnings)
+    : sellerSaleTotal(transaction.paymentBreakdown);
+  const released = typeof settlement.released === 'boolean'
+    ? settlement.released
+    : (transaction.disputeInfo?.wasReleased === true
+      || transaction.status === 'completed'
+      || transaction.payout?.status === 'completed');
+  const refundAmount = settlement.refundAmount !== undefined && settlement.refundAmount !== null
+    ? Number(settlement.refundAmount)
+    : (transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0);
+  return { earnings, released, refundAmount };
+}
+
+/**
+ * Complete every side effect of a LOST chargeback, idempotently.
+ *
+ * This runs both on the delivery that wins the status claim and on every
+ * replay after it. The status claim, fee write, ledger debit, stat reversal,
+ * return closure and order sync are separate documents/steps, so a crash can
+ * land between any of them; Stripe's retry must finish the rest without
+ * applying anything twice. The ledger/stats/notification step is guarded by a
+ * marker written in the same atomic update as the money, and every other step
+ * is a natural no-op on repeat.
+ */
+async function completeLostChargeback(transaction, dispute) {
+  if (!transaction?._id) return;
+  const disputeFee = disputeFeeFrom(dispute);
+  const { earnings, released, refundAmount } = lostSettlementContext(transaction);
+  // Rows settled BEFORE the settlement marker/inputs existed have neither
+  // `lostSettlement` nor a `balance.chargebackSettlements` entry, yet their
+  // seller debit, stat reversal and notification already ran. A replay cannot
+  // distinguish them from a crash-before-effects row, and guessing wrong in
+  // the debit direction charges the seller twice. Absence of the persisted
+  // settlement inputs therefore means "already settled": heal the idempotent
+  // non-money effects below, but never move the seller's money again. New
+  // claims always write `lostSettlement` atomically with the status, so their
+  // crash recovery is unaffected.
+  const lostSettlement = transaction.disputeInfo?.lostSettlement;
+  const hasSettlementRecord = lostSettlement != null
+    && (lostSettlement.earnings !== undefined || lostSettlement.released !== undefined);
+
+  // Normally written with the status claim. Heal rows whose claim predates the
+  // fee field (or a crash between an older claim and this write).
+  if (disputeFee.amount > 0 && !(Number(transaction.disputeInfo?.feeAmount) > 0)) {
+    await Transaction.updateOne(
+      { _id: transaction._id },
+      { $set: { 'disputeInfo.feeAmount': disputeFee.amount, 'disputeInfo.feeCurrency': disputeFee.currency } },
+    );
+  }
+
+  // Released sales drain available first (then pending, which may go negative);
+  // escrowed sales only touch pending. Stats reverse only for a released sale,
+  // because only then was it counted. Atomic and exactly-once via the marker.
+  if (hasSettlementRecord && (earnings > 0 || released)) {
+    await settleLostChargeback({
+      sellerId: transaction.seller,
+      transactionId: transaction._id,
+      amount: earnings,
+      released,
+      notification: earnings > 0
+        ? {
+            type: 'dispute',
+            from: transaction.buyer,
+            listing: transaction.listing,
+            transaction: transaction._id,
+            message: 'Chargeback lost. The sale amount has been deducted from your balance.',
+          }
+        : null,
+    });
+  }
+
+  await closeReturnsForLostChargeback(transaction, refundAmount);
+
+  // A pending/completed payout for a lost sale must not keep showing as owed
+  // or paid on the seller dashboard.
+  await Payout.updateMany(
+    { transaction: transaction._id, status: { $ne: 'refunded' } },
+    { $set: { status: 'refunded', refundedAt: new Date() } },
+  );
+  if (transaction.escrow && ['active', 'disputed'].includes(transaction.escrow.status)) {
+    await Transaction.updateOne(
+      { _id: transaction._id },
+      { $set: { 'escrow.status': 'resolved', 'escrow.resolution': 'chargeback_lost', 'escrow.resolvedAt': new Date() } },
+    );
+  }
+  await syncOrderForLostChargeback(transaction);
+}
+
 async function settleDisputeOutcome(transaction, dispute) {
   if (!transaction || !['won', 'lost'].includes(dispute.status)) return false;
   const nextStatus = dispute.status === 'won' ? 'chargeback_won' : 'chargeback_lost';
-  // Capture the release state BEFORE the claim overwrites the status: a
-  // dispute opened after completion has status chargeback_open, but its money
-  // already sits in available.
-  const wasReleased = transaction.status === 'completed'
+  // A dispute opened before completion may later be lost after the order
+  // completed. Conversely, `charge.dispute.created` overwrites the status with
+  // chargeback_open, so by the time the dispute is lost the status alone no
+  // longer proves the sale was completed. Persisted-at-open wins; otherwise
+  // fall back to the current status/payout.
+  const wasReleased = transaction.disputeInfo?.wasReleased === true
+    || transaction.status === 'completed'
     || transaction.payout?.status === 'completed';
   const disputeFee = disputeFeeFrom(dispute);
+  const refundAmount = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0;
+  const earnings = sellerSaleTotal(transaction.paymentBreakdown);
   const claimed = await Transaction.findOneAndUpdate(
     {
       _id: transaction._id,
@@ -112,6 +218,8 @@ async function settleDisputeOutcome(transaction, dispute) {
               'payout.status': 'refunded',
               'disputeInfo.feeAmount': disputeFee.amount,
               'disputeInfo.feeCurrency': disputeFee.currency,
+              'disputeInfo.wasReleased': wasReleased,
+              'disputeInfo.lostSettlement': { earnings, released: wasReleased, refundAmount },
             }
           : {}),
       },
@@ -119,79 +227,20 @@ async function settleDisputeOutcome(transaction, dispute) {
     { new: true },
   );
   if (!claimed) {
-    // Already terminal. A lost chargeback may still need its order healed (the
-    // original delivery could have crashed after the status claim); the sync is
-    // idempotent, so only the refund audit is guarded by the item presence.
+    // Already terminal. A lost chargeback may still need its fee, ledger,
+    // stats, return and order healed after a crash following the status claim;
+    // every step is idempotent, so replaying the whole settlement is safe.
     if (dispute.status === 'lost') {
       const current = await Transaction.findById(transaction._id).lean();
       if (current?.status === 'chargeback_lost') {
-        // Heal rows settled before the fee was recorded, and close returns a
-        // crash between the claim and the return sweep left open.
-        if (disputeFee.amount > 0 && !current.disputeInfo?.feeAmount) {
-          await Transaction.updateOne(
-            { _id: current._id },
-            { $set: { 'disputeInfo.feeAmount': disputeFee.amount, 'disputeInfo.feeCurrency': disputeFee.currency } },
-          );
-        }
-        await closeReturnsForLostChargeback(current);
-        await syncOrderForLostChargeback(current);
+        await completeLostChargeback(current, dispute);
       }
     }
     return false;
   }
 
   if (dispute.status === 'lost') {
-    const earnings = sellerSaleTotal(claimed.paymentBreakdown);
-    if (earnings > 0) {
-      // Released sales come out of available first (then pending, which may go
-      // negative); escrowed sales only touch pending. Atomic per helper.
-      await debitSellerForChargeback(claimed.seller, earnings, { released: wasReleased });
-      await User.updateOne(
-        { _id: claimed.seller },
-        {
-          $push: {
-            notifications: {
-              $each: [{
-                type: 'dispute',
-                from: claimed.buyer,
-                listing: claimed.listing,
-                transaction: claimed._id,
-                message: 'Chargeback lost. The sale amount has been deducted from your balance.',
-              }],
-              $position: 0,
-            },
-          },
-        },
-      );
-    }
-    if (wasReleased) {
-      // The sale was counted when its funds were released; a lost chargeback
-      // reverses it. Floor at zero so historic stat drift cannot go negative.
-      await User.updateOne({ _id: claimed.seller }, [
-        {
-          $set: {
-            'stats.totalSales': {
-              $max: [0, { $subtract: [{ $ifNull: ['$stats.totalSales', 0] }, 1] }],
-            },
-          },
-        },
-      ]);
-    }
-    await closeReturnsForLostChargeback(claimed);
-
-    // A pending/completed payout for a lost sale must not keep showing as owed
-    // or paid on the seller dashboard.
-    await Payout.updateMany(
-      { transaction: claimed._id, status: { $ne: 'refunded' } },
-      { $set: { status: 'refunded', refundedAt: new Date() } },
-    );
-    if (claimed.escrow && ['active', 'disputed'].includes(claimed.escrow.status)) {
-      await Transaction.updateOne(
-        { _id: claimed._id },
-        { $set: { 'escrow.status': 'resolved', 'escrow.resolution': 'chargeback_lost', 'escrow.resolvedAt': new Date() } },
-      );
-    }
-    await syncOrderForLostChargeback(claimed);
+    await completeLostChargeback(claimed, dispute);
   } else {
     await User.updateOne(
       { _id: claimed.seller },
@@ -285,6 +334,12 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
           const isNewDispute = !transaction.disputeInfo ||
             transaction.disputeInfo.stripeDisputeId !== dispute.id ||
             transaction.status !== 'chargeback_open';
+          // Capture release state BEFORE overwriting status: once this write
+          // lands there is no way to tell a completed sale from an escrowed
+          // one. The lost settlement uses this to claw back available funds.
+          const wasReleased = transaction.disputeInfo?.wasReleased === true
+            || transaction.status === 'completed'
+            || transaction.payout?.status === 'completed';
           transaction.status = 'chargeback_open';
           transaction.disputeInfo = {
             stripeDisputeId: dispute.id,
@@ -292,6 +347,7 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
             status: dispute.status,
             openedAt: transaction.disputeInfo?.openedAt || new Date(),
             evidenceDueBy: dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000) : null,
+            wasReleased,
           };
           await transaction.save();
           

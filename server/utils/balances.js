@@ -233,6 +233,89 @@ const debitSellerForChargeback = async (sellerId, amount, { released = false } =
 };
 
 /**
+ * Recover a lost chargeback from the seller ledger EXACTLY ONCE, together with
+ * the sales-stat reversal and the seller notification.
+ *
+ * The lost-chargeback status claim and these effects are separate writes, so a
+ * process can die between them. Stripe then replays the webhook; without a
+ * marker the replay cannot know which effects already ran. Debiting and
+ * decrementing unconditionally would double-charge the seller, while skipping
+ * them would silently leave the money and stats un-reversed.
+ *
+ * The fix mirrors releaseSellerEarnings(): the balance mutation, the
+ * `stats.totalSales` reversal, the notification and the settlement marker are
+ * written by ONE pipeline update. The `$ne` filter on the marker makes every
+ * later attempt a no-op, and because the marker moves with the money there is
+ * no crash window in which one happened without the other.
+ *
+ * `released` sales drain available first and let the unpaid remainder make
+ * pending negative (a recorded receivable). Escrowed sales only touch pending.
+ * A released sale also reverses its `totalSales` count, regardless of whether
+ * `amount` is positive.
+ */
+const settleLostChargeback = async ({
+  sellerId, transactionId, amount, released = false, notification = null,
+}) => {
+  const amt = round2(amount);
+  if (!Number.isFinite(amt) || amt < 0) return null;
+  const key = String(transactionId);
+  const marker = {
+    $concatArrays: [{ $ifNull: ['$balance.chargebackSettlements', []] }, [key]],
+  };
+  const statsReversal = {
+    $max: [0, { $subtract: [{ $ifNull: ['$stats.totalSales', 0] }, 1] }],
+  };
+  const notificationStage = notification
+    ? { notifications: { $concatArrays: [[notification], { $ifNull: ['$notifications', []] }] } }
+    : {};
+
+  if (!released) {
+    return User.updateOne(
+      { _id: sellerId, 'balance.chargebackSettlements': { $ne: key } },
+      [
+        {
+          $set: {
+            'balance.pending': { $subtract: [{ $ifNull: ['$balance.pending', 0] }, amt] },
+            'balance.totalEarned': { $max: [0, { $subtract: [{ $ifNull: ['$balance.totalEarned', 0] }, amt] }] },
+            ...notificationStage,
+            'balance.chargebackSettlements': marker,
+          },
+        },
+      ],
+    );
+  }
+
+  return User.updateOne(
+    { _id: sellerId, 'balance.chargebackSettlements': { $ne: key } },
+    [
+      {
+        $set: {
+          __fromAvailable: {
+            $min: [{ $max: [{ $ifNull: ['$balance.available', 0] }, 0] }, amt],
+          },
+        },
+      },
+      {
+        $set: {
+          'balance.available': { $subtract: [{ $ifNull: ['$balance.available', 0] }, '$__fromAvailable'] },
+          'balance.pending': {
+            $subtract: [
+              { $ifNull: ['$balance.pending', 0] },
+              { $subtract: [amt, '$__fromAvailable'] },
+            ],
+          },
+          'balance.totalEarned': { $max: [0, { $subtract: [{ $ifNull: ['$balance.totalEarned', 0] }, amt] }] },
+          'stats.totalSales': statsReversal,
+          ...notificationStage,
+          'balance.chargebackSettlements': marker,
+        },
+      },
+      { $unset: ['__fromAvailable'] },
+    ],
+  );
+};
+
+/**
  * Use a seller's settled `available` cash to clear a negative `pending`
  * receivable (a lost chargeback debit) BEFORE any cash-out. Without this a
  * seller could withdraw the available balance and keep the debt forever.
@@ -355,6 +438,7 @@ module.exports = {
   reverseEscrowHold,
   debitPendingAllowNegative,
   debitSellerForChargeback,
+  settleLostChargeback,
   offsetNegativePending,
   chargeSellerPostage,
   reverseSellerCredits,
