@@ -38,8 +38,19 @@ const formatTypeCounts = (byType = {}) => Object.entries(byType)
   .map(([type, count]) => `${type}=${count}`)
   .join(' ');
 
-const main = async () => {
-  const apply = process.argv.slice(2).includes('--apply');
+const countType = (notifications) => notifications.reduce((counts, notification) => {
+  const type = String(notification?.type || 'unknown');
+  counts[type] = (counts[type] || 0) + 1;
+  return counts;
+}, {});
+
+const main = async ({
+  apply = process.argv.slice(2).includes('--apply'),
+  disconnect = true,
+} = {}) => {
+  const close = async () => {
+    if (disconnect) await mongoose.disconnect();
+  };
 
   await connectDB();
   const { host, name } = mongoose.connection;
@@ -89,13 +100,13 @@ const main = async () => {
     }
     console.log('');
     console.log('Refusing to run while a mixed order is in scope. Resolve it manually first.');
-    await mongoose.disconnect();
+    await close();
     process.exit(2);
   }
 
   if (plan.qaTransactions.length === 0) {
     console.log('Nothing to clean up.');
-    await mongoose.disconnect();
+    await close();
     return;
   }
 
@@ -121,7 +132,7 @@ const main = async () => {
   if (!apply) {
     console.log('');
     console.log('DRY RUN — nothing was written. Re-run with --apply to reverse credits and delete.');
-    await mongoose.disconnect();
+    await close();
     return;
   }
 
@@ -142,6 +153,7 @@ const main = async () => {
   // listings; the reverse order would leave dangling references.
   const qaTransactionIds = new Set(plan.qaTransactions.map((txn) => String(txn._id)));
   let notificationsRemoved = 0;
+  const notificationsRemovedByType = {};
   for (const row of plan.notificationRemovals) {
     if (row.notificationIds.length === 0) continue;
     await User.updateOne(
@@ -161,6 +173,11 @@ const main = async () => {
     const remaining = (after?.notifications || []).filter((notification) =>
       notification.transaction
       && qaTransactionIds.has(String(notification.transaction)));
+    const remainingByType = countType(remaining);
+    for (const [type, count] of Object.entries(row.byType)) {
+      const removed = Math.max(0, count - (remainingByType[type] || 0));
+      if (removed) notificationsRemovedByType[type] = (notificationsRemovedByType[type] || 0) + removed;
+    }
     notificationsRemoved += Math.max(0, row.total - remaining.length);
   }
 
@@ -172,16 +189,21 @@ const main = async () => {
     transactions: (await Transaction.deleteMany({ _id: { $in: ids(plan.qaTransactions) } })).deletedCount,
   };
 
+  const removedBreakdown = formatTypeCounts(notificationsRemovedByType);
   console.log('');
   console.log('APPLY — deleted:');
-  console.log(`  notifications=${deleted.notifications} orders=${deleted.orders} returns=${deleted.returns} payouts=${deleted.payouts} transactions=${deleted.transactions}`);
+  console.log(`  notifications=${deleted.notifications}${removedBreakdown ? ` (${removedBreakdown})` : ''} orders=${deleted.orders} returns=${deleted.returns} payouts=${deleted.payouts} transactions=${deleted.transactions}`);
   console.log('Listings were left untouched (retire them separately if needed).');
 
-  await mongoose.disconnect();
+  await close();
 };
 
-main().catch(async (error) => {
-  console.error('QA commerce cleanup failed:', error.message);
-  await mongoose.disconnect().catch(() => {});
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(async (error) => {
+    console.error('QA commerce cleanup failed:', error.message);
+    await mongoose.disconnect().catch(() => {});
+    process.exit(1);
+  });
+}
+
+module.exports = { main };
