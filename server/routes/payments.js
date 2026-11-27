@@ -1986,7 +1986,10 @@ router.post('/connect/onboard', auth, async (req, res) => {
     res.json({ url: link.url, accountId });
   } catch (error) {
     console.error('Stripe Connect onboarding error:', error.message);
-    res.status(502).json({ message: 'Could not start payout onboarding' });
+    res.status(502).json({
+      message: 'Could not start payout onboarding',
+      code: error.code || error.type || 'connect_onboarding_failed',
+    });
   }
 });
 
