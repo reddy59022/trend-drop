@@ -77,6 +77,7 @@ const UnsupportedRegionPage = lazy(() => import('./pages/UnsupportedRegion'));
 const LegalCenterPage = lazy(() => import('./pages/LegalCenter'));
 const LegalDocumentPage = lazy(() => import('./pages/LegalDocument'));
 const LegalAdminPage = lazy(() => import('./pages/LegalAdmin'));
+const HelpCenterPage = lazy(() => import('./pages/HelpCenter'));
 
 const PageLoader = () => (
   <div className="page-loader">
@@ -235,6 +236,7 @@ function App() {
                 <Route path="/verify-email" element={<VerifyEmailPage />} />
                 <Route path="/legal" element={<LegalCenterPage />} />
                 <Route path="/legal/:type" element={<LegalDocumentPage />} />
+                <Route path="/help" element={<HelpCenterPage />} />
                 <Route path="/admin/legal" element={<ProtectedRoute requiredRole={['admin', 'legal_counsel']}><LegalAdminPage /></ProtectedRoute>} />
                 <Route path="/collections/:sellerId" element={<CollectionsPage />} />
 

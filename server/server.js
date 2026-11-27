@@ -23,6 +23,11 @@ if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   require('dotenv').config();
 }
 
+// Transactional email must not silently ship from the personal fallback
+// sender in production (server/docs/email-sender-setup.md).
+const { warnIfSenderNotConfigured } = require('./config/email');
+warnIfSenderNotConfigured();
+
 const connectDB = require('./config/db');
 const { initCronJobs } = require('./config/cron');
 const { initializeWebSocket } = require('./websocket');

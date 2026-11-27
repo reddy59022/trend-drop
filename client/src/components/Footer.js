@@ -95,7 +95,7 @@ const Footer = () => {
           {/* Support */}
           <div className="footer-section">
             <h4>Support</h4>
-            <Link to="/settings">Help Center</Link>
+            <Link to="/help">Help Center</Link>
             <a href={contactMailto('TrendDrop support request')}>Contact Support</a>
             <a href={contactMailto('TrendDrop problem report')}>Report a Problem</a>
             <Link to="/legal/privacy">Privacy Notice</Link>

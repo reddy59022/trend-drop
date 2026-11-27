@@ -321,6 +321,8 @@ jest.mock('cloudinary', () => {
 
 // 2a. Brevo transactional email — never send real email from tests.
 jest.mock('./config/email', () => ({
+  warnIfSenderNotConfigured: jest.fn(() => ({ configured: true, sender: 'connect.trenddrop@gmail.com', warned: false })),
+  FALLBACK_SENDER_EMAIL: 'reddy59021@gmail.com',
   sendVerificationEmail: jest.fn(async () => true),
   sendPasswordResetEmail: jest.fn(async () => true),
   sendOperationalAlert: jest.fn(async () => ({ emailSent: true })),

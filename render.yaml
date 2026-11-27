@@ -70,6 +70,9 @@ services:
       # Email (Brevo)
       - key: BREVO_API_KEY
         sync: false
+      # From address for transactional email. Must be a sender verified in
+      # Brevo. When unset, production logs a startup warning and sends from
+      # the code fallback (server/docs/email-sender-setup.md).
       - key: BREVO_SENDER_EMAIL
         sync: false
       # OAuth providers

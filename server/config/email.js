@@ -23,8 +23,39 @@ const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL;
 const ALERT_WEBHOOK_TIMEOUT_MS = Math.max(1000, Number(process.env.ALERT_WEBHOOK_TIMEOUT_MS) || 10000);
 const ALERT_WEBHOOK_MAX_RETRIES = retryLimit(process.env.ALERT_WEBHOOK_MAX_RETRIES);
 
-const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'reddy59021@gmail.com';
+// The sender address every recipient sees in the From line. Brevo only accepts
+// senders verified on the account, so an unset BREVO_SENDER_EMAIL still falls
+// back to the historically verified inbox — but that fallback must never ship
+// silently in production (see warnIfSenderNotConfigured).
+const FALLBACK_SENDER_EMAIL = 'reddy59021@gmail.com';
+const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || FALLBACK_SENDER_EMAIL;
 const SENDER_NAME = 'TrendDrop';
+
+/**
+ * Warn at boot when production would send transactional email from the
+ * personal fallback sender instead of a configured Brevo sender.
+ *
+ * This warns rather than throwing on purpose: Brevo rejects unverified
+ * senders, and the canonical contact address must be verified in Brevo before
+ * it can be used as the From address. Failing startup on an unset variable
+ * would take verification and password-reset email down with it, while a boot
+ * warning makes the fallback impossible to miss in deploy logs.
+ *
+ * Setup steps: server/docs/email-sender-setup.md
+ */
+const warnIfSenderNotConfigured = ({ env = process.env, log = console.warn } = {}) => {
+  const configuredSender = String(env.BREVO_SENDER_EMAIL || '').trim();
+  const sender = configuredSender || FALLBACK_SENDER_EMAIL;
+  if (env.NODE_ENV !== 'production' || configuredSender) {
+    return { configured: Boolean(configuredSender), sender, warned: false };
+  }
+  log(
+    `[email] BREVO_SENDER_EMAIL is not set in production — transactional email will be sent from ${FALLBACK_SENDER_EMAIL}, `
+    + `not the public contact ${CONTACT_EMAIL}. Verify ${CONTACT_EMAIL} as a Brevo sender and set BREVO_SENDER_EMAIL `
+    + 'in Render (server/docs/email-sender-setup.md).',
+  );
+  return { configured: false, sender, warned: true };
+};
 // FRONTEND_URL drives all email links. Fall back to CLIENT_URL, then localhost
 // so a missing env var never produces 'undefined/verify-email' links.
 const BASE_URL = (process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/+$/, '');
@@ -324,6 +355,8 @@ const sendOperationalAlert = async ({ subject, text }) => {
 };
 
 module.exports = {
+  warnIfSenderNotConfigured,
+  FALLBACK_SENDER_EMAIL,
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendOperationalAlert,
