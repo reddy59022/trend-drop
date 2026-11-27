@@ -366,6 +366,9 @@ router.post('/resolve-dispute', auth, async (req, res) => {
     // the refund/release, the dispute remains retryable and no local balance,
     // inventory, payout, or transaction state is changed.
     if (resolution === 'release_to_buyer') {
+      // Declared outside the try so the failure path can restore the payout
+      // status this route claims before calling the provider.
+      const priorPayoutStatus = transaction.payout?.status || 'pending';
       try {
         const paymentIntent = paymentIntentId ? await findPaymentIntent(paymentIntentId) : null;
         if (!paymentIntent) {
@@ -374,12 +377,29 @@ router.post('/resolve-dispute', auth, async (req, res) => {
         if (paymentIntent.status === 'requires_capture') {
           await releaseAuthorization(paymentIntentId);
         } else if (paymentIntentId) {
+          // Claim the provider refund before calling Stripe. Stripe emits
+          // `charge.refunded` the moment it accepts the refund, which can be
+          // while this request is still reversing escrow and restocking the
+          // listing. The webhook treats payout.status === 'refunded' as already
+          // settled, so this marker stops it from unwinding the sale a second
+          // time. It is rolled back below if the provider refund fails.
+          if (transaction.payout) transaction.payout.status = 'refunded';
+          else transaction.payout = { status: 'refunded' };
+          await transaction.save();
           await issueRefund(paymentIntentId);
         } else {
           return res.status(502).json({ message: 'Payment provider reference is missing' });
         }
       } catch (providerError) {
         console.error('Escrow dispute refund error:', providerError.message);
+        if (transaction.payout && transaction.payout.status === 'refunded' && priorPayoutStatus !== 'refunded') {
+          try {
+            transaction.payout.status = priorPayoutStatus;
+            await transaction.save();
+          } catch (claimRollbackErr) {
+            console.error('Escrow refund claim rollback failed:', claimRollbackErr.message);
+          }
+        }
         return res.status(502).json({ message: 'Escrow refund could not be processed. No ledger changes were made.' });
       }
 

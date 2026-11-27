@@ -327,6 +327,10 @@ describe('Returns & Refund Management', () => {
     expect(retryable.status).toBe('shipped');
     expect(retryable.providerRefunded).toBe(false);
     expect(retryable.providerRefundId).toBe('');
+    // The pre-refund claim is released when the provider rejects the refund,
+    // so a later charge.refunded webhook is not ignored on a sale we still hold.
+    const unclaimed = await Transaction.findById(txn._id);
+    expect(unclaimed.payout.status).toBe('pending');
 
     payments.issueRefund.mockResolvedValueOnce({ id: 're_route_ok', status: 'succeeded', amount: 5650 });
     const settled = await request(app)
@@ -413,6 +417,70 @@ describe('Returns & Refund Management', () => {
     expect(kept.status).toBe('completed');
     const keptItem = await Listing.findById(keptListing._id);
     expect(keptItem.available).toBe(false);
+  });
+
+  test('RET.15 - the provider refund is claimed before Stripe is called so charge.refunded cannot unwind twice', async () => {
+    const paymentIntentId = `pi_claim_${Date.now()}`;
+    global.__mockPaymentIntents = global.__mockPaymentIntents || {};
+    global.__mockPaymentIntents[paymentIntentId] = {
+      id: paymentIntentId, status: 'succeeded', amount: 5650,
+      metadata: { buyerId: String(buyerId) },
+    };
+    const claimListing = await Listing.create({
+      seller: sellerId, title: 'Refund claim ordering item', description: 'test',
+      price: 50, category: 'Women', condition: 'New with tags', images: ['img1.jpg'],
+      available: false, sold: true, status: 'active', quantity: 0, quantitySold: 1,
+    });
+    const claimTxn = await Transaction.create({
+      buyer: buyerId, seller: sellerId, listing: claimListing._id, itemPrice: 50,
+      currency: 'USD', quantity: 1, status: 'completed',
+      paymentBreakdown: {
+        subtotal: 50, shippingCost: 0, buyerProtectionFee: 2.5, buyerProtectionPercent: 5,
+        totalPaid: 56.5, platformFee: 4, platformFeePercent: 10, sellerEarnings: 44,
+        paymentIntentId,
+      },
+      payout: { status: 'pending', transactionId: paymentIntentId },
+      shipping: { trackingNumber: 'TRK-RET-15' },
+    });
+    const created = await request(app)
+      .post('/api/returns')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ transactionId: claimTxn._id, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
+    expect(created.status).toBe(201);
+    await request(app)
+      .put(`/api/returns/${created.body._id}/approve`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    await request(app)
+      .put(`/api/returns/${created.body._id}/ship`)
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ trackingNumber: 'RET-RET-15' });
+
+    // Capture what a charge.refunded webhook would see while the route is
+    // still mid-settlement. If the payout is not yet marked refunded, the
+    // webhook restores inventory and reverses escrow a second time.
+    let duringRefund = null;
+    payments.issueRefund.mockImplementationOnce(async () => {
+      const txnDuring = await Transaction.findById(claimTxn._id);
+      const listingDuring = await Listing.findById(claimListing._id);
+      duringRefund = {
+        payoutStatus: txnDuring.payout?.status,
+        quantity: listingDuring.quantity,
+        quantitySold: listingDuring.quantitySold || 0,
+      };
+      return { id: `re_claim_${Date.now()}`, status: 'succeeded', amount: 5650 };
+    });
+    const settled = await request(app)
+      .put(`/api/returns/${created.body._id}/receive`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    expect(settled.status).toBe(200);
+
+    expect(duringRefund.payoutStatus).toBe('refunded');
+    // The local unwind runs after the provider call, exactly once.
+    expect(duringRefund.quantity).toBe(0);
+    expect(duringRefund.quantitySold).toBe(1);
+    const finalListing = await Listing.findById(claimListing._id);
+    expect(finalListing.quantity).toBe(1);
+    expect(finalListing.quantitySold || 0).toBe(0);
   });
 
   test('RET.11 - Seller can deny a return request', async () => {

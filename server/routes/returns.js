@@ -516,6 +516,9 @@ router.put('/:id/receive', auth, async (req, res) => {
     // empty, while batch purchases set payout.transactionId. Resolve BOTH, or
     // the provider refund is silently skipped for every single-item return.
     const paymentIntentId = txn.payout?.transactionId || txn.paymentBreakdown?.paymentIntentId;
+    // Declared outside the try so the failure path can restore the payout
+    // status this route claims before calling the provider.
+    let priorPayoutStatus = txn.payout?.status || 'pending';
     if (paymentIntentId) {
       try {
         const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
@@ -528,6 +531,18 @@ router.put('/:id/receive', auth, async (req, res) => {
           // free and those sellers stayed credited. Refund this transaction's
           // own amount; only a legacy row with no recorded amount falls back to
           // a full-intent refund.
+          //
+          // CLAIM THE REFUND BEFORE CALLING STRIPE. Stripe emits
+          // `charge.refunded` the moment it accepts the refund, which can be
+          // while this request is still unwinding the order. The webhook
+          // treats payout.status === 'refunded' as already settled, so this
+          // marker stops it from restoring inventory and reversing escrow a
+          // second time (this route does both exactly once, below). The marker
+          // is rolled back if the provider refund fails.
+          priorPayoutStatus = txn.payout?.status || 'pending';
+          if (txn.payout) txn.payout.status = 'refunded';
+          else txn.payout = { status: 'refunded' };
+          await txn.save();
           const refund = await issueRefund(paymentIntentId, buyerRefund > 0 ? buyerRefund : undefined);
           // Stripe can accept the call and still reject the refund. Only a
           // provider-accepted result may settle the return.
@@ -542,8 +557,17 @@ router.put('/:id/receive', auth, async (req, res) => {
         }
       } catch (stripeErr) {
         // No inventory, payout, or balance mutation has happened yet. Keep
-        // the return retryable if the provider rejects the refund.
+        // the return retryable if the provider rejects the refund, and release
+        // the pre-refund claim so the ledger still shows the sale as held.
         console.error('Stripe refund on receive:', stripeErr.message);
+        if (txn.payout && txn.payout.status === 'refunded' && priorPayoutStatus !== 'refunded') {
+          try {
+            txn.payout.status = priorPayoutStatus;
+            await txn.save();
+          } catch (claimRollbackErr) {
+            console.error('Refund claim rollback failed:', claimRollbackErr.message);
+          }
+        }
         await Return.updateOne(
           { _id: returnRequest._id, status: 'received' },
           { $set: { status: 'shipped' } },

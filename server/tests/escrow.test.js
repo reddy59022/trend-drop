@@ -400,6 +400,8 @@ describe('Escrow Service', () => {
       expect(res.statusCode).toBe(502);
       const fresh = await Transaction.findById(transactionId);
       expect(fresh.escrow.status).toBe('disputed');
+      // No provider call was made, so no refund claim may be left behind.
+      expect(fresh.payout?.status).toBe('pending');
       expect((await Listing.findById(listingId)).quantity).toBe(0);
     });
 
