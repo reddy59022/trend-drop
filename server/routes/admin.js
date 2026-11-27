@@ -6,6 +6,7 @@ const { adminAuth } = require('../middleware/admin');
 const { asNumber } = require('../utils/validators');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
+const restoreListingInventory = require('../utils/restoreListingInventory');
 const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
 const Report = require('../models/Report');
@@ -226,15 +227,23 @@ router.put('/users/:id/role', async (req, res) => {
 router.post('/users/:id/suspend', async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user || user.deletedAt) return res.status(404).json({ message: 'User not found' });
 
     user.stats.strikes = 3; // Suspension threshold
+    if (user.role !== 'suspended') user.previousRole = user.role;
     user.role = 'suspended';
     // Revoke every already-issued token and close live sockets. Otherwise a
     // suspended account's existing JWT becomes valid again the moment an
     // admin unsuspends it, and its open socket keeps receiving events now.
     user.tokenVersion = (user.tokenVersion || 0) + 1;
     await user.save();
+    // A suspended seller must stop taking new orders immediately. Hide only
+    // currently active listings and remember which ones we hid, so unsuspend
+    // can restore exactly those without resurrecting the seller's drafts.
+    await Listing.updateMany(
+      { seller: user._id, status: 'active' },
+      { $set: { status: 'draft', available: false, suspensionPaused: true } },
+    );
     disconnectUser(user._id);
 
     res.json({ message: 'User suspended', user: { _id: user._id, name: user.name, email: user.email, role: user.role } });
@@ -248,11 +257,24 @@ router.post('/users/:id/suspend', async (req, res) => {
 router.post('/users/:id/unsuspend', async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    // A deleted account is anonymized and must never be made active again;
+    // doing so could also restore its old listings via suspensionPaused.
+    if (!user || user.deletedAt) return res.status(404).json({ message: 'User not found' });
 
     user.stats.strikes = 0;
-    user.role = 'user';
+    // Restore the role the account had before suspension, never silently
+    // demote a suspended moderator or admin.
+    user.role = ['user', 'moderator', 'admin', 'legal_counsel'].includes(user.previousRole)
+      ? user.previousRole
+      : 'user';
+    user.previousRole = '';
     await user.save();
+    // Restore only listings hidden by the suspension; leave drafts and sold
+    // or out-of-stock listings exactly as they were.
+    await Listing.updateMany(
+      { seller: user._id, suspensionPaused: true, sold: { $ne: true }, quantity: { $gt: 0 } },
+      { $set: { status: 'active', available: true, suspensionPaused: false } },
+    );
 
     res.json({ message: 'User unsuspended', user: { _id: user._id, name: user.name, email: user.email, role: user.role } });
   } catch (error) {
@@ -469,9 +491,9 @@ router.post('/transactions/:id/refund', async (req, res) => {
     const restoredQuantity = Number.isInteger(txn.quantity) && txn.quantity > 0 ? txn.quantity : 1;
     await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
     await markPayoutRefunded(txn);
-    await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: restoredQuantity, quantitySold: -restoredQuantity },
-      $set: { sold: false, available: true },
+    await restoreListingInventory(txn.listing, {
+      quantity: restoredQuantity,
+      quantitySold: -restoredQuantity,
     });
 
     txn.status = 'refunded';
@@ -518,6 +540,7 @@ router.post('/auto-suspend', async (req, res) => {
     let suspended = 0;
 
     for (const user of flaggedUsers) {
+      user.previousRole = user.role;
       user.role = 'suspended';
       user.tokenVersion = (user.tokenVersion || 0) + 1;
       user.notifications.unshift({
@@ -525,6 +548,10 @@ router.post('/auto-suspend', async (req, res) => {
         message: `Your account has been automatically suspended due to ${user.stats.strikes} strikes. Please contact support.`,
       });
       await user.save();
+      await Listing.updateMany(
+        { seller: user._id, status: 'active' },
+        { $set: { status: 'draft', available: false, suspensionPaused: true } },
+      );
       disconnectUser(user._id);
       suspended++;
     }

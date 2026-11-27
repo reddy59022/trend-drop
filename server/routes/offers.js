@@ -22,8 +22,8 @@ router.param('id', (req, res, next, id) => {
 // "proceed to purchase" on an item that can never be bought (the purchase
 // gate then fails with a confusing error). Returns false when it responded.
 async function assertListingPurchasable(offer, res) {
-  const listing = await Listing.findById(offer.listing).select('_id available sold');
-  if (!listing || !listing.available || listing.sold) {
+  const listing = await Listing.findById(offer.listing).select('_id status available sold');
+  if (!listing || listing.status !== 'active' || !listing.available || listing.sold) {
     res.status(400).json({ message: 'Listing is no longer available' });
     return false;
   }
@@ -79,7 +79,7 @@ router.post('/', auth, async (req, res) => {
     const listing = await Listing.findById(listingId);
     // Unpublished/removed listings are not publicly retrievable, so they must
     // not accept offers either (nor confirm that they exist).
-    if (!listing || ['draft', 'deleted'].includes(listing.status)) {
+    if (!listing || listing.status !== 'active') {
       return res.status(404).json({ message: 'Listing not found' });
     }
 
@@ -87,7 +87,7 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Cannot offer on your own listing' });
     }
 
-    if (!listing.available || listing.sold) {
+    if (listing.status !== 'active' || !listing.available || listing.sold) {
       return res.status(400).json({ message: 'Listing is no longer available' });
     }
 
@@ -472,8 +472,8 @@ router.post('/to-likers/:offerId/claim', auth, async (req, res) => {
     // R3: the offer is exclusive to people who liked the listing (the
     // share notification only goes to likers), so a claim by anyone else
     // would be a discount leak.
-    const claimListing = await Listing.findById(offer.listing).select('_id available sold likes');
-    if (!claimListing || !claimListing.available || claimListing.sold) {
+    const claimListing = await Listing.findById(offer.listing).select('_id status available sold likes');
+    if (!claimListing || claimListing.status !== 'active' || !claimListing.available || claimListing.sold) {
       return res.status(400).json({ message: 'Listing is no longer available' });
     }
     const isLiker = (claimListing.likes || []).some((l) => l.toString() === req.user._id.toString());

@@ -124,6 +124,12 @@ const listingSchema = new mongoose.Schema({
     enum: ['draft', 'active', 'sold', 'deleted'],
     default: 'active',
   },
+  // True when an admin suspension hid this listing. Unsuspend restores only
+  // listings carrying this marker, so the seller's own drafts stay drafts.
+  suspensionPaused: {
+    type: Boolean,
+    default: false,
+  },
   sold: {
     type: Boolean,
     default: false,

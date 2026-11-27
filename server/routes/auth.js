@@ -1089,6 +1089,10 @@ router.delete('/account', auth, async (req, res) => {
           // The connected Stripe account is a credential-bearing identifier;
           // an anonymized account must not retain it.
           stripeAccountId: null,
+          // Do not leave a deleted account attributed to (and rewardable
+          // through) a referrer.
+          referralApplied: false,
+          referredBy: null,
           googleId: null,
           appleId: null,
           facebookId: null,

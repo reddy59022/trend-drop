@@ -135,7 +135,7 @@ router.post('/batch', auth, async (req, res) => {
       }
       const listing = await Listing.findById(item.listingId);
       if (!listing) throw new Error(`Listing ${item.listingId} not found`);
-      if (!listing.available || listing.sold || listing.quantity < quantity) {
+      if (listing.status !== 'active' || !listing.available || listing.sold || listing.quantity < quantity) {
         throw new Error(`Item "${listing.title}" is no longer available`);
       }
 
@@ -224,7 +224,10 @@ router.post('/guest', async (req, res) => {
       return res.status(400).json({ message: 'Cannot purchase your own listing' });
     }
 
-    if (!listing.available || listing.sold) {
+    // Draft/deleted listings are not for sale even if a stale document still
+    // has available:true. Guest checkout previously ignored status entirely,
+    // so knowing a listing id was enough to buy an unpublished item.
+    if (listing.status !== 'active' || !listing.available || listing.sold) {
       return res.status(400).json({ message: 'Listing is no longer available' });
     }
     if (listing.quantity <= 0) {
@@ -485,7 +488,7 @@ router.post('/', auth, async (req, res) => {
         return res.status(400).json({ message: 'Cannot purchase your own listing' });
       }
 
-      if (!listing.available || listing.sold) {
+      if (listing.status !== 'active' || !listing.available || listing.sold) {
         return res.status(400).json({ message: 'Listing is no longer available' });
       }
       if (listing.quantity <= 0) {
@@ -792,7 +795,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     if (!listing) {
       return res.status(404).json({ message: 'Listing not found' });
     }
-    if (!listing.available || listing.sold || (listing.quantity !== undefined && listing.quantity <= 0)) {
+    if (listing.status !== 'active' || !listing.available || listing.sold || (listing.quantity !== undefined && listing.quantity <= 0)) {
       return res.status(400).json({ message: 'Listing not available for purchase' });
     }
     // TDD-B1: verify authorized payment BEFORE any money/inventory state.

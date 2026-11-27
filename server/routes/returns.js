@@ -11,6 +11,7 @@ const { isValidObjectId } = require('../utils/validators');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
 const { clawbackSellerEarnings, sellerSaleTotal, chargeSellerPostage } = require('../utils/balances');
 const { refundShippingLabel } = require('../services/easypostService');
+const restoreListingInventory = require('../utils/restoreListingInventory');
 
 // Reuse the listing image pipeline (Cloudinary in prod, deterministic mock in test).
 const { uploadListingImages } = (() => {
@@ -538,9 +539,9 @@ router.put('/:id/receive', auth, async (req, res) => {
     // once. Ordering these steps prevents a failed provider call from leaving
     // a retry that can restore stock or claw back funds twice.
     try {
-      await Listing.findByIdAndUpdate(txn.listing, {
-        $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
-        $set: { sold: false, available: true },
+      await restoreListingInventory(txn.listing, {
+        quantity: txn.quantity || 1,
+        quantitySold: -(txn.quantity || 1),
       });
     } catch (listingErr) { console.error('Restore listing on receive:', listingErr.message); }
     await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);

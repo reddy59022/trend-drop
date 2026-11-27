@@ -13,6 +13,7 @@ const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundR
 const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
 const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings, chargeSellerPostage, sellerSaleTotal } = require('../utils/balances');
 const { claimTransaction } = require('../utils/claims');
+const restoreListingInventory = require('../utils/restoreListingInventory');
 const { refundTransactionLabel } = require('../services/shippingPurchase');
 const { isValidObjectId } = require('../utils/validators');
 // Viewer-aware transaction shaping (seller earnings column + boost privacy).
@@ -632,9 +633,9 @@ router.post('/:transactionId/cancel', auth, validateOrderAccess, async (req, res
 
     // 3c. Inventory: restore the EXACT quantity bought (zero-leakage).
     const restoredQty = claimed.quantity || 1;
-    await Listing.findByIdAndUpdate(claimed.listing, {
-      $inc: { quantity: restoredQty, quantitySold: -restoredQty },
-      $set: { sold: false, available: true },
+    await restoreListingInventory(claimed.listing, {
+      quantity: restoredQty,
+      quantitySold: -restoredQty,
     });
 
     // 3d. Boost fee is never charged for a cancelled order (idempotent reversal).
@@ -1328,9 +1329,9 @@ router.post('/:transactionId/confirm-return-received', auth, validateOrderAccess
     // Provider refund succeeded (or authorization was released); now apply
     // the local zero-sum unwind. No inventory or ledger mutation occurs before
     // this point, so provider failures remain fully retryable.
-    await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
-      $set: { sold: false, available: true },
+    await restoreListingInventory(txn.listing, {
+      quantity: txn.quantity || 1,
+      quantitySold: -(txn.quantity || 1),
     });
     await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
     await markPayoutRefunded(txn);
@@ -1477,9 +1478,9 @@ router.post('/:transactionId/process-return', auth, validateOrderAccess, async (
     // Provider refund succeeded (or authorization was released); now apply
     // the local zero-sum unwind. No inventory or ledger mutation occurs before
     // this point, so provider failures remain fully retryable.
-    await Listing.findByIdAndUpdate(txn.listing, {
-      $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
-      $set: { sold: false, available: true },
+    await restoreListingInventory(txn.listing, {
+      quantity: txn.quantity || 1,
+      quantitySold: -(txn.quantity || 1),
     });
     await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
     await markPayoutRefunded(txn);
@@ -1636,9 +1637,9 @@ router.post('/:transactionId/resolve-dispute', auth, validateOrderAccess, async 
 
     if (normalized === 'refund') {
       // Full buyer refund — same robust claw-back as the return flow.
-      await Listing.findByIdAndUpdate(txn.listing, {
-        $inc: { quantity: txn.quantity || 1, quantitySold: -(txn.quantity || 1) },
-        $set: { sold: false, available: true },
+      await restoreListingInventory(txn.listing, {
+        quantity: txn.quantity || 1,
+        quantitySold: -(txn.quantity || 1),
       });
       await reverseBoostFeeOwed(txn.listing, txn.paymentBreakdown?.boostFee || 0);
       await markPayoutRefunded(txn);

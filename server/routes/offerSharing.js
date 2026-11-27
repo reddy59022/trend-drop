@@ -57,7 +57,7 @@ router.post('/to-likers/:listingId', auth, async (req, res) => {
 
     // GA-7c: likers must not be handed offers on items that can no longer
     // be purchased.
-    if (!listing.available || listing.sold) {
+    if (listing.status !== 'active' || !listing.available || listing.sold) {
       return res.status(400).json({ message: 'Listing is no longer available' });
     }
 

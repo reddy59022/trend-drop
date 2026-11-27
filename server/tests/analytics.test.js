@@ -88,6 +88,9 @@ describe('v50.0 Advanced Analytics Dashboard', () => {
     expect(res.body.totalRevenue).toBe(85);
     expect(res.body.netRevenue).toBe(85);
     expect(res.body.totalTransactions).toBe(1);
+    // Checkout charges 8% for every seller; a self-activated subscription
+    // must not make the dashboard display a 5% rate that was never billed.
+    expect(res.body.platformFeePercent).toBe(8);
   });
 
   test('v50.3 - Should return seller average order value in overview', async () => {

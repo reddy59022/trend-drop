@@ -5,6 +5,7 @@ const { auth } = require('../middleware/auth');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
+const restoreListingInventory = require('../utils/restoreListingInventory');
 const Payout = require('../models/Payout');
 const Offer = require('../models/Offer');
 const Promo = require('../models/Promo');
@@ -221,7 +222,7 @@ router.post('/create-intent', auth, async (req, res) => {
       if (listing.seller.toString() === req.user._id.toString()) {
         return res.status(400).json({ message: 'Cannot purchase your own listing' });
       }
-      if (!listing.available || listing.sold || listing.quantity <= 0) {
+      if (listing.status !== 'active' || !listing.available || listing.sold || listing.quantity <= 0) {
         return res.status(400).json({ message: `"${listing.title}" is no longer available` });
       }
       if (listing.quantity < requestedQuantity) {
@@ -564,7 +565,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       }
       const requestedQuantity = hasQuantity ? item.quantity : 1;
       const listing = await Listing.findById(item.listingId);
-      if (!listing || !listing.available || listing.sold || listing.quantity <= 0) {
+      if (!listing || listing.status !== 'active' || !listing.available || listing.sold || listing.quantity <= 0) {
         return releaseAuthOnFailure(res, 400, {
           message: `Item ${item.listingId} is no longer available`,
           failedItem: item.listingId,
@@ -1285,15 +1286,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
           // not a hardcoded 1 — a qty=3 line must put all 3 units back) and
           // clear the sold/available flags, so a rolled-back purchase is
           // buyable again. Boost entries are reversed in their own loop below.
-          const inc = { quantity: change.qty || 1, quantitySold: -(change.qty || 1) };
-          await Listing.findOneAndUpdate(
-            { _id: change.listingId },
-            {
-              $inc: inc,
-              $set: { sold: false, available: true },
-            },
-            { new: true }
-          );
+          await restoreListingInventory(change.listingId, {
+            quantity: change.qty || 1,
+            quantitySold: -(change.qty || 1),
+          });
         } catch (e) {}
       }
     }
@@ -1398,7 +1394,7 @@ router.post('/confirm', auth, async (req, res) => {
       const voided = await voidStrandedSingleUnitIntent(paymentIntent, paymentIntentId, req.user._id, listingId);
       return res.status(404).json({ message: 'Listing not found', paymentReleased: voided });
     }
-    if (!listing.available || listing.sold || listing.quantity <= 0) {
+    if (listing.status !== 'active' || !listing.available || listing.sold || listing.quantity <= 0) {
       const voided = await voidStrandedSingleUnitIntent(paymentIntent, paymentIntentId, req.user._id, listingId);
       return res.status(400).json({ message: 'Item sold out', paymentReleased: voided });
     }
@@ -1731,10 +1727,7 @@ router.post('/confirm', auth, async (req, res) => {
     }
     if (inventoryClaimed && req.body.listingId) {
       try {
-        await Listing.findOneAndUpdate(
-          { _id: req.body.listingId },
-          { $inc: { quantity: 1, quantitySold: -1 }, $set: { sold: false, available: true } },
-        );
+        await restoreListingInventory(req.body.listingId, { quantity: 1, quantitySold: -1 });
       } catch (e) { console.error('Inventory rollback failed:', e.message); }
     }
     if (boostFeeRecorded && req.body.listingId) {

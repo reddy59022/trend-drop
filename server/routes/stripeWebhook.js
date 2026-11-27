@@ -11,6 +11,7 @@ const {
 } = require('../config/payments');
 const { clawbackSellerEarnings, reverseEscrowHold, sellerSaleTotal } = require('../utils/balances');
 const { increment } = require('../utils/metrics');
+const restoreListingInventory = require('../utils/restoreListingInventory');
 
 // Transactions created by older checkout paths stored the provider intent only
 // in paymentBreakdown.paymentIntentId. Webhook reconciliation must support both
@@ -336,9 +337,9 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
           const restoredQuantity = Number.isInteger(transaction.quantity) && transaction.quantity > 0
             ? transaction.quantity
             : 1;
-          await Listing.findByIdAndUpdate(transaction.listing, {
-            $inc: { quantity: restoredQuantity, quantitySold: -restoredQuantity },
-            $set: { sold: false, available: true },
+          await restoreListingInventory(transaction.listing, {
+            quantity: restoredQuantity,
+            quantitySold: -restoredQuantity,
           }).catch((e) => console.error('charge.refunded inventory restore:', e.message));
 
           const seller = await User.findById(transaction.seller).catch(() => null);

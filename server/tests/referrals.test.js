@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 let userToken;
 let userId;
 let referrerId;
+let secondReferrerId;
 let secondUserId;
 
 async function createUser(email, name = 'TestUser') {
@@ -36,6 +37,7 @@ describe('Referral Program', () => {
     const user = await createUser(`user_${Date.now()}@example.com`, 'User');
     userId = user._id;
     secondUserId = null;
+    secondReferrerId = null;
     
     const secret = process.env.JWT_SECRET || 'fallback_secret_change_me';
     userToken = jwt.sign({ id: userId }, secret, { expiresIn: '1h' });
@@ -43,8 +45,8 @@ describe('Referral Program', () => {
   });
 
   afterEach(async () => {
-    await Referral.deleteMany({ referrer: { $in: [userId, referrerId] } });
-    await User.deleteMany({ _id: { $in: [userId, referrerId, secondUserId].filter(Boolean) } });
+    await Referral.deleteMany({ referrer: { $in: [userId, referrerId, secondReferrerId].filter(Boolean) } });
+    await User.deleteMany({ _id: { $in: [userId, referrerId, secondReferrerId, secondUserId].filter(Boolean) } });
   });
 
   describe('GET /api/referrals/settings', () => {
@@ -121,6 +123,38 @@ describe('Referral Program', () => {
       expect(referral.referredUsers).toHaveLength(1);
     });
 
+    it('REF.5b should let an account be attributed to only one referral code', async () => {
+      const first = await request(app)
+        .post('/api/referrals/generate')
+        .set('Authorization', `Bearer ${referrerToken}`);
+      const secondReferrer = await createUser(`referrer2_${Date.now()}@example.com`, 'Referrer Two');
+      secondReferrerId = secondReferrer._id;
+      const secondToken = jwt.sign(
+        { id: secondReferrerId },
+        process.env.JWT_SECRET || 'fallback_secret_change_me',
+        { expiresIn: '1h' },
+      );
+      const second = await request(app)
+        .post('/api/referrals/generate')
+        .set('Authorization', `Bearer ${secondToken}`);
+
+      const firstApply = await request(app)
+        .post('/api/referrals/apply')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ code: first.body.referral.code, userId });
+      expect(firstApply.statusCode).toBe(200);
+
+      const secondApply = await request(app)
+        .post('/api/referrals/apply')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ code: second.body.referral.code, userId });
+      expect(secondApply.statusCode).toBe(400);
+
+      const secondReferral = await Referral.findOne({ code: second.body.referral.code });
+      expect(secondReferral.uses).toBe(0);
+      expect(secondReferral.referredUsers).toHaveLength(0);
+    });
+
     it('REF.6-unauthenticated cannot attach the code to another user', async () => {
       const genRes = await request(app)
         .post('/api/referrals/generate')
@@ -182,6 +216,23 @@ describe('Referral Program', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.newBalance).toBe((before.balance?.available || 0) + 20);
+    });
+
+    it('REF.8b should allow claiming referrals earned before the code expired', async () => {
+      const genRes = await request(app)
+        .post('/api/referrals/generate')
+        .set('Authorization', `Bearer ${referrerToken}`);
+      const code = genRes.body.referral.code;
+      await request(app).post('/api/referrals/apply').set('Authorization', `Bearer ${userToken}`).send({ code, userId });
+      await Referral.updateOne({ code }, { $set: { status: 'expired', expiresAt: new Date(Date.now() - 1000) } });
+
+      const before = await User.findById(referrerId);
+      const res = await request(app)
+        .post('/api/referrals/claim')
+        .set('Authorization', `Bearer ${referrerToken}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.newBalance).toBe((before.balance?.available || 0) + 10);
     });
   });
 

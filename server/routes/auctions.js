@@ -77,7 +77,7 @@ router.post('/', auth, async (req, res) => {
     // Only a live, in-stock listing can be auctioned. Without this check a
     // seller could auction an item that is already sold, and closing that
     // auction would mint a second order for merchandise that is gone.
-    if (listing.sold || listing.available === false) {
+    if (listing.status !== 'active' || listing.sold || listing.available === false) {
       return res.status(400).json({ message: 'Listing is not available for auction' });
     }
 

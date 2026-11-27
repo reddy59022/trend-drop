@@ -163,7 +163,7 @@ router.post('/items', auth, async (req, res) => {
     if (['draft', 'deleted'].includes(listing.status)) {
       return res.status(404).json({ message: 'Listing not found' });
     }
-    if (!listing.available || listing.sold) {
+    if (listing.status !== 'active' || !listing.available || listing.sold) {
       return res.status(400).json({ message: 'Item is no longer available' });
     }
 
@@ -318,7 +318,7 @@ router.post('/checkout', auth, async (req, res) => {
       if (!listing || ['draft', 'deleted'].includes(listing.status)) {
         return res.status(400).json({ message: 'An item in your cart is no longer available' });
       }
-      if (!listing.available || listing.sold) {
+      if (listing.status !== 'active' || !listing.available || listing.sold) {
         return res.status(400).json({ message: `"${listing.title}" is no longer available` });
       }
       // TDD-B2 (defense in depth): cart-add blocks self-listings, but a cart

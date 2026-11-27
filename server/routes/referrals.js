@@ -100,6 +100,29 @@ router.post('/apply', auth, async (req, res) => {
       return res.status(400).json({ message: 'You cannot use your own referral code' });
     }
 
+    // An account may be attributed to only one referrer. Without this a user
+    // could apply code A and then code B, and both referrers could claim a
+    // reward for the same signup.
+    const alreadyLinked = await Referral.exists({
+      $or: [{ 'referredUsers.user': linkedUserId }, { referred: linkedUserId }],
+    });
+    if (alreadyLinked) {
+      return res.status(400).json({ message: 'User already used a referral code' });
+    }
+
+    // Claim the attribution on the user document atomically. The Referral
+    // update below is a separate document, so this is what actually serializes
+    // two simultaneous requests using different codes: exactly one can set
+    // referralApplied false -> true.
+    const referralUser = await User.findOneAndUpdate(
+      { _id: linkedUserId, referralApplied: { $ne: true } },
+      { $set: { referralApplied: true, referredBy: referral.referrer } },
+      { new: true }
+    );
+    if (!referralUser) {
+      return res.status(400).json({ message: 'User already used a referral code' });
+    }
+
     // Atomically reserve this referral for the authenticated user. The old
     // read/check/save sequence allowed two concurrent requests to both
     // succeed, increment uses twice, and append duplicate referred-user
@@ -130,6 +153,12 @@ router.post('/apply', auth, async (req, res) => {
       { new: true }
     );
     if (!appliedReferral) {
+      // The code expired or hit its use cap after the user attribution was
+      // reserved; release it so the user can still apply a valid code.
+      await User.updateOne(
+        { _id: linkedUserId, referralApplied: true, referredBy: referral.referrer },
+        { $set: { referralApplied: false, referredBy: null } },
+      );
       return res.status(400).json({ message: 'User already used a referral code' });
     }
 
@@ -168,7 +197,16 @@ router.get('/my', auth, async (req, res) => {
 // POST /api/referrals/claim - Claim referral reward
 router.post('/claim', auth, async (req, res) => {
   try {
-    const existing = await Referral.findOne({ referrer: req.user._id, status: 'active' });
+    // A code expiring must not forfeit rewards already earned with it. Look
+    // for the active code first, then fall back to a code that has referred
+    // users even if its share link has expired.
+    let existing = await Referral.findOne({ referrer: req.user._id, status: 'active' });
+    if (!existing) {
+      existing = await Referral.findOne({
+        referrer: req.user._id,
+        $or: [{ 'referredUsers.0': { $exists: true } }, { referred: { $ne: null } }],
+      }).sort({ createdAt: -1 });
+    }
     if (!existing) {
       return res.status(404).json({ message: 'No active referral found' });
     }
@@ -178,8 +216,21 @@ router.post('/claim', auth, async (req, res) => {
 
     // A freshly generated code has zero successful referrals. Paying then
     // would let every user mint the referral bonus without referring anyone.
-    const eligibleReferrals = existing.referredUsers?.length || (existing.referred ? 1 : 0);
-    if (eligibleReferrals === 0) {
+    const candidateUserIds = existing.referredUsers?.length
+      ? existing.referredUsers.map((entry) => entry.user)
+      : (existing.referred ? [existing.referred] : []);
+    // Never pay for a deleted or suspended account. Otherwise a referrer can
+    // create an account, apply their own code, delete the account, and still
+    // collect a cash reward for the empty shell.
+    const eligibleUsers = candidateUserIds.length
+      ? await User.find({
+          _id: { $in: candidateUserIds },
+          deletedAt: null,
+          role: { $ne: 'suspended' },
+          emailVerified: true,
+        }).select('_id').lean()
+      : [];
+    if (eligibleUsers.length === 0) {
       return res.status(400).json({ message: 'No completed referrals to claim' });
     }
 
@@ -196,13 +247,11 @@ router.post('/claim', auth, async (req, res) => {
       return res.status(400).json({ message: 'Referral reward already claimed' });
     }
 
-    // Credit once for every referred user. The UI and referral policy expose
-    // rewardAmount per successful referral, so paying only one amount would
-    // silently shortchange referrers with multiple conversions.
-    // Preserve the legacy single-referral claim behavior for records created
-    // before referredUsers was populated; new multi-use records pay per user.
-    const referralCount = referral.referredUsers?.length || (referral.referred ? 1 : 0);
-    const rewardTotal = referral.rewardAmount * referralCount;
+    // Credit once for every eligible referred user. The UI and referral policy
+    // expose rewardAmount per successful referral, so paying only one amount
+    // would silently shortchange referrers with multiple conversions.
+    const eligibleIds = new Set(eligibleUsers.map((user) => String(user._id)));
+    const rewardTotal = referral.rewardAmount * eligibleUsers.length;
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { $inc: { 'balance.available': rewardTotal, 'balance.totalEarned': rewardTotal } },
@@ -212,7 +261,7 @@ router.post('/claim', auth, async (req, res) => {
     // Mark all referred users as having received reward
     if (referral.referredUsers && referral.referredUsers.length > 0) {
       for (const referredUser of referral.referredUsers) {
-        if (!referredUser.rewardGiven) {
+        if (!referredUser.rewardGiven && eligibleIds.has(String(referredUser.user))) {
           referredUser.rewardGiven = true;
         }
       }

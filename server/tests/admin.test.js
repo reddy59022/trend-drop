@@ -163,6 +163,57 @@ describe('Admin User Management', () => {
     const r = await request(app).put(`/api/admin/users/${userId}/role`).set('Authorization', `Bearer ${adminToken}`).send({ role: 'invalid' });
     expect(r.status).toBe(400);
   });
+
+  test('AD.11a suspension hides active listings and unsuspend restores only those', async () => {
+    const seller = await User.create({
+      name: 'Suspend Seller',
+      email: `suspend_seller_${TEST_RUN_ID}@test.com`,
+      password: 'password123',
+      emailVerified: true,
+      role: 'moderator',
+      authProvider: 'email',
+      country: 'US',
+      currency: 'USD',
+    });
+    testUserIds.push(seller._id);
+    const activeListing = await Listing.create({
+      seller: seller._id, title: `Suspend active ${TEST_RUN_ID}`, description: 'd',
+      price: 25, category: 'Men', condition: 'Good', quantity: 2, available: true, sold: false, status: 'active',
+    });
+    const draftListing = await Listing.create({
+      seller: seller._id, title: `Suspend draft ${TEST_RUN_ID}`, description: 'd',
+      price: 25, category: 'Men', condition: 'Good', quantity: 2, available: false, sold: false, status: 'draft',
+    });
+    testListingIds.push(activeListing._id, draftListing._id);
+
+    const suspended = await request(app)
+      .post(`/api/admin/users/${seller._id}/suspend`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(suspended.status).toBe(200);
+    expect((await User.findById(seller._id)).role).toBe('suspended');
+
+    const hidden = await Listing.findById(activeListing._id);
+    expect(hidden.status).toBe('draft');
+    expect(hidden.available).toBe(false);
+    expect(hidden.suspensionPaused).toBe(true);
+    const untouchedDraft = await Listing.findById(draftListing._id);
+    expect(untouchedDraft.status).toBe('draft');
+    expect(untouchedDraft.suspensionPaused).toBe(false);
+
+    const restored = await request(app)
+      .post(`/api/admin/users/${seller._id}/unsuspend`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(restored.status).toBe(200);
+    expect((await User.findById(seller._id)).role).toBe('moderator');
+
+    const visible = await Listing.findById(activeListing._id);
+    expect(visible.status).toBe('active');
+    expect(visible.available).toBe(true);
+    expect(visible.suspensionPaused).toBe(false);
+    const stillDraft = await Listing.findById(draftListing._id);
+    expect(stillDraft.status).toBe('draft');
+    expect(stillDraft.available).toBe(false);
+  });
 });
 
 describe('Admin Listing Management', () => {
@@ -321,6 +372,8 @@ describe('Admin Refund Integrity', () => {
     expect(restored.quantitySold).toBe(0);
     expect(restored.available).toBe(true);
     expect(restored.sold).toBe(false);
+    // A refunded listing must return to the public catalog, not stay 'sold'.
+    expect(restored.status).toBe('active');
   });
 
   test('AD.22 an already cancelled order cannot be refunded a second time', async () => {

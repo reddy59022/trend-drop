@@ -30,6 +30,14 @@ const userSchema = new mongoose.Schema({
     country: { type: String, default: null, uppercase: true, maxlength: 2 },
   },
   ageConfirmed: { type: Boolean, default: false },
+  // A buyer can be attributed to exactly one referral code. This flag is set
+  // atomically so two different codes cannot both claim the same account.
+  referralApplied: { type: Boolean, default: false },
+  referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  // Role to restore when a suspension is lifted. Suspending used to
+  // overwrite roles with 'suspended', and unsuspending always wrote 'user',
+  // silently demoting a suspended moderator or admin.
+  previousRole: { type: String, enum: ['', 'user', 'moderator', 'admin', 'legal_counsel'], default: '' },
   // Email verification
   emailVerified: {
     type: Boolean,

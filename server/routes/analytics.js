@@ -3,7 +3,6 @@ const router = express.Router();
 const { auth } = require('../middleware/auth');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
-const Subscription = require('../models/Subscription');
 const { currencies } = require('../config/currencies');
 
 // Analytics aggregates are reported in USD so a JPY/EUR sale cannot be
@@ -54,9 +53,11 @@ router.get('/dashboard', auth, async (req, res) => {
       0
     ));
 
-    // Get subscription for display/configuration compatibility.
-    const subscription = await Subscription.findOne({ seller: req.user._id, status: 'active' });
-    const platformFee = subscription?.features?.reducedFees ? 0.05 : 0.08;
+    // Checkout charges the platform's 8% fee for every seller. Subscription
+    // plans advertise a reduced-fee benefit, but billing/reduced-fee rating is
+    // not wired into checkout yet; reporting 5% here told sellers they paid a
+    // rate the payment ledger never applied.
+    const platformFee = 0.08;
     
     const stats = {
       totalListings: listings.length,
