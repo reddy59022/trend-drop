@@ -137,6 +137,8 @@ describe('public payment endpoints', () => {
     expect(res.status).toBe(200);
     expect(res.body.publishableKey).toBe('pk_test_placeholder');
     expect(res.body.configured).toBe(false);
+    // An unconfigured deployment is never advertised as a sandbox.
+    expect(res.body.testMode).toBe(false);
   });
 
   test('publishable-key rejects placeholder keys and accepts real keys', async () => {
@@ -149,6 +151,13 @@ describe('public payment endpoints', () => {
     process.env.STRIPE_PUBLISHABLE_KEY = ['pk', 'live', 'realkey999'].join('_');
     const real = await request(app).get('/api/payments/publishable-key');
     expect(real.body.configured).toBe(true);
+    // A live key is NOT a sandbox — the client must not show test-card hints.
+    expect(real.body.testMode).toBe(false);
+
+    process.env.STRIPE_PUBLISHABLE_KEY = ['pk', 'test', 'sandboxkey999'].join('_');
+    const sandbox = await request(app).get('/api/payments/publishable-key');
+    expect(sandbox.body.configured).toBe(true);
+    expect(sandbox.body.testMode).toBe(true);
   });
 
   test('status reports mock mode with and without configured keys', async () => {
@@ -161,6 +170,9 @@ describe('public payment endpoints', () => {
     expect(res.status).toBe(200);
     expect(res.body.stripe.mockMode).toBe(true);
     expect(res.body.stripe.publishableKeyConfigured).toBe(false);
+    // Without keys the deployment must not look like a live OR sandbox deployment.
+    expect(res.body.stripe.testMode).toBe(false);
+    expect(res.body.stripe.livemode).toBe(false);
     expect(res.body.environment).toBe('test');
 
     // env-provided keys set the configured flags; an empty NODE_ENV hits the
@@ -171,6 +183,16 @@ describe('public payment endpoints', () => {
     expect(withKeys.body.stripe.publishableKeyConfigured).toBe(true);
     expect(withKeys.body.stripe.secretKeyConfigured).toBe(false);
     expect(withKeys.body.environment).toBe('development');
+
+    // Sandbox detection is based on key prefixes only (assembled at runtime
+    // so no literal test/live key prefix lives in the test files).
+    process.env.STRIPE_SECRET_KEY = ['sk', 'test', 'sandbox123'].join('_');
+    const sandbox = await request(app).get('/api/payments/status');
+    expect(sandbox.body.stripe.testMode).toBe(true);
+    expect(sandbox.body.stripe.livemode).toBe(false);
+    // Never leave an injected key behind: later safety-gate tests assert that a
+    // production deployment WITHOUT test keys keeps /test-confirm disabled.
+    delete process.env.STRIPE_SECRET_KEY;
     process.env.NODE_ENV = envSave;
     delete process.env.E2E_IN_MEMORY;
   });

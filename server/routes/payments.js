@@ -110,9 +110,17 @@ router.get('/publishable-key', (req, res) => {
   // configured must be FALSE for placeholder/dev keys: the client only boots
   // Stripe.js (and enables checkout) when a REAL key is present. Placeholder
   // keys start with 'pk_' too, so filter them explicitly.
-  res.json({ 
+  const configured = !!(key && key.startsWith('pk_') && !/placeholder|CHANGE_ME|xxxx/i.test(key));
+  // Sandbox (Stripe TEST) mode: this deployment moves NO real money. The
+  // client shows a test-card hint so the deployed URL is genuinely testable
+  // instead of looking like a live checkout. Only key PREFIXES are inspected;
+  // no secret material is ever serialised.
+  const testMode = configured
+    && (key.startsWith('pk_test_') || String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_'));
+  res.json({
     publishableKey: key || 'pk_test_placeholder',
-    configured: !!(key && key.startsWith('pk_') && !/placeholder|CHANGE_ME|xxxx/i.test(key)),
+    configured,
+    testMode: Boolean(testMode),
   });
 });
 
@@ -130,6 +138,14 @@ router.get('/status', (req, res) => {
       secretKeyConfigured: !!(secretKey && secretKey.startsWith('sk_')),
       stripeInitialized: !!stripe || !!process.env.E2E_IN_MEMORY,
       mockMode: !stripe && !!process.env.E2E_IN_MEMORY,
+      // Sandbox vs live: derived only from key prefixes, so a test-key
+      // deployment is unambiguously identifiable (and a live-key deployment
+      // can never claim to be a sandbox).
+      testMode: Boolean(
+        (publishableKey && publishableKey.startsWith('pk_test_'))
+        || (secretKey && secretKey.startsWith('sk_test_')),
+      ),
+      livemode: Boolean(secretKey && secretKey.startsWith('sk_live_')),
     },
     environment: process.env.NODE_ENV || 'development',
   });

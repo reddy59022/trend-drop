@@ -22,6 +22,9 @@ const Cart = () => {
   const { currency } = useTheme();
   const [stripePromise, setStripePromise] = useState(null);
   const stripePromiseRef = useRef(null);
+  // Sandbox deployment (Stripe TEST keys): show the test card so the deployed
+  // URL can be exercised end to end without anyone guessing credentials.
+  const [stripeTestMode, setStripeTestMode] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [shippingInfo, setShippingInfo] = useState({
@@ -51,6 +54,8 @@ const Cart = () => {
         
         console.debug('Stripe init:', { configured, keyPrefix: key ? key.substring(0, 7) + '...' : 'not set' });
         
+        setStripeTestMode(Boolean(res.data.testMode));
+
         if (configured && key && key.startsWith('pk_')) {
           // Keep the promise in a ref as well as state so a fast tap on
           // Proceed to Checkout can await Stripe initialization instead of
@@ -558,6 +563,25 @@ const Cart = () => {
               </button>
             ) : (
               <div style={{ animation: 'fadeInUp 0.3s ease-out' }}>
+                {stripeTestMode && (
+                  <div
+                    data-testid="sandbox-payment-notice"
+                    style={{
+                      background: 'rgba(255, 193, 7, 0.12)',
+                      border: '1px solid rgba(255, 193, 7, 0.45)',
+                      borderRadius: 'var(--td-radius-sm)',
+                      padding: '10px 12px',
+                      marginBottom: 'var(--td-space-md)',
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: 'var(--td-text)',
+                    }}
+                  >
+                    <strong>Stripe sandbox — no real money moves.</strong>
+                    {' '}Pay with test card <code>4242 4242 4242 4242</code>, any future expiry, any CVC
+                    (declines: <code>4000 0000 0000 0002</code>).
+                  </div>
+                )}
                 <h4 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Shipping Details</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--td-space-md)' }}>
                   <input type="text" className="form-input" placeholder="Full Name *" value={shippingInfo.fullName}

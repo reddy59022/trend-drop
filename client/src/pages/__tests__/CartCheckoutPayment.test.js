@@ -62,10 +62,10 @@ const mockStripe = (status) => {
 };
 
 /** Wire the checkout happy path up to (but not including) order placement. */
-const prepareCheckout = ({ failOrder = false, breakdown = BREAKDOWN } = {}) => {
+const prepareCheckout = ({ failOrder = false, breakdown = BREAKDOWN, testMode = false } = {}) => {
   api.get.mockImplementation((url) => {
     if (url === '/payments/publishable-key') {
-      return Promise.resolve({ data: { publishableKey: 'pk_test_r32', configured: true } });
+      return Promise.resolve({ data: { publishableKey: 'pk_test_r32', configured: true, testMode } });
     }
     if (typeof url === 'string' && url.startsWith('/listings/')) {
       return Promise.resolve({
@@ -240,5 +240,21 @@ describe('Cart checkout — payment confirmation status (R32)', () => {
     expect(toast.error).toHaveBeenCalled();
     expect(globalThis.__tdCart.clearCart).not.toHaveBeenCalled();
     expect(screen.queryByText('Payment Successful!')).not.toBeInTheDocument();
+  });
+
+  test('shows the sandbox test-card notice on a TEST-key deployment', async () => {
+    prepareCheckout({ testMode: true });
+    await renderCheckout();
+
+    const notice = await screen.findByTestId('sandbox-payment-notice');
+    expect(notice).toHaveTextContent(/stripe sandbox/i);
+    expect(notice).toHaveTextContent(/4242 4242 4242 4242/);
+  });
+
+  test('does not advertise a sandbox on a live-key deployment', async () => {
+    prepareCheckout({ testMode: false });
+    await renderCheckout();
+
+    expect(screen.queryByTestId('sandbox-payment-notice')).not.toBeInTheDocument();
   });
 });
