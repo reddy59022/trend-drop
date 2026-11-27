@@ -114,9 +114,16 @@ test.describe('04 · Checkout → payment → order creation (production + Strip
     //   boosted B (premium 15% of $80) => $12.00 fee; plain A => no fee
     expect(tB.paymentBreakdown?.boostFee).toBeUndefined();
     expect(tA.paymentBreakdown?.boostFee).toBeUndefined();
-    // Seller earnings = price − 8% commission (− boost fee when boosted)
-    expect(tA.paymentBreakdown?.sellerEarnings).toBe(41.4);  // 45 − 3.6
-    expect(tB.paymentBreakdown?.sellerEarnings).toBe(61.6);  // 80 − 6.4 − 12
+    // Seller earnings = subtotal − 8% commission − boost fee (when boosted)
+    //                  − postage subsidy the buyer's shipping charge did not cover
+    // (real EasyPost rates vary, so the subsidy is part of the live ledger).
+    const netEarnings = (t, boost = 0) => {
+      const b = t.paymentBreakdown || {};
+      const subsidy = Math.round(Math.max(0, (b.labelCost || 0) - (b.shippingCost || 0)) * 100) / 100;
+      return Math.round((b.subtotal - b.platformFee - boost - subsidy) * 100) / 100;
+    };
+    expect(tA.paymentBreakdown?.sellerEarnings).toBe(netEarnings(tA));  // 45 − 3.6 − subsidy
+    expect(tB.paymentBreakdown?.sellerEarnings).toBe(netEarnings(tB, 12));  // 80 − 6.4 − 12 − subsidy
 
     const viewB = await api.req('get', `/api/transactions/${tB._id}`, { token: alexToken });
     expect(viewB.status, JSON.stringify(viewB.data)).toBe(200);
@@ -124,7 +131,7 @@ test.describe('04 · Checkout → payment → order creation (production + Strip
     expect(viewB.data.sellerBreakdown?.boostTierLabel).toBe('Premium Boost');
     expect(viewB.data.sellerBreakdown?.reconciled).toBe(true);
     expect(
-      Math.round((viewB.data.sellerBreakdown.itemPrice - viewB.data.sellerBreakdown.platformFee - viewB.data.sellerBreakdown.boostFee) * 100) / 100
+      Math.round((viewB.data.sellerBreakdown.itemPrice - viewB.data.sellerBreakdown.platformFee - viewB.data.sellerBreakdown.boostFee - viewB.data.sellerBreakdown.sellerPostageSubsidy) * 100) / 100
     ).toBe(viewB.data.sellerBreakdown.sellerEarnings);
 
     const viewA = await api.req('get', `/api/transactions/${tA._id}`, { token: alexToken });

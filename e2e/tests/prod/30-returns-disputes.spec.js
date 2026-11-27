@@ -6,7 +6,7 @@
  *   -> resolve -> refunded.
  */
 const { test } = require('@playwright/test');
-const { makeApi, loadState, saveState, RUN_ID, expect } = require('./helpers');
+const { makeApi, loadState, saveState, RUN_ID, expect, deliverShipment } = require('./helpers');
 
 const SHIPPING = {
   fullName: 'E2E Buyer', street1: '600 Return Rd', city: 'Austin', state: 'TX',
@@ -66,9 +66,8 @@ test.describe('30 · Returns + disputes full journey', () => {
     });
     expect(ship.status, JSON.stringify(ship.data)).toBe(200);
     // Carrier webhook (Bug B3 fix) advances the shipment shipped → delivered.
-    const ev = await api.req('post', '/api/shipping/tracking-event', {
-      headers: { 'x-tracking-secret': 'trenddrop-tracking-dev' },
-      body: { transactionId: txnId, status: 'delivered', trackingNumber: `S30-RET-${RUN_ID}` },
+    const ev = await deliverShipment(api, {
+      token: sellerToken, transactionId: txnId, trackingNumber: `S30-RET-${RUN_ID}`,
     });
     expect(ev.status, JSON.stringify(ev.data)).toBe(200);
     // Buyer confirms receipt: delivered → buyer_confirmed (return window opens).
@@ -121,9 +120,8 @@ test.describe('30 · Returns + disputes full journey', () => {
     });
     expect(ship.status).toBe(200);
     // Carrier webhook advances the shipment shipped → delivered.
-    const ev = await api.req('post', '/api/shipping/tracking-event', {
-      headers: { 'x-tracking-secret': 'trenddrop-tracking-dev' },
-      body: { transactionId: txnId, status: 'delivered', trackingNumber: `S30-DIS-${RUN_ID}` },
+    const ev = await deliverShipment(api, {
+      token: sellerToken, transactionId: txnId, trackingNumber: `S30-DIS-${RUN_ID}`,
     });
     expect(ev.status, JSON.stringify(ev.data)).toBe(200);
     // Dispute is filed directly from 'delivered' (state machine: delivered →

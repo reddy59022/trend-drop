@@ -4,7 +4,7 @@
  * buyer-only label visibility, shipping, receipt -> refund, inventory restore.
  */
 const { test } = require('@playwright/test');
-const { makeApi, loadState, saveState, RUN_ID, expect } = require('./helpers');
+const { makeApi, loadState, saveState, RUN_ID, expect, deliverShipment } = require('./helpers');
 
 const SHIPPING = {
   fullName: 'Jordan Patel', street1: '123 E2E Test St', city: 'Los Angeles',
@@ -60,9 +60,8 @@ test.describe('32 · Full return flow (enterprise standard)', () => {
     });
     expect(ship.status).toBe(200);
     // Carrier webhook advances the shipment shipped → delivered.
-    const t = await api.req('post', '/api/shipping/tracking-event', {
-      headers: { 'x-tracking-secret': 'trenddrop-tracking-dev' },
-      body: { transactionId: txnId, status: 'delivered', trackingNumber: `S32-${RUN_ID}` },
+    const t = await deliverShipment(api, {
+      token: sellerToken, transactionId: txnId, trackingNumber: `S32-${RUN_ID}`,
     });
     expect(t.status).toBe(200);
   });

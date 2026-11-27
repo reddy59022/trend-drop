@@ -7,7 +7,7 @@
  * Self-sufficient: creates its own sale + payout.
  */
 const { test } = require('@playwright/test');
-const { makeApi, loadState, saveState, RUN_ID, expect, cents } = require('./helpers');
+const { makeApi, loadState, saveState, RUN_ID, expect, cents, deliverShipment } = require('./helpers');
 
 const SHIPPING = {
   fullName: 'E2E Buyer', street1: '700 Cashout Ln', city: 'Austin', state: 'TX',
@@ -63,9 +63,8 @@ test.describe('31 · Seller cashout full (dashboard amounts + cashout scenarios)
       body: { shipmentIndex: 0, trackingNumber: `S31-${RUN_ID}`, carrier: 'UPS' },
     });
     expect(ship.status, JSON.stringify(ship.data)).toBe(200);
-    const delivered = await api.req('post', '/api/shipping/tracking-event', {
-      headers: { 'x-tracking-secret': 'trenddrop-tracking-dev' },
-      body: { transactionId: saleTxnId, status: 'delivered', trackingNumber: `S31-${RUN_ID}` },
+    const delivered = await deliverShipment(api, {
+      token: sellerToken, transactionId: saleTxnId, trackingNumber: `S31-${RUN_ID}`,
     });
     expect(delivered.status, JSON.stringify(delivered.data)).toBe(200);
     const received = await api.req('post', `/api/orders/${saleTxnId}/confirm-received`, {

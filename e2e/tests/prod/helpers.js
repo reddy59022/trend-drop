@@ -150,6 +150,32 @@ async function makeApi() {
 const cents = (n) => Math.round(n * 100) / 100;
 
 /**
+ * Mark a shipment delivered for the journey specs.
+ *
+ * Preference order:
+ *   1. the signed carrier webhook (TRACKING_WEBHOOK_SECRET, dev default) — the
+ *      path a real carrier uses;
+ *   2. ONLY when the deployment answers 503 "Tracking webhook is not
+ *      configured" (a sandbox deploy with no webhook secret), the
+ *      authenticated sandbox state driver, so returns/disputes/payouts are
+ *      still exercised end to end.
+ * Any other answer (403 bad signature, 400 bad status, 5xx) is returned
+ * unchanged: the helper never masks a mis-signed or misbehaving webhook.
+ */
+async function deliverShipment(api, { token, transactionId, trackingNumber, status = 'delivered' }) {
+  const body = { transactionId, status, trackingNumber };
+  const event = await api.req('post', '/api/shipping/tracking-event', {
+    headers: { 'x-tracking-secret': process.env.TRACKING_WEBHOOK_SECRET || 'trenddrop-tracking-dev' },
+    body,
+  });
+  if (event.status === 200) return event;
+  if (event.status === 503 && event.data?.message === 'Tracking webhook is not configured') {
+    return api.req('post', '/api/shipping/sandbox/advance', { token, body });
+  }
+  return event;
+}
+
+/**
  * In-memory server boost fee (server/config/boost.js DEFAULT_BOOST_FEE_PERCENT = 5).
  * Production may differ; tests use the server-side response rather than hardcoding.
  */
@@ -157,5 +183,5 @@ const BOOST_FEE_PERCENT = 5;
 
 module.exports = {
   makeApi, loadState, saveState, ACCOUNTS, BASE_URL, RUN_ID, cents, expect,
-  isMemory, BOOST_FEE_PERCENT, IS_PROD,
+  isMemory, BOOST_FEE_PERCENT, IS_PROD, deliverShipment,
 };
