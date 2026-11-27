@@ -10,7 +10,7 @@ const Order = require('../models/Order');
 const Return = require('../models/Return');
 const { carriers, normalizeCarrier } = require('../config/shipping');
 const { orderStates, allowedTransitions, timeWindows, cancellationRules, refundRules, returnEligibility, evidenceRequirements, disputeProcess, isValidTransition, getAllowedActions } = require('../config/orderLifecycle');
-const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund } = require('../config/payments');
+const { calculatePaymentBreakdown, capturePaymentIntent, retrievePaymentIntent, issueRefund, payoutSimulationAllowed } = require('../config/payments');
 const { releaseSellerEarnings, settlementAlreadyApplied, clawbackSellerEarnings, chargeSellerPostage, sellerSaleTotal } = require('../utils/balances');
 const { claimTransaction } = require('../utils/claims');
 const restoreListingInventory = require('../utils/restoreListingInventory');
@@ -709,12 +709,36 @@ router.post('/:transactionId/confirm-received', auth, validateOrderAccess, async
       await seller.save();
     }
 
+    // Development-stage deployments (Stripe TEST keys + simulated payouts)
+    // cannot wait out the 3-day escrow and 5-day return window, so release the
+    // seller's earnings immediately. Live keys keep the normal hold.
+    let testReleased = false;
+    if (process.env.NODE_ENV === 'production' && payoutSimulationAllowed()) {
+      const earnings = sellerSaleTotal(txn.paymentBreakdown);
+      if (seller && earnings > 0) {
+        await releaseSellerEarnings(seller._id, {
+          earnings,
+          availableAmount: earnings,
+          reserveAmount: 0,
+          settlementKey: txn._id,
+        });
+        txn.status = orderStates.COMPLETED;
+        txn.completedAt = new Date();
+        testReleased = true;
+      }
+    }
+
     await txn.save();
 
     res.json({
-      message: 'Receipt confirmed. Payment will be released in 3 days.',
+      message: testReleased
+        ? 'Receipt confirmed. Earnings released immediately (test mode).'
+        : 'Receipt confirmed. Payment will be released in 3 days.',
       transaction: txn,
-      releaseDate: new Date(Date.now() + timeWindows.AUTO_COMPLETE).toISOString(),
+      releaseDate: testReleased
+        ? new Date().toISOString()
+        : new Date(Date.now() + timeWindows.AUTO_COMPLETE).toISOString(),
+      testReleased,
     });
   } catch (error) {
     console.error(error);
