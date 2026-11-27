@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Operator entry point: remove the commerce rows left by the QA webhook/chargeback
- * runs (orders, transactions, returns, payouts), their dispute/sale
- * notifications, and reverse the seller credit for any matched sale that was
- * never refunded.
+ * runs (orders, transactions, returns, payouts), every notification that
+ * references a matched transaction, and reverse the seller credit for any
+ * matched sale that was never refunded.
  *
  * Inventory-first — a dry run by default, scoped only to listings titled
  * "QA webhook flow …" / "QA chargeback flow …". Listings themselves are NOT
@@ -32,6 +32,11 @@ const { QA_TITLE_PATTERN, buildNotificationRemovalFilter, planQaCommerce } = req
 const { applyBalanceAdjustment } = require('../utils/balanceAdjustment');
 
 const ids = (rows) => rows.map((row) => row._id);
+
+const formatTypeCounts = (byType = {}) => Object.entries(byType)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([type, count]) => `${type}=${count}`)
+  .join(' ');
 
 const main = async () => {
   const apply = process.argv.slice(2).includes('--apply');
@@ -62,7 +67,6 @@ const main = async () => {
     Payout.find({ transaction: { $in: transactionIds } }).select('status transaction payoutAmount').lean(),
     User.find({
       'notifications.transaction': { $in: transactionIds },
-      'notifications.type': { $in: ['dispute', 'sale'] },
     }).select('notifications').lean(),
   ]);
 
@@ -74,7 +78,8 @@ const main = async () => {
   console.log(`orders:            ${plan.qaOrders.length}`);
   console.log(`returns:           ${plan.qaReturns.length}`);
   console.log(`payouts:           ${plan.qaPayouts.length}`);
-  console.log(`notifications:     ${plan.notificationCounts.total} (dispute=${plan.notificationCounts.dispute} sale=${plan.notificationCounts.sale})`);
+  const notificationBreakdown = formatTypeCounts(plan.notificationCounts.byType);
+  console.log(`notifications:     ${plan.notificationCounts.total}${notificationBreakdown ? ` (${notificationBreakdown})` : ''}`);
   console.log('');
 
   if (plan.blockedOrders.length) {
@@ -101,7 +106,8 @@ const main = async () => {
     console.log(`  order ${String(order._id)}  ${order.status}`);
   }
   for (const row of plan.notificationRemovals) {
-    console.log(`  notifications user=${row.userId} total=${row.total} dispute=${row.dispute} sale=${row.sale}`);
+    const breakdown = formatTypeCounts(row.byType);
+    console.log(`  notifications user=${row.userId} total=${row.total}${breakdown ? ` (${breakdown})` : ''}`);
   }
 
   if (plan.creditReversals.length) {
@@ -134,6 +140,7 @@ const main = async () => {
   // Remove notifications BEFORE the transactions. If the process dies after
   // this step, the remaining QA commerce rows are still identifiable by their
   // listings; the reverse order would leave dangling references.
+  const qaTransactionIds = new Set(plan.qaTransactions.map((txn) => String(txn._id)));
   let notificationsRemoved = 0;
   for (const row of plan.notificationRemovals) {
     if (row.notificationIds.length === 0) continue;
@@ -152,9 +159,8 @@ const main = async () => {
     // accurately rather than claiming the whole planned batch was removed.
     const after = await User.findById(row.userId).select('notifications').lean();
     const remaining = (after?.notifications || []).filter((notification) =>
-      ['dispute', 'sale'].includes(notification.type)
-      && notification.transaction
-      && plan.qaTransactions.some((txn) => String(txn._id) === String(notification.transaction)));
+      notification.transaction
+      && qaTransactionIds.has(String(notification.transaction)));
     notificationsRemoved += Math.max(0, row.total - remaining.length);
   }
 

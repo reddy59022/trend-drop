@@ -41,7 +41,7 @@ describe('QA notification integrity (database)', () => {
     return _id;
   };
 
-  test('removes only dispute/sale notifications for the deleted QA transaction', async () => {
+  test('removes every notification type for the deleted QA transaction', async () => {
     const listingId = oid();
     const qaTransactionId = oid();
     const realTransactionId = oid();
@@ -50,7 +50,7 @@ describe('QA notification integrity (database)', () => {
       { _id: oid(), type: 'dispute', transaction: qaTransactionId, message: 'QA dispute' },
       { _id: oid(), type: 'sale', transaction: qaTransactionId, message: 'QA sale' },
       { _id: oid(), type: 'sale', transaction: realTransactionId, message: 'real sale' },
-      { _id: oid(), type: 'refund', transaction: qaTransactionId, message: 'unrelated type' },
+      { _id: oid(), type: 'refund', transaction: qaTransactionId, message: 'QA refund' },
       { _id: oid(), type: 'sale', message: 'no transaction' },
     ]);
 
@@ -67,7 +67,10 @@ describe('QA notification integrity (database)', () => {
       users: [user],
     });
 
-    expect(plan.notificationCounts).toEqual({ dispute: 1, sale: 1, total: 2 });
+    expect(plan.notificationCounts).toEqual({
+      total: 3,
+      byType: { dispute: 1, sale: 1, refund: 1 },
+    });
     expect(plan.notificationRemovals).toHaveLength(1);
 
     const removal = plan.notificationRemovals[0];
@@ -87,18 +90,12 @@ describe('QA notification integrity (database)', () => {
     expect(after.notifications.map((n) => n.message).sort()).toEqual([
       'no transaction',
       'real sale',
-      'unrelated type',
     ]);
-    expect(after.notifications.map((n) => n.type).sort()).toEqual([
-      'refund',
-      'sale',
-      'sale',
-    ]);
-    expect(after.notifications.some((n) => n.type === 'dispute')).toBe(false);
+    expect(after.notifications.map((n) => n.type).sort()).toEqual(['sale', 'sale']);
+    expect(after.notifications.some((n) =>
+      String(n.transaction) === String(qaTransactionId))).toBe(false);
     expect(after.notifications.find((n) => n.message === 'real sale').transaction.toString())
       .toBe(realTransactionId.toString());
-    expect(after.notifications.find((n) => n.message === 'unrelated type').transaction.toString())
-      .toBe(qaTransactionId.toString());
   });
 
   test('audits ObjectId references and ignores notifications without a transaction', async () => {

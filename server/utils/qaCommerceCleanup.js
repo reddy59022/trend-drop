@@ -8,8 +8,8 @@
  *    consolidated order that also contains a real item is reported, never
  *    partially deleted;
  *  - returns/payouts are scoped by the matched transactions;
- *  - only dispute/sale notifications tied to the matched transactions are
- *    selected, because deleting those transactions would orphan them.
+ *  - every notification tied to a matched transaction is selected, regardless
+ *    of type, because deleting the transaction would orphan all of them.
  *
  * The planner also reports which matched transactions still hold a seller credit
  * (a sale that was never refunded/reversed). Deleting those records without
@@ -50,14 +50,24 @@ const holdsSellerCredit = (transaction) => {
   return sellerSaleCredit(transaction) > 0;
 };
 
-const NOTIFICATION_TYPES = new Set(['dispute', 'sale']);
-
-/** Filter for removing only the QA dispute/sale notifications selected above. */
+/** Filter for removing the QA notifications selected above (all types). */
 const buildNotificationRemovalFilter = (notificationIds, transactionIds) => ({
   _id: { $in: notificationIds },
-  type: { $in: [...NOTIFICATION_TYPES] },
   transaction: { $in: transactionIds },
 });
+
+const countNotificationTypes = (notifications) => notifications.reduce((counts, notification) => {
+  const type = String(notification?.type || 'unknown');
+  counts[type] = (counts[type] || 0) + 1;
+  return counts;
+}, {});
+
+const mergeTypeCounts = (target, source) => {
+  for (const [type, count] of Object.entries(source)) {
+    target[type] = (target[type] || 0) + count;
+  }
+  return target;
+};
 
 /**
  * @param {{listings?: any[], transactions?: any[], orders?: any[], returns?: any[], payouts?: any[], users?: any[]}} data
@@ -92,32 +102,28 @@ function planQaCommerce({
   const qaReturns = returns.filter((r) => transactionIds.has(String(r.transaction)));
   const qaPayouts = payouts.filter((p) => transactionIds.has(String(p.transaction)));
 
-  // Deleting a QA transaction would leave its "Item sold" and chargeback
-  // notifications pointing at a record that no longer exists. Select exactly
-  // those two notification types for the transactions about to be deleted;
-  // real-transaction and unrelated notification types are never included.
+  // Deleting a QA transaction would leave every notification that points at it
+  // dangling, regardless of type. Select all of them for the transactions about
+  // to be deleted; notifications for real transactions and notifications with
+  // no transaction remain untouched.
   const notificationRemovals = [];
   for (const user of users) {
     const notifications = (user.notifications || []).filter((notification) =>
-      NOTIFICATION_TYPES.has(String(notification?.type))
-      && notification?.transaction
+      notification?.transaction
       && transactionIds.has(String(notification.transaction)));
     if (notifications.length === 0) continue;
-    const dispute = notifications.filter((n) => n.type === 'dispute').length;
-    const sale = notifications.filter((n) => n.type === 'sale').length;
     notificationRemovals.push({
       userId: String(user._id),
       notificationIds: notifications.map((n) => n._id).filter(Boolean),
-      dispute,
-      sale,
+      byType: countNotificationTypes(notifications),
       total: notifications.length,
     });
   }
-  const notificationCounts = notificationRemovals.reduce((acc, row) => ({
-    dispute: acc.dispute + row.dispute,
-    sale: acc.sale + row.sale,
-    total: acc.total + row.total,
-  }), { dispute: 0, sale: 0, total: 0 });
+  const notificationCounts = notificationRemovals.reduce((acc, row) => {
+    acc.total += row.total;
+    mergeTypeCounts(acc.byType, row.byType);
+    return acc;
+  }, { total: 0, byType: {} });
 
   const creditReversals = qaTransactions
     .filter(holdsSellerCredit)

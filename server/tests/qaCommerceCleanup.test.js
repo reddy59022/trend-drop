@@ -82,7 +82,7 @@ describe('QA commerce cleanup planner', () => {
     ]);
   });
 
-  test('plans dispute and sale notification removal only for QA transactions', () => {
+  test('plans removal of every notification type tied to QA transactions', () => {
     const users = [
       {
         _id: 'u1',
@@ -90,7 +90,7 @@ describe('QA commerce cleanup planner', () => {
           { _id: 'n1', type: 'dispute', transaction: 't1' },
           { _id: 'n2', type: 'sale', transaction: 't1' },
           { _id: 'n3', type: 'sale', transaction: 't3' }, // real transaction
-          { _id: 'n4', type: 'support', transaction: 't1' }, // unrelated type
+          { _id: 'n4', type: 'purchase', transaction: 't1' },
           { _id: 'n5', type: 'sale' }, // no transaction
         ],
       },
@@ -99,6 +99,7 @@ describe('QA commerce cleanup planner', () => {
         notifications: [
           { _id: 'n6', type: 'sale', transaction: 't2' },
           { _id: 'n7', type: 'dispute', transaction: 't9' },
+          { _id: 'n8', type: 'refund', transaction: 't2' },
         ],
       },
     ];
@@ -113,10 +114,23 @@ describe('QA commerce cleanup planner', () => {
       users,
     });
 
-    expect(plan.notificationCounts).toEqual({ dispute: 1, sale: 2, total: 3 });
+    expect(plan.notificationCounts).toEqual({
+      total: 5,
+      byType: { dispute: 1, purchase: 1, sale: 2, refund: 1 },
+    });
     expect(plan.notificationRemovals).toEqual([
-      { userId: 'u1', notificationIds: ['n1', 'n2'], dispute: 1, sale: 1, total: 2 },
-      { userId: 'u2', notificationIds: ['n6'], dispute: 0, sale: 1, total: 1 },
+      {
+        userId: 'u1',
+        notificationIds: ['n1', 'n2', 'n4'],
+        byType: { dispute: 1, sale: 1, purchase: 1 },
+        total: 3,
+      },
+      {
+        userId: 'u2',
+        notificationIds: ['n6', 'n8'],
+        byType: { sale: 1, refund: 1 },
+        total: 2,
+      },
     ]);
   });
 });
