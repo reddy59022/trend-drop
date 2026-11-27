@@ -30,7 +30,7 @@ const generateReturnLabel = async (returnRequest) => {
   const label = await createShippingLabel({
     fromAddress: {
       name: buyer.name || buyerAddress.fullName,
-      street1: buyerAddress.street1,
+      street1: buyerAddress.street1 || buyerAddress.street,
       street2: buyerAddress.street2,
       city: buyerAddress.city,
       state: buyerAddress.state,
@@ -41,7 +41,7 @@ const generateReturnLabel = async (returnRequest) => {
     },
     toAddress: {
       name: seller.name || sellerAddress.fullName,
-      street1: sellerAddress.street1,
+      street1: sellerAddress.street1 || sellerAddress.street,
       street2: sellerAddress.street2,
       city: sellerAddress.city,
       state: sellerAddress.state,

@@ -23,6 +23,7 @@ const {
   labelCostFromFees,
   ShippingProviderError,
 } = require('../services/easypostService');
+const { sellerParcelAddress } = require('../services/shippingPurchase');
 
 const SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 const RUN = `ep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -159,6 +160,21 @@ afterAll(async () => {
   await Transaction.deleteMany({ $or: [{ buyer: { $in: users } }, { seller: { $in: users } }] });
   await Listing.deleteMany({ _id: { $in: listings } });
   await User.deleteMany({ _id: { $in: users } });
+});
+
+describe('EP.0 seller address compatibility', () => {
+  test('legacy `street` and an empty fullName still produce a usable parcel origin', () => {
+    const address = sellerParcelAddress({
+      name: 'Alex Rivera',
+      shippingAddress: {
+        street: '123 Sunset Blvd', city: 'Los Angeles', state: 'CA',
+        postalCode: '90028', country: 'US', fullName: '', street1: '',
+      },
+    }, 'US');
+    expect(address.fullName).toBe('Alex Rivera');
+    expect(address.street1).toBe('123 Sunset Blvd');
+    expect(address.city).toBe('Los Angeles');
+  });
 });
 
 describe('EP.1 provider client', () => {

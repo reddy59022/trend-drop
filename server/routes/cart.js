@@ -462,7 +462,7 @@ router.post('/checkout', auth, async (req, res) => {
       const sellerCountry = seller?.country || planned.listing.shipsFrom || 'US';
       const sellerAddress = seller?.shippingAddress ? {
         fullName: seller.shippingAddress.fullName || seller.name,
-        street1: seller.shippingAddress.street1,
+        street1: seller.shippingAddress.street1 || seller.shippingAddress.street,
         city: seller.shippingAddress.city,
         state: seller.shippingAddress.state,
         postalCode: seller.shippingAddress.postalCode,
@@ -525,7 +525,7 @@ router.post('/checkout', auth, async (req, res) => {
 
       const sellerAddress = seller?.shippingAddress ? {
         fullName: seller.shippingAddress.fullName || seller.name,
-        street1: seller.shippingAddress.street1,
+        street1: seller.shippingAddress.street1 || seller.shippingAddress.street,
         city: seller.shippingAddress.city,
         state: seller.shippingAddress.state,
         postalCode: seller.shippingAddress.postalCode,
@@ -591,7 +591,7 @@ router.post('/checkout', auth, async (req, res) => {
         },
         shippingAddress: {
           fullName: shippingAddress?.fullName || buyer.name,
-          street1: shippingAddress?.street1,
+          street1: shippingAddress?.street1 || shippingAddress?.street,
           street2: shippingAddress?.street2,
           city: shippingAddress?.city,
           state: shippingAddress?.state,

@@ -290,7 +290,7 @@ router.post('/guest', async (req, res) => {
 
     const sellerAddress = seller?.shippingAddress ? {
       fullName: seller.shippingAddress.fullName || seller.name,
-      street1: seller.shippingAddress.street1,
+      street1: seller.shippingAddress.street1 || seller.shippingAddress.street,
       street2: seller.shippingAddress.street2,
       city: seller.shippingAddress.city,
       state: seller.shippingAddress.state,
@@ -541,7 +541,7 @@ router.post('/', auth, async (req, res) => {
     // Get seller's address
     const sellerAddress = seller?.shippingAddress ? {
       fullName: seller.shippingAddress.fullName || seller.name,
-      street1: seller.shippingAddress.street1,
+      street1: seller.shippingAddress.street1 || seller.shippingAddress.street,
       street2: seller.shippingAddress.street2,
       city: seller.shippingAddress.city,
       state: seller.shippingAddress.state,
@@ -610,7 +610,7 @@ router.post('/', auth, async (req, res) => {
       },
       shippingAddress: {
         fullName: shippingAddress?.fullName || req.user.name,
-        street1: shippingAddress?.street1,
+        street1: shippingAddress?.street1 || shippingAddress?.street,
         street2: shippingAddress?.street2,
         city: shippingAddress?.city,
         state: shippingAddress?.state,
@@ -737,7 +737,7 @@ router.post('/', auth, async (req, res) => {
         },
         shippingAddress: {
           fullName: shippingAddress?.fullName || req.user.name,
-          street1: shippingAddress?.street1 || '',
+          street1: shippingAddress?.street1 || shippingAddress?.street || '',
           street2: shippingAddress?.street2 || '',
           city: shippingAddress?.city || '',
           state: shippingAddress?.state || '',
@@ -829,7 +829,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
 
     const sellerAddress = seller?.shippingAddress ? {
       fullName: seller.shippingAddress.fullName || seller.name,
-      street1: seller.shippingAddress.street1,
+      street1: seller.shippingAddress.street1 || seller.shippingAddress.street,
       street2: seller.shippingAddress.street2,
       city: seller.shippingAddress.city,
       state: seller.shippingAddress.state,

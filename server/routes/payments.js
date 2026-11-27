@@ -941,7 +941,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
         },
         shippingAddress: {
           fullName: shippingAddress?.fullName || req.user.name,
-          street1: shippingAddress?.street1,
+          street1: shippingAddress?.street1 || shippingAddress?.street,
           street2: shippingAddress?.street2,
           city: shippingAddress?.city,
           state: shippingAddress?.state,
@@ -1211,7 +1211,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
         },
         shippingAddress: {
           fullName: shippingAddress?.fullName || req.user.name,
-          street1: shippingAddress?.street1 || '',
+          street1: shippingAddress?.street1 || shippingAddress?.street || '',
           street2: shippingAddress?.street2 || '',
           city: shippingAddress?.city || '',
           state: shippingAddress?.state || '',
@@ -1582,7 +1582,7 @@ router.post('/confirm', auth, async (req, res) => {
       },
       shippingAddress: {
         fullName: shippingAddress?.fullName || req.user.name,
-        street1: shippingAddress?.street1,
+        street1: shippingAddress?.street1 || shippingAddress?.street,
         street2: shippingAddress?.street2,
         city: shippingAddress?.city,
         state: shippingAddress?.state,
