@@ -53,8 +53,28 @@ test.describe('31 · Seller cashout full (dashboard amounts + cashout scenarios)
     expect([200, 201]).toContain(conf.status);
     const txn = conf.data.transaction || conf.data;
     saleTxnId = String(txn._id || txn.id);
+    const orderId = String((conf.data.orders && conf.data.orders[0] && conf.data.orders[0]._id) || saleTxnId);
+
+    // Release the seller's pending balance by completing the carrier journey.
+    // In development this uses the mock tracking webhook; with a real carrier
+    // the same endpoint receives signed EasyPost events.
+    const ship = await api.req('post', `/api/orders/${orderId}/ship`, {
+      token: sellerToken,
+      body: { shipmentIndex: 0, trackingNumber: `S31-${RUN_ID}`, carrier: 'UPS' },
+    });
+    expect(ship.status, JSON.stringify(ship.data)).toBe(200);
+    const delivered = await api.req('post', '/api/shipping/tracking-event', {
+      headers: { 'x-tracking-secret': 'trenddrop-tracking-dev' },
+      body: { transactionId: saleTxnId, status: 'delivered', trackingNumber: `S31-${RUN_ID}` },
+    });
+    expect(delivered.status, JSON.stringify(delivered.data)).toBe(200);
+    const received = await api.req('post', `/api/orders/${saleTxnId}/confirm-received`, {
+      token: buyerToken, body: {},
+    });
+    expect(received.status, JSON.stringify(received.data)).toBe(200);
+
     state.txns = state.txns || {};
-    state.txns.S31 = { id: saleTxnId };
+    state.txns.S31 = { id: saleTxnId, orderId };
     saveState(state);
   });
   test.afterAll(async () => { await api.dispose(); });

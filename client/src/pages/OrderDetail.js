@@ -309,6 +309,9 @@ const OrderDetail = () => {
         case 'confirm':
           res = await api.post(`/orders/${data.transactionId || id}/confirm-received`, {});
           break;
+        case 'simulate-delivery':
+          res = await api.post('/shipping/mock-deliver', { transactionId: data.transactionId || id });
+          break;
         case 'request-return':
           res = await api.post(`/orders/${data.transactionId || id}/request-return`, { reason: data.reason });
           break;
@@ -342,6 +345,10 @@ const OrderDetail = () => {
   const myInsurance = insurancePolicies.filter(p => String(p.transaction?._id || p.transaction) === primaryTransactionId)[0] || null;
   const canInitiateEscrow = isBuyer && escrow?.status !== 'active' && escrow?.status !== 'disputed' &&
     (viewOrder.paymentBreakdown?.totalPaid || viewOrder.itemPrice) > 500 && ['paid', 'shipped', 'in_transit', 'out_for_delivery', 'delivered'].includes(viewOrder.status);
+  const isMockShipment = viewOrder.shipping?.provider === 'mock'
+    || (isConsolidated && (order.shipments || []).some(s => s.provider === 'mock'));
+  const canSimulateDelivery = isMockShipment && (isBuyer || isSeller)
+    && ['shipped', 'in_transit', 'out_for_delivery'].includes(viewOrder.status);
   
   const trackingSteps = viewOrder.shipping?.trackingHistory || [];
   const buildTimeline = () => {
@@ -714,6 +721,13 @@ const OrderDetail = () => {
                       onClick={() => handleAction('confirm', { transactionId: primaryTransactionId })}
                       disabled={actionLoading === `confirm:${primaryTransactionId}`}>
                       {actionLoading === `confirm:${primaryTransactionId}` ? <FaSpinner className="spinner-sm" /> : <FaCheckCircle size={14} />} I've Received the Item
+                    </button>
+                  )}
+                  {canSimulateDelivery && (
+                    <button className="btn btn-outline btn-block"
+                      onClick={() => handleAction('simulate-delivery', { transactionId: primaryTransactionId })}
+                      disabled={actionLoading === `simulate-delivery:${primaryTransactionId}`}>
+                      {actionLoading === `simulate-delivery:${primaryTransactionId}` ? <FaSpinner className="spinner-sm" /> : <FaTruck size={14} />} Simulate Carrier Delivery (Test)
                     </button>
                   )}
                   {canCancel && (

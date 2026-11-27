@@ -250,14 +250,16 @@ function Settings() {
               <div className="flex-between">
                 <strong>Stripe payout account</strong>
                 <span style={{ color: stripeConnect?.payoutsEnabled ? 'var(--td-success)' : 'var(--td-error)' }}>
-                  {stripeConnect?.payoutsEnabled ? 'Ready' : (stripeConnect?.detailsSubmitted ? 'Verification pending' : 'Not connected')}
+                  {stripeConnect?.mock ? 'Test payouts enabled' : (stripeConnect?.payoutsEnabled ? 'Ready' : (stripeConnect?.detailsSubmitted ? 'Verification pending' : 'Not connected'))}
                 </span>
               </div>
               <p style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>
-                Connect a Stripe account so TrendDrop can transfer your earnings to your bank. The payout method below is kept for your records.
+                {stripeConnect?.mock
+                  ? 'Stripe Connect is not enabled yet, so cash-outs are simulated against your real test balance. Enable Stripe Connect to switch to live transfers.'
+                  : 'Connect a Stripe account so TrendDrop can transfer your earnings to your bank. The payout method below is kept for your records.'}
               </p>
               <button type="button" className="btn btn-primary" onClick={handleConnectStripe} disabled={connectLoading || stripeConnect?.payoutsEnabled}>
-                {connectLoading ? 'Opening Stripe…' : (stripeConnect?.payoutsEnabled ? 'Payouts enabled' : 'Connect Stripe')}
+                {connectLoading ? 'Opening Stripe…' : (stripeConnect?.payoutsEnabled ? (stripeConnect?.mock ? 'Test payouts enabled' : 'Payouts enabled') : 'Connect Stripe')}
               </button>
             </div>
             <div className="form-group"><label className="form-label">Payout Method</label><select name="payoutMethod.type" value={formData.payoutMethod.type} onChange={handleChange} className="form-input"><option value="">Select method</option><option value="paypal">PayPal</option><option value="bank">Bank Transfer</option></select></div>

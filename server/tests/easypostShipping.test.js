@@ -204,10 +204,12 @@ describe('EP.1 provider client', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test('production without a key fails closed', async () => {
+  test('production without a key fails closed when Stripe is live', async () => {
     delete process.env.EASYPOST_API_KEY;
     const previous = process.env.NODE_ENV;
+    const previousStripe = process.env.STRIPE_SECRET_KEY;
     process.env.NODE_ENV = 'production';
+    delete process.env.STRIPE_SECRET_KEY;
     try {
       await expect(createShippingLabel({
         fromAddress: { name: 'Seller', street1: '1 St', city: 'Austin', state: 'TX', zip: '78702', country: 'US' },
@@ -217,6 +219,30 @@ describe('EP.1 provider client', () => {
       expect(global.fetch).not.toHaveBeenCalled();
     } finally {
       process.env.NODE_ENV = previous;
+      if (previousStripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = previousStripe;
+    }
+  });
+
+  test('production on Stripe TEST keys uses mock labels until EasyPost is configured', async () => {
+    delete process.env.EASYPOST_API_KEY;
+    const previous = process.env.NODE_ENV;
+    const previousStripe = process.env.STRIPE_SECRET_KEY;
+    process.env.NODE_ENV = 'production';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_easypost_mock_probe';
+    try {
+      const label = await createShippingLabel({
+        fromAddress: { name: 'Seller', street1: '1 St', city: 'Austin', state: 'TX', zip: '78702', country: 'US' },
+        toAddress: US_ADDRESS,
+        weightKg: 1,
+      });
+      expect(label.provider).toBe('mock');
+      expect(label.trackingNumber).toMatch(/^EZ/);
+      expect(global.fetch).not.toHaveBeenCalled();
+    } finally {
+      process.env.NODE_ENV = previous;
+      if (previousStripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = previousStripe;
     }
   });
 

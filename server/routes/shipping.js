@@ -697,6 +697,78 @@ router.post('/auto-track', async (req, res) => {
   }
 });
 
+// POST /api/shipping/mock-deliver - Development-only carrier simulation.
+// Mock labels have no real carrier, so participants need a safe way to move a
+// shipment (or return) to delivered to exercise confirm-received, returns,
+// escrow release, and payouts. Disabled unless the mock provider is active.
+router.post('/mock-deliver', auth, async (req, res) => {
+  try {
+    if (!isMockMode()) {
+      return res.status(404).json({ message: 'Mock delivery is not available' });
+    }
+    const { transactionId, returnId } = req.body || {};
+    const eventTime = new Date();
+    const deliveredStep = (description) => ({
+      status: 'delivered',
+      label: 'Delivered',
+      description: description || 'Delivered by test carrier',
+      timestamp: eventTime,
+      location: 'Test carrier network',
+    });
+
+    if (returnId) {
+      if (!isValidObjectId(returnId)) return res.status(400).json({ message: 'Invalid returnId' });
+      const returnRequest = await Return.findById(returnId);
+      if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
+      const txn = await Transaction.findById(returnRequest.transaction);
+      if (!txn) return res.status(404).json({ message: 'Transaction not found' });
+      const userId = String(req.user._id);
+      if (![String(txn.buyer), String(txn.seller)].includes(userId)) {
+        return res.status(403).json({ message: 'Not authorized' });
+      }
+      if (['refunded', 'completed'].includes(returnRequest.status)) {
+        return res.json({ message: 'Return already settled', status: returnRequest.trackingStatus, returnId });
+      }
+      returnRequest.trackingHistory = returnRequest.trackingHistory || [];
+      returnRequest.trackingHistory.push(deliveredStep('Return package delivered to seller'));
+      returnRequest.trackingStatus = 'delivered';
+      returnRequest.status = 'delivered';
+      returnRequest.deliveredAt = eventTime;
+      await returnRequest.save();
+      txn.returnDetails = { ...(txn.returnDetails || {}), deliveredAt: eventTime };
+      await txn.save();
+      return res.json({ message: 'Return marked delivered (test mode)', status: 'delivered', returnId });
+    }
+
+    if (!transactionId || !isValidObjectId(transactionId)) {
+      return res.status(400).json({ message: 'Invalid transactionId' });
+    }
+    const txn = await Transaction.findById(transactionId);
+    if (!txn) return res.status(404).json({ message: 'Transaction not found' });
+    const userId = String(req.user._id);
+    if (![String(txn.buyer), String(txn.seller)].includes(userId)) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+    if (txn.status === 'delivered') {
+      return res.json({ message: 'Already delivered', status: 'delivered', transactionId });
+    }
+    if (!['shipped', 'in_transit', 'out_for_delivery'].includes(txn.status)) {
+      return res.status(400).json({ message: 'Only a shipped package can be delivered' });
+    }
+    txn.shipping = txn.shipping || {};
+    txn.shipping.trackingHistory = txn.shipping.trackingHistory || [];
+    txn.shipping.trackingHistory.push(deliveredStep());
+    txn.shipping.trackingHistory = txn.shipping.trackingHistory.slice(-50);
+    txn.shipping.actualDelivery = eventTime;
+    txn.status = 'delivered';
+    await txn.save();
+    res.json({ message: 'Package marked delivered (test mode)', status: 'delivered', transactionId });
+  } catch (error) {
+    console.error('Mock delivery error:', error);
+    res.status(500).json({ message: 'Error simulating delivery' });
+  }
+});
+
 // POST /api/shipping/tracking-event - Carrier webhook: advance a shipment.
 // Signed with x-tracking-secret (TRACKING_WEBHOOK_SECRET, dev default for
 // local/e2e). Idempotent and forward-only: a delivery event can never regress
@@ -709,7 +781,10 @@ router.post('/tracking-event', async (req, res) => {
     // default would let anyone mark shipments delivered and unlock returns,
     // disputes, and seller payouts.
     const configuredSecret = process.env.TRACKING_WEBHOOK_SECRET;
-    if (process.env.NODE_ENV === 'production' && !configuredSecret) {
+    // Mock shipping (development/test Stripe only) has no carrier that can call
+    // this endpoint, so it may use the deterministic demo secret until a real
+    // webhook secret is configured. Live deployments still fail closed.
+    if (process.env.NODE_ENV === 'production' && !configuredSecret && !isMockMode()) {
       console.error('Tracking webhook disabled: TRACKING_WEBHOOK_SECRET is not configured');
       return res.status(503).json({ message: 'Tracking webhook is not configured' });
     }

@@ -1299,6 +1299,17 @@ describe('production payment safety gates', () => {
       process.env.NODE_ENV = 'test';
       delete process.env.E2E_IN_MEMORY;
       expect(config.isTestConfirmationAllowed()).toBe(true);
+
+      // A production deployment on Stripe TEST keys is still a development
+      // environment; live keys keep the endpoint disabled.
+      const savedStripe = process.env.STRIPE_SECRET_KEY;
+      process.env.NODE_ENV = 'production';
+      process.env.STRIPE_SECRET_KEY = 'sk_test_confirmation_probe';
+      expect(config.isTestConfirmationAllowed()).toBe(true);
+      process.env.STRIPE_SECRET_KEY = ['sk', 'live', 'confirmation_probe'].join('_');
+      expect(config.isTestConfirmationAllowed()).toBe(false);
+      if (savedStripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = savedStripe;
     } finally {
       process.env.NODE_ENV = originalNodeEnv;
       if (originalE2E === undefined) delete process.env.E2E_IN_MEMORY;

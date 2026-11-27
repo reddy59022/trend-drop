@@ -24,6 +24,16 @@ let stripe = null;
 // authorizations/captures/refunds, which means free orders and payouts that
 // were marked paid without any money moving.
 const mockPaymentsAllowed = () => process.env.NODE_ENV === 'test' || Boolean(process.env.E2E_IN_MEMORY);
+const stripeTestMode = () => String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_');
+// Development-stage deployments run Stripe TEST keys. Without Stripe Connect
+// enabled there is no connected account to receive a transfer, so cash-outs
+// are simulated against the real balance ledger. This is impossible with live
+// keys and is disabled by PAYOUTS_MOCK_MODE=0.
+const payoutSimulationAllowed = () => (
+  mockPaymentsAllowed()
+  || process.env.PAYOUTS_MOCK_MODE === '1'
+  || (process.env.PAYOUTS_MOCK_MODE !== '0' && process.env.NODE_ENV === 'production' && stripeTestMode())
+);
 const paymentsNotConfigured = () => {
   const error = new Error('Payment processing is not configured');
   error.code = 'PAYMENTS_NOT_CONFIGURED';
@@ -561,7 +571,7 @@ const processSellerPayout = async (sellerId, amount, currency, payoutMethod) => 
   // balance while sending no money. Tests and the in-memory E2E harness keep
   // the simulation; a real deployment fails closed and the caller refunds the
   // reserved balance.
-  if (!mockPaymentsAllowed()) {
+  if (!payoutSimulationAllowed()) {
     const error = new Error('Seller payouts require a connected Stripe account');
     error.code = 'PAYOUT_PROVIDER_UNAVAILABLE';
     error.status = 503;
@@ -574,6 +584,8 @@ const processSellerPayout = async (sellerId, amount, currency, payoutMethod) => 
     currency,
     status: 'paid',
     method: payoutMethod || 'stripe',
+    provider: 'mock',
+    mock: true,
     estimatedArrival: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
   };
 };
@@ -602,5 +614,13 @@ module.exports = {
   // /test-confirm exists only for automated test/E2E runs. Keeping this rule
   // here (rather than inline in the route) makes the production guard
   // independently unit-testable without booting production middleware.
-  isTestConfirmationAllowed: () => process.env.NODE_ENV === 'test' || Boolean(process.env.E2E_IN_MEMORY),
+  isTestConfirmationAllowed: () => (
+    process.env.NODE_ENV === 'test'
+    || Boolean(process.env.E2E_IN_MEMORY)
+    // A production deployment using Stripe TEST keys is still a development
+    // environment. The endpoint remains impossible with live keys and still
+    // enforces buyer ownership and the $500 automation cap.
+    || (process.env.NODE_ENV === 'production' && stripeTestMode())
+  ),
+  payoutSimulationAllowed,
 };

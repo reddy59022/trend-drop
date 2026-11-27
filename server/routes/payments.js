@@ -1932,7 +1932,16 @@ router.get('/connect/status', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('stripeAccountId').lean();
     if (!user?.stripeAccountId) {
-      return res.json({ connected: false, payoutsEnabled: false, detailsSubmitted: false });
+      // Development-stage Stripe TEST deployments without Connect enabled can
+      // still exercise cash-outs against the real balance ledger.
+      const mockPayouts = process.env.NODE_ENV === 'production'
+        && paymentsConfig.payoutSimulationAllowed();
+      return res.json({
+        connected: false,
+        payoutsEnabled: mockPayouts,
+        detailsSubmitted: mockPayouts,
+        mock: mockPayouts,
+      });
     }
     if (!stripe) {
       return res.status(400).json({ message: 'Payouts are not configured' });

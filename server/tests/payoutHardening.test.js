@@ -64,16 +64,38 @@ describe('PAH.1 payout minimum', () => {
     expect(after.balance.available).toBe(95);
   });
 
-  test('production never simulates a payout without a connected account', async () => {
+  test('production never simulates a payout without a connected account on live keys', async () => {
     const user = await makeUser('payout_unconfigured');
     const { processSellerPayout } = require('../config/payments');
     const previousEnv = process.env.NODE_ENV;
+    const previousStripe = process.env.STRIPE_SECRET_KEY;
     process.env.NODE_ENV = 'production';
+    delete process.env.STRIPE_SECRET_KEY;
     try {
       await expect(processSellerPayout(user._id, 5, 'USD', 'bank'))
         .rejects.toThrow(/connected Stripe account/i);
     } finally {
       process.env.NODE_ENV = previousEnv;
+      if (previousStripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = previousStripe;
+    }
+  });
+
+  test('production on Stripe TEST keys simulates cash-out without Connect', async () => {
+    const user = await makeUser('payout_test_mode');
+    const previousEnv = process.env.NODE_ENV;
+    const previousStripe = process.env.STRIPE_SECRET_KEY;
+    process.env.NODE_ENV = 'production';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_payout_probe';
+    try {
+      const { processSellerPayout } = require('../config/payments');
+      const payout = await processSellerPayout(user._id, 10, 'USD', 'bank');
+      expect(payout.mock).toBe(true);
+      expect(payout.status).toBe('paid');
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+      if (previousStripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = previousStripe;
     }
   });
 });

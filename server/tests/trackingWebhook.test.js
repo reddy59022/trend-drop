@@ -23,6 +23,7 @@ const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Return = require('../models/Return');
 const { orderStates } = require('../config/orderLifecycle');
+const { isMockMode } = require('../services/easypostService');
 
 const SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 const WEBHOOK_SECRET = process.env.TRACKING_WEBHOOK_SECRET || 'trenddrop-tracking-dev';
@@ -207,6 +208,30 @@ describe('TW · Tracking webhook advances a shipment to delivered', () => {
     }
   });
 
+  test('TW.6a-test production on Stripe TEST keys accepts the demo carrier secret', async () => {
+    const txn = await mkShippedTxn();
+    const previousEnv = process.env.NODE_ENV;
+    const previousSecret = process.env.TRACKING_WEBHOOK_SECRET;
+    const previousStripe = process.env.STRIPE_SECRET_KEY;
+    process.env.NODE_ENV = 'production';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_tracking_probe';
+    delete process.env.TRACKING_WEBHOOK_SECRET;
+    try {
+      const res = await request(app)
+        .post('/api/shipping/tracking-event')
+        .set('x-tracking-secret', 'trenddrop-tracking-dev')
+        .send({ transactionId: txn._id, status: 'delivered' });
+      expect(res.status).toBe(200);
+      expect((await Transaction.findById(txn._id)).status).toBe('delivered');
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+      if (previousSecret === undefined) delete process.env.TRACKING_WEBHOOK_SECRET;
+      else process.env.TRACKING_WEBHOOK_SECRET = previousSecret;
+      if (previousStripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = previousStripe;
+    }
+  });
+
   test('TW.6b production auto-track fails closed without its cron secret', async () => {
     const txn = await mkShippedTxn({
       'shipping.labelCreatedDate': new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
@@ -250,6 +275,54 @@ describe('TW · Tracking webhook advances a shipment to delivered', () => {
     const after = await Transaction.findById(txn._id);
     expect(after.status).toBe('delivered');
     expect(after.shipping.actualDelivery).toBeTruthy();
+  });
+});
+
+describe('TW · Mock carrier delivery for development', () => {
+  const sellerToken = () => jwt.sign({ id: seller._id }, SECRET, { expiresIn: '30d' });
+
+  test('TW.M1 participant can mark a shipped mock shipment delivered', async () => {
+    const txn = await mkShippedTxn();
+    const res = await request(app)
+      .post('/api/shipping/mock-deliver')
+      .set('Authorization', `Bearer ${sellerToken()}`)
+      .send({ transactionId: txn._id });
+    expect(res.status).toBe(200);
+    const after = await Transaction.findById(txn._id);
+    expect(after.status).toBe('delivered');
+    expect(after.shipping.actualDelivery).toBeTruthy();
+    expect(after.shipping.trackingHistory.at(-1).status).toBe('delivered');
+  });
+
+  test('TW.M2 an unpaid or non-participant transaction cannot be delivered', async () => {
+    const txn = await mkShippedTxn({ status: orderStates.PAID });
+    const invalid = await request(app)
+      .post('/api/shipping/mock-deliver')
+      .set('Authorization', `Bearer ${sellerToken()}`)
+      .send({ transactionId: txn._id });
+    expect(invalid.status).toBe(400);
+
+    const outsider = await mkUser('TW Outsider', 'outsider');
+    const outsiderToken = jwt.sign({ id: outsider._id }, SECRET, { expiresIn: '30d' });
+    const forbidden = await request(app)
+      .post('/api/shipping/mock-deliver')
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .send({ transactionId: txn._id });
+    expect(forbidden.status).toBe(403);
+  });
+
+  test('TW.M3 mock mode is disabled by live Stripe keys', () => {
+    const previousEnv = process.env.NODE_ENV;
+    const previousStripe = process.env.STRIPE_SECRET_KEY;
+    process.env.NODE_ENV = 'production';
+    process.env.STRIPE_SECRET_KEY = ['sk', 'live', 'mock_probe'].join('_');
+    try {
+      expect(isMockMode()).toBe(false);
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+      if (previousStripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = previousStripe;
+    }
   });
 });
 

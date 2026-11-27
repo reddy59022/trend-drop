@@ -37,18 +37,24 @@ class ShippingProviderError extends Error {
 
 const apiKey = () => String(process.env.EASYPOST_API_KEY || '').trim();
 const isProduction = () => process.env.NODE_ENV === 'production';
+const stripeTestMode = () => String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_');
 
 /**
- * The mock provider is available only outside production when no real key is
- * configured. A configured key ALWAYS uses the live API, even in tests, so a
- * misconfigured suite cannot silently pass with fake labels.
+ * Development/demo shipping provider.
+ *
+ * EasyPost does not publish a shared test key: every test key belongs to one
+ * account. Until a real key is installed, a deployment running Stripe TEST
+ * keys may use deterministic mock labels so the full purchase -> ship ->
+ * deliver -> return -> payout flow is exercisable. A configured EasyPost key
+ * ALWAYS wins; live Stripe keys never fall back to mock labels.
  */
 const isMockMode = () => (
   // The in-memory Playwright harness boots with NODE_ENV=production to test
   // production middleware without any external services; it sets this flag
   // explicitly. Real deployments never set it.
   process.env.E2E_IN_MEMORY === '1'
-  || (!apiKey() && !isProduction())
+  || process.env.SHIPPING_MOCK_MODE === '1'
+  || (!apiKey() && (!isProduction() || stripeTestMode()))
 );
 
 const authHeader = () => `Basic ${Buffer.from(`${apiKey()}:`).toString('base64')}`;
@@ -404,6 +410,7 @@ const shippingLabelPayload = (label) => ({
 
 module.exports = {
   ShippingProviderError,
+  stripeTestMode,
   createShippingLabel,
   getTracker,
   mapTrackerStatus,
