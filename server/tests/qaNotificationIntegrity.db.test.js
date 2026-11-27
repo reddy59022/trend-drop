@@ -213,4 +213,33 @@ describe('QA notification integrity (database)', () => {
       'brevo unavailable',
     ]);
   });
+
+  test('scheduled audit failure emits failed metric and alerts operators', async () => {
+    reset();
+    sendOperationalAlert.mockClear();
+    const audit = jest.fn().mockRejectedValue(new Error('audit database unavailable'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    let report;
+    let errorCalls;
+    try {
+      report = await auditNotificationIntegrity({ audit });
+    } finally {
+      errorCalls = errorSpy.mock.calls;
+      errorSpy.mockRestore();
+    }
+
+    expect(report).toBeNull();
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(render()).toMatch(/trenddrop_orphan_notification_audits_total\{[^}]*result="failed"[^}]*source="cron"[^}]*\} 1/);
+    expect(sendOperationalAlert).toHaveBeenCalledTimes(1);
+    const alert = sendOperationalAlert.mock.calls[0][0];
+    expect(alert.subject).toContain('Orphan notification audit failed');
+    expect(alert.text).toContain('audit database unavailable');
+    expect(alert.text).toContain('Orphan detection is degraded');
+    expect(errorCalls).toContainEqual([
+      '[CRON] Orphan notification audit failed:',
+      'audit database unavailable',
+    ]);
+  });
 });

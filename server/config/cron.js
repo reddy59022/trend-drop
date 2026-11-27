@@ -1096,11 +1096,12 @@ async function releaseHeldSettlements(now = Date.now()) {
 // JOB 11: Read-only orphan-notification audit (daily at 5:00 AM)
 // ──────────────────────────────────────────────
 // Notifications live inside User documents, so deleting a transaction can
-// leave dangling references. This check never writes; it emits metrics and a
-// warning so the orphan count is visible operationally.
-async function auditNotificationIntegrity() {
+// leave dangling references. This check never writes; it emits metrics, logs
+// and sends an operational alert when the audit finds orphans or cannot run.
+// The audit runner is injectable so the cron failure path can be tested.
+async function auditNotificationIntegrity({ audit = auditOrphanNotifications } = {}) {
   try {
-    const report = await auditOrphanNotifications();
+    const report = await audit();
     if (report.total > 0) {
       increment('trenddrop_orphan_notifications_total', { source: 'cron', result: 'found' }, report.total);
       console.warn(
@@ -1136,6 +1137,24 @@ async function auditNotificationIntegrity() {
   } catch (error) {
     increment('trenddrop_orphan_notification_audits_total', { source: 'cron', result: 'failed' });
     console.error('[CRON] Orphan notification audit failed:', error.message);
+
+    const text = [
+      `The read-only orphan-notification audit failed at ${new Date().toISOString()}.`,
+      `Error: ${error.message}`,
+      'Orphan detection is degraded; investigate the database and audit immediately.',
+      'Run: node scripts/audit-orphan-notifications.js --json',
+    ].join('\n');
+    try {
+      const alert = await sendOperationalAlert({
+        subject: '[TrendDrop][ALERT] Orphan notification audit failed',
+        text,
+      });
+      if (alert?.skipped) {
+        console.warn('[CRON] Orphan audit failure alert skipped: no alert email configuration.');
+      }
+    } catch (alertError) {
+      console.error('[CRON] Orphan audit failure alert delivery failed:', alertError.message);
+    }
     return null;
   }
 }
