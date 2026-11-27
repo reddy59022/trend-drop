@@ -415,7 +415,7 @@ describe('R20.3 hostile bodies -> 400 (regression guards)', () => {
   });
 
   test('R20.3c referrals/apply non-string code -> 400 (was 500: toUpperCase)', async () => {
-    const res = await call('post', '/api/referrals/apply', { body: { code: 42 } });
+    const res = await call('post', '/api/referrals/apply', { body: { code: 42 }, token: myToken });
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/required/i);
   });

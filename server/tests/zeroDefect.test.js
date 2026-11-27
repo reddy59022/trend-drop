@@ -93,6 +93,7 @@ describe('ZD2 — referral self-use and double-claim', () => {
       .set('Authorization', 'Bearer ' + u.token).send({});
     const code = g.body.referral.code;
     const r = await request(app).post('/api/referrals/apply')
+      .set('Authorization', 'Bearer ' + u.token)
       .send({ code, userId: u.user._id.toString() });
     expect(r.status).toBe(400);
     expect(JSON.stringify(r.body)).toMatch(/own/i);
@@ -105,6 +106,7 @@ describe('ZD2 — referral self-use and double-claim', () => {
     const code = g.body.referral.code;
     const referred = await makeUser('ZDRef3', `zdref3_${Date.now()}@test.com`);
     const a = await request(app).post('/api/referrals/apply')
+      .set('Authorization', 'Bearer ' + referred.token)
       .send({ code, userId: referred.user._id.toString() });
     expect(a.status).toBe(200);
     const c1 = await request(app).post('/api/referrals/claim')

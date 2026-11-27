@@ -231,6 +231,7 @@ describe('PR.3 account deletion anonymizes while preserving order history', () =
     const txn = await makeSale({ seller: seller._id, buyer: buyer._id, listing });
     const token = tokenFor(seller._id);
     const originalEmail = seller.email;
+    await User.updateOne({ _id: seller._id }, { $set: { stripeAccountId: 'acct_delete_test' } });
     await PushDevice.create({ userId: seller._id, token: `delete-device-${Date.now()}`, platform: 'Android' });
 
     const res = await request(app)
@@ -247,6 +248,7 @@ describe('PR.3 account deletion anonymizes while preserving order history', () =
     expect(stored.email).toMatch(/@deleted\.trenddrop\.invalid$/);
     expect(stored.password).toBeFalsy();
     expect(stored.googleId).toBeNull();
+    expect(stored.stripeAccountId).toBeNull();
     expect(stored.tokenVersion).toBe(1);
     expect(await PushDevice.countDocuments({ userId: seller._id })).toBe(0);
 

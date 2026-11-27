@@ -525,11 +525,16 @@ const processSellerPayout = async (sellerId, amount, currency, payoutMethod) => 
   const seller = await User.findById(sellerId);
   const accountId = seller?.stripeAccountId;
   if (stripe && accountId) {
-    const idempotencyKey = generateIdempotencyKey({ sellerId, amount, currency, payoutMethod });
+    // Stripe Connect only accepts `standard` or `instant` payout methods.
+    // Seller payout preferences are stored as `bank`/`paypal`/`stripe`, and
+    // passing those through made a real connected-account payout fail after
+    // the seller's balance had already been reserved.
+    const stripeMethod = payoutMethod === 'instant' ? 'instant' : 'standard';
+    const idempotencyKey = generateIdempotencyKey({ sellerId, amount, currency, payoutMethod: stripeMethod });
     const payout = await stripe.payouts.create({
       amount: Math.round(amount * 100),
       currency: currency.toLowerCase(),
-      method: payoutMethod || 'standard',
+      method: stripeMethod,
     }, {
       stripeAccount: accountId,
       idempotencyKey,
@@ -540,7 +545,7 @@ const processSellerPayout = async (sellerId, amount, currency, payoutMethod) => 
       amount,
       currency,
       status: payout.status,
-      method: payoutMethod || payout.method,
+      method: stripeMethod,
       estimatedArrival: payout.arrival_date ? new Date(payout.arrival_date * 1000) : null,
     };
   }

@@ -162,9 +162,12 @@ describe('PC · Legacy confirm-received payout uses the 8% platform commission',
     expect(payout).toBeTruthy();
     // Platform commission is 8% (config/payments.js + routes/payouts.js).
     expect(payout.commissionRate).toBe(0.08);
-    // salePrice here is totalPaid (110) per legacy contract; commission 8% of that.
-    expect(Math.round(payout.commissionAmount * 100) / 100).toBe(Math.round(110 * 0.08 * 100) / 100);
-    expect(Math.round(payout.payoutAmount * 100) / 100).toBe(Math.round((110 - 110 * 0.08) * 100) / 100);
+    // Seller pay is based on the item subtotal (100), never the buyer's
+    // shipping + buyer-protection pass-throughs in totalPaid (110). The old
+    // legacy fallback recorded 101.20 and overstated pending seller earnings.
+    expect(Math.round(payout.commissionAmount * 100) / 100).toBe(8);
+    expect(Math.round(payout.payoutAmount * 100) / 100).toBe(92);
+    expect(payout.salePrice).toBe(100);
   });
 
   test('PC.2 existing checkout-created payout is NOT overwritten', async () => {

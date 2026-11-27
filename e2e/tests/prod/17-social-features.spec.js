@@ -277,8 +277,14 @@ test.describe('17 - Social features (production)', () => {
     expect(my.data.stats).toBeTruthy();
   });
 
-  test('referrals: apply validates codes correctly', async () => {
-    var invalid = await api.req('post', '/api/referrals/apply', { body: { code: 'INVALIDCODE' } });
+  test('referrals: apply validates codes correctly and requires auth', async () => {
+    var anonymous = await api.req('post', '/api/referrals/apply', { body: { code: 'INVALIDCODE' } });
+    expect(anonymous.status).toBe(401);
+
+    var invalid = await api.req('post', '/api/referrals/apply', {
+      token: alexToken,
+      body: { code: 'INVALIDCODE' },
+    });
     expect([400, 404]).toContain(invalid.status);
   });
 

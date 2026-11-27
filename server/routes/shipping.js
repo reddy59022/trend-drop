@@ -863,10 +863,20 @@ router.post('/confirm-received', auth, async (req, res) => {
     try {
       const existingPayout = await Payout.findOne({ transaction: transaction._id });
       if (!existingPayout) {
-        const salePrice = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0;
+        // The seller is paid on the item subtotal, not on the buyer's
+        // shipping and buyer-protection pass-throughs. The old totalPaid base
+        // inflated the pending Payout record by those pass-throughs and made
+        // the dashboard report money the seller never earned.
+        const salePrice = transaction.paymentBreakdown?.subtotal || transaction.itemPrice || 0;
         const commissionRate = 0.08; // platform commission
-        const commissionAmount = Math.round(salePrice * commissionRate * 100) / 100;
-        const payoutAmount = Math.round((salePrice - commissionAmount) * 100) / 100;
+        const storedCommission = transaction.paymentBreakdown?.platformFee;
+        const commissionAmount = typeof storedCommission === 'number' && Number.isFinite(storedCommission)
+          ? storedCommission
+          : Math.round(salePrice * commissionRate * 100) / 100;
+        const storedEarnings = transaction.paymentBreakdown?.sellerEarnings;
+        const payoutAmount = typeof storedEarnings === 'number' && Number.isFinite(storedEarnings)
+          ? storedEarnings
+          : Math.round((salePrice - commissionAmount) * 100) / 100;
         await Payout.create({
           seller: transaction.seller,
           transaction: transaction._id,

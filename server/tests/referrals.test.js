@@ -95,6 +95,7 @@ describe('Referral Program', () => {
 
       const res = await request(app)
         .post('/api/referrals/apply')
+        .set('Authorization', `Bearer ${userToken}`)
         .send({ code, userId });
 
       expect(res.statusCode).toBe(200);
@@ -108,8 +109,8 @@ describe('Referral Program', () => {
       const code = genRes.body.referral.code;
 
       const responses = await Promise.all([
-        request(app).post('/api/referrals/apply').send({ code, userId }),
-        request(app).post('/api/referrals/apply').send({ code, userId }),
+        request(app).post('/api/referrals/apply').set('Authorization', `Bearer ${userToken}`).send({ code, userId }),
+        request(app).post('/api/referrals/apply').set('Authorization', `Bearer ${userToken}`).send({ code, userId }),
       ]);
 
       expect(responses.filter((res) => res.statusCode === 200)).toHaveLength(1);
@@ -120,9 +121,26 @@ describe('Referral Program', () => {
       expect(referral.referredUsers).toHaveLength(1);
     });
 
+    it('REF.6-unauthenticated cannot attach the code to another user', async () => {
+      const genRes = await request(app)
+        .post('/api/referrals/generate')
+        .set('Authorization', `Bearer ${referrerToken}`);
+      const code = genRes.body.referral.code;
+
+      const res = await request(app)
+        .post('/api/referrals/apply')
+        .send({ code, userId });
+
+      expect(res.statusCode).toBe(401);
+      const referral = await Referral.findOne({ code });
+      expect(referral.uses).toBe(0);
+      expect(referral.referredUsers).toHaveLength(0);
+    });
+
     it('REF.6 should reject invalid referral code', async () => {
       const res = await request(app)
         .post('/api/referrals/apply')
+        .set('Authorization', `Bearer ${userToken}`)
         .send({ code: 'INVALIDCODE' });
 
       expect(res.statusCode).toBe(404);
@@ -149,8 +167,13 @@ describe('Referral Program', () => {
       const secondUser = await createUser(`second_${Date.now()}@example.com`, 'Second User');
       secondUserId = secondUser._id;
 
-      await request(app).post('/api/referrals/apply').send({ code, userId });
-      await request(app).post('/api/referrals/apply').send({ code, userId: secondUserId });
+      const secondToken = jwt.sign(
+        { id: secondUserId },
+        process.env.JWT_SECRET || 'fallback_secret_change_me',
+        { expiresIn: '1h' },
+      );
+      await request(app).post('/api/referrals/apply').set('Authorization', `Bearer ${userToken}`).send({ code, userId });
+      await request(app).post('/api/referrals/apply').set('Authorization', `Bearer ${secondToken}`).send({ code, userId: secondUserId });
 
       const before = await User.findById(referrerId);
       const res = await request(app)

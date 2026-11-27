@@ -64,7 +64,14 @@ const insuranceSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Indexes
-insuranceSchema.index({ transaction: 1 });
+// One policy per transaction. Without uniqueness, two concurrent purchase
+// requests could each create a policy for the same sale, and the seller could
+// file (and be paid for) the same loss once per duplicate policy.
+// Distinct name: MongoDB refuses to add uniqueness to an existing index with
+// the same auto-generated name (`transaction_1`). A named index makes the
+// uniqueness guarantee actually apply to deployments that already created the
+// old non-unique index.
+insuranceSchema.index({ transaction: 1 }, { unique: true, name: 'uniq_insurance_transaction' });
 insuranceSchema.index({ seller: 1 });
 insuranceSchema.index({ expiresAt: 1 });
 

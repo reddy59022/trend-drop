@@ -43,7 +43,12 @@ const optionalAuth = async (req, res, next) => {
     if (token) {
       const decoded = jwt.verify(token, getJwtSecret());
       const user = await User.findById(decoded.id).select('-password');
-      if (user && !user.deletedAt && (decoded.tv || 0) === (user.tokenVersion || 0)) {
+      // optionalAuth must enforce the same account-state rules as auth for
+      // the routes that use it to expose private resources (collections,
+      // parties, drafts). A suspended user is treated as anonymous instead of
+      // retaining access merely because the route is "optional" auth.
+      if (user && !user.deletedAt && (decoded.tv || 0) === (user.tokenVersion || 0)
+        && !isSuspendedRole(user.role)) {
         req.user = user;
       }
     }

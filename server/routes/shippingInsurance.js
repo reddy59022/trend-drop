@@ -77,6 +77,15 @@ router.post('/purchase', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only seller can purchase insurance' });
     }
 
+    // Insurance must be bought before the parcel leaves the seller. Allowing
+    // it after shipment (or on a completed/cancelled/refunded/disputed sale)
+    // let a seller insure a loss that had already happened and claim against
+    // it. Only an active, pre-shipment sale is insurable.
+    const INSURABLE_STATUSES = ['paid', 'processing'];
+    if (!INSURABLE_STATUSES.includes(transaction.status)) {
+      return res.status(400).json({ message: 'This transaction can no longer be insured' });
+    }
+
     // Check if insurance already exists
     const existing = await ShippingInsurance.findOne({ transaction: transactionId });
     if (existing) {
@@ -87,16 +96,26 @@ router.post('/purchase', auth, async (req, res) => {
     const premium = ShippingInsurance.calculatePremium(itemValue, coverageType);
     const limit = ShippingInsurance.getCoverageLimit(coverageType);
 
-    const insurance = await ShippingInsurance.create({
-      transaction: transactionId,
-      seller: req.user._id,
-      itemValue,
-      premium,
-      currency: transaction.currency || 'USD',
-      coverageType,
-      coverageLimit: limit,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-    });
+    let insurance;
+    try {
+      insurance = await ShippingInsurance.create({
+        transaction: transactionId,
+        seller: req.user._id,
+        itemValue,
+        premium,
+        currency: transaction.currency || 'USD',
+        coverageType,
+        coverageLimit: limit,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      });
+    } catch (createError) {
+      // The unique transaction index serializes concurrent purchases. The
+      // loser gets the same user-facing result as the pre-check duplicate.
+      if (createError?.code === 11000) {
+        return res.status(400).json({ message: 'Insurance already purchased for this transaction' });
+      }
+      throw createError;
+    }
 
     res.status(201).json({ insurance });
   } catch (error) {

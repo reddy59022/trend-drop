@@ -12,6 +12,7 @@ const { CURRENT_VERSIONS, requiredConsentTypes } = require('../config/legal');
 const LegalAcceptance = require('../models/LegalAcceptance');
 const { isCountryPolicyPublished } = require('../config/legalRuntime');
 const { currencies } = require('../config/currencies');
+const { isSuspendedRole } = require('../criticalRules');
 
 // Helper: Generate JWT + user response
 // Always signs with the SAME secret the auth middleware verifies with
@@ -323,6 +324,9 @@ async function handleVerification(token, res) {
   if (!user) {
     return res.status(400).json({ message: 'Invalid or expired verification token' });
   }
+  if (isSuspendedRole(user.role)) {
+    return res.status(403).json({ message: 'Account suspended. Contact support.' });
+  }
   user.emailVerified = true;
   user.verificationToken = null;
   user.verificationTokenExpires = null;
@@ -418,6 +422,14 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Invalid email or password' });
     }
 
+    // Verify the password BEFORE revealing that an address belongs to an
+    // unverified account. Otherwise anyone could probe arbitrary emails and
+    // use the distinct needsVerification response as an account oracle.
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid email or password' });
+    }
+
     // Block login if email not verified (for email auth users)
     if (user.authProvider === 'email' && !user.emailVerified) {
       return res.status(403).json({
@@ -427,9 +439,11 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid email or password' });
+    // A suspended account must not receive a fresh token. The HTTP middleware
+    // and websocket handshake also reject it, but issuing a usable-looking
+    // session here made the suspension look ineffective to the client.
+    if (isSuspendedRole(user.role)) {
+      return res.status(403).json({ message: 'Account suspended. Contact support.' });
     }
 
     const token = generateToken(user);
@@ -503,6 +517,9 @@ router.post('/google', async (req, res) => {
       });
     }
 
+    if (isSuspendedRole(user.role)) {
+      return res.status(403).json({ message: 'Account suspended. Contact support.' });
+    }
     const token = generateToken(user);
     res.json(userResponse(user, token));
   } catch (error) {
@@ -669,6 +686,9 @@ router.post('/apple', async (req, res) => {
       });
     }
 
+    if (isSuspendedRole(user.role)) {
+      return res.status(403).json({ message: 'Account suspended. Contact support.' });
+    }
     const token = generateToken(user);
     res.json(userResponse(user, token));
   } catch (error) {
@@ -728,6 +748,9 @@ router.post('/facebook', async (req, res) => {
       });
     }
 
+    if (isSuspendedRole(user.role)) {
+      return res.status(403).json({ message: 'Account suspended. Contact support.' });
+    }
     const token = generateToken(user);
     res.json(userResponse(user, token));
   } catch (error) {
@@ -1063,6 +1086,9 @@ router.delete('/account', auth, async (req, res) => {
           store: {},
           shippingAddress: {},
           payoutMethod: { type: '' },
+          // The connected Stripe account is a credential-bearing identifier;
+          // an anonymized account must not retain it.
+          stripeAccountId: null,
           googleId: null,
           appleId: null,
           facebookId: null,

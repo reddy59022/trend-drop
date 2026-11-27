@@ -232,6 +232,16 @@ describe('Global signup and verification contract', () => {
     expect(res.body.needsVerification).toBe(true);
   });
 
+  test('SG.26a unverified-account oracle requires the correct password', async () => {
+    const user = await User.create({ name: 'Unverified Probe', email: emailFor('unverified-probe'), password, emailVerified: false, country: 'US' });
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: user.email, password: 'definitely-wrong' });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Invalid email or password');
+    expect(res.body.needsVerification).toBeUndefined();
+  });
+
   test('SG.27 allows login after email verification', async () => {
     const user = await User.create({ name: 'Verified', email: emailFor('verified'), password, emailVerified: true, country: 'US' });
     const res = await request(app).post('/api/auth/login').send({ email: user.email, password });

@@ -9,6 +9,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { getJwtSecret } = require('../config/security');
 const app = require('../server');
+const { optionalAuth } = require('../middleware/auth');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Inventory = require('../models/Inventory');
@@ -98,6 +99,25 @@ describe('middleware auth branches', () => {
     const res = await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body.message).toBe('Account suspended. Contact support.');
+  });
+
+  test('suspended account cannot obtain a fresh token from login', async () => {
+    const { user } = await makeUser('Suspended Login', `susp-login-${Date.now()}@t.test`, { role: 'suspended' });
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: user.email, password: 'password123' });
+    expect(res.status).toBe(403);
+    expect(res.body.token).toBeUndefined();
+    expect(res.body.user).toBeUndefined();
+  });
+
+  test('optionalAuth treats a suspended account as anonymous', async () => {
+    const { token } = await makeUser('Suspended Optional', `susp-opt-${Date.now()}@t.test`, { role: 'suspended' });
+    const req = { header: () => `Bearer ${token}` };
+    let nextCalled = false;
+    await optionalAuth(req, {}, () => { nextCalled = true; });
+    expect(nextCalled).toBe(true);
+    expect(req.user).toBeUndefined();
   });
 
   test('optionalAuth attaches a user for valid tokens and continues otherwise', async () => {

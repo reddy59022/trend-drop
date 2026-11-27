@@ -50,7 +50,7 @@ describe('Seller Shipping Insurance', () => {
         totalPaid: 105,
         sellerEarnings: 92,
       },
-      status: 'shipped',
+      status: 'processing',
     });
     transactionId = txn._id;
     
@@ -138,6 +138,20 @@ describe('Seller Shipping Insurance', () => {
         .send({ transactionId: new mongoose.Types.ObjectId() });
 
       expect(res.statusCode).toBe(404);
+    });
+
+    it('INS.6a-1 refuses to insure a terminal or already-shipped transaction', async () => {
+      for (const status of ['completed', 'shipped', 'refunded']) {
+        await Transaction.updateOne({ _id: transactionId }, { $set: { status } });
+
+        const res = await request(app)
+          .post('/api/shipping-insurance/purchase')
+          .set('Authorization', `Bearer ${sellerToken}`)
+          .send({ transactionId, coverageType: 'standard' });
+
+        expect(res.statusCode).toBe(400);
+        expect(res.body.message).toMatch(/can no longer be insured/i);
+      }
     });
 
     it('INS.6a persists the selected coverage limit', async () => {

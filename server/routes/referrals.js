@@ -3,7 +3,6 @@ const router = express.Router();
 const { auth } = require('../middleware/auth');
 const Referral = require('../models/Referral');
 const User = require('../models/User');
-const { isValidObjectId } = require('../utils/validators');
 
 // ===================== REFERRAL PROGRAM =====================
 // Track referrals with unique codes and reward both parties
@@ -56,10 +55,17 @@ router.post('/generate', auth, async (req, res) => {
   }
 });
 
-// POST /api/referrals/apply - Apply a referral code during registration
-router.post('/apply', async (req, res) => {
+// POST /api/referrals/apply - Apply a referral code to the signed-in account.
+// Authentication is required: the old public route accepted any userId, so an
+// attacker could attach arbitrary victims to their code and claim a cash
+// reward for people who never used it.
+router.post('/apply', auth, async (req, res) => {
   try {
     const { code, userId } = req.body;
+
+    if (userId !== undefined && userId !== null && String(userId) !== String(req.user._id)) {
+      return res.status(403).json({ message: 'You can only apply a referral code to your own account' });
+    }
 
     // `code` must be a string: a number/object would reach `.toUpperCase()`
     // and throw a TypeError -> 500. Reject non-strings outright.
@@ -87,54 +93,44 @@ router.post('/apply', async (req, res) => {
       return res.status(400).json({ message: 'Referral code has reached maximum uses' });
     }
 
+    const linkedUserId = req.user._id;
+
     // Self-referral is fraud: a user must never consume their own code.
-    if (userId && String(referral.referrer) === String(userId)) {
+    if (String(referral.referrer) === String(linkedUserId)) {
       return res.status(400).json({ message: 'You cannot use your own referral code' });
     }
 
-    // If userId provided, link the referral
-    if (userId) {
-      // A garbage id would CastError the push (500) and a ghost id would
-      // inflate `uses` with a referral row pointing at no real user.
-      if (!isValidObjectId(userId)) {
-        return res.status(400).json({ message: 'Invalid userId' });
-      }
-      const linkedUser = await User.findById(userId);
-      if (!linkedUser) {
-        return res.status(404).json({ message: 'User not found' });
-      }
+    // Atomically reserve this referral for the authenticated user. The old
+    // read/check/save sequence allowed two concurrent requests to both
+    // succeed, increment uses twice, and append duplicate referred-user
+    // entries.
+    const usageFilter = {
+      _id: referral._id,
+      status: 'active',
+      'referredUsers.user': { $ne: linkedUserId },
+    };
+    if (referral.expiresAt) usageFilter.expiresAt = { $gt: new Date() };
+    if (referral.maxUses !== null && referral.maxUses !== undefined) {
+      usageFilter.uses = { $lt: referral.maxUses };
+    }
 
-      // Atomically reserve this referral for the user. The old read/check/save
-      // sequence allowed two concurrent registration requests to both succeed,
-      // increment uses twice, and append duplicate referred-user entries.
-      const usageFilter = {
-        _id: referral._id,
-        status: 'active',
-        'referredUsers.user': { $ne: userId },
-      };
-      if (referral.expiresAt) usageFilter.expiresAt = { $gt: new Date() };
-      if (referral.maxUses !== null && referral.maxUses !== undefined) {
-        usageFilter.uses = { $lt: referral.maxUses };
-      }
-
-      const appliedReferral = await Referral.findOneAndUpdate(
-        usageFilter,
-        {
-          $set: { referred: userId },
-          $inc: { uses: 1 },
-          $push: {
-            referredUsers: {
-              user: userId,
-              createdAt: new Date(),
-              rewardGiven: false,
-            },
+    const appliedReferral = await Referral.findOneAndUpdate(
+      usageFilter,
+      {
+        $set: { referred: linkedUserId },
+        $inc: { uses: 1 },
+        $push: {
+          referredUsers: {
+            user: linkedUserId,
+            createdAt: new Date(),
+            rewardGiven: false,
           },
         },
-        { new: true }
-      );
-      if (!appliedReferral) {
-        return res.status(400).json({ message: 'User already used a referral code' });
-      }
+      },
+      { new: true }
+    );
+    if (!appliedReferral) {
+      return res.status(400).json({ message: 'User already used a referral code' });
     }
 
     res.json({
