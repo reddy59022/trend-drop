@@ -60,7 +60,7 @@ async function main() {
   if (!process.env.LEGAL_ENTITY_NAME) process.env.LEGAL_ENTITY_NAME = 'TrendDrop E2E Entity';
   if (!process.env.LEGAL_ENTITY_ADDRESS) process.env.LEGAL_ENTITY_ADDRESS = '1 Test Way, Testville, TS 00000';
   if (!process.env.LEGAL_ENTITY_JURISDICTION) process.env.LEGAL_ENTITY_JURISDICTION = 'California, USA';
-  if (!process.env.LEGAL_CONTACT_EMAIL) process.env.LEGAL_CONTACT_EMAIL = 'legal-e2e@trenddrop.test';
+  if (!process.env.CONTACT_EMAIL) process.env.CONTACT_EMAIL = 'legal-e2e@trenddrop.test';
   // config/legal captures process.env into its ENTITY object at require time,
   // so this require MUST stay below the env-var defaults above (and below the
   // NODE_ENV=production assignment) — server.js will reuse the cached module.

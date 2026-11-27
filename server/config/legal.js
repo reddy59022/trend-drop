@@ -7,7 +7,7 @@ const ENTITY = {
   name: process.env.LEGAL_ENTITY_NAME || '[LEGAL ENTITY NAME — COUNSEL MUST COMPLETE]',
   address: process.env.LEGAL_ENTITY_ADDRESS || '[REGISTERED BUSINESS ADDRESS]',
   jurisdiction: process.env.LEGAL_ENTITY_JURISDICTION || '[GOVERNING JURISDICTION]',
-  contact: process.env.LEGAL_CONTACT_EMAIL || CONTACT_EMAIL,
+  contact: CONTACT_EMAIL,
 };
 
 const CURRENT_VERSIONS = {

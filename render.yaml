@@ -107,10 +107,8 @@ services:
         value: "123 Market Street, San Francisco, CA 94105, USA"
       - key: LEGAL_ENTITY_JURISDICTION
         value: "Delaware, USA"
-      - key: LEGAL_CONTACT_EMAIL
-        value: "connect.trenddrop@gmail.com"
-      # Public support address shown in the footer, legal center, blocked-region
-      # page, and transactional email replies.
+      # Public support and legal contact shown in the footer, legal center,
+      # blocked-region page, and transactional email replies.
       - key: CONTACT_EMAIL
         value: "connect.trenddrop@gmail.com"
       # Temporary availability bridge: the production database currently has
