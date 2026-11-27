@@ -21,7 +21,7 @@ const sellerParcelAddress = (seller, fallbackCountry) => (
       street2: seller.shippingAddress.street2,
       city: seller.shippingAddress.city,
       state: seller.shippingAddress.state,
-      postalCode: seller.shippingAddress.postalCode,
+      postalCode: seller.shippingAddress.postalCode || seller.shippingAddress.zip,
       country: seller.shippingAddress.country || fallbackCountry,
     }
     : { fullName: seller?.name, country: fallbackCountry }

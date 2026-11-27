@@ -157,10 +157,15 @@ const userSchema = new mongoose.Schema({
   shippingAddress: {
     fullName: { type: String, default: '' },
     street1: { type: String, default: '' },
+    // Legacy accounts saved `street`/`zip` instead of street1/postalCode.
+    // Keep them in the schema so Mongoose does not discard the only copy of
+    // the seller's origin street when a label is purchased.
+    street: { type: String, default: '' },
     street2: { type: String, default: '' },
     city: { type: String, default: '' },
     state: { type: String, default: '' },
     postalCode: { type: String, default: '' },
+    zip: { type: String, default: '' },
     country: { type: String, default: 'US' },
     phone: { type: String, default: '' },
   },

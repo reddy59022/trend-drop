@@ -294,7 +294,7 @@ router.post('/guest', async (req, res) => {
       street2: seller.shippingAddress.street2,
       city: seller.shippingAddress.city,
       state: seller.shippingAddress.state,
-      postalCode: seller.shippingAddress.postalCode,
+      postalCode: seller.shippingAddress.postalCode || seller.shippingAddress.zip,
       country: seller.shippingAddress.country || sellerCountry,
     } : { fullName: seller?.name, country: sellerCountry };
 
@@ -545,7 +545,7 @@ router.post('/', auth, async (req, res) => {
       street2: seller.shippingAddress.street2,
       city: seller.shippingAddress.city,
       state: seller.shippingAddress.state,
-      postalCode: seller.shippingAddress.postalCode,
+      postalCode: seller.shippingAddress.postalCode || seller.shippingAddress.zip,
       country: seller.shippingAddress.country || sellerCountry,
     } : { fullName: seller?.name, country: sellerCountry };
 
@@ -833,7 +833,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
       street2: seller.shippingAddress.street2,
       city: seller.shippingAddress.city,
       state: seller.shippingAddress.state,
-      postalCode: seller.shippingAddress.postalCode,
+      postalCode: seller.shippingAddress.postalCode || seller.shippingAddress.zip,
       country: seller.shippingAddress.country || sellerCountry,
     } : { fullName: seller?.name, country: sellerCountry };
 

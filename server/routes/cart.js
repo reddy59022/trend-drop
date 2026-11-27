@@ -465,7 +465,7 @@ router.post('/checkout', auth, async (req, res) => {
         street1: seller.shippingAddress.street1 || seller.shippingAddress.street,
         city: seller.shippingAddress.city,
         state: seller.shippingAddress.state,
-        postalCode: seller.shippingAddress.postalCode,
+        postalCode: seller.shippingAddress.postalCode || seller.shippingAddress.zip,
         country: seller.shippingAddress.country || sellerCountry,
       } : { fullName: seller?.name, country: sellerCountry };
       try {
@@ -528,7 +528,7 @@ router.post('/checkout', auth, async (req, res) => {
         street1: seller.shippingAddress.street1 || seller.shippingAddress.street,
         city: seller.shippingAddress.city,
         state: seller.shippingAddress.state,
-        postalCode: seller.shippingAddress.postalCode,
+        postalCode: seller.shippingAddress.postalCode || seller.shippingAddress.zip,
         country: seller.shippingAddress.country || sellerCountry,
       } : { fullName: seller?.name, country: sellerCountry };
 

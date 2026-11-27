@@ -163,6 +163,24 @@ afterAll(async () => {
 });
 
 describe('EP.0 seller address compatibility', () => {
+  test('legacy street and zip survive a User save/reload', async () => {
+    const user = await User.create({
+      name: 'Legacy Address', email: mkEmail('legacy_address'), password: 'password123',
+      emailVerified: true, authProvider: 'email', country: 'US', currency: 'USD',
+      shippingAddress: {
+        fullName: '', street: '123 Sunset Blvd', city: 'Los Angeles',
+        state: 'CA', zip: '90028', country: 'US',
+      },
+    });
+    users.push(user._id);
+    const reloaded = await User.findById(user._id);
+    expect(reloaded.shippingAddress.street).toBe('123 Sunset Blvd');
+    expect(reloaded.shippingAddress.zip).toBe('90028');
+    const address = sellerParcelAddress(reloaded, 'US');
+    expect(address.street1).toBe('123 Sunset Blvd');
+    expect(address.postalCode).toBe('90028');
+  });
+
   test('legacy `street` and an empty fullName still produce a usable parcel origin', () => {
     const address = sellerParcelAddress({
       name: 'Alex Rivera',
