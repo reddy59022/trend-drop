@@ -4,12 +4,13 @@ const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
+const Payout = require('../models/Payout');
 const {
   verifyStripeWebhookEvent,
   isWebhookSignatureRequired,
   getWebhookSecret,
 } = require('../config/payments');
-const { clawbackSellerEarnings, reverseEscrowHold, sellerSaleTotal } = require('../utils/balances');
+const { clawbackSellerEarnings, reverseEscrowHold, sellerSaleTotal, debitSellerForChargeback } = require('../utils/balances');
 const { increment } = require('../utils/metrics');
 const restoreListingInventory = require('../utils/restoreListingInventory');
 const { syncOrderFromTransaction } = require('./orderLifecycle');
@@ -55,12 +56,23 @@ async function syncOrderForLostChargeback(transaction) {
 async function settleDisputeOutcome(transaction, dispute) {
   if (!transaction || !['won', 'lost'].includes(dispute.status)) return false;
   const nextStatus = dispute.status === 'won' ? 'chargeback_won' : 'chargeback_lost';
+  // Capture the release state BEFORE the claim overwrites the status: a
+  // dispute opened after completion has status chargeback_open, but its money
+  // already sits in available.
+  const wasReleased = transaction.status === 'completed'
+    || transaction.payout?.status === 'completed';
   const claimed = await Transaction.findOneAndUpdate(
     {
       _id: transaction._id,
       status: { $nin: ['chargeback_won', 'chargeback_lost', 'refunded'] },
     },
-    { $set: { status: nextStatus, 'disputeInfo.status': dispute.status } },
+    {
+      $set: {
+        status: nextStatus,
+        'disputeInfo.status': dispute.status,
+        ...(dispute.status === 'lost' ? { 'payout.status': 'refunded' } : {}),
+      },
+    },
     { new: true },
   );
   if (!claimed) {
@@ -77,14 +89,12 @@ async function settleDisputeOutcome(transaction, dispute) {
   if (dispute.status === 'lost') {
     const earnings = sellerSaleTotal(claimed.paymentBreakdown);
     if (earnings > 0) {
-      // ATOMIC: a lost dispute intentionally allows the pending balance to go
-      // negative (the seller owes the platform). Keep the debit and the
-      // notification in one update so a stale seller document cannot overwrite
-      // an unrelated balance change.
+      // Released sales come out of available first (then pending, which may go
+      // negative); escrowed sales only touch pending. Atomic per helper.
+      await debitSellerForChargeback(claimed.seller, earnings, { released: wasReleased });
       await User.updateOne(
         { _id: claimed.seller },
         {
-          $inc: { 'balance.pending': -earnings },
           $push: {
             notifications: {
               $each: [{
@@ -98,6 +108,18 @@ async function settleDisputeOutcome(transaction, dispute) {
             },
           },
         },
+      );
+    }
+    // A pending/completed payout for a lost sale must not keep showing as owed
+    // or paid on the seller dashboard.
+    await Payout.updateMany(
+      { transaction: claimed._id, status: { $ne: 'refunded' } },
+      { $set: { status: 'refunded', refundedAt: new Date() } },
+    );
+    if (claimed.escrow && ['active', 'disputed'].includes(claimed.escrow.status)) {
+      await Transaction.updateOne(
+        { _id: claimed._id },
+        { $set: { 'escrow.status': 'resolved', 'escrow.resolution': 'chargeback_lost', 'escrow.resolvedAt': new Date() } },
       );
     }
     await syncOrderForLostChargeback(claimed);

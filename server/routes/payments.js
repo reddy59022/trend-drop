@@ -38,7 +38,7 @@ const { increment } = require('../utils/metrics');
 const { sanitizeTransactionForViewer, sanitizeTransactionsForViewer } = require('../utils/transactionView');
 const { boostConfig } = require('../config/boost');
 const { isValidMoneyInput, isPositiveIntegerQuantity } = require('../criticalRules');
-const { sellerSaleTotal, reverseSellerCredits } = require('../utils/balances');
+const { sellerSaleTotal, reverseSellerCredits, offsetNegativePending } = require('../utils/balances');
 const { requirePostageFunded, postageFundingFailure } = require('../utils/postageFunding');
 const { reverseTrackedBoostEntries } = require('../utils/boostLedger');
 const { releasePromoUse } = require('../utils/promoUsage');
@@ -2030,6 +2030,10 @@ router.post('/connect/onboard', auth, async (req, res) => {
 // POST /api/payments/payout - Process seller payout
 router.post('/payout', auth, async (req, res) => {
   try {
+    // A lost chargeback can leave `pending` negative (a receivable). Settled
+    // available cash must clear that debt before it can be withdrawn; otherwise
+    // the seller keeps the disputed money and the platform never recovers it.
+    await offsetNegativePending(req.user._id);
     const user = await User.findById(req.user._id);
     if (!user.balance || user.balance.available <= 0) {
       return res.status(400).json({ message: 'No available balance for payout' });

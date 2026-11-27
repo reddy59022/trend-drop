@@ -1053,9 +1053,14 @@ router.delete('/account', auth, async (req, res) => {
     const available = Number(user.balance?.available) || 0;
     const pending = Number(user.balance?.pending) || 0;
     const reserve = Number(user.balance?.reserve) || 0;
-    if (available > 0 || pending > 0 || reserve > 0) {
+    // A negative pending balance is a chargeback receivable (the seller owes
+    // the platform). Deleting the account would anonymize the debtor and erase
+    // the balance, so it must block deletion just like an unpaid balance.
+    if (available > 0 || pending !== 0 || reserve > 0) {
       return res.status(400).json({
-        message: 'Withdraw your available balance and wait for pending sales and the rolling reserve to settle before deleting your account.',
+        message: pending < 0
+          ? 'Your account has an outstanding chargeback balance. Available funds or future sales must clear it before the account can be deleted.'
+          : 'Withdraw your available balance and wait for pending sales and the rolling reserve to settle before deleting your account.',
       });
     }
 

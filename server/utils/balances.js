@@ -179,6 +179,83 @@ const debitPendingAllowNegative = async (sellerId, amount) =>
   User.updateOne({ _id: sellerId }, { $inc: { 'balance.pending': -round2(amount) } });
 
 /**
+ * Chargeback debit: recover a lost sale from the ledger.
+ *
+ * A dispute can be lost before OR after the sale was released. Debiting only
+ * `pending` after release leaves the money in `available` (where the seller can
+ * still withdraw it), so released sales drain `available` first and only the
+ * unpaid remainder goes against `pending` (which may go negative — a recorded
+ * receivable). Escrowed sales never touch unrelated available funds.
+ *
+ * One atomic pipeline: concurrent credits/refunds cannot interleave between the
+ * available check and the pending debit.
+ */
+const debitSellerForChargeback = async (sellerId, amount, { released = false } = {}) => {
+  const amt = round2(amount);
+  if (!Number.isFinite(amt) || amt <= 0) return null;
+
+  if (!released) {
+    return User.updateOne({ _id: sellerId }, [
+      {
+        $set: {
+          'balance.pending': { $subtract: [{ $ifNull: ['$balance.pending', 0] }, amt] },
+          'balance.totalEarned': { $max: [0, { $subtract: [{ $ifNull: ['$balance.totalEarned', 0] }, amt] }] },
+        },
+      },
+    ]);
+  }
+
+  return User.updateOne({ _id: sellerId }, [
+    {
+      $set: {
+        __fromAvailable: {
+          $min: [
+            { $max: [{ $ifNull: ['$balance.available', 0] }, 0] },
+            amt,
+          ],
+        },
+      },
+    },
+    {
+      $set: {
+        'balance.available': { $subtract: [{ $ifNull: ['$balance.available', 0] }, '$__fromAvailable'] },
+        'balance.pending': {
+          $subtract: [
+            { $ifNull: ['$balance.pending', 0] },
+            { $subtract: [amt, '$__fromAvailable'] },
+          ],
+        },
+        'balance.totalEarned': { $max: [0, { $subtract: [{ $ifNull: ['$balance.totalEarned', 0] }, amt] }] },
+      },
+    },
+    { $unset: ['__fromAvailable'] },
+  ]);
+};
+
+/**
+ * Use a seller's settled `available` cash to clear a negative `pending`
+ * receivable (a lost chargeback debit) BEFORE any cash-out. Without this a
+ * seller could withdraw the available balance and keep the debt forever.
+ */
+const offsetNegativePending = async (userId) => User.updateOne(
+  { _id: userId, 'balance.pending': { $lt: 0 }, 'balance.available': { $gt: 0 } },
+  [
+    {
+      $set: {
+        __pay: { $min: [{ $subtract: [0, '$balance.pending'] }, '$balance.available'] },
+      },
+    },
+    {
+      $set: {
+        'balance.available': { $subtract: ['$balance.available', '$__pay'] },
+        'balance.pending': { $add: ['$balance.pending', '$__pay'] },
+      },
+    },
+    { $unset: ['__pay'] },
+  ],
+);
+
+/**
  * Recover platform postage from a seller who is responsible for a return.
  * Drains available first, then pending (allowing pending to go negative so the
  * platform records a receivable instead of silently writing the postage off).
@@ -277,6 +354,8 @@ module.exports = {
   clawbackSellerEarnings,
   reverseEscrowHold,
   debitPendingAllowNegative,
+  debitSellerForChargeback,
+  offsetNegativePending,
   chargeSellerPostage,
   reverseSellerCredits,
   withdrawAvailable,

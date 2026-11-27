@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Order = require('../models/Order');
+const Payout = require('../models/Payout');
 
 // Webhook endpoint: POST /api/payments/webhook with raw JSON + stripe-signature
 // header. jest.setup.js mocks the Stripe SDK: constructEvent(payload, sig)
@@ -49,6 +50,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
   afterAll(async () => {
     await Transaction.deleteMany({});
     await Order.deleteMany({});
+    await Payout.deleteMany({});
     await Listing.deleteMany({});
     await User.deleteMany({});
   });
@@ -56,6 +58,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
   beforeEach(async () => {
     await Transaction.deleteMany({});
     await Order.deleteMany({});
+    await Payout.deleteMany({});
     // Reset seller balance + notifications for deterministic assertions
     seller = await User.findById(seller._id);
     seller.balance.pending = 100;
@@ -361,6 +364,157 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       const synced = await Order.findById(order._id);
       expect(synced.status).toBe('refunded');
       expect(synced.items).toHaveLength(0);
+      expect(synced.cancellation.refundAmount).toBe(60);
+    });
+
+    it('WH.22 a lost chargeback after release claws available funds and refunds the payout record', async () => {
+      tx.stripePaymentIntentId = 'pi_lost_released';
+      tx.status = 'completed';
+      tx.payout.status = 'completed';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
+      await tx.save();
+      const payoutDoc = await Payout.create({
+        seller: seller._id,
+        transaction: tx._id,
+        listing: listing._id,
+        salePrice: 50,
+        commissionRate: 0.08,
+        commissionAmount: 4,
+        payoutAmount: 45,
+        status: 'completed',
+      });
+      const order = await Order.create({
+        buyer: buyer._id,
+        sellers: [seller._id],
+        status: 'completed',
+        items: [{ listing: listing._id, transaction: tx._id, seller: seller._id, title: listing.title, price: 50 }],
+        shipments: [{ seller: seller._id, items: [tx._id], status: 'confirmed' }],
+        payment: { paymentIntentId: 'pi_lost_released', status: 'captured', totalHeld: 60 },
+        totals: { subtotal: 50, total: 60 },
+      });
+      await User.updateOne({ _id: seller._id }, { $set: { 'balance.available': 80, 'balance.pending': 100 } });
+
+      const res = await postWebhook(closedEvent('lost'));
+      expect(res.status).toBe(200);
+
+      const updated = await Transaction.findById(tx._id);
+      let s = await User.findById(seller._id);
+      expect(updated.status).toBe('chargeback_lost');
+      expect(updated.payout.status).toBe('refunded');
+      expect(s.balance.available).toBe(35); // 80 - 45, not left withdrawable
+      expect(s.balance.pending).toBe(100);
+      expect((await Payout.findById(payoutDoc._id)).status).toBe('refunded');
+      expect((await Order.findById(order._id)).status).toBe('refunded');
+
+      const replay = await postWebhook(closedEvent('lost'));
+      expect(replay.status).toBe(200);
+      s = await User.findById(seller._id);
+      expect(s.balance.available).toBe(35);
+      expect(s.balance.pending).toBe(100);
+    });
+
+    it('WH.23 a lost chargeback after withdrawal records a negative receivable without restocking', async () => {
+      tx.stripePaymentIntentId = 'pi_lost_withdrawn';
+      tx.status = 'completed';
+      tx.payout.status = 'completed';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
+      await tx.save();
+      await User.updateOne({ _id: seller._id }, { $set: { 'balance.available': 0, 'balance.pending': 0 } });
+      await Listing.updateOne({ _id: listing._id }, {
+        $set: { quantity: 0, quantitySold: 1, sold: true, available: false },
+      });
+
+      const res = await postWebhook(closedEvent('lost'));
+      expect(res.status).toBe(200);
+
+      const s = await User.findById(seller._id);
+      expect(s.balance.available).toBe(0);
+      expect(s.balance.pending).toBe(-45); // seller owes the platform
+      const listingAfter = await Listing.findById(listing._id);
+      expect(listingAfter.quantity).toBe(0);
+      expect(listingAfter.quantitySold).toBe(1);
+      expect(listingAfter.sold).toBe(true);
+    });
+
+    it('WH.24 a lost item in a consolidated order leaves the other shipment active', async () => {
+      tx.stripePaymentIntentId = 'pi_lost_multi';
+      tx.status = 'chargeback_open';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
+      await tx.save();
+      const secondListing = await Listing.create({
+        seller: seller._id,
+        title: 'Webhook Second Item',
+        description: 'Second item',
+        price: 20,
+        currency: 'USD',
+        images: [],
+        category: 'Men',
+        condition: 'Good',
+        available: true,
+        quantity: 1,
+      });
+      const secondTxn = await Transaction.create({
+        seller: seller._id,
+        buyer: buyer._id,
+        listing: secondListing._id,
+        status: 'shipped',
+        itemPrice: 20,
+        total: 20,
+        paymentBreakdown: { subtotal: 20, totalPaid: 20, sellerEarnings: 18 },
+      });
+      const order = await Order.create({
+        buyer: buyer._id,
+        sellers: [seller._id],
+        status: 'shipped',
+        items: [
+          { listing: listing._id, transaction: tx._id, seller: seller._id, title: listing.title, price: 50 },
+          { listing: secondListing._id, transaction: secondTxn._id, seller: seller._id, title: secondListing.title, price: 20 },
+        ],
+        shipments: [
+          { seller: seller._id, items: [tx._id], status: 'confirmed' },
+          { seller: seller._id, items: [secondTxn._id], status: 'shipped' },
+        ],
+        payment: { paymentIntentId: 'pi_lost_multi', status: 'captured', totalHeld: 70 },
+        totals: { subtotal: 70, total: 70 },
+      });
+
+      const res = await postWebhook(closedEvent('lost'));
+      expect(res.status).toBe(200);
+
+      const synced = await Order.findById(order._id);
+      expect(synced.items).toHaveLength(1);
+      expect(String(synced.items[0].transaction)).toBe(String(secondTxn._id));
+      expect(synced.shipments[0].status).toBe('cancelled');
+      expect(synced.shipments[1].status).toBe('shipped');
+      expect(synced.status).toBe('shipped');
+      expect(synced.cancellation.refundAmount).toBe(60);
+    });
+
+    it('WH.25 concurrent lost deliveries debit and reconcile exactly once', async () => {
+      tx.stripePaymentIntentId = 'pi_lost_concurrent';
+      tx.status = 'chargeback_open';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
+      await tx.save();
+      const order = await Order.create({
+        buyer: buyer._id,
+        sellers: [seller._id],
+        status: 'confirmed',
+        items: [{ listing: listing._id, transaction: tx._id, seller: seller._id, title: listing.title, price: 50 }],
+        shipments: [{ seller: seller._id, items: [tx._id], status: 'confirmed' }],
+        payment: { paymentIntentId: 'pi_lost_concurrent', status: 'captured', totalHeld: 60 },
+        totals: { subtotal: 50, total: 60 },
+      });
+
+      const responses = await Promise.all([
+        postWebhook(closedEvent('lost')),
+        postWebhook(closedEvent('lost')),
+      ]);
+      responses.forEach((res) => expect(res.status).toBe(200));
+
+      const s = await User.findById(seller._id);
+      expect(s.balance.pending).toBe(55); // 100 - 45 once
+      const synced = await Order.findById(order._id);
+      expect(synced.status).toBe('refunded');
       expect(synced.cancellation.refundAmount).toBe(60);
     });
 

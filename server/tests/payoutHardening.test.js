@@ -53,6 +53,51 @@ describe('PAH.1 payout minimum', () => {
     expect(after.balance.available).toBe(100);
   });
 
+  test('a negative pending receivable is cleared from available before cash-out', async () => {
+    const user = await makeUser('payout_chargeback_debt');
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { 'balance.available': 100, 'balance.pending': -45 } },
+    );
+
+    // Only 55 is actually withdrawable (100 available - 45 debt).
+    const tooMuch = await request(app)
+      .post('/api/payments/payout')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({ amount: 60 });
+    expect(tooMuch.status).toBe(422);
+
+    let after = await User.findById(user._id);
+    expect(after.balance.available).toBe(55);
+    expect(after.balance.pending).toBe(0);
+
+    const remaining = await request(app)
+      .post('/api/payments/payout')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({ amount: 55 });
+    expect(remaining.status).toBe(200);
+
+    after = await User.findById(user._id);
+    expect(after.balance.available).toBe(0);
+    expect(after.balance.pending).toBe(0);
+  });
+
+  test('a chargeback receivable blocks account deletion', async () => {
+    const user = await makeUser('payout_delete_debt');
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { 'balance.available': 0, 'balance.pending': -45 } },
+    );
+
+    const res = await request(app)
+      .delete('/api/auth/account')
+      .set('Authorization', `Bearer ${tokenFor(user)}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/outstanding chargeback balance/i);
+    expect(await User.findById(user._id)).toBeTruthy();
+  });
+
   test('a normal payout still works', async () => {
     const user = await makeUser('payout_normal');
     const res = await request(app)
