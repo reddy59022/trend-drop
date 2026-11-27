@@ -15,6 +15,8 @@ describe('isQaJunkTitle — matches unmistakable test inventory', () => {
     'E2E_cart_flow_2',
     'QA Test Item',
     'QA Test Item 3',
+    'QA webhook flow 1795785937036',
+    'QA chargeback flow 1795787254973',
     'TD QA listing created by audit',
     '$32_20260915094524_prod3 return-item',
     '1234_20260915094524_prod3',

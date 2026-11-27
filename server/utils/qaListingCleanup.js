@@ -13,6 +13,7 @@ const JUNK_PATTERNS = [
   /^PROD-E2E\b/i, // e2e harness ("PROD-E2E 20260911 …")
   /^E2E[- _]/i, // harness ("E2E-checkout-123")
   /^QA Test Item\b/i, // QA fixtures ("QA Test Item 3")
+  /^QA (?:webhook|chargeback) flow\b/i, // QA webhook/chargeback runs
   /^TD QA\b/i, // audit write-checks ("TD QA …")
   /^\$\d+_\d{8,}/, // transaction artifacts ("$32_20260915094524_prod3 …")
   /^\$?\d+_\d{8,}_/, // same family without leading "$"

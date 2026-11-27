@@ -12,6 +12,7 @@ const {
 const { clawbackSellerEarnings, reverseEscrowHold, sellerSaleTotal } = require('../utils/balances');
 const { increment } = require('../utils/metrics');
 const restoreListingInventory = require('../utils/restoreListingInventory');
+const { syncOrderFromTransaction } = require('./orderLifecycle');
 
 // Transactions created by older checkout paths stored the provider intent only
 // in paymentBreakdown.paymentIntentId. Webhook reconciliation must support both
@@ -318,6 +319,21 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
           transaction.payout?.status === 'refunded'
         ));
         if (alreadyUnwound) {
+          // The transaction was already unwound by an internal path, but the
+          // consolidated Order may not have been synced (a crash between the
+          // claim and the order save, or a legacy row). Re-syncing is
+          // idempotent, so a provider retry heals the order without moving any
+          // money a second time.
+          if (transaction) {
+            await syncOrderFromTransaction(
+              transaction,
+              'refunded',
+              transaction.cancellation?.refundAmount
+                || transaction.paymentBreakdown?.totalPaid
+                || transaction.itemPrice
+                || 0,
+            );
+          }
           increment('trenddrop_webhook_retries_total', { event_type: 'charge.refunded' });
           break;
         }
@@ -355,6 +371,17 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
             };
           }
           await transaction.save();
+
+          // Keep the consolidated Order in sync: the buyer's order must not
+          // stay "confirmed" after the payment provider refunded its item.
+          await syncOrderFromTransaction(
+            transaction,
+            'refunded',
+            transaction.cancellation?.refundAmount
+              || transaction.paymentBreakdown?.totalPaid
+              || transaction.itemPrice
+              || 0,
+          );
 
           const sellerEarnings = sellerSaleTotal(transaction.paymentBreakdown);
           if (sellerEarnings > 0) {

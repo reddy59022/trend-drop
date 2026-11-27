@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
+const Order = require('../models/Order');
 
 // Webhook endpoint: POST /api/payments/webhook with raw JSON + stripe-signature
 // header. jest.setup.js mocks the Stripe SDK: constructEvent(payload, sig)
@@ -47,12 +48,14 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
 
   afterAll(async () => {
     await Transaction.deleteMany({});
+    await Order.deleteMany({});
     await Listing.deleteMany({});
     await User.deleteMany({});
   });
 
   beforeEach(async () => {
     await Transaction.deleteMany({});
+    await Order.deleteMany({});
     // Reset seller balance + notifications for deterministic assertions
     seller = await User.findById(seller._id);
     seller.balance.pending = 100;
@@ -300,6 +303,77 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(listingAfter.quantitySold).toBe(0);
       expect(listingAfter.available).toBe(true);
       expect(listingAfter.sold).toBe(false);
+    });
+
+    it('WH.18 provider refund marks the parent order refunded and is replay-safe', async () => {
+      tx.stripePaymentIntentId = 'pi_refund_order';
+      await tx.save();
+      const order = await Order.create({
+        buyer: buyer._id,
+        sellers: [seller._id],
+        status: 'confirmed',
+        items: [{ listing: listing._id, transaction: tx._id, seller: seller._id, title: listing.title, price: 50 }],
+        shipments: [{ seller: seller._id, items: [tx._id], status: 'confirmed' }],
+        payment: { paymentIntentId: 'pi_refund_order', status: 'captured', totalHeld: 60 },
+        totals: { subtotal: 50, total: 60 },
+      });
+
+      const res = await postWebhook({
+        type: 'charge.refunded',
+        data: { object: { payment_intent: 'pi_refund_order' } },
+      });
+      expect(res.status).toBe(200);
+
+      let synced = await Order.findById(order._id);
+      expect(synced.status).toBe('refunded');
+      expect(synced.payment.status).toBe('refunded');
+      expect(synced.items).toHaveLength(0);
+      expect(synced.shipments[0].status).toBe('cancelled');
+      expect(synced.shipments[0].items).toHaveLength(0);
+      expect(synced.cancellation.refundAmount).toBe(60);
+
+      // A provider retry reaches the already-unwound branch; it must re-sync
+      // the order without accumulating the refund a second time.
+      const replay = await postWebhook({
+        type: 'charge.refunded',
+        data: { object: { payment_intent: 'pi_refund_order' } },
+      });
+      expect(replay.status).toBe(200);
+      synced = await Order.findById(order._id);
+      expect(synced.status).toBe('refunded');
+      expect(synced.cancellation.refundAmount).toBe(60);
+    });
+
+    it('WH.19 provider retry heals an order left confirmed by an internal refund', async () => {
+      tx.stripePaymentIntentId = 'pi_refund_stale_order';
+      tx.status = 'cancelled_by_buyer';
+      tx.cancellation = {
+        cancelledBy: 'buyer',
+        reason: 'Changed mind',
+        cancelledAt: new Date(),
+        refundAmount: 60,
+      };
+      await tx.save();
+      const order = await Order.create({
+        buyer: buyer._id,
+        sellers: [seller._id],
+        status: 'confirmed',
+        items: [{ listing: listing._id, transaction: tx._id, seller: seller._id, title: listing.title, price: 50 }],
+        shipments: [{ seller: seller._id, items: [tx._id], status: 'confirmed' }],
+        payment: { paymentIntentId: 'pi_refund_stale_order', status: 'captured', totalHeld: 60 },
+        totals: { subtotal: 50, total: 60 },
+      });
+
+      const res = await postWebhook({
+        type: 'charge.refunded',
+        data: { object: { payment_intent: 'pi_refund_stale_order' } },
+      });
+      expect(res.status).toBe(200);
+
+      const synced = await Order.findById(order._id);
+      expect(synced.status).toBe('refunded');
+      expect(synced.items).toHaveLength(0);
+      expect(synced.cancellation.refundAmount).toBe(60);
     });
 
     it('WH.12 provider refund after an internal cancellation does not unwind twice', async () => {

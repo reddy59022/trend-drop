@@ -92,6 +92,13 @@ const syncOrderFromTransaction = async (txn, newStatus, refundAmount = 0) => {
       let touched = false;
 
       if (newStatus === 'refunded') {
+        // Idempotency: only move money into the audit trail while the item is
+        // still on the order. A retry (provider webhook after a crash, a
+        // concurrent delivery) must not accumulate the refund amount twice.
+        const txnId = String(txn._id);
+        const wasPresent = (order.items || []).some((it) => it.transaction && String(it.transaction) === txnId)
+          || (order.shipments || []).some((s) => (s.items || []).some((id) => id && String(id) === txnId));
+
         // Remove the refunded txn from any shipment it belongs to; a
         // shipment left with no items is fully cancelled → mark it so.
         (order.shipments || []).forEach((s) => {
@@ -115,7 +122,9 @@ const syncOrderFromTransaction = async (txn, newStatus, refundAmount = 0) => {
         order.cancellation.reason = txn.cancellation?.reason || order.cancellation.reason || null;
         order.cancellation.cancelledAt = txn.cancellation?.cancelledAt || new Date();
         order.cancellation.currency = txn.currency || order.currency || 'USD';
-        order.cancellation.refundAmount = Math.round(((order.cancellation.refundAmount || 0) + (refundAmount || 0)) * 100) / 100;
+        if (wasPresent) {
+          order.cancellation.refundAmount = Math.round(((order.cancellation.refundAmount || 0) + (refundAmount || 0)) * 100) / 100;
+        }
         touched = true;
 
         // If EVERY shipment + item is refunded → final state
