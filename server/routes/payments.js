@@ -829,7 +829,7 @@ router.post('/confirm-batch', auth, async (req, res) => {
       });
       purchasedLabels.push(...labels);
     } catch (labelError) {
-      console.error('Batch shipping label failed:', labelError.message);
+      console.error('Batch shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
       // Second compensation pass for labels whose first refund attempt failed.
       // The buyer is never captured, but unrefunded postage is a platform loss.
       await compensateFailedLabels(labelError);
@@ -840,6 +840,10 @@ router.post('/confirm-batch', auth, async (req, res) => {
         code: labelError.code,
         message: 'Shipping label could not be created. Your payment was not captured.',
         retryable: labelError.retryable,
+        // Sandbox acceptance testing only; live deployments stay generic.
+        ...(['sandbox', 'test'].includes(String(process.env.EASYPOST_MODE || '').trim().toLowerCase()) && labelError.message
+          ? { detail: labelError.message, providerStatus: labelError.status || null }
+          : {}),
       });
     }
 
@@ -1542,7 +1546,7 @@ router.post('/confirm', auth, async (req, res) => {
         declaredValue: salePrice,
       });
     } catch (labelError) {
-      console.error('Single-order shipping label failed:', labelError.message);
+      console.error('Single-order shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
       // EasyPost may have purchased (and failed to refund) a label before its
       // response was unusable. Retry that exact shipment; otherwise the
       // platform absorbs postage for an order that never existed.
@@ -1553,6 +1557,9 @@ router.post('/confirm', auth, async (req, res) => {
         code: labelError.code,
         message: 'Shipping label could not be created. Your payment was not captured.',
         retryable: labelError.retryable,
+        ...(['sandbox', 'test'].includes(String(process.env.EASYPOST_MODE || '').trim().toLowerCase()) && labelError.message
+          ? { detail: labelError.message, providerStatus: labelError.status || null }
+          : {}),
       });
     }
     const label = createdLabel;
