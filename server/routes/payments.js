@@ -1989,6 +1989,8 @@ router.post('/connect/onboard', auth, async (req, res) => {
     res.status(502).json({
       message: 'Could not start payout onboarding',
       code: error.code || error.type || 'connect_onboarding_failed',
+      param: error.param || error.raw?.param || null,
+      stripeCode: error.raw?.code || null,
     });
   }
 });
