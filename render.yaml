@@ -50,8 +50,10 @@ services:
         sync: false
       # Platform-owned shipping. Orders fail closed until this key is present.
       # Keep this deployment on the existing production EasyPost account.
+      # Dashboard-managed so a test deploy can switch to sandbox without the
+      # Blueprint overwriting it; unset defaults to production in code.
       - key: EASYPOST_MODE
-        value: "production"
+        sync: false
       - key: EASYPOST_API_KEY
         sync: false
       # Only used when EASYPOST_MODE=sandbox/test, so a production deploy can
