@@ -96,6 +96,10 @@ const returnSchema = new mongoose.Schema({
   payoutMarkedRefunded: { type: Boolean, default: false },
   sellerLedgerClawedBack: { type: Boolean, default: false },
   providerRefunded: { type: Boolean, default: false },
+  // A lost chargeback refunds the buyer outside the return flow; any in-progress
+  // return for that transaction is closed so it cannot be settled twice.
+  closedByChargeback: { type: Boolean, default: false },
+  chargebackClosedAt: { type: Date, default: null },
   // The provider's actual answer for this return's refund. `providerRefunded`
   // means the money-moving call was accepted; these fields record WHAT Stripe
   // returned (refund id, status, amount in minor units) so a settled return

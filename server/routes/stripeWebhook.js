@@ -5,6 +5,7 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Payout = require('../models/Payout');
+const Return = require('../models/Return');
 const {
   verifyStripeWebhookEvent,
   isWebhookSignatureRequired,
@@ -44,6 +45,41 @@ const paymentIntentMatch = (paymentIntentId) => ({
 // the consolidated order must leave "confirmed" too. The shared order sync is
 // idempotent (it only accumulates the refund while the item is still on the
 // order), which lets a replay heal an order left stale by a crash.
+const IN_PROGRESS_RETURN_STATUSES = [
+  'pending', 'approved', 'shipped', 'in_transit', 'out_for_delivery',
+  'delivered', 'received', 'disputed',
+];
+
+/** Close any live return for a transaction the buyer has charged back. */
+async function closeReturnsForLostChargeback(transaction) {
+  if (!transaction?._id) return;
+  const refundAmount = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0;
+  await Return.updateMany(
+    { transaction: transaction._id, status: { $in: IN_PROGRESS_RETURN_STATUSES } },
+    {
+      $set: {
+        status: 'refunded',
+        refundAmount,
+        closedByChargeback: true,
+        chargebackClosedAt: new Date(),
+      },
+    },
+  );
+}
+
+/** Stripe's dispute fee, in major units, from the dispute's balance transactions. */
+function disputeFeeFrom(dispute) {
+  const balanceTransactions = Array.isArray(dispute?.balance_transactions) ? dispute.balance_transactions : [];
+  const feeMinor = balanceTransactions.reduce((sum, bt) => {
+    const fee = Number(bt?.fee);
+    return Number.isFinite(fee) && fee > 0 ? sum + fee : sum;
+  }, 0);
+  const currency = balanceTransactions.find((bt) => Number(bt?.fee) > 0)?.currency
+    || dispute?.currency
+    || 'usd';
+  return { amount: Math.round(feeMinor) / 100, currency: String(currency).toUpperCase() };
+}
+
 async function syncOrderForLostChargeback(transaction) {
   if (!transaction) return;
   await syncOrderFromTransaction(
@@ -61,6 +97,7 @@ async function settleDisputeOutcome(transaction, dispute) {
   // already sits in available.
   const wasReleased = transaction.status === 'completed'
     || transaction.payout?.status === 'completed';
+  const disputeFee = disputeFeeFrom(dispute);
   const claimed = await Transaction.findOneAndUpdate(
     {
       _id: transaction._id,
@@ -70,7 +107,13 @@ async function settleDisputeOutcome(transaction, dispute) {
       $set: {
         status: nextStatus,
         'disputeInfo.status': dispute.status,
-        ...(dispute.status === 'lost' ? { 'payout.status': 'refunded' } : {}),
+        ...(dispute.status === 'lost'
+          ? {
+              'payout.status': 'refunded',
+              'disputeInfo.feeAmount': disputeFee.amount,
+              'disputeInfo.feeCurrency': disputeFee.currency,
+            }
+          : {}),
       },
     },
     { new: true },
@@ -81,7 +124,18 @@ async function settleDisputeOutcome(transaction, dispute) {
     // idempotent, so only the refund audit is guarded by the item presence.
     if (dispute.status === 'lost') {
       const current = await Transaction.findById(transaction._id).lean();
-      if (current?.status === 'chargeback_lost') await syncOrderForLostChargeback(current);
+      if (current?.status === 'chargeback_lost') {
+        // Heal rows settled before the fee was recorded, and close returns a
+        // crash between the claim and the return sweep left open.
+        if (disputeFee.amount > 0 && !current.disputeInfo?.feeAmount) {
+          await Transaction.updateOne(
+            { _id: current._id },
+            { $set: { 'disputeInfo.feeAmount': disputeFee.amount, 'disputeInfo.feeCurrency': disputeFee.currency } },
+          );
+        }
+        await closeReturnsForLostChargeback(current);
+        await syncOrderForLostChargeback(current);
+      }
     }
     return false;
   }
@@ -110,6 +164,21 @@ async function settleDisputeOutcome(transaction, dispute) {
         },
       );
     }
+    if (wasReleased) {
+      // The sale was counted when its funds were released; a lost chargeback
+      // reverses it. Floor at zero so historic stat drift cannot go negative.
+      await User.updateOne({ _id: claimed.seller }, [
+        {
+          $set: {
+            'stats.totalSales': {
+              $max: [0, { $subtract: [{ $ifNull: ['$stats.totalSales', 0] }, 1] }],
+            },
+          },
+        },
+      ]);
+    }
+    await closeReturnsForLostChargeback(claimed);
+
     // A pending/completed payout for a lost sale must not keep showing as owed
     // or paid on the seller dashboard.
     await Payout.updateMany(

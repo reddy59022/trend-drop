@@ -261,6 +261,11 @@ const transactionSchema = new mongoose.Schema({
     openedAt: { type: Date, default: null },
     evidenceDueBy: { type: Date, default: null },
     closedAt: { type: Date, default: null },
+    // Stripe's dispute fee (e.g. 15.00 USD), recorded from the dispute's
+    // balance_transactions when the dispute is lost. Charged to the platform,
+    // not debited from the seller.
+    feeAmount: { type: Number, default: 0 },
+    feeCurrency: { type: String, default: '' },
   },
   // Atomic provider-refund claim. This prevents concurrent admin/support
   // refund requests from issuing duplicate refunds or reversing inventory

@@ -6,6 +6,7 @@ const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Order = require('../models/Order');
 const Payout = require('../models/Payout');
+const Return = require('../models/Return');
 
 // Webhook endpoint: POST /api/payments/webhook with raw JSON + stripe-signature
 // header. jest.setup.js mocks the Stripe SDK: constructEvent(payload, sig)
@@ -51,6 +52,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
     await Transaction.deleteMany({});
     await Order.deleteMany({});
     await Payout.deleteMany({});
+    await Return.deleteMany({});
     await Listing.deleteMany({});
     await User.deleteMany({});
   });
@@ -59,6 +61,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
     await Transaction.deleteMany({});
     await Order.deleteMany({});
     await Payout.deleteMany({});
+    await Return.deleteMany({});
     // Reset seller balance + notifications for deterministic assertions
     seller = await User.findById(seller._id);
     seller.balance.pending = 100;
@@ -198,7 +201,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(disputeNotes.length).toBe(1);
     });
 
-    const closedEvent = (status) => ({
+    const closedEvent = (status, extra = {}) => ({
       type: 'charge.dispute.closed',
       data: {
         object: {
@@ -206,6 +209,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
           payment_intent: 'pi_test_123',
           status,
           evidence_details: { due_by: 1893456000 },
+          ...extra,
         },
       },
     });
@@ -308,11 +312,36 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(listingAfter.sold).toBe(false);
     });
 
+    it('WH.26 a lost chargeback closes an in-progress return', async () => {
+      tx.stripePaymentIntentId = 'pi_lost_return';
+      tx.status = 'chargeback_open';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
+      await tx.save();
+      const returnRequest = await Return.create({
+        transaction: tx._id,
+        buyer: buyer._id,
+        seller: seller._id,
+        listing: listing._id,
+        reason: 'Defective',
+        status: 'in_transit',
+      });
+
+      const res = await postWebhook(closedEvent('lost'));
+      expect(res.status).toBe(200);
+
+      const closed = await Return.findById(returnRequest._id);
+      expect(closed.status).toBe('refunded');
+      expect(closed.closedByChargeback).toBe(true);
+      expect(closed.chargebackClosedAt).toBeTruthy();
+      expect(closed.refundAmount).toBe(60);
+    });
+
     it('WH.20 a lost chargeback reverses the parent order and replay is idempotent', async () => {
       tx.stripePaymentIntentId = 'pi_test_123';
       tx.status = 'chargeback_open';
       tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
       await tx.save();
+      await User.updateOne({ _id: seller._id }, { $set: { 'stats.totalSales': 5 } });
       const order = await Order.create({
         buyer: buyer._id,
         sellers: [seller._id],
@@ -333,6 +362,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(synced.shipments[0].status).toBe('cancelled');
       expect(synced.shipments[0].items).toHaveLength(0);
       expect(synced.cancellation.refundAmount).toBe(60);
+      expect((await User.findById(seller._id)).stats.totalSales).toBe(5); // never released, never counted
 
       const replay = await postWebhook(closedEvent('lost'));
       expect(replay.status).toBe(200);
@@ -340,6 +370,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       const s = await User.findById(seller._id);
       expect(synced.cancellation.refundAmount).toBe(60);
       expect(s.balance.pending).toBe(55); // debited once
+      expect(s.stats.totalSales).toBe(5);
     });
 
     it('WH.21 a replay heals an order left confirmed by an earlier lost settlement', async () => {
@@ -392,25 +423,34 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
         payment: { paymentIntentId: 'pi_lost_released', status: 'captured', totalHeld: 60 },
         totals: { subtotal: 50, total: 60 },
       });
-      await User.updateOne({ _id: seller._id }, { $set: { 'balance.available': 80, 'balance.pending': 100 } });
+      await User.updateOne({ _id: seller._id }, {
+        $set: { 'balance.available': 80, 'balance.pending': 100, 'stats.totalSales': 5 },
+      });
 
-      const res = await postWebhook(closedEvent('lost'));
+      const lostWithFee = closedEvent('lost', {
+        balance_transactions: [{ fee: 1500, currency: 'usd' }],
+      });
+      const res = await postWebhook(lostWithFee);
       expect(res.status).toBe(200);
 
       const updated = await Transaction.findById(tx._id);
       let s = await User.findById(seller._id);
       expect(updated.status).toBe('chargeback_lost');
       expect(updated.payout.status).toBe('refunded');
+      expect(updated.disputeInfo.feeAmount).toBe(15);
+      expect(updated.disputeInfo.feeCurrency).toBe('USD');
       expect(s.balance.available).toBe(35); // 80 - 45, not left withdrawable
       expect(s.balance.pending).toBe(100);
+      expect(s.stats.totalSales).toBe(4); // released sale reversed
       expect((await Payout.findById(payoutDoc._id)).status).toBe('refunded');
       expect((await Order.findById(order._id)).status).toBe('refunded');
 
-      const replay = await postWebhook(closedEvent('lost'));
+      const replay = await postWebhook(lostWithFee);
       expect(replay.status).toBe(200);
       s = await User.findById(seller._id);
       expect(s.balance.available).toBe(35);
       expect(s.balance.pending).toBe(100);
+      expect(s.stats.totalSales).toBe(4);
     });
 
     it('WH.23 a lost chargeback after withdrawal records a negative receivable without restocking', async () => {
@@ -419,7 +459,9 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       tx.payout.status = 'completed';
       tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
       await tx.save();
-      await User.updateOne({ _id: seller._id }, { $set: { 'balance.available': 0, 'balance.pending': 0 } });
+      await User.updateOne({ _id: seller._id }, {
+        $set: { 'balance.available': 0, 'balance.pending': 0, 'stats.totalSales': 5 },
+      });
       await Listing.updateOne({ _id: listing._id }, {
         $set: { quantity: 0, quantitySold: 1, sold: true, available: false },
       });
@@ -430,6 +472,7 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       const s = await User.findById(seller._id);
       expect(s.balance.available).toBe(0);
       expect(s.balance.pending).toBe(-45); // seller owes the platform
+      expect(s.stats.totalSales).toBe(4);
       const listingAfter = await Listing.findById(listing._id);
       expect(listingAfter.quantity).toBe(0);
       expect(listingAfter.quantitySold).toBe(1);
