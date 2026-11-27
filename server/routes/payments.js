@@ -1986,12 +1986,12 @@ router.post('/connect/onboard', auth, async (req, res) => {
     res.json({ url: link.url, accountId });
   } catch (error) {
     console.error('Stripe Connect onboarding error:', error.message);
+    const connectNotEnabled = /signed up for Connect/i.test(String(error.message || ''));
     res.status(502).json({
-      message: 'Could not start payout onboarding',
-      code: error.code || error.type || 'connect_onboarding_failed',
-      param: error.param || error.raw?.param || null,
-      stripeCode: error.raw?.code || null,
-      detail: typeof error.message === 'string' ? error.message.slice(0, 300) : null,
+      message: connectNotEnabled
+        ? 'Stripe payouts are not enabled for this marketplace yet'
+        : 'Could not start payout onboarding',
+      code: connectNotEnabled ? 'connect_not_enabled' : (error.code || error.type || 'connect_onboarding_failed'),
     });
   }
 });

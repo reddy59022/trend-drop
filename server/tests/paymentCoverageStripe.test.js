@@ -181,5 +181,13 @@ describe('live-stripe guardrails on /api/payments/test-confirm', () => {
     config.__stripeMock.accountLinks.create.mockRejectedValueOnce(new Error('link failed'));
     const onboard = await request(app).post('/api/payments/connect/onboard').set(authHeader());
     expect(onboard.status).toBe(502);
+    expect(onboard.body.code).toBe('connect_onboarding_failed');
+
+    config.__stripeMock.accountLinks.create.mockRejectedValueOnce(
+      new Error("You can only create new accounts if you've signed up for Connect")
+    );
+    const disabled = await request(app).post('/api/payments/connect/onboard').set(authHeader());
+    expect(disabled.status).toBe(502);
+    expect(disabled.body.code).toBe('connect_not_enabled');
   });
 });
