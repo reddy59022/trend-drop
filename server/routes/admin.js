@@ -16,6 +16,7 @@ const { claimTransaction } = require('../utils/claims');
 const { findPaymentIntent, retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
 const { reconcileSettlements } = require('../utils/settlementAudit');
+const { disconnectUser } = require('../websocket');
 
 // All admin routes require auth + adminAuth
 router.use(auth, adminAuth);
@@ -229,7 +230,12 @@ router.post('/users/:id/suspend', async (req, res) => {
 
     user.stats.strikes = 3; // Suspension threshold
     user.role = 'suspended';
+    // Revoke every already-issued token and close live sockets. Otherwise a
+    // suspended account's existing JWT becomes valid again the moment an
+    // admin unsuspends it, and its open socket keeps receiving events now.
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
     await user.save();
+    disconnectUser(user._id);
 
     res.json({ message: 'User suspended', user: { _id: user._id, name: user.name, email: user.email, role: user.role } });
   } catch (error) {
@@ -405,7 +411,15 @@ router.post('/transactions/:id/refund', async (req, res) => {
     }
     txn = await Transaction.findById(req.params.id);
     if (!txn) return res.status(404).json({ message: 'Transaction not found' });
-    if (txn.status === 'refunded') return res.status(400).json({ message: 'Already refunded' });
+    // A cancelled/auto-cancelled order has already been fully refunded and
+    // had its seller ledger and inventory unwound by the cancellation path.
+    // Re-running the admin refund would issue a second Stripe refund and
+    // restore stock twice.
+    const alreadyUnwound = txn.status === 'refunded'
+      || ['cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled', 'chargeback_lost', 'chargeback_won'].includes(txn.status)
+      || Boolean(txn.cancellation?.cancelledAt || txn.cancellation?.cancelledBy)
+      || txn.payout?.status === 'refunded';
+    if (alreadyUnwound) return res.status(400).json({ message: 'Transaction is already cancelled or refunded' });
 
     // Claim the refund atomically before contacting the provider or changing
     // local balances. A duplicate admin click must not issue two refunds or
@@ -505,11 +519,13 @@ router.post('/auto-suspend', async (req, res) => {
 
     for (const user of flaggedUsers) {
       user.role = 'suspended';
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
       user.notifications.unshift({
         type: 'payout',
         message: `Your account has been automatically suspended due to ${user.stats.strikes} strikes. Please contact support.`,
       });
       await user.save();
+      disconnectUser(user._id);
       suspended++;
     }
 

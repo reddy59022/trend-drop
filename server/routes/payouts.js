@@ -35,6 +35,19 @@ const sellerPayout = (transaction, salePrice, commissionAmount) => {
     : Math.round((salePrice - commissionAmount) * 100) / 100;
 };
 
+// The seller's spendable cash-out balance. `User.balance.available` is the
+// authoritative ledger after releaseSellerEarnings/paid-out updates; adding
+// lifetime completed payouts on top double-counted every completed sale. The
+// payout-document fallback stays for legacy rows whose balance was never
+// backfilled.
+const spendableBalance = ({ userAvailable, userTotalPaidOut, userTotalEarned, lifetimeCompleted }) => {
+  const available = Math.max(0, num(userAvailable));
+  const ledgerActive = num(userTotalEarned) > 0 || num(userTotalPaidOut) > 0;
+  return ledgerActive
+    ? round2(available)
+    : round2(Math.max(0, lifetimeCompleted - num(userTotalPaidOut)) + available);
+};
+
 // Integer-cents helpers. Float rounding at every step (0.1+0.2 style error)
 // is what corrupts money totals when many payouts are summed — so every sum
 // in this file is accumulated in whole cents and rounded ONCE at the end.
@@ -233,9 +246,12 @@ router.get('/dashboard', auth, async (req, res) => {
     const sellerDoc = await User.findById(sellerId).select('balance').lean();
     const userAvailable = num(sellerDoc?.balance?.available);
     const userTotalPaidOut = num(sellerDoc?.balance?.totalPaidOut);
+    const userTotalEarned = num(sellerDoc?.balance?.totalEarned);
     const totalEarned = round2(totalEarnings);
     const pendingBalance = round2(pendingAmount);
-    const availableBalance = round2(Math.max(0, totalEarned - userTotalPaidOut) + userAvailable);
+    const availableBalance = spendableBalance({
+      userAvailable, userTotalPaidOut, userTotalEarned, lifetimeCompleted: totalEarnings,
+    });
 
     res.json({
       commissionRate: COMMISSION_RATE,
@@ -470,7 +486,10 @@ router.get('/balance', auth, async (req, res) => {
     const sellerDoc = await User.findById(req.user._id).select('balance').lean();
     const userAvailable = num(sellerDoc?.balance?.available);
     const userTotalPaidOut = num(sellerDoc?.balance?.totalPaidOut);
-    const availableBalance = round2(Math.max(0, lifetimeCompleted - userTotalPaidOut) + userAvailable);
+    const userTotalEarned = num(sellerDoc?.balance?.totalEarned);
+    const availableBalance = spendableBalance({
+      userAvailable, userTotalPaidOut, userTotalEarned, lifetimeCompleted,
+    });
 
     res.json({
       availableBalance,

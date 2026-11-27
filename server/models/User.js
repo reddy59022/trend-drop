@@ -43,6 +43,17 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  // Password reset credentials are deliberately separate from email
+  // verification tokens. Sharing one field let a reset link verify an
+  // unverified email and let a verification link reset the password.
+  passwordResetToken: {
+    type: String,
+    default: null,
+  },
+  passwordResetExpires: {
+    type: Date,
+    default: null,
+  },
 // Google OAuth
    googleId: {
      type: String,
@@ -182,6 +193,14 @@ const userSchema = new mongoose.Schema({
     settledTransactions: [{ type: String }],
     currency: { type: String, default: 'USD' },
   },
+  // Stripe Connect account used for real seller payouts. processSellerPayout
+  // reads this field, but it was missing from the schema, so any connect
+  // account written by onboarding was silently dropped by Mongoose (and the
+  // payout path always fell through to the simulated transfer).
+  stripeAccountId: {
+    type: String,
+    default: null,
+  },
   payoutMethod: {
     type: { type: String, enum: ['paypal', 'bank', 'stripe', ''], default: '' },
     paypalEmail: { type: String, default: '' },
@@ -240,6 +259,8 @@ function stripSensitiveUserFields(_doc, ret) {
   delete ret.password;
   delete ret.verificationToken;
   delete ret.verificationTokenExpires;
+  delete ret.passwordResetToken;
+  delete ret.passwordResetExpires;
   return ret;
 }
 

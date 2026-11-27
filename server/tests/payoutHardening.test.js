@@ -63,4 +63,17 @@ describe('PAH.1 payout minimum', () => {
     const after = await User.findById(user._id);
     expect(after.balance.available).toBe(95);
   });
+
+  test('production never simulates a payout without a connected account', async () => {
+    const user = await makeUser('payout_unconfigured');
+    const { processSellerPayout } = require('../config/payments');
+    const previousEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      await expect(processSellerPayout(user._id, 5, 'USD', 'bank'))
+        .rejects.toThrow(/connected Stripe account/i);
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+    }
+  });
 });

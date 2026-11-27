@@ -70,6 +70,10 @@ if (process.env.NODE_ENV !== 'test' && !process.env.DISABLE_RATE_LIMIT) {
   app.use('/api/', apiLimiter);
   app.use('/api/auth/login', authLimiter);
   app.use('/api/auth/register', authLimiter);
+  // These endpoints send email. Without a limiter they are an email-bombing
+  // and account-enumeration oracle (20 sends / 15 min per IP).
+  app.use('/api/auth/forgot-password', authLimiter);
+  app.use('/api/auth/resend-verification', authLimiter);
 }
 
 // Performance: Gzip compression (reduces response size by ~70%)
@@ -178,7 +182,11 @@ const PUBLIC_CACHE_PATHS = [
 ];
 app.use('/api', (req, res, next) => {
   const isPublic = PUBLIC_CACHE_PATHS.some(p => req.path.startsWith(p));
-  if (req.method === 'GET' && isPublic) {
+  // Never let a shared/browser cache store an authenticated response. Paths
+  // such as /listings/my and /seller-communities/:id share a prefix with
+  // public catalog routes but contain private, per-user data.
+  const hasCredentials = Boolean(req.headers.authorization || req.headers.cookie);
+  if (req.method === 'GET' && isPublic && !hasCredentials) {
     res.set('Cache-Control', 'public, max-age=60'); // 60s for catalog data
   } else {
     res.set('Cache-Control', 'no-store');

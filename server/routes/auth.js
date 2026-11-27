@@ -372,12 +372,11 @@ router.post('/resend-verification', async (req, res) => {
 
     const user = await User.findOne({ email: normalizedEmail });
 
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    if (user.emailVerified) {
-      return res.status(400).json({ message: 'Email already verified' });
+    // Do not reveal whether an address is registered (or already verified).
+    // The caller gets the same response either way; only a real unverified
+    // account receives an email.
+    if (!user || user.emailVerified) {
+      return res.json({ message: 'Verification email resent. Please check your inbox.' });
     }
 
     // Generate new token
@@ -760,10 +759,9 @@ router.post('/forgot-password', async (req, res) => {
       return res.json({ message: 'If an account exists, a password reset email has been sent.' });
     }
 
-    // Generate reset token (reuse verification token field is fine, but let's use a separate approach)
     const resetToken = crypto.randomBytes(32).toString('hex');
-    user.verificationToken = resetToken;
-    user.verificationTokenExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    user.passwordResetToken = resetToken;
+    user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await user.save();
 
     await sendPasswordResetEmail(user.email, user.name, resetToken);
@@ -798,8 +796,8 @@ router.post('/reset-password', async (req, res) => {
     }
 
     const user = await User.findOne({
-      verificationToken: token,
-      verificationTokenExpires: { $gt: new Date() },
+      passwordResetToken: token,
+      passwordResetExpires: { $gt: new Date() },
     });
 
     if (!user) {
@@ -807,8 +805,8 @@ router.post('/reset-password', async (req, res) => {
     }
 
     user.password = password;
-    user.verificationToken = null;
-    user.verificationTokenExpires = null;
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
     // Invalidate every JWT issued before this reset. A stolen/leftover session
     // must not outlive the password it was created with.
     user.tokenVersion = (user.tokenVersion || 0) + 1;
@@ -1031,9 +1029,10 @@ router.delete('/account', auth, async (req, res) => {
     // closed; anonymizing the only payout identity would strand the balance.
     const available = Number(user.balance?.available) || 0;
     const pending = Number(user.balance?.pending) || 0;
-    if (available > 0 || pending > 0) {
+    const reserve = Number(user.balance?.reserve) || 0;
+    if (available > 0 || pending > 0 || reserve > 0) {
       return res.status(400).json({
-        message: 'Withdraw your available balance and wait for pending sales to settle before deleting your account.',
+        message: 'Withdraw your available balance and wait for pending sales and the rolling reserve to settle before deleting your account.',
       });
     }
 
@@ -1072,6 +1071,8 @@ router.delete('/account', auth, async (req, res) => {
           role: 'user',
           verificationToken: null,
           verificationTokenExpires: null,
+          passwordResetToken: null,
+          passwordResetExpires: null,
           notifications: [],
           followers: [],
           following: [],

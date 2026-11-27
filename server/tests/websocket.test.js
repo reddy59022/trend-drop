@@ -8,12 +8,14 @@ const app = require('../server');
 const { initializeWebSocket, getIO, sendNotificationToUser, sendMessageNotification, isUserOnline, getOnlineUsers, broadcastToAll, userSocketMap } = require('../websocket');
 const { io: ioClient } = require('socket.io-client');
 const User = require('../models/User');
+const Listing = require('../models/Listing');
+const Auction = require('../models/Auction');
 const jwt = require('jsonwebtoken');
 const http = require('http');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 
-let server, user1Token, user2Token, user1Id, user2Id;
+let server, user1Token, user2Token, user1Id, user2Id, auction;
 let socket1, socket2;
 
 beforeAll(async () => {
@@ -52,10 +54,20 @@ beforeAll(async () => {
     .field('color', 'Black')
     .field('weight', 0.5)
     .field('quantity', 5);
+
+  const listing = await Listing.findOne({ seller: user1Id });
+  auction = await Auction.create({
+    listing: listing._id,
+    seller: user1Id,
+    startTime: new Date(Date.now() - 60_000),
+    endTime: new Date(Date.now() + 3600_000),
+    status: 'active',
+  });
 });
 
 afterAll(async () => {
   await User.deleteMany({ email: /ws[12]_/ });
+  if (auction) await Auction.deleteOne({ _id: auction._id });
   if (server) server.close();
   await mongoose.connection.close();
 });
@@ -202,5 +214,37 @@ describe('WebSocket Real-Time Notifications', () => {
     expect(isUserOnline(user1Id.toString())).toBe(true);
     await waitForDisconnect(second);
     expect(isUserOnline(user1Id.toString())).toBe(false);
+  });
+
+  test('WS.13 a token invalidated by a password reset cannot open a socket', async () => {
+    await User.updateOne({ _id: user1Id }, { $set: { tokenVersion: 1 } });
+    try {
+      await expect(connectSocket(user1Token)).rejects.toThrow();
+    } finally {
+      await User.updateOne({ _id: user1Id }, { $set: { tokenVersion: 0 } });
+    }
+  });
+
+  test('WS.14 only the auction seller can broadcast a stream offer', async () => {
+    socket1 = await connectSocket(user1Token, '1');
+    socket2 = await connectSocket(user2Token, '2');
+    const joinRoom = (socket) => new Promise((resolve) => {
+      socket.emit('stream:join', { auctionId: auction._id.toString() }, resolve);
+    });
+    await joinRoom(socket1);
+    await joinRoom(socket2);
+
+    let sellerReceived = null;
+    socket1.on('stream:offer', (payload) => { sellerReceived = payload; });
+    socket2.emit('stream:offer', { auctionId: auction._id.toString(), offer: { type: 'fake' } });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(sellerReceived).toBeNull();
+
+    let attackerReceived = null;
+    socket2.once('stream:offer', (payload) => { attackerReceived = payload; });
+    socket1.emit('stream:offer', { auctionId: auction._id.toString(), offer: { type: 'real' } });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(attackerReceived.offer.type).toBe('real');
+    expect(sellerReceived).toBeNull();
   });
 });

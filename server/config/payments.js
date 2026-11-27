@@ -18,6 +18,18 @@ const {
 // Stripe is not needed (e.g., during deployment testing), we allow the module to
 // load without throwing an error.
 let stripe = null;
+
+// Mock intents are a test/E2E facility, never a production fallback. Without
+// this gate a deployment with a missing Stripe key fabricated successful
+// authorizations/captures/refunds, which means free orders and payouts that
+// were marked paid without any money moving.
+const mockPaymentsAllowed = () => process.env.NODE_ENV === 'test' || Boolean(process.env.E2E_IN_MEMORY);
+const paymentsNotConfigured = () => {
+  const error = new Error('Payment processing is not configured');
+  error.code = 'PAYMENTS_NOT_CONFIGURED';
+  error.status = 503;
+  return error;
+};
 // Defense-in-depth: never initialize the real Stripe SDK in test mode.
 // jest.setup.js deletes STRIPE_SECRET_KEY, but server.js/test-flows may
 // inadvertently reintroduce it (e.g. dotenv). Tests must ALWAYS use the
@@ -161,6 +173,7 @@ const fetchExchangeRate = async (currency) => {
 const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
   const idempotencyKey = generateIdempotencyKey({ amount, currency, metadata });
   if (!stripe) {
+    if (!mockPaymentsAllowed()) throw paymentsNotConfigured();
     // Test/dev mode: return mock payment intent. Start it UNCONFIRMED
     // (requires_payment_method) exactly like a freshly created Stripe intent,
     // so the payment authorization semantics are preserved: a consumer must
@@ -199,6 +212,7 @@ const authorizePaymentIntent = async (amount, currency, metadata = {}) => {
 //   R32.9/R32.10). Must be <= the authorized amount.
 const capturePaymentIntent = async (paymentIntentId, amountToCapture = null) => {
   if (!stripe) {
+    if (!mockPaymentsAllowed()) throw paymentsNotConfigured();
     // Test/dev mode: mirror STRIPE's real capture contract.
     // Stripe REJECTS a capture above the authorized amount
     // (invalid_request_error / amount_too_large). The mock used to silently
@@ -245,6 +259,7 @@ const retrievePaymentIntent = async (paymentIntentId) => {
     return global.__mockPaymentIntents[paymentIntentId];
   }
   if (!stripe) {
+    if (!mockPaymentsAllowed()) throw paymentsNotConfigured();
     // Test/dev mode: default to succeeded (simulates automatic capture already done)
     return { id: paymentIntentId, status: 'succeeded', amount: 0 };
   }
@@ -352,6 +367,7 @@ const verifyIntentAmount = (intent, expectedCents) => {
 const releaseAuthorization = async (paymentIntentId) => {
   try {
     if (!stripe) {
+      if (!mockPaymentsAllowed()) throw paymentsNotConfigured();
       // E2E / hermetic mode: reflect the release in the mock store (parity with
       // issueRefund) so a released authorization can never be replayed into an
       // order and the stranded-hold behaviour is observable in tests.
@@ -468,6 +484,7 @@ const verifyStripeWebhook = (payload, signature) => {
 // payment intent id so tests can assert the exact amount refunded.
 const issueRefund = async (paymentIntentId, amount) => {
   if (!stripe) {
+    if (!mockPaymentsAllowed()) throw paymentsNotConfigured();
     // E2E / test mode: record refund in mock store and return simulated result.
     if (!global.__mockPaymentIntents) global.__mockPaymentIntents = {};
     if (global.__mockPaymentIntents[paymentIntentId]) {
@@ -527,7 +544,17 @@ const processSellerPayout = async (sellerId, amount, currency, payoutMethod) => 
       estimatedArrival: payout.arrival_date ? new Date(payout.arrival_date * 1000) : null,
     };
   }
-  // Fallback simulation (MVP)
+  // Never pretend a seller was paid. The balance debit happens before this
+  // call; reporting a simulated "paid" transfer would burn the seller's
+  // balance while sending no money. Tests and the in-memory E2E harness keep
+  // the simulation; a real deployment fails closed and the caller refunds the
+  // reserved balance.
+  if (!mockPaymentsAllowed()) {
+    const error = new Error('Seller payouts require a connected Stripe account');
+    error.code = 'PAYOUT_PROVIDER_UNAVAILABLE';
+    error.status = 503;
+    throw error;
+  }
   increment('trenddrop_payouts_total', { operation: 'provider_payout', status: 'paid' });
   return {
     id: `payout_sim_${Date.now()}`,
@@ -560,4 +587,8 @@ module.exports = {
   issueRefund,
   generateIdempotencyKey,
   fetchExchangeRate,
+  // /test-confirm exists only for automated test/E2E runs. Keeping this rule
+  // here (rather than inline in the route) makes the production guard
+  // independently unit-testable without booting production middleware.
+  isTestConfirmationAllowed: () => process.env.NODE_ENV === 'test' || Boolean(process.env.E2E_IN_MEMORY),
 };

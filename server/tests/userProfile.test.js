@@ -53,4 +53,45 @@ describe('User Profile', () => {
     expect(r.status).toBe(200);
     expect(r.body.bio).toBe('Updated bio');
   });
+
+  test('PROF.5 follow is idempotent and cannot duplicate followers', async () => {
+    const target = await User.create({
+      name: 'Follow Target',
+      email: `follow_${TEST_RUN_ID}@test.com`,
+      password: 'password123',
+      emailVerified: true,
+      authProvider: 'email',
+      country: 'US',
+      currency: 'USD',
+    });
+    testUserIds.push(target._id);
+
+    const first = await request(app)
+      .post(`/api/users/${target._id}/follow`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(first.status).toBe(200);
+
+    const confirm = await request(app)
+      .post(`/api/users/${target._id}/follow`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(confirm.status).toBe(200);
+    expect(confirm.body.following).toBe(false);
+
+    const again = await request(app)
+      .post(`/api/users/${target._id}/follow`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(again.status).toBe(200);
+    expect(again.body.following).toBe(true);
+
+    const targetAfter = await User.findById(target._id).select('followers');
+    expect(targetAfter.followers.filter((id) => id.toString() === userId.toString())).toHaveLength(1);
+  });
+
+  test('PROF.6 authenticated listing responses are not publicly cacheable', async () => {
+    const r = await request(app)
+      .get('/api/listings/my')
+      .set('Authorization', `Bearer ${token}`);
+    expect(r.status).toBe(200);
+    expect(r.headers['cache-control']).toBe('no-store');
+  });
 });

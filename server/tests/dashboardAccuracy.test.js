@@ -243,4 +243,26 @@ describe('Dashboard Accuracy & Revenue Protection', () => {
     // Platform cut also consistent: (163.04−150) + (217.39−200) = 13.04 + 17.39
     expect(bal.totalCommissionPaid).toBe(round2(13.04 + 17.39));
   });
+
+  test('DA.6 spendable balance is not double-counted with completed payouts', async () => {
+    await Payout.create({
+      seller: sellerId, transaction: oid(), listing: oid(),
+      salePrice: 100, commissionRate: 0.08, commissionAmount: 8, payoutAmount: 92,
+      status: 'completed', paidAt: new Date(),
+    });
+    await User.updateOne({ _id: sellerId }, {
+      $set: {
+        'balance.available': 92,
+        'balance.totalEarned': 92,
+        'balance.totalPaidOut': 0,
+      },
+    });
+
+    const dash = await getDashboard();
+    const bal = (await request(app).get('/api/payouts/balance').set('Authorization', `Bearer ${sellerToken}`)).body;
+
+    expect(dash.availableBalance).toBe(92);
+    expect(bal.availableBalance).toBe(92);
+    expect(bal.availableBalance).toBe(dash.availableBalance);
+  });
 });

@@ -173,30 +173,43 @@ router.post('/:id/follow', auth, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const currentUser = await User.findById(req.user._id);
-    const isFollowing = currentUser.following.includes(req.params.id);
+    const targetId = targetUser._id;
+    // ObjectId arrays do not match a string with Array#includes, so the old
+    // read-then-toggle path treated every follow as new and pushed duplicate
+    // followers on each click. Claim the relationship atomically too, so two
+    // concurrent requests cannot both add it.
+    const followed = await User.findOneAndUpdate(
+      { _id: req.user._id, following: { $ne: targetId } },
+      { $addToSet: { following: targetId } },
+      { new: true },
+    ).select('_id');
 
-    if (isFollowing) {
-      currentUser.following.pull(req.params.id);
-      targetUser.followers.pull(req.user._id);
+    if (followed) {
+      await User.updateOne({ _id: targetId }, { $addToSet: { followers: req.user._id } });
+      await User.updateOne(
+        { _id: targetId },
+        {
+          $push: {
+            notifications: {
+              $each: [{
+                type: 'follow',
+                from: req.user._id,
+                message: `${req.user.name} started following you`,
+              }],
+              $position: 0,
+            },
+          },
+        },
+      );
     } else {
-      currentUser.following.push(req.params.id);
-      targetUser.followers.push(req.user._id);
-
-      // Add notification
-      targetUser.notifications.unshift({
-        type: 'follow',
-        from: req.user._id,
-        message: `${req.user.name} started following you`,
-      });
+      await User.updateOne({ _id: req.user._id }, { $pull: { following: targetId } });
+      await User.updateOne({ _id: targetId }, { $pull: { followers: req.user._id } });
     }
 
-    await currentUser.save();
-    await targetUser.save();
-
+    const freshTarget = await User.findById(targetId).select('followers');
     res.json({
-      following: !isFollowing,
-      followersCount: targetUser.followers.length,
+      following: Boolean(followed),
+      followersCount: freshTarget?.followers?.length || 0,
     });
   } catch (error) {
     console.error(error);

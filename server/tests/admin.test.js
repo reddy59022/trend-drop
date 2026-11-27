@@ -322,6 +322,45 @@ describe('Admin Refund Integrity', () => {
     expect(restored.available).toBe(true);
     expect(restored.sold).toBe(false);
   });
+
+  test('AD.22 an already cancelled order cannot be refunded a second time', async () => {
+    const listing = await Listing.create({
+      seller: adminId,
+      title: `Admin double refund ${TEST_RUN_ID}`,
+      description: 'cancelled order guard',
+      price: 50,
+      category: 'Women',
+      condition: 'Good',
+      quantity: 2,
+      quantitySold: 0,
+      sold: false,
+      available: true,
+    });
+    testListingIds.push(listing._id);
+    await User.findByIdAndUpdate(adminId, { $set: { 'balance.pending': 0 } });
+    const paymentIntentId = authorizedPaymentIntent('succeeded');
+    const txn = await Transaction.create({
+      listing: listing._id,
+      buyer: userId,
+      seller: adminId,
+      quantity: 1,
+      itemPrice: 50,
+      paymentBreakdown: { subtotal: 50, totalPaid: 57.5, sellerEarnings: 46, platformFee: 4, paymentIntentId },
+      payout: { status: 'refunded', transactionId: paymentIntentId },
+      status: 'cancelled_by_buyer',
+      cancellation: { cancelledBy: 'buyer', cancelledAt: new Date(), refundAmount: 57.5 },
+    });
+
+    const r = await request(app)
+      .post(`/api/admin/transactions/${txn._id}/refund`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(r.status).toBe(400);
+
+    const after = await Listing.findById(listing._id);
+    expect(after.quantity).toBe(2);
+    expect(after.quantitySold).toBe(0);
+    expect((await User.findById(adminId)).balance.pending).toBe(0);
+  });
 });
 
 describe('Admin Auto-Suspend', () => {

@@ -27,6 +27,7 @@ const {
   refundOrReleaseIntent,
   fetchExchangeRate,
 } = require('../config/payments');
+const paymentsConfig = require('../config/payments');
 const { isInternationalAllowed } = require('../config/shipping');
 const { isValidObjectId } = require('../utils/validators');
 const { increment } = require('../utils/metrics');
@@ -1796,6 +1797,12 @@ router.post('/test-confirm', auth, async (req, res) => {
   try {
     const { paymentIntentId } = req.body || {};
     if (!paymentIntentId) return res.status(400).json({ message: 'Missing paymentIntentId' });
+    // This endpoint exists only for automated TEST/E2E runs. It must never be
+    // reachable on a real deployment, even one without a Stripe key (the
+    // missing-key fallback below would otherwise authorize a free order).
+    if (!paymentsConfig.isTestConfirmationAllowed()) {
+      return res.status(403).json({ message: 'Test confirmation is not available in production' });
+    }
     // The secret-key guard applies ONLY to the real Stripe SDK path. In
     // E2E in-memory / hermetic mode Stripe is intentionally not initialized
     // (mock payment-intent registry below handles the flow) — never 403 those.
@@ -1992,7 +1999,7 @@ router.post('/payout', auth, async (req, res) => {
   } catch (error) {
     increment('trenddrop_payouts_total', { operation: 'seller_payout', status: 'failed' });
     console.error(error);
-    res.status(500).json({ message: error.message || 'Error processing payout' });
+    res.status(error.status || 500).json({ message: error.message || 'Error processing payout' });
   }
 });
 

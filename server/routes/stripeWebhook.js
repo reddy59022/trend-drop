@@ -74,6 +74,19 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
         console.log(`[WEBHOOK] found transaction:`, transaction ? transaction._id : 'NOT FOUND');
         
         if (transaction) {
+          // A late/replayed `created` event must never reopen a dispute that
+          // already reached a terminal resolution. Doing so reset the status
+          // to chargeback_open, which let a subsequent (also replayed) `won`
+          // event credit the seller a second time.
+          const sameDispute = transaction.disputeInfo?.stripeDisputeId === dispute.id;
+          const alreadyResolved = sameDispute &&
+            (['chargeback_won', 'chargeback_lost'].includes(transaction.status) ||
+              ['won', 'lost'].includes(transaction.disputeInfo?.status));
+          if (alreadyResolved) {
+            increment('trenddrop_webhook_retries_total', { event_type: 'charge.dispute.created' });
+            break;
+          }
+
           // IDEMPOTENCY: Stripe can re-deliver the same event. Only open the
           // dispute (and notify the seller) when this is a NEW dispute — a
           // duplicate delivery must not push duplicate notifications or reset
@@ -124,6 +137,18 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
         console.log(`[WEBHOOK] found transaction:`, transaction ? transaction._id : 'NOT FOUND');
         
         if (transaction) {
+          // Ignore an out-of-order terminal update from the same dispute. A
+          // replayed `lost` after `won` (or vice versa) must not move money a
+          // second time; Stripe's terminal dispute result does not flip back.
+          const sameDispute = transaction.disputeInfo?.stripeDisputeId === dispute.id;
+          const priorStatus = transaction.disputeInfo?.status;
+          const priorTerminal = ['won', 'lost'].includes(priorStatus) ||
+            ['chargeback_won', 'chargeback_lost'].includes(transaction.status);
+          if (sameDispute && priorTerminal && priorStatus !== dispute.status) {
+            increment('trenddrop_webhook_retries_total', { event_type: 'charge.dispute.updated' });
+            break;
+          }
+
           // If won, restore funds to seller
           if (dispute.status === 'won') {
             // IDEMPOTENCY: only credit once — Stripe re-delivers events and
@@ -245,6 +270,22 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
       case 'charge.refunded': {
         const charge = event.data.object;
         let transaction = await Transaction.findOne(paymentIntentMatch(charge.payment_intent));
+
+        // Internal cancellation/auto-cancel already refunded the buyer,
+        // clawed back the seller ledger, and restored inventory. The Stripe
+        // `charge.refunded` event follows that refund; treating it as a new
+        // refund restores stock twice and debits unrelated seller funds.
+        const alreadyUnwound = Boolean(transaction && (
+          (transaction.cancellation?.cancelledAt || transaction.cancellation?.cancelledBy) ||
+          transaction.status === 'refunded' ||
+          ['cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled'].includes(transaction.status) ||
+          transaction.payout?.status === 'refunded'
+        ));
+        if (alreadyUnwound) {
+          increment('trenddrop_webhook_retries_total', { event_type: 'charge.refunded' });
+          break;
+        }
+
         if (transaction && transaction.status !== 'refunded') {
           const wasReleased = transaction.status === 'completed'
             || transaction.payout?.status === 'completed';

@@ -85,12 +85,17 @@ router.post('/:id/join', auth, async (req, res) => {
       return res.status(403).json({ message: 'Invalid invite code' });
     }
 
-    if (!community.members.includes(req.user._id)) {
-      community.members.push(req.user._id);
-      await community.save();
+    if (!community.members.some((member) => String(member) === String(req.user._id))) {
+      await SellerCommunity.updateOne(
+        { _id: community._id },
+        { $addToSet: { members: req.user._id } },
+      );
     }
 
-    res.json(community);
+    const joinedCommunity = await SellerCommunity.findById(community._id)
+      .populate('members', 'name avatar')
+      .populate('moderators', 'name');
+    res.json(joinedCommunity);
   } catch (error) {
     res.status(500).json({ message: 'Failed to join community' });
   }
@@ -167,7 +172,17 @@ router.post('/:id/achievements', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only moderators can award achievements' });
     }
 
-    community.achievements.push({ member: memberId, badge });
+    if (typeof memberId !== 'string' || !require('mongoose').Types.ObjectId.isValid(memberId)) {
+      return res.status(400).json({ message: 'memberId must be a valid user id' });
+    }
+    if (!community.members.some((id) => String(id) === String(memberId))) {
+      return res.status(400).json({ message: 'Achievements can only be awarded to community members' });
+    }
+    if (typeof badge !== 'string' || !badge.trim()) {
+      return res.status(400).json({ message: 'badge is required' });
+    }
+
+    community.achievements.push({ member: memberId, badge: badge.trim() });
     await community.save();
 
     res.json(community);
@@ -187,9 +202,15 @@ router.get('/:id/leaderboard', auth, async (req, res) => {
       return res.status(404).json({ message: 'Community not found' });
     }
 
+    // Private community membership is private. The detail route already hides
+    // it; the leaderboard must not leak member names to arbitrary accounts.
+    if (community.isPrivate && !community.members.some((member) => String(member?._id) === String(req.user._id))) {
+      return res.status(403).json({ message: 'You are not a member of this private community' });
+    }
+
     const leaderboard = community.members.map(member => ({
       member,
-      achievements: community.achievements.filter(a => a.member._id.equals(member._id)).length
+      achievements: community.achievements.filter(a => a.member && String(a.member._id) === String(member?._id)).length
     })).sort((a, b) => b.achievements - a.achievements);
 
     res.json(leaderboard);

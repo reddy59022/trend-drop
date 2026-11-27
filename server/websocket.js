@@ -6,7 +6,9 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const User = require('./models/User');
+const Auction = require('./models/Auction');
 const { getJwtSecret } = require('./config/security');
+const { isSuspendedRole } = require('./criticalRules');
 
 let io = null;
 // A user can have multiple active sessions (for example web + mobile). Keep
@@ -60,8 +62,17 @@ function initializeWebSocket(server) {
       const decoded = jwt.verify(token, getJwtSecret());
       const user = await User.findById(decoded.id).select('-password');
       
-      if (!user) {
+      if (!user || user.deletedAt) {
         return next(new Error('User not found'));
+      }
+
+      // Mirror the HTTP auth middleware: a password reset or suspension must
+      // invalidate already-open sockets too, not just their next API call.
+      if ((decoded.tv || 0) !== (user.tokenVersion || 0)) {
+        return next(new Error('Session expired'));
+      }
+      if (isSuspendedRole(user.role)) {
+        return next(new Error('Account suspended'));
       }
 
       socket.user = user;
@@ -147,39 +158,65 @@ function initializeWebSocket(server) {
       console.log(`User ${socket.user.email} left stream room for auction ${auctionId}`);
     });
 
-    // Seller sends SDP offer to viewers in the stream room
-    socket.on('stream:offer', ({ auctionId, offer }) => {
-      socket.to(`stream:${auctionId}`).emit('stream:offer', {
-        auctionId,
-        offer,
-        sellerId: socket.user._id,
-        sellerName: socket.user.name,
-      });
-      console.log(`Stream offer relayed for auction ${auctionId} by ${socket.user.email}`);
+    // Seller sends SDP offer to viewers in the stream room. Without the
+    // seller check, any authenticated viewer could broadcast an offer into
+    // another seller's room and hijack the WebRTC session.
+    socket.on('stream:offer', async ({ auctionId, offer } = {}) => {
+      try {
+        const auction = await Auction.findById(auctionId).select('seller').lean();
+        if (!auction || String(auction.seller) !== userId) return;
+        socket.to(`stream:${auctionId}`).emit('stream:offer', {
+          auctionId,
+          offer,
+          sellerId: socket.user._id,
+          sellerName: socket.user.name,
+        });
+        console.log(`Stream offer relayed for auction ${auctionId} by ${socket.user.email}`);
+      } catch (error) {
+        console.error('Stream offer rejected:', error.message);
+      }
     });
 
-    // Viewer sends SDP answer back to seller
-    socket.on('stream:answer', ({ auctionId, answer, toSellerId }) => {
-      socket.to(`user:${toSellerId}`).emit('stream:answer', {
-        auctionId,
-        answer,
-        viewerId: socket.user._id,
-        viewerName: socket.user.name,
-      });
-      console.log(`Stream answer relayed for auction ${auctionId} by ${socket.user.email}`);
+    // Viewer sends SDP answer back to the auction's actual seller, never to a
+    // client-supplied arbitrary user id.
+    socket.on('stream:answer', async ({ auctionId, answer } = {}) => {
+      try {
+        // Only a viewer actually in this stream may answer the seller.
+        if (!socket.rooms.has(`stream:${auctionId}`)) return;
+        const auction = await Auction.findById(auctionId).select('seller').lean();
+        if (!auction) return;
+        socket.to(`user:${auction.seller}`).emit('stream:answer', {
+          auctionId,
+          answer,
+          viewerId: socket.user._id,
+          viewerName: socket.user.name,
+        });
+        console.log(`Stream answer relayed for auction ${auctionId} by ${socket.user.email}`);
+      } catch (error) {
+        console.error('Stream answer rejected:', error.message);
+      }
     });
 
-    // ICE candidate exchange
-    socket.on('stream:ice-candidate', ({ auctionId, candidate, toUserId }) => {
-      // If toUserId provided, send to that specific user; otherwise broadcast to room
+    // ICE candidate exchange. A client-supplied target is only honoured when
+    // both parties are actually in this auction's stream room; otherwise the
+    // socket would be a generic authenticated direct-message primitive.
+    socket.on('stream:ice-candidate', ({ auctionId, candidate, toUserId } = {}) => {
+      const room = `stream:${auctionId}`;
+      if (!socket.rooms.has(room)) return;
       if (toUserId) {
+        const targetSockets = userSocketMap.get(String(toUserId)) || new Set();
+        const targetInRoom = [...targetSockets].some((socketId) => {
+          const target = io.sockets.sockets.get(socketId);
+          return target && target.rooms.has(room);
+        });
+        if (!targetInRoom) return;
         socket.to(`user:${toUserId}`).emit('stream:ice-candidate', {
           auctionId,
           candidate,
           fromUserId: socket.user._id,
         });
       } else {
-        socket.to(`stream:${auctionId}`).emit('stream:ice-candidate', {
+        socket.to(room).emit('stream:ice-candidate', {
           auctionId,
           candidate,
           fromUserId: socket.user._id,
@@ -187,14 +224,21 @@ function initializeWebSocket(server) {
       }
     });
 
-    // Seller announces stream is ending
-    socket.on('stream:end', ({ auctionId }) => {
-      socket.to(`stream:${auctionId}`).emit('stream:ended', {
-        auctionId,
-        sellerId: socket.user._id,
-      });
-      socket.leave(`stream:${auctionId}`);
-      console.log(`Stream ended for auction ${auctionId} by ${socket.user.email}`);
+    // Seller announces stream is ending. Only the auction's seller may end
+    // the room for every viewer.
+    socket.on('stream:end', async ({ auctionId } = {}) => {
+      try {
+        const auction = await Auction.findById(auctionId).select('seller').lean();
+        if (!auction || String(auction.seller) !== userId) return;
+        socket.to(`stream:${auctionId}`).emit('stream:ended', {
+          auctionId,
+          sellerId: socket.user._id,
+        });
+        socket.leave(`stream:${auctionId}`);
+        console.log(`Stream ended for auction ${auctionId} by ${socket.user.email}`);
+      } catch (error) {
+        console.error('Stream end rejected:', error.message);
+      }
     });
 
     // Mark notifications as read
@@ -247,6 +291,11 @@ function getIO() {
 /**
  * Send notification to specific user
  */
+function disconnectUser(userId) {
+  if (!io || !userId) return;
+  io.in(`user:${userId}`).disconnectSockets(true);
+}
+
 function sendNotificationToUser(userId, notification) {
   if (!io) return;
 
@@ -330,5 +379,6 @@ module.exports = {
   isUserOnline,
   getOnlineUsers,
   sendMessageNotification,
+  disconnectUser,
   userSocketMap,
 };

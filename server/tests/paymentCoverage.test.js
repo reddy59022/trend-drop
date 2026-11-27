@@ -1268,3 +1268,41 @@ describe('test-confirm / cancel-payment / payout', () => {
     });
   });
 });
+
+describe('production payment safety gates', () => {
+  test('test-confirm returns 403 when the production gate closes', async () => {
+    const buyer = await makeUser('Gate Buyer', `gatebuyer-${Date.now()}@t.test`);
+    const gate = jest.spyOn(config, 'isTestConfirmationAllowed').mockReturnValueOnce(false);
+    try {
+      const res = await request(app)
+        .post('/api/payments/test-confirm')
+        .set('Authorization', `Bearer ${buyer.token}`)
+        .send({ paymentIntentId: 'pi_gate_closed' });
+      expect(res.status).toBe(403);
+      expect(res.body.message).toMatch(/not available in production/i);
+    } finally {
+      gate.mockRestore();
+    }
+  });
+
+  test('test-confirm is allowed only in test/E2E modes', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalE2E = process.env.E2E_IN_MEMORY;
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.E2E_IN_MEMORY;
+      expect(config.isTestConfirmationAllowed()).toBe(false);
+
+      process.env.E2E_IN_MEMORY = '1';
+      expect(config.isTestConfirmationAllowed()).toBe(true);
+
+      process.env.NODE_ENV = 'test';
+      delete process.env.E2E_IN_MEMORY;
+      expect(config.isTestConfirmationAllowed()).toBe(true);
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+      if (originalE2E === undefined) delete process.env.E2E_IN_MEMORY;
+      else process.env.E2E_IN_MEMORY = originalE2E;
+    }
+  });
+});

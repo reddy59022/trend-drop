@@ -209,6 +209,21 @@ describe('PR.3 account deletion anonymizes while preserving order history', () =
     expect(stored.deletedAt).toBeFalsy();
   });
 
+  test('deletion is blocked while the rolling reserve is still held', async () => {
+    const seller = await makeUser('delete_reserve');
+    await User.updateOne({ _id: seller._id }, { $set: { 'balance.reserve': 25 } });
+
+    const res = await request(app)
+      .delete('/api/auth/account')
+      .set('Authorization', `Bearer ${tokenFor(seller._id)}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/reserve/i);
+    const stored = await User.findById(seller._id);
+    expect(stored.deletedAt).toBeFalsy();
+    expect(stored.balance.reserve).toBe(25);
+  });
+
   test('deleting removes PII, revokes the token, and keeps the seller reference', async () => {
     const seller = await makeUser('delete_seller');
     const buyer = await makeUser('delete_buyer');
@@ -266,12 +281,12 @@ describe('PR.4 password reset revokes existing sessions', () => {
       .send({ email: user.email });
     expect(forgot.status).toBe(200);
 
-    const withToken = await User.findById(user._id).select('verificationToken');
-    expect(withToken.verificationToken).toBeTruthy();
+    const withToken = await User.findById(user._id).select('passwordResetToken passwordResetExpires');
+    expect(withToken.passwordResetToken).toBeTruthy();
 
     const reset = await request(app)
       .post('/api/auth/reset-password')
-      .send({ token: withToken.verificationToken, password: 'newpassword123' });
+      .send({ token: withToken.passwordResetToken, password: 'newpassword123' });
     expect(reset.status).toBe(200);
 
     const meAfter = await request(app)
@@ -305,5 +320,23 @@ describe('PR.4 password reset revokes existing sessions', () => {
 
     expect(res.status).toBe(200);
     expect(res.body._id).toBe(String(user._id));
+  });
+
+  test('a password reset token cannot be used as an email verification token', async () => {
+    const user = await makeUser('reset_token_scope');
+    const forgot = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ email: user.email });
+    expect(forgot.status).toBe(200);
+
+    const stored = await User.findById(user._id).select('passwordResetToken verificationToken');
+    expect(stored.passwordResetToken).toBeTruthy();
+    expect(stored.verificationToken).toBeFalsy();
+
+    const verify = await request(app)
+      .post('/api/auth/verify-email')
+      .send({ token: stored.passwordResetToken });
+    expect(verify.status).toBe(400);
+    expect((await User.findById(user._id)).emailVerified).toBe(true);
   });
 });

@@ -217,6 +217,37 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(listingAfter.sold).toBe(false);
     });
 
+    it('WH.12 provider refund after an internal cancellation does not unwind twice', async () => {
+      tx.stripePaymentIntentId = 'pi_refund_cancelled';
+      tx.status = 'cancelled_by_buyer';
+      tx.quantity = 3;
+      tx.cancellation = {
+        cancelledBy: 'buyer',
+        reason: 'Changed mind',
+        cancelledAt: new Date(),
+        refundAmount: 60,
+      };
+      await tx.save();
+
+      await User.updateOne({ _id: seller._id }, { $set: { 'balance.pending': 0 } });
+      await Listing.updateOne({ _id: listing._id }, {
+        $set: { quantity: 3, quantitySold: 0, sold: false, available: true },
+      });
+
+      const res = await postWebhook({
+        type: 'charge.refunded',
+        data: { object: { payment_intent: 'pi_refund_cancelled' } },
+      });
+      expect(res.status).toBe(200);
+
+      const sellerAfter = await User.findById(seller._id);
+      expect(sellerAfter.balance.pending).toBe(0);
+      const listingAfter = await Listing.findById(listing._id);
+      expect(listingAfter.quantity).toBe(3);
+      expect(listingAfter.quantitySold).toBe(0);
+      expect((await Transaction.findById(tx._id)).status).toBe('cancelled_by_buyer');
+    });
+
     it('WH.8 provider refund after release claws back available seller earnings', async () => {
       tx.stripePaymentIntentId = 'pi_refund_released';
       tx.status = 'completed';
@@ -272,6 +303,54 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       expect(sellerAfter.balance.pending).toBe(55);
       expect(listingAfter.quantity).toBe(2);
       expect(listingAfter.quantitySold).toBe(0);
+    });
+
+    it('WH.13 a replayed created event cannot reopen a resolved dispute', async () => {
+      tx.stripePaymentIntentId = 'pi_test_123';
+      tx.status = 'chargeback_won';
+      tx.disputeInfo = {
+        stripeDisputeId: 'dp_test_1',
+        status: 'won',
+      };
+      await tx.save();
+      const pendingBefore = (await User.findById(seller._id)).balance.pending;
+
+      const replay = await postWebhook({
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_test_1',
+            payment_intent: 'pi_test_123',
+            reason: 'fraudulent',
+            status: 'needs_response',
+            evidence_details: { due_by: 1893456000 },
+          },
+        },
+      });
+      expect(replay.status).toBe(200);
+
+      const updated = await Transaction.findById(tx._id);
+      expect(updated.status).toBe('chargeback_won');
+      expect(updated.disputeInfo.status).toBe('won');
+      expect((await User.findById(seller._id)).balance.pending).toBe(pendingBefore);
+    });
+
+    it('WH.14 a stale lost update cannot debit after the dispute was won', async () => {
+      tx.stripePaymentIntentId = 'pi_test_123';
+      tx.status = 'chargeback_won';
+      tx.disputeInfo = {
+        stripeDisputeId: 'dp_test_1',
+        status: 'won',
+      };
+      await tx.save();
+
+      const stale = await postWebhook(disputeEvent('lost'));
+      expect(stale.status).toBe(200);
+
+      const updated = await Transaction.findById(tx._id);
+      expect(updated.status).toBe('chargeback_won');
+      expect(updated.disputeInfo.status).toBe('won');
+      expect((await User.findById(seller._id)).balance.pending).toBe(100);
     });
 
     it('WH.5 "lost" re-delivery debits the seller exactly once', async () => {

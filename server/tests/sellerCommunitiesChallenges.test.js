@@ -177,4 +177,40 @@ describe('TDD R26 — POST /api/seller-communities/:id/challenges input contract
 
     expect(res.status).toBe(403);
   });
+
+  test('private community leaderboards are not readable by non-members', async () => {
+    const privateCommunity = await SellerCommunity.create({
+      name: 'Private Leaderboard Community',
+      isPrivate: true,
+      inviteCode: `PRIV${Date.now()}`,
+      members: [moderator._id],
+      moderators: [moderator._id],
+    });
+
+    const denied = await request(app)
+      .get(`/api/seller-communities/${privateCommunity._id}/leaderboard`)
+      .set('Authorization', `Bearer ${memberToken}`);
+    expect(denied.status).toBe(403);
+
+    const allowed = await request(app)
+      .get(`/api/seller-communities/${privateCommunity._id}/leaderboard`)
+      .set('Authorization', `Bearer ${moderatorToken}`);
+    expect(allowed.status).toBe(200);
+  });
+
+  test('achievements can only be awarded to community members', async () => {
+    const res = await request(app)
+      .post(`/api/seller-communities/${community._id}/achievements`)
+      .set('Authorization', `Bearer ${moderatorToken}`)
+      .send({ memberId: new mongoose.Types.ObjectId().toString(), badge: 'Top Seller' });
+    expect(res.status).toBe(400);
+  });
+
+  test('authenticated community responses are never publicly cacheable', async () => {
+    const res = await request(app)
+      .get('/api/seller-communities')
+      .set('Authorization', `Bearer ${moderatorToken}`);
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
 });
