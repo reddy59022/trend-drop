@@ -169,4 +169,39 @@ const sendPasswordResetEmail = (email, name, token) => {
   return Promise.resolve({ emailSent: true, queued: true });
 };
 
-module.exports = { sendVerificationEmail, sendPasswordResetEmail };
+/**
+ * Operational alert email for integrity checks. Recipients come from
+ * ALERT_EMAILS, then ADMIN_EMAILS, then the configured sender as a last
+ * resort. Returns `{ skipped: true }` when email is not configured; throws when
+ * the provider rejects the send so the caller can log the failed alert while
+ * preserving the audit result.
+ */
+const sendOperationalAlert = async ({ subject, text }) => {
+  if (!hasApiKey()) return { emailSent: false, skipped: true };
+
+  const recipients = [...new Set(
+    String(process.env.ALERT_EMAILS || process.env.ADMIN_EMAILS || SENDER_EMAIL)
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  )];
+  if (recipients.length === 0) {
+    console.warn('[email] No operational alert recipient configured; skipping alert.');
+    return { emailSent: false, skipped: true };
+  }
+
+  const safeSubject = String(subject || 'TrendDrop operational alert').slice(0, 180);
+  const safeText = escapeHtml(text || safeSubject);
+  const data = await sendTransactionalEmail({
+    subject: safeSubject,
+    textContent: text || safeSubject,
+    htmlContent: `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#222;"><h2>${escapeHtml(safeSubject)}</h2><pre style="white-space:pre-wrap;font-family:inherit;">${safeText}</pre></div>`,
+    to: recipients.map((email) => ({ email })),
+    sender: { email: SENDER_EMAIL, name: SENDER_NAME },
+    replyTo: { email: SENDER_EMAIL, name: 'TrendDrop Operations' },
+  });
+  console.log('[email] Operational alert sent:', safeSubject);
+  return { emailSent: true, messageId: data.messageId };
+};
+
+module.exports = { sendVerificationEmail, sendPasswordResetEmail, sendOperationalAlert };

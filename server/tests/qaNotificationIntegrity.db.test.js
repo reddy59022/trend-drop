@@ -8,6 +8,7 @@ const {
 const { auditOrphanNotifications } = require('../utils/notificationAudit');
 const { auditNotificationIntegrity } = require('../config/cron');
 const { render, reset } = require('../utils/metrics');
+const { sendOperationalAlert } = require('../config/email');
 
 const oid = () => new mongoose.Types.ObjectId();
 
@@ -141,9 +142,39 @@ describe('QA notification integrity (database)', () => {
 
   test('scheduled audit runs read-only and emits a clean metric', async () => {
     reset();
+    sendOperationalAlert.mockClear();
     const report = await auditNotificationIntegrity();
     expect(report).not.toBeNull();
     expect(report.total).toBe(0);
     expect(render()).toMatch(/trenddrop_orphan_notification_audits_total\{[^}]*result="clean"[^}]*source="cron"[^}]*\} 1/);
+    expect(sendOperationalAlert).not.toHaveBeenCalled();
+  });
+
+  test('scheduled audit found path emits a found metric and sends an actionable alert', async () => {
+    const missingTransactionId = oid();
+    await insertUser([
+      {
+        _id: oid(),
+        type: 'dispute',
+        transaction: missingTransactionId,
+        message: 'missing transaction',
+      },
+    ]);
+
+    reset();
+    sendOperationalAlert.mockClear();
+    const report = await auditNotificationIntegrity();
+
+    expect(report).not.toBeNull();
+    expect(report.total).toBe(1);
+    expect(report.affectedUsers).toBe(1);
+    expect(report.missingTransactionIds).toEqual([missingTransactionId.toString()]);
+    expect(render()).toMatch(/trenddrop_orphan_notifications_total\{[^}]*result="found"[^}]*source="cron"[^}]*\} 1/);
+    expect(sendOperationalAlert).toHaveBeenCalledTimes(1);
+
+    const alert = sendOperationalAlert.mock.calls[0][0];
+    expect(alert.subject).toContain('orphan notification');
+    expect(alert.text).toContain('1 notification(s)');
+    expect(alert.text).toContain(missingTransactionId.toString());
   });
 });

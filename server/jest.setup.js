@@ -323,6 +323,7 @@ jest.mock('cloudinary', () => {
 jest.mock('./config/email', () => ({
   sendVerificationEmail: jest.fn(async () => true),
   sendPasswordResetEmail: jest.fn(async () => true),
+  sendOperationalAlert: jest.fn(async () => ({ emailSent: true })),
 }));
 
 // 2b. Google OAuth — google-auth-library's verifyIdToken() fetches Google's

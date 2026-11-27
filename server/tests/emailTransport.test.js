@@ -24,6 +24,8 @@ describe('Email transport uses Brevo REST (no request-based SDK)', () => {
     process.env.FRONTEND_URL = 'https://app.trenddrop.example';
     delete process.env.CLIENT_URL;
     delete process.env.E2E_IN_MEMORY;
+    delete process.env.ALERT_EMAILS;
+    delete process.env.ADMIN_EMAILS;
     fetchMock = jest.fn(async () => ({
       ok: true,
       status: 201,
@@ -112,5 +114,57 @@ describe('Email transport uses Brevo REST (no request-based SDK)', () => {
     });
     await flushAsync();
     expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it('TR.7 operational alert sends to ALERT_EMAILS with escaped text', async () => {
+    process.env.ALERT_EMAILS = 'ops@example.com, oncall@example.com';
+
+    const result = await email.sendOperationalAlert({
+      subject: '[TrendDrop][ALERT] 2 orphan notifications detected',
+      text: '2 notifications\n<script>alert(1)</script>',
+    });
+
+    expect(result).toEqual({ emailSent: true, messageId: 'msg-1' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.to).toEqual([
+      { email: 'ops@example.com' },
+      { email: 'oncall@example.com' },
+    ]);
+    expect(body.subject).toContain('2 orphan notifications');
+    expect(body.textContent).toContain('<script>');
+    expect(body.htmlContent).toContain('&lt;script&gt;');
+    expect(body.htmlContent).not.toContain('<script>');
+  });
+
+  it('TR.8 operational alert falls back to ADMIN_EMAILS', async () => {
+    process.env.ADMIN_EMAILS = 'admin@example.com';
+
+    await email.sendOperationalAlert({ subject: 'Alert', text: 'body' });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.to).toEqual([{ email: 'admin@example.com' }]);
+  });
+
+  it('TR.9 operational alert propagates provider failure so cron can log it', async () => {
+    process.env.ALERT_EMAILS = 'ops@example.com';
+    fetchMock.mockImplementationOnce(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ message: 'unavailable' }),
+    }));
+
+    await expect(email.sendOperationalAlert({ subject: 'Alert', text: 'body' }))
+      .rejects.toThrow('Brevo API error 503');
+  });
+
+  it('TR.10 operational alert skips without a key and makes no network call', async () => {
+    delete process.env.BREVO_API_KEY;
+    jest.resetModules();
+    email = require('../config/email');
+
+    await expect(email.sendOperationalAlert({ subject: 'Alert', text: 'body' }))
+      .resolves.toEqual({ emailSent: false, skipped: true });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

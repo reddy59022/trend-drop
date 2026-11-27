@@ -31,6 +31,7 @@ const { applyProviderRefundResult, recordProviderSettlement } = require('../util
 const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
 const { auditOrphanNotifications } = require('../utils/notificationAudit');
 const { increment } = require('../utils/metrics');
+const { sendOperationalAlert } = require('./email');
 
 // ──────────────────────────────────────────────
 // JOB 1: Auto-Expire Listings (Every 6 hours)
@@ -1106,6 +1107,28 @@ async function auditNotificationIntegrity() {
         `[CRON] Orphan notification audit: ${report.total} dangling notification(s) across ` +
         `${report.affectedUsers} user(s); ${report.missingTransactionIds.length} missing transaction(s)`,
       );
+
+      const missingIds = report.missingTransactionIds.slice(0, 25).join(', ') || 'none';
+      const affectedUsers = [...new Set(report.notifications.map((row) => row.userId))]
+        .slice(0, 25)
+        .join(', ') || 'none';
+      const text = [
+        `The read-only orphan-notification audit found ${report.total} notification(s) referencing ${report.missingTransactionIds.length} missing transaction(s).`,
+        `Affected users: ${report.affectedUsers} (${affectedUsers})`,
+        `Missing transaction ids: ${missingIds}`,
+        'Run: node scripts/audit-orphan-notifications.js --json',
+      ].join('\n');
+      try {
+        const alert = await sendOperationalAlert({
+          subject: `[TrendDrop][ALERT] ${report.total} orphan notification(s) detected`,
+          text,
+        });
+        if (alert?.skipped) {
+          console.warn('[CRON] Orphan audit alert skipped: no alert email configuration.');
+        }
+      } catch (alertError) {
+        console.error('[CRON] Orphan audit alert delivery failed:', alertError.message);
+      }
     } else {
       increment('trenddrop_orphan_notification_audits_total', { source: 'cron', result: 'clean' });
     }
