@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { saleNotification } = require('../utils/saleNotification');
 const { auth } = require('../middleware/auth');
@@ -414,6 +415,11 @@ router.post('/create-intent', auth, async (req, res) => {
       // terminal rejection at confirm can never be consumed elsewhere before
       // it returns the buyer's money.
       totalUnits: itemData.reduce((sum, d) => sum + (d.quantity || 1), 0).toString(),
+      // A failed checkout releases its intent, and Stripe replays a canceled
+      // intent for the same idempotency key for 24 hours. Without a per-attempt
+      // nonce, retrying the same cart returned the canceled intent and blocked
+      // the buyer until the key expired.
+      attemptNonce: req.get('Idempotency-Key') || crypto.randomUUID(),
     };
 
     const paymentIntent = await authorizePaymentIntent(

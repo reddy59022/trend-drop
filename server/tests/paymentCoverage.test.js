@@ -218,6 +218,15 @@ describe('create-intent validation branches', () => {
     expect(res.body.items.length).toBe(1);
   });
 
+  test('a retried checkout gets a fresh intent instead of a canceled replay', async () => {
+    const listing = await makeListing(seller.user);
+    const first = await runCreateIntent(buyer, { listingId: listing._id.toString() });
+    const second = await runCreateIntent(buyer, { listingId: listing._id.toString() });
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.body.paymentIntentId).not.toBe(second.body.paymentIntentId);
+  });
+
   test.each([
     [{ items: [] }, 'No items provided'],
     [{ items: [null] }, 'Each item must be an object with a valid quantity'],
