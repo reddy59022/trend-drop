@@ -438,6 +438,78 @@ describe('ZD27 — cart checkout rolls back the ENTIRE multi-item cart on failur
 });
 
 
+describe('ZD25b — notification cleanup failure is contained and logged', () => {
+  test('single confirm rollback logs cleanup failure without deleting the transaction early', async () => {
+    const seller = await makeUser('PI cleanup single seller', `pi_cleanup_single_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI cleanup single buyer', `pi_cleanup_single_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100, { quantity: 1 });
+    const pi = mockIntent(buyer.user._id, [listing._id.toString()], 'succeeded', 20000);
+
+    const originalUpdateOne = User.updateOne.bind(User);
+    const updateSpy = jest.spyOn(User, 'updateOne').mockImplementationOnce(async (...args) => {
+      await originalUpdateOne(...args);
+      throw new Error('post-notification failure');
+    });
+    const countSpy = jest.spyOn(User, 'countDocuments')
+      .mockRejectedValueOnce(new Error('notification store unavailable'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    let res;
+    let errorCalls;
+    try {
+      res = await request(app).post('/api/payments/confirm')
+        .set('Authorization', `Bearer ${buyer.token}`)
+        .send({ paymentIntentId: pi, listingId: listing._id.toString(), shippingAddress: { ...US } });
+    } finally {
+      updateSpy.mockRestore();
+      countSpy.mockRestore();
+      errorCalls = errorSpy.mock.calls;
+      errorSpy.mockRestore();
+    }
+
+    expect(res.status).toBe(500);
+    expect(errorCalls.flat().join(' ')).toContain('Transaction/notification cleanup failed');
+    // The helper refused to delete after verification failed; the route must
+    // surface the failure instead of creating an unobserved orphan.
+    expect(await Transaction.countDocuments({ 'paymentBreakdown.paymentIntentId': pi })).toBe(1);
+    await Transaction.deleteMany({ 'paymentBreakdown.paymentIntentId': pi });
+  });
+
+  test('batch confirm rollback logs cleanup failure without deleting the transaction early', async () => {
+    const seller = await makeUser('PI cleanup batch seller', `pi_cleanup_batch_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI cleanup batch buyer', `pi_cleanup_batch_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100, { quantity: 1 });
+    const pi = mockIntent(buyer.user._id, [listing._id.toString()], 'requires_capture');
+
+    const originalUpdateOne = User.updateOne.bind(User);
+    const updateSpy = jest.spyOn(User, 'updateOne').mockImplementationOnce(async (...args) => {
+      await originalUpdateOne(...args);
+      throw new Error('post-notification failure');
+    });
+    const countSpy = jest.spyOn(User, 'countDocuments')
+      .mockRejectedValueOnce(new Error('notification store unavailable'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    let res;
+    let errorCalls;
+    try {
+      res = await request(app).post('/api/payments/confirm-batch')
+        .set('Authorization', `Bearer ${buyer.token}`)
+        .send({ paymentIntentId: pi, items: [{ listingId: listing._id.toString(), quantity: 1 }], shippingAddress: { ...US } });
+    } finally {
+      updateSpy.mockRestore();
+      countSpy.mockRestore();
+      errorCalls = errorSpy.mock.calls;
+      errorSpy.mockRestore();
+    }
+
+    expect(res.status).toBe(500);
+    expect(errorCalls.flat().join(' ')).toContain('Batch transaction/notification cleanup failed');
+    expect(await Transaction.countDocuments({ 'paymentBreakdown.paymentIntentId': pi })).toBe(1);
+    await Transaction.deleteMany({ 'paymentBreakdown.paymentIntentId': pi });
+  });
+});
+
 describe('ZD28 — an accepted offer can only be consumed ONCE (concurrent double-checkout)', () => {
   test('two concurrent offer purchases create exactly one transaction; the loser rolls back fully', async () => {
     const seller = await makeUser('PI12', `pi12_${Date.now()}@test.com`);
