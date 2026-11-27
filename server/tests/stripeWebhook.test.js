@@ -214,6 +214,71 @@ describe('Stripe webhook hardening (TD-1.1)', () => {
       },
     });
 
+    it('WH.30 records the dispute fee at creation and keeps it when the dispute is won', async () => {
+      tx.stripePaymentIntentId = 'pi_test_123';
+      await tx.save();
+
+      const created = await postWebhook({
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_test_1',
+            payment_intent: 'pi_test_123',
+            reason: 'fraudulent',
+            status: 'needs_response',
+            currency: 'usd',
+            evidence_details: { due_by: 1893456000 },
+            balance_transactions: [{ fee: 1500, currency: 'usd' }],
+          },
+        },
+      });
+      expect(created.status).toBe(200);
+
+      let updated = await Transaction.findById(tx._id);
+      expect(updated.status).toBe('chargeback_open');
+      expect(updated.disputeInfo.feeAmount).toBe(15);
+      expect(updated.disputeInfo.feeCurrency).toBe('USD');
+      expect(updated.disputeInfo.lostSettlement?.earnings).toBeUndefined();
+      expect(updated.disputeInfo.lostSettlement?.released).toBeUndefined();
+      let s = await User.findById(seller._id);
+      expect(s.balance.pending).toBe(100); // creation never debits
+
+      // Stripe's won payload need not repeat balance_transactions; the
+      // creation-time fee must survive.
+      const won = await postWebhook(closedEvent('won'));
+      expect(won.status).toBe(200);
+      updated = await Transaction.findById(tx._id);
+      s = await User.findById(seller._id);
+      expect(updated.status).toBe('chargeback_won');
+      expect(updated.disputeInfo.feeAmount).toBe(15);
+      expect(updated.disputeInfo.feeCurrency).toBe('USD');
+      expect(updated.disputeInfo.lostSettlement?.earnings).toBeUndefined();
+      expect(updated.disputeInfo.lostSettlement?.released).toBeUndefined();
+      expect(s.balance.pending).toBe(100);
+      expect(s.notifications.filter((n) => n.type === 'dispute').length).toBe(2);
+    });
+
+    it('WH.31 closed(won) books a fee when the created event was missed', async () => {
+      tx.status = 'chargeback_open';
+      tx.disputeInfo = { stripeDisputeId: 'dp_test_1', status: 'under_review' };
+      await tx.save();
+
+      const res = await postWebhook(closedEvent('won', {
+        balance_transactions: [{ fee: 1500, currency: 'usd' }],
+      }));
+      expect(res.status).toBe(200);
+
+      const updated = await Transaction.findById(tx._id);
+      const s = await User.findById(seller._id);
+      expect(updated.status).toBe('chargeback_won');
+      expect(updated.disputeInfo.feeAmount).toBe(15);
+      expect(updated.disputeInfo.feeCurrency).toBe('USD');
+      expect(updated.disputeInfo.lostSettlement?.earnings).toBeUndefined();
+      expect(updated.disputeInfo.lostSettlement?.released).toBeUndefined();
+      expect(s.balance.pending).toBe(100);
+      expect(s.notifications.filter((n) => n.type === 'dispute').length).toBe(1);
+    });
+
     it('WH.15 closed(won) settles the order without crediting the sale twice', async () => {
       // Stripe's real lifecycle: created → updated(under_review) →
       // funds_reinstated → closed(won). No updated event carries 'won'.

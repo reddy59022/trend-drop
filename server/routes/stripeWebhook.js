@@ -83,6 +83,46 @@ function disputeFeeFrom(dispute) {
   return { amount: Math.round(feeMinor) / 100, currency: String(currency).toUpperCase() };
 }
 
+/**
+ * Keep the highest fee evidence seen for a dispute. Stripe assesses the fee in
+ * the same balance transaction that creates the dispute (the real test-mode
+ * payload already carries it in `charge.dispute.created`), and it is NOT
+ * returned when the dispute is won. Later events may omit the balance
+ * transactions, so a positive recorded fee must never be overwritten by 0.
+ */
+function effectiveDisputeFee(transaction, dispute) {
+  const eventFee = disputeFeeFrom(dispute);
+  const recordedAmount = Number(transaction.disputeInfo?.feeAmount) || 0;
+  if (recordedAmount > eventFee.amount) {
+    return { amount: recordedAmount, currency: transaction.disputeInfo?.feeCurrency || eventFee.currency };
+  }
+  return eventFee;
+}
+
+/** Persist a newly observed dispute fee without ever lowering an existing one. */
+async function recordDisputeFee(transaction, dispute) {
+  if (!transaction?._id) return false;
+  const fee = effectiveDisputeFee(transaction, dispute);
+  if (!(fee.amount > 0)) return false;
+  const currentAmount = Number(transaction.disputeInfo?.feeAmount) || 0;
+  const currentCurrency = transaction.disputeInfo?.feeCurrency || '';
+  if (currentAmount === fee.amount && currentCurrency === fee.currency) return false;
+
+  const result = await Transaction.updateOne(
+    {
+      _id: transaction._id,
+      $or: [
+        { 'disputeInfo.feeAmount': { $exists: false } },
+        { 'disputeInfo.feeAmount': null },
+        { 'disputeInfo.feeAmount': { $lt: fee.amount } },
+        { 'disputeInfo.feeCurrency': { $in: ['', null] } },
+      ],
+    },
+    { $set: { 'disputeInfo.feeAmount': fee.amount, 'disputeInfo.feeCurrency': fee.currency } },
+  );
+  return result.modifiedCount > 0;
+}
+
 async function syncOrderForLostChargeback(transaction) {
   if (!transaction) return;
   await syncOrderFromTransaction(
@@ -201,7 +241,7 @@ async function settleDisputeOutcome(transaction, dispute) {
   const wasReleased = transaction.disputeInfo?.wasReleased === true
     || transaction.status === 'completed'
     || transaction.payout?.status === 'completed';
-  const disputeFee = disputeFeeFrom(dispute);
+  const disputeFee = effectiveDisputeFee(transaction, dispute);
   const refundAmount = transaction.paymentBreakdown?.totalPaid || transaction.itemPrice || 0;
   const earnings = sellerSaleTotal(transaction.paymentBreakdown);
   const claimed = await Transaction.findOneAndUpdate(
@@ -213,11 +253,13 @@ async function settleDisputeOutcome(transaction, dispute) {
       $set: {
         status: nextStatus,
         'disputeInfo.status': dispute.status,
+        // The fee is a creation-time platform expense and stays booked even
+        // when the dispute is won; real Stripe evidence shows no fee reversal.
+        'disputeInfo.feeAmount': disputeFee.amount,
+        'disputeInfo.feeCurrency': disputeFee.currency,
         ...(dispute.status === 'lost'
           ? {
               'payout.status': 'refunded',
-              'disputeInfo.feeAmount': disputeFee.amount,
-              'disputeInfo.feeCurrency': disputeFee.currency,
               'disputeInfo.wasReleased': wasReleased,
               'disputeInfo.lostSettlement': { earnings, released: wasReleased, refundAmount },
             }
@@ -230,11 +272,12 @@ async function settleDisputeOutcome(transaction, dispute) {
     // Already terminal. A lost chargeback may still need its fee, ledger,
     // stats, return and order healed after a crash following the status claim;
     // every step is idempotent, so replaying the whole settlement is safe.
-    if (dispute.status === 'lost') {
-      const current = await Transaction.findById(transaction._id).lean();
-      if (current?.status === 'chargeback_lost') {
-        await completeLostChargeback(current, dispute);
-      }
+    const current = await Transaction.findById(transaction._id).lean();
+    if (dispute.status === 'lost' && current?.status === 'chargeback_lost') {
+      await completeLostChargeback(current, dispute);
+    } else if (dispute.status === 'won' && current?.status === 'chargeback_won') {
+      // Heal a won dispute resolved before creation-time fee recording existed.
+      await recordDisputeFee(current, dispute);
     }
     return false;
   }
@@ -340,6 +383,12 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
           const wasReleased = transaction.disputeInfo?.wasReleased === true
             || transaction.status === 'completed'
             || transaction.payout?.status === 'completed';
+          // Stripe charges the dispute fee when the dispute is created and
+          // keeps it even if the dispute is won. Record it here, on the created
+          // event, instead of waiting for a loss that may never happen.
+          const disputeFee = sameDispute
+            ? effectiveDisputeFee(transaction, dispute)
+            : disputeFeeFrom(dispute);
           transaction.status = 'chargeback_open';
           transaction.disputeInfo = {
             stripeDisputeId: dispute.id,
@@ -348,6 +397,8 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
             openedAt: transaction.disputeInfo?.openedAt || new Date(),
             evidenceDueBy: dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000) : null,
             wasReleased,
+            feeAmount: disputeFee.amount,
+            feeCurrency: disputeFee.currency,
           };
           await transaction.save();
           
@@ -384,6 +435,10 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
         console.log(`[WEBHOOK] found transaction:`, transaction ? transaction._id : 'NOT FOUND');
         
         if (transaction) {
+          // Any lifecycle event may carry the fee balance transaction; persist
+          // it before the terminal/settlement branches so a missed created
+          // event still books the creation-time expense.
+          await recordDisputeFee(transaction, dispute);
           // Ignore an out-of-order terminal update from the same dispute. A
           // replayed `lost` after `won` (or vice versa) must not move money a
           // second time; Stripe's terminal dispute result does not flip back.
