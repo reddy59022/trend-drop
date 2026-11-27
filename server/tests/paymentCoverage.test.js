@@ -227,6 +227,7 @@ describe('create-intent validation branches', () => {
     expect(first.body.paymentIntentId).not.toBe(second.body.paymentIntentId);
   });
 
+
   test.each([
     [{ items: [] }, 'No items provided'],
     [{ items: [null] }, 'Each item must be an object with a valid quantity'],
@@ -436,6 +437,22 @@ describe('confirm-batch branches', () => {
     buyer = await makeUser('Cov Batch Buyer', `covbb-${Date.now()}@t.test`);
     seller = await makeUser('Cov Batch Seller', `covbs-${Date.now()}@t.test`);
     buyer2 = await makeUser('Cov Batch Rival', `covbr-${Date.now()}@t.test`);
+  });
+
+  test('legacy street-only body address is normalized to street1', async () => {
+    const listing = await makeListing(seller.user);
+    const { piId } = await authorizedIntent(buyer, listing);
+    const res = await request(app).post('/api/payments/confirm-batch')
+      .set('Authorization', `Bearer ${buyer.token}`)
+      .send({
+        paymentIntentId: piId,
+        items: [{ listingId: listing._id.toString(), quantity: 1 }],
+        shippingAddress: { street: '7 Legacy Rd', city: 'Austin', state: 'TX', postalCode: '78702', country: 'US' },
+      });
+    expect(res.status).toBe(201);
+    const txn = res.body.transactions[0];
+    expect(txn.shippingAddress.street1).toBe('7 Legacy Rd');
+    expect(txn.shippingAddress.fullName).toBe(buyer.user.name);
   });
 
   test('missing payload elements', async () => {

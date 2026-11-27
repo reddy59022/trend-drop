@@ -51,7 +51,7 @@ test.describe('31 · Seller cashout full (dashboard amounts + cashout scenarios)
       body: { paymentIntentId: pi, items: [{ listingId }], shippingAddress: SHIPPING },
     });
     expect([200, 201]).toContain(conf.status);
-    const txn = conf.data.transaction || conf.data;
+    const txn = (conf.data.transactions && conf.data.transactions[0]) || conf.data.transaction || conf.data;
     saleTxnId = String(txn._id || txn.id);
     const orderId = String((conf.data.orders && conf.data.orders[0] && conf.data.orders[0]._id) || saleTxnId);
 

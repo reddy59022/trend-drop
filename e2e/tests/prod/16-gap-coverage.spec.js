@@ -81,7 +81,7 @@ test.describe('16 · BE↔FE gap coverage (production)', () => {
     if (ar.status === 502) return; // Infrastructure issue, skip rest
     const auctionId = ar.data.auction._id;
     // ?mine=true (getMyAuctions helper)
-    const mine = await api.req('get', '/api/auctions?mine=true', { token: alexToken });
+    const mine = await api.req('get', '/api/auctions?mine=true&status=active&limit=50', { token: alexToken });
     expect(mine.status, JSON.stringify(mine.data)).toBe(200);
     expect(mine.data.auctions.some(a => String(a._id) === String(auctionId)), 'mine contains auction').toBe(true);
     // close (endAuction helper)

@@ -419,7 +419,7 @@ router.post('/create-intent', auth, async (req, res) => {
       // intent for the same idempotency key for 24 hours. Without a per-attempt
       // nonce, retrying the same cart returned the canceled intent and blocked
       // the buyer until the key expired.
-      attemptNonce: req.get('Idempotency-Key') || crypto.randomUUID(),
+      attemptNonce: crypto.randomUUID(),
     };
 
     const paymentIntent = await authorizePaymentIntent(

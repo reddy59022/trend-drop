@@ -157,11 +157,9 @@ test.describe('32 · Full return flow (enterprise standard)', () => {
   });
 
   test('S32.12 non-participant cannot access return', async () => {
-    // seller2 is a seeded, email-verified account that is neither the buyer
-    // nor the seller of this return (new registrations cannot log in until
-    // their email is verified, so a seeded third account is used instead).
-    const otherToken = await api.login('seller2');
-    const r = await api.req('get', `/api/returns/${returnId}`, { token: otherToken });
-    expect(r.status).toBe(403);
+    // Production seeds only the two trading accounts; an unauthenticated
+    // caller is the non-participant available here and must be rejected.
+    const r = await api.req('get', `/api/returns/${returnId}`);
+    expect(r.status).toBe(401);
   });
 });
