@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const NotificationAuditState = require('../models/NotificationAuditState');
 const {
   planQaCommerce,
   buildNotificationRemovalFilter,
@@ -22,6 +23,7 @@ describe('QA notification integrity (database)', () => {
   afterEach(async () => {
     await User.deleteMany({});
     await Transaction.deleteMany({});
+    await NotificationAuditState.deleteMany({});
   });
 
   afterAll(async () => {
