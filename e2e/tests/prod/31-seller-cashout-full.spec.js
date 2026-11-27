@@ -103,10 +103,12 @@ test.describe('31 · Seller cashout full (dashboard amounts + cashout scenarios)
     // The cashout endpoint spends user.balance.available (the real spendable pool).
     const available = user.balance?.available ?? 0;
     expect(available).toBeGreaterThan(0);
+    // The ledger can carry sub-cent float noise; the API pays whole cents.
+    const amount = Math.floor(available * 100) / 100;
 
     const r = await api.req('post', '/api/payments/payout', {
       token: sellerToken,
-      body: { amount: available },
+      body: { amount },
     });
     expect(r.status, JSON.stringify(r.data)).toBe(200);
 
