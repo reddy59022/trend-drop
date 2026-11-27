@@ -476,9 +476,14 @@ async function settleDeliveredReturn(txn, returnRequest, now) {
         recordProviderSettlement(returnRequest, 'authorization_released', new Date(now));
         await returnRequest.save();
       } else if (intent.status === 'succeeded' && (responsibility !== 'buyer' || refundAmount > 0)) {
+        // One intent can fund several transactions (batch checkout). Omitting
+        // the amount refunds the WHOLE intent — paying the buyer back for
+        // items that were never returned, whose sellers stay credited and
+        // whose inventory stays sold. Refund only this transaction's amount;
+        // a legacy row without one keeps the full-refund fallback.
         const refund = await issueRefund(
           paymentIntentId,
-          responsibility === 'buyer' ? refundAmount : undefined,
+          refundAmount > 0 ? refundAmount : undefined,
         );
         applyProviderRefundResult(returnRequest, refund, paymentIntentId);
         await returnRequest.save();

@@ -521,7 +521,14 @@ router.put('/:id/receive', auth, async (req, res) => {
         const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
         const pi = await retrievePaymentIntent(paymentIntentId);
         if (pi.status === 'succeeded' && (responsibility !== 'buyer' || buyerRefund > 0)) {
-          const refund = await issueRefund(paymentIntentId, responsibility === 'buyer' ? buyerRefund : undefined);
+          // ONE INTENT CAN FUND SEVERAL TRANSACTIONS (batch checkout). Omitting
+          // the amount tells Stripe to refund the WHOLE intent, so returning a
+          // single item refunded every other item in that cart while only the
+          // returned item was unwound locally — the buyer kept the rest for
+          // free and those sellers stayed credited. Refund this transaction's
+          // own amount; only a legacy row with no recorded amount falls back to
+          // a full-intent refund.
+          const refund = await issueRefund(paymentIntentId, buyerRefund > 0 ? buyerRefund : undefined);
           // Stripe can accept the call and still reject the refund. Only a
           // provider-accepted result may settle the return.
           applyProviderRefundResult(returnRequest, refund, paymentIntentId);

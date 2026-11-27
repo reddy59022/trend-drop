@@ -342,6 +342,79 @@ describe('Returns & Refund Management', () => {
     expect(done.providerRefundedAt).toBeTruthy();
   });
 
+  test('RET.14 - a return refunds only its own transaction, never the whole batch intent', async () => {
+    payments.issueRefund.mockClear();
+    // A batch checkout funds every line from ONE intent. Refunding "the intent"
+    // for a single returned item pays the buyer back for items they keep, and
+    // leaves those transactions settled and their sellers credited.
+    const paymentIntentId = `pi_batch_refund_${Date.now()}`;
+    global.__mockPaymentIntents = global.__mockPaymentIntents || {};
+    global.__mockPaymentIntents[paymentIntentId] = {
+      id: paymentIntentId, status: 'succeeded', amount: 11300,
+      metadata: { buyerId: String(buyerId) },
+    };
+    const breakdown = {
+      subtotal: 50, shippingCost: 0, buyerProtectionFee: 2.5, buyerProtectionPercent: 5,
+      totalPaid: 56.5, platformFee: 4, platformFeePercent: 10, sellerEarnings: 44,
+      paymentIntentId,
+    };
+    const returnedListing = await Listing.create({
+      seller: sellerId, title: 'Batch return item A', description: 'test', price: 50,
+      category: 'Women', condition: 'New with tags', images: ['img1.jpg'],
+      available: false, sold: true, status: 'active', quantity: 0, quantitySold: 1,
+    });
+    const keptListing = await Listing.create({
+      seller: sellerId, title: 'Batch return item B', description: 'test', price: 50,
+      category: 'Women', condition: 'New with tags', images: ['img1.jpg'],
+      available: false, sold: true, status: 'active', quantity: 0, quantitySold: 1,
+    });
+    const returnedTxn = await Transaction.create({
+      buyer: buyerId, seller: sellerId, listing: returnedListing._id, itemPrice: 50,
+      currency: 'USD', quantity: 1, status: 'completed',
+      paymentBreakdown: breakdown,
+      payout: { status: 'pending', transactionId: paymentIntentId },
+      shipping: { trackingNumber: 'TRK-RET-14' },
+    });
+    const keptTxn = await Transaction.create({
+      buyer: buyerId, seller: sellerId, listing: keptListing._id, itemPrice: 50,
+      currency: 'USD', quantity: 1, status: 'completed',
+      paymentBreakdown: breakdown,
+      payout: { status: 'pending', transactionId: paymentIntentId },
+    });
+
+    const created = await request(app)
+      .post('/api/returns')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ transactionId: returnedTxn._id, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
+    expect(created.status).toBe(201);
+    await request(app)
+      .put(`/api/returns/${created.body._id}/approve`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    await request(app)
+      .put(`/api/returns/${created.body._id}/ship`)
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ trackingNumber: 'RET-RET-14' });
+
+    payments.issueRefund.mockResolvedValueOnce({ id: 're_batch_ok', status: 'succeeded', amount: 5650 });
+    const settled = await request(app)
+      .put(`/api/returns/${created.body._id}/receive`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    if (settled.status !== 200) throw new Error(`receive failed: ${JSON.stringify(settled.body)}`);
+    expect(settled.status).toBe(200);
+
+    // The refund must be THIS line's amount ($56.50), never undefined (= full $113 intent).
+    expect(payments.issueRefund).toHaveBeenCalledWith(paymentIntentId, 56.5);
+    const done = await Return.findById(created.body._id);
+    expect(done.refundAmount).toBe(56.5);
+    expect(done.providerRefundAmount).toBe(5650);
+
+    // The item the buyer kept stays sold and settled.
+    const kept = await Transaction.findById(keptTxn._id);
+    expect(kept.status).toBe('completed');
+    const keptItem = await Listing.findById(keptListing._id);
+    expect(keptItem.available).toBe(false);
+  });
+
   test('RET.11 - Seller can deny a return request', async () => {
     const created = await request(app)
       .post('/api/returns')

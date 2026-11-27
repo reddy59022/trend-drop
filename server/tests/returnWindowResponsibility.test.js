@@ -170,10 +170,12 @@ describe('RW — reason-based shipping responsibility & refund amount', () => {
     const rec = await request(app).put(`/api/returns/${returnId}/receive`).set('Authorization', 'Bearer ' + seller.token).send({});
     expect(rec.status).toBe(200);
 
-    // Full refund: no partial amount passed to the provider.
+    // Full refund of THIS transaction's totalPaid — passed explicitly so a
+    // batch intent (one intent funding several items) cannot refund the
+    // buyer for items they kept.
     const refundRecord = global.__mockRefunds && global.__mockRefunds[pi];
     expect(refundRecord).toBeDefined();
-    expect(refundRecord.amount).toBeUndefined();
+    expect(refundRecord.amount).toBe(Math.round(txn.paymentBreakdown.totalPaid * 100));
 
     const Return = require('../models/Return');
     const doc = await Return.findById(returnId).lean();

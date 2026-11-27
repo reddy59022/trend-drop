@@ -9,7 +9,7 @@ const created = [];
 let seller;
 let buyer;
 
-async function makeReturn({ responsibility = 'seller', ageDays = 7, provider = true } = {}) {
+async function makeReturn({ responsibility = 'seller', ageDays = 7, provider = true, intentAmountCents = 11000 } = {}) {
   const listing = await Listing.create({
     seller: seller._id, title: `Return tracking ${Date.now()}`, description: 'test',
     price: 100, category: 'Women', condition: 'Good', quantity: 0, quantitySold: 1,
@@ -19,7 +19,7 @@ async function makeReturn({ responsibility = 'seller', ageDays = 7, provider = t
   const paymentIntentId = `pi_return_${Date.now()}_${Math.random()}`;
   if (provider) {
     global.__mockPaymentIntents[paymentIntentId] = {
-      id: paymentIntentId, status: 'succeeded', amount: 11000,
+      id: paymentIntentId, status: 'succeeded', amount: intentAmountCents,
       metadata: { buyerId: String(buyer._id), itemIds: String(listing._id) },
     };
   }
@@ -76,7 +76,10 @@ afterAll(async () => {
 
 describe('automated return tracking and settlement', () => {
   test('RTC.1 progresses shipped returns and settles on carrier delivery', async () => {
-    const { txn, returnRequest, listing, paymentIntentId } = await makeReturn({ ageDays: 7 });
+    // A batch checkout funds two items ($110 each) from ONE intent ($220).
+    // Settling this return must refund only THIS transaction's $110 — a
+    // full-intent refund would pay the buyer back for the item they kept.
+    const { txn, returnRequest, listing, paymentIntentId } = await makeReturn({ ageDays: 7, intentAmountCents: 22000 });
     const result = await autoProcessReturnTracking();
     const freshTxn = await Transaction.findById(txn._id);
     const freshReturn = await Return.findById(returnRequest._id);
@@ -90,7 +93,10 @@ describe('automated return tracking and settlement', () => {
       'picked_up', 'in_transit', 'in_transit_local', 'out_for_delivery', 'delivered',
     ]);
     expect(freshTxn.status).toBe('refunded');
-    expect(global.__mockRefunds[paymentIntentId].amount).toBeUndefined();
+    expect(global.__mockRefunds[paymentIntentId].amount).toBe(11000);
+    expect(freshReturn.providerRefunded).toBe(true);
+    expect(freshReturn.providerRefundStatus).toBe('succeeded');
+    expect(freshReturn.providerRefundAmount).toBe(11000);
     expect(freshListing.quantity).toBe(1);
     expect(freshListing.quantitySold).toBe(0);
     expect(freshSeller.balance.pending).toBe(0);
