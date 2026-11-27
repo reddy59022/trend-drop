@@ -69,6 +69,16 @@ services:
         sync: false
       - key: ADMIN_EMAILS
         sync: false
+      # Distinct state key per environment; prevents staging alerts from
+      # suppressing production alerts when both use one MongoDB cluster.
+      - key: ORPHAN_ALERT_STATE_KEY
+        value: "trend-drop-production"
+      - key: ORPHAN_ALERT_CRITICAL_THRESHOLD
+        value: "10"
+      # Secondary paging path (Slack incoming webhook or on-call automation).
+      # Optional but recommended: email failures must not silence integrity alerts.
+      - key: ALERT_WEBHOOK_URL
+        sync: false
       - key: APPLE_CLIENT_ID
         sync: false
       - key: FB_APP_ID

@@ -120,6 +120,25 @@ describe('Transaction notification cleanup (database)', () => {
     expect(after.notifications.map((n) => n.message)).toEqual(['must remain']);
   });
 
+  test('refuses to delete a transaction when a notification reference remains', async () => {
+    const target = oid();
+    await Transaction.collection.insertOne({ _id: target });
+    await insertUser([
+      { _id: oid(), type: 'sale', transaction: target, message: 'must not become orphaned' },
+    ]);
+
+    const updateSpy = jest.spyOn(User, 'updateMany')
+      .mockResolvedValueOnce({ modifiedCount: 0 });
+    try {
+      await expect(deleteTransactionsWithNotifications([target]))
+        .rejects.toThrow('Notification cleanup incomplete');
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    expect(await Transaction.collection.findOne({ _id: target })).not.toBeNull();
+  });
+
   test('purchase rollback removes notifications before deleting its transactions', async () => {
     const target = oid();
     await Transaction.collection.insertOne({ _id: target });

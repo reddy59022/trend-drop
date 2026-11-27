@@ -49,6 +49,19 @@ const deleteTransactionsWithNotifications = async (transactionIds) => {
   if (ids.length === 0) return { notificationsModified: 0, deleted: 0 };
 
   const notificationsModified = await removeNotificationsForTransactions(ids);
+
+  // Verify the exact references are gone before deleting the rows. A partial
+  // $pull (or a concurrent notification write) must abort the deletion rather
+  // than create the orphan this helper exists to prevent.
+  const residualReferences = await User.countDocuments({
+    'notifications.transaction': { $in: ids },
+  });
+  if (residualReferences > 0) {
+    throw new Error(
+      `Notification cleanup incomplete for ${residualReferences} user document(s); refusing to delete transactions`,
+    );
+  }
+
   const result = await Transaction.deleteMany({ _id: { $in: ids } });
   return {
     notificationsModified,

@@ -30,16 +30,23 @@ const { refundTransactionLabel } = require('../services/shippingPurchase');
 const { applyProviderRefundResult, recordProviderSettlement } = require('../utils/providerRefund');
 const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
 const { auditOrphanNotifications } = require('../utils/notificationAudit');
-const { increment } = require('../utils/metrics');
-const { sendOperationalAlert } = require('./email');
+const { increment, setGauge } = require('../utils/metrics');
+const { sendOperationalAlert, getOperationalAlertRecipientKey } = require('./email');
 const {
   fingerprintMissingTransactionIds,
+  fingerprintAuditFailure,
+  REMINDER_AFTER_MS,
   getOrphanAlertState,
   recordAuditRun,
   recordOrphanAlert,
   recordOrphanRecovery,
   isDuplicateOrphanAlert,
   needsRecoveryNotice,
+  claimOrphanAlert,
+  claimOrphanRecovery,
+  releaseOrphanAlertClaim,
+  isDuplicateAuditFailure,
+  recordAuditFailure,
 } = require('../utils/orphanNotificationAlerts');
 
 // ──────────────────────────────────────────────
@@ -1127,9 +1134,34 @@ const persistOrphanAlertState = async (operation, label) => {
   }
 };
 
+const operationalRecipientKey = () => {
+  try {
+    return getOperationalAlertRecipientKey();
+  } catch (error) {
+    console.error('[CRON] Could not resolve operational alert recipients:', error.message);
+    return null;
+  }
+};
+
+const setOrphanAuditGauges = (orphanCount, { success = false } = {}) => {
+  setGauge('trenddrop_orphan_notifications', orphanCount, { source: 'cron' });
+  setGauge('trenddrop_orphan_notification_audit_last_run_timestamp', Math.floor(Date.now() / 1000), { source: 'cron' });
+  if (success) {
+    setGauge('trenddrop_orphan_notification_audit_last_success_timestamp', Math.floor(Date.now() / 1000), { source: 'cron' });
+  }
+};
+
+const markOrphanAlertDelivered = (count) => {
+  increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'sent' });
+  setGauge('trenddrop_orphan_notification_alert_last_sent_timestamp', Math.floor(Date.now() / 1000), { source: 'cron' });
+  setOrphanAuditGauges(count, { success: true });
+};
+
 async function auditNotificationIntegrity({ audit = auditOrphanNotifications } = {}) {
   try {
     const report = await audit();
+    setOrphanAuditGauges(report.total, { success: true });
+
     if (report.total > 0) {
       increment('trenddrop_orphan_notifications_total', { source: 'cron', result: 'found' }, report.total);
       console.warn(
@@ -1138,10 +1170,16 @@ async function auditNotificationIntegrity({ audit = auditOrphanNotifications } =
       );
 
       const fingerprint = fingerprintMissingTransactionIds(report.missingTransactionIds);
+      const recipientKey = operationalRecipientKey();
       const state = await readOrphanAlertState();
-      if (isDuplicateOrphanAlert(state, fingerprint)) {
+      const now = new Date();
+      if (isDuplicateOrphanAlert(state, fingerprint, {
+        orphanCount: report.total,
+        recipientKey,
+        now,
+      })) {
         increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'suppressed' });
-        console.log('[CRON] Orphan notification alert suppressed: missing transaction references unchanged.');
+        console.log('[CRON] Orphan notification alert suppressed: finding is unchanged and within the reminder window.');
         await persistOrphanAlertState(
           () => recordAuditRun({
             orphanCount: report.total,
@@ -1152,24 +1190,90 @@ async function auditNotificationIntegrity({ audit = auditOrphanNotifications } =
         return report;
       }
 
+      // Claim delivery before sending. Two overlapping cron workers can both
+      // observe the same finding; only one may send the alert.
+      let claim;
+      try {
+        claim = await claimOrphanAlert({
+          fingerprint,
+          orphanCount: report.total,
+          missingTransactionIds: report.missingTransactionIds,
+          recipientKey,
+          now,
+        });
+      } catch (claimError) {
+        increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'failed' });
+        console.error('[CRON] Orphan notification alert claim failed:', claimError.message);
+        await persistOrphanAlertState(
+          () => recordAuditRun({
+            orphanCount: report.total,
+            missingTransactionIds: report.missingTransactionIds,
+          }),
+          'claim failure',
+        );
+        return report;
+      }
+      if (!claim.claimed) {
+        increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'suppressed' });
+        console.log('[CRON] Orphan notification alert suppressed: another worker owns delivery or the finding is unchanged.');
+        // If this is a materially different finding, do not overwrite the
+        // state with the new count while another worker owns the old alert.
+        // Leaving the state intact lets the next run alert after the lease.
+        const materialDifference = state?.fingerprint !== fingerprint
+          || report.total > Number(state?.orphanCount || 0);
+        if (!materialDifference) {
+          await persistOrphanAlertState(
+            () => recordAuditRun({
+              orphanCount: report.total,
+              missingTransactionIds: report.missingTransactionIds,
+            }),
+            'claimed run',
+          );
+        }
+        return report;
+      }
+
       const missingIds = report.missingTransactionIds.slice(0, 25).join(', ') || 'none';
       const affectedUsers = [...new Set(report.notifications.map((row) => row.userId))]
         .slice(0, 25)
         .join(', ') || 'none';
+      const byType = Object.entries(report.byType || {})
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([type, count]) => `${type}=${count}`)
+        .join(', ') || 'none';
+      const sameFinding = Boolean(state?.fingerprint === fingerprint && state?.lastAlertedAt);
+      const materialChange = sameFinding && report.total > Number(state?.orphanCount || 0);
+      const reminder = sameFinding
+        && !materialChange
+        && (Date.now() - new Date(state.lastAlertedAt).getTime()) >= REMINDER_AFTER_MS;
+      const criticalThreshold = Math.max(1, Number(process.env.ORPHAN_ALERT_CRITICAL_THRESHOLD) || 10);
+      const severity = report.total >= criticalThreshold ? 'CRITICAL' : 'ALERT';
       const text = [
-        `The read-only orphan-notification audit found ${report.total} notification(s) referencing ${report.missingTransactionIds.length} missing transaction(s).`,
+        `${reminder ? 'Reminder: ' : ''}The read-only orphan-notification audit found ${report.total} notification(s) referencing ${report.missingTransactionIds.length} missing transaction(s).`,
+        `Severity: ${severity} (critical threshold: ${criticalThreshold})`,
+        `Notification types: ${byType}`,
         `Affected users: ${report.affectedUsers} (${affectedUsers})`,
         `Missing transaction ids: ${missingIds}`,
         'Run: node scripts/audit-orphan-notifications.js --json',
+        'Then remove the dangling notifications via the QA cleanup path or notify support; do not delete transactions to silence the alert.',
       ].join('\n');
       try {
         const alert = await sendOperationalAlert({
-          subject: `[TrendDrop][ALERT] ${report.total} orphan notification(s) detected`,
+          subject: `[TrendDrop][${severity}]${reminder ? ' [REMINDER]' : ''} ${report.total} orphan notification(s) detected`,
           text,
         });
         if (alert?.skipped) {
           console.warn('[CRON] Orphan audit alert skipped: no alert email configuration.');
           increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'skipped' });
+          await persistOrphanAlertState(
+            () => releaseOrphanAlertClaim({
+              claimToken: claim.token,
+              fingerprint,
+              orphanCount: report.total,
+              missingTransactionIds: report.missingTransactionIds,
+            }),
+            'skipped alert claim release',
+          );
           await persistOrphanAlertState(
             () => recordAuditRun({
               orphanCount: report.total,
@@ -1178,12 +1282,14 @@ async function auditNotificationIntegrity({ audit = auditOrphanNotifications } =
             'skipped alert',
           );
         } else {
-          increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'sent' });
+          markOrphanAlertDelivered(report.total);
           await persistOrphanAlertState(
             () => recordOrphanAlert({
               fingerprint,
               orphanCount: report.total,
               missingTransactionIds: report.missingTransactionIds,
+              recipientKey,
+              claimToken: claim.token,
             }),
             'orphan alert',
           );
@@ -1191,6 +1297,15 @@ async function auditNotificationIntegrity({ audit = auditOrphanNotifications } =
       } catch (alertError) {
         increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'failed' });
         console.error('[CRON] Orphan audit alert delivery failed:', alertError.message);
+        await persistOrphanAlertState(
+          () => releaseOrphanAlertClaim({
+            claimToken: claim.token,
+            fingerprint,
+            orphanCount: report.total,
+            missingTransactionIds: report.missingTransactionIds,
+          }),
+          'failed alert claim release',
+        );
         await persistOrphanAlertState(
           () => recordAuditRun({
             orphanCount: report.total,
@@ -1203,6 +1318,20 @@ async function auditNotificationIntegrity({ audit = auditOrphanNotifications } =
       increment('trenddrop_orphan_notification_audits_total', { source: 'cron', result: 'clean' });
       const state = await readOrphanAlertState();
       if (needsRecoveryNotice(state)) {
+        let recoveryClaim;
+        try {
+          recoveryClaim = await claimOrphanRecovery();
+        } catch (claimError) {
+          increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'failed' });
+          console.error('[CRON] Orphan recovery alert claim failed:', claimError.message);
+          return report;
+        }
+        if (!recoveryClaim.claimed) {
+          increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'suppressed' });
+          console.log('[CRON] Orphan recovery alert suppressed: another worker owns delivery.');
+          return report;
+        }
+
         const previousIds = (state.missingTransactionIds || []).slice(0, 25).join(', ') || 'none recorded';
         const previousAt = state.lastAlertedAt
           ? new Date(state.lastAlertedAt).toISOString()
@@ -1222,16 +1351,29 @@ async function auditNotificationIntegrity({ audit = auditOrphanNotifications } =
             console.warn('[CRON] Orphan recovery alert skipped: no alert email configuration.');
             increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'skipped' });
             await persistOrphanAlertState(
+              () => releaseOrphanAlertClaim({ claimToken: recoveryClaim.token }),
+              'skipped recovery claim release',
+            );
+            await persistOrphanAlertState(
               () => recordAuditRun({ orphanCount: 0, missingTransactionIds: [] }),
               'skipped recovery',
             );
           } else {
             increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'recovery' });
-            await persistOrphanAlertState(recordOrphanRecovery, 'recovery');
+            setGauge('trenddrop_orphan_notification_alert_last_sent_timestamp', Math.floor(Date.now() / 1000), { source: 'cron' });
+            setOrphanAuditGauges(0, { success: true });
+            await persistOrphanAlertState(
+              () => recordOrphanRecovery({ claimToken: recoveryClaim.token }),
+              'recovery',
+            );
           }
         } catch (alertError) {
           increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'failed' });
           console.error('[CRON] Orphan recovery alert delivery failed:', alertError.message);
+          await persistOrphanAlertState(
+            () => releaseOrphanAlertClaim({ claimToken: recoveryClaim.token }),
+            'failed recovery claim release',
+          );
         }
       } else {
         await persistOrphanAlertState(
@@ -1243,7 +1385,19 @@ async function auditNotificationIntegrity({ audit = auditOrphanNotifications } =
     return report;
   } catch (error) {
     increment('trenddrop_orphan_notification_audits_total', { source: 'cron', result: 'failed' });
+    setGauge('trenddrop_orphan_notification_audit_last_run_timestamp', Math.floor(Date.now() / 1000), { source: 'cron' });
     console.error('[CRON] Orphan notification audit failed:', error.message);
+
+    // A database outage can persist for hours. Do not page every daily run with
+    // the identical failure; re-alert after the failure reminder window or when
+    // the failure changes. If state is unreadable, fail open and alert.
+    const failureFingerprint = fingerprintAuditFailure(error);
+    const state = await readOrphanAlertState();
+    if (isDuplicateAuditFailure(state, failureFingerprint)) {
+      increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'suppressed' });
+      console.log('[CRON] Orphan audit failure alert suppressed: identical failure is within the reminder window.');
+      return null;
+    }
 
     const text = [
       `The read-only orphan-notification audit failed at ${new Date().toISOString()}.`,
@@ -1258,8 +1412,17 @@ async function auditNotificationIntegrity({ audit = auditOrphanNotifications } =
       });
       if (alert?.skipped) {
         console.warn('[CRON] Orphan audit failure alert skipped: no alert email configuration.');
+        increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'skipped' });
+      } else {
+        increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'sent' });
+        setGauge('trenddrop_orphan_notification_alert_last_sent_timestamp', Math.floor(Date.now() / 1000), { source: 'cron' });
+        await persistOrphanAlertState(
+          () => recordAuditFailure({ failureFingerprint, error }),
+          'audit failure alert',
+        );
       }
     } catch (alertError) {
+      increment('trenddrop_orphan_notification_alerts_total', { source: 'cron', result: 'failed' });
       console.error('[CRON] Orphan audit failure alert delivery failed:', alertError.message);
     }
     return null;

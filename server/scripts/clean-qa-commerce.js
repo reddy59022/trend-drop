@@ -30,6 +30,7 @@ const Payout = require('../models/Payout');
 const User = require('../models/User');
 const { QA_TITLE_PATTERN, buildNotificationRemovalFilter, planQaCommerce } = require('../utils/qaCommerceCleanup');
 const { applyBalanceAdjustment } = require('../utils/balanceAdjustment');
+const { auditOrphanNotifications } = require('../utils/notificationAudit');
 
 const ids = (rows) => rows.map((row) => row._id);
 
@@ -194,6 +195,15 @@ const main = async ({
   console.log('APPLY — deleted:');
   console.log(`  notifications=${deleted.notifications}${removedBreakdown ? ` (${removedBreakdown})` : ''} orders=${deleted.orders} returns=${deleted.returns} payouts=${deleted.payouts} transactions=${deleted.transactions}`);
   console.log('Listings were left untouched (retire them separately if needed).');
+
+  // Cleanup mutates the exact relations the orphan audit checks. Re-run the
+  // read-only audit immediately so an incomplete deletion is visible to the
+  // operator instead of waiting for the next daily cron window.
+  const residual = await auditOrphanNotifications();
+  console.log(`post-cleanup orphan audit: ${residual.total} dangling notification(s) across ${residual.affectedUsers} user(s)`);
+  if (residual.total > 0) {
+    console.warn('Post-cleanup audit found residual orphans; run notifications:audit-orphans for details before declaring cleanup complete.');
+  }
 
   await close();
 };

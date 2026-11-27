@@ -124,6 +124,7 @@ describe('QA commerce cleanup script', () => {
     const applyOutput = await captureOutput(true);
     expect(applyOutput).toContain('APPLY — deleted:');
     expect(applyOutput).toContain('notifications=4 (dispute=1 purchase=1 refund=1 sale=1)');
+    expect(applyOutput).toContain('post-cleanup orphan audit: 0 dangling notification(s)');
 
     expect(await Transaction.collection.findOne({ _id: qaTransaction })).toBeNull();
     expect(await Transaction.collection.findOne({ _id: realTransaction })).not.toBeNull();

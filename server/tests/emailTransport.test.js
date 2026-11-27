@@ -26,6 +26,7 @@ describe('Email transport uses Brevo REST (no request-based SDK)', () => {
     delete process.env.E2E_IN_MEMORY;
     delete process.env.ALERT_EMAILS;
     delete process.env.ADMIN_EMAILS;
+    delete process.env.ALERT_WEBHOOK_URL;
     fetchMock = jest.fn(async () => ({
       ok: true,
       status: 201,
@@ -146,9 +147,11 @@ describe('Email transport uses Brevo REST (no request-based SDK)', () => {
     expect(body.to).toEqual([{ email: 'admin@example.com' }]);
   });
 
-  it('TR.9 operational alert propagates provider failure so cron can log it', async () => {
+  it('TR.9 operational alert retries transient failures and then propagates so cron can log it', async () => {
     process.env.ALERT_EMAILS = 'ops@example.com';
-    fetchMock.mockImplementationOnce(async () => ({
+    process.env.BREVO_MAX_RETRIES = '2';
+    process.env.BREVO_RETRY_BASE_MS = '1';
+    fetchMock.mockImplementation(async () => ({
       ok: false,
       status: 503,
       json: async () => ({ message: 'unavailable' }),
@@ -156,6 +159,9 @@ describe('Email transport uses Brevo REST (no request-based SDK)', () => {
 
     await expect(email.sendOperationalAlert({ subject: 'Alert', text: 'body' }))
       .rejects.toThrow('Brevo API error 503');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    delete process.env.BREVO_MAX_RETRIES;
+    delete process.env.BREVO_RETRY_BASE_MS;
   });
 
   it('TR.10 operational alert skips without a key and makes no network call', async () => {
@@ -166,5 +172,36 @@ describe('Email transport uses Brevo REST (no request-based SDK)', () => {
     await expect(email.sendOperationalAlert({ subject: 'Alert', text: 'body' }))
       .resolves.toEqual({ emailSent: false, skipped: true });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('TR.11 falls back to the configured paging webhook when email is unavailable', async () => {
+    delete process.env.BREVO_API_KEY;
+    process.env.ALERT_WEBHOOK_URL = 'https://hooks.example.com/trenddrop';
+    jest.resetModules();
+    email = require('../config/email');
+
+    const result = await email.sendOperationalAlert({ subject: 'Alert', text: 'body' });
+    expect(result).toEqual({ emailSent: false, webhookSent: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://hooks.example.com/trenddrop');
+    expect(JSON.parse(opts.body)).toMatchObject({ source: 'trenddrop', subject: 'Alert' });
+    delete process.env.ALERT_WEBHOOK_URL;
+  });
+
+  it('TR.12 falls back to the webhook after the email provider fails', async () => {
+    process.env.ALERT_EMAILS = 'ops@example.com';
+    process.env.ALERT_WEBHOOK_URL = 'https://hooks.example.com/trenddrop';
+    jest.resetModules();
+    email = require('../config/email');
+    fetchMock.mockImplementation(async (url) => {
+      if (String(url).includes('hooks.example.com')) return { ok: true, status: 204 };
+      return { ok: false, status: 503, json: async () => ({ message: 'unavailable' }) };
+    });
+
+    const result = await email.sendOperationalAlert({ subject: 'Alert', text: 'body' });
+    expect(result).toMatchObject({ emailSent: false, webhookSent: true });
+    expect(fetchMock).toHaveBeenCalledTimes(4); // 3 email attempts + 1 webhook
+    delete process.env.ALERT_WEBHOOK_URL;
   });
 });

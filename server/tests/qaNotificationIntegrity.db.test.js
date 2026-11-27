@@ -146,6 +146,8 @@ describe('QA notification integrity (database)', () => {
     expect(report).not.toBeNull();
     expect(report.total).toBe(0);
     expect(render()).toMatch(/trenddrop_orphan_notification_audits_total\{[^}]*result="clean"[^}]*source="cron"[^}]*\} 1/);
+    expect(render()).toContain('trenddrop_orphan_notifications{source="cron"} 0');
+    expect(render()).toMatch(/trenddrop_orphan_notification_audit_last_success_timestamp\{source="cron"\} \d+/);
     expect(sendOperationalAlert).not.toHaveBeenCalled();
   });
 

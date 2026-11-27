@@ -324,6 +324,7 @@ jest.mock('./config/email', () => ({
   sendVerificationEmail: jest.fn(async () => true),
   sendPasswordResetEmail: jest.fn(async () => true),
   sendOperationalAlert: jest.fn(async () => ({ emailSent: true })),
+  getOperationalAlertRecipientKey: jest.fn(() => 'test-recipient-key'),
 }));
 
 // 2b. Google OAuth — google-auth-library's verifyIdToken() fetches Google's

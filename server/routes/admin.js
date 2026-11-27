@@ -18,6 +18,7 @@ const { findPaymentIntent, retrievePaymentIntent, issueRefund, releaseAuthorizat
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
 const { reconcileSettlements } = require('../utils/settlementAudit');
 const { disconnectUser } = require('../websocket');
+const { getStateKey, getOrphanAlertState } = require('../utils/orphanNotificationAlerts');
 
 // All admin routes require auth + adminAuth
 router.use(auth, adminAuth);
@@ -128,6 +129,19 @@ router.get('/dashboard', async (req, res) => {
   } catch (error) {
     console.error('Admin dashboard error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/admin/orphan-notifications/state - read-only alert state visibility
+// Does not run the audit, send email, or mutate any data. Use the CLI
+// `notifications:state` when the API is unavailable.
+router.get('/orphan-notifications/state', async (req, res) => {
+  try {
+    const state = await getOrphanAlertState();
+    res.json({ readOnly: true, key: getStateKey(), state: state || null });
+  } catch (error) {
+    console.error('Admin orphan notification state error:', error.message);
+    res.status(500).json({ message: 'Failed to read orphan notification alert state' });
   }
 });
 

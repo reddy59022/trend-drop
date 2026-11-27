@@ -4,8 +4,23 @@
 // the deprecated @sendinblue/client SDK, whose request@2.88.2 dependency
 // chain carried CRITICAL advisories (request SSRF, form-data boundary/CRLF)
 // plus moderate ones (qs, tough-cookie, uuid@3).
+const crypto = require('crypto');
+const { increment } = require('../utils/metrics');
+
+const retryLimit = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 2;
+  return Math.max(0, Math.min(Math.floor(parsed), 5));
+};
+
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const BREVO_SMTP_URL = 'https://api.brevo.com/v3/smtp/email';
+const BREVO_TIMEOUT_MS = Math.max(1000, Number(process.env.BREVO_TIMEOUT_MS) || 10000);
+const BREVO_MAX_RETRIES = retryLimit(process.env.BREVO_MAX_RETRIES);
+const RETRY_BASE_MS = Math.max(50, Number(process.env.BREVO_RETRY_BASE_MS) || 250);
+const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL;
+const ALERT_WEBHOOK_TIMEOUT_MS = Math.max(1000, Number(process.env.ALERT_WEBHOOK_TIMEOUT_MS) || 10000);
+const ALERT_WEBHOOK_MAX_RETRIES = retryLimit(process.env.ALERT_WEBHOOK_MAX_RETRIES);
 
 const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'reddy59021@gmail.com';
 const SENDER_NAME = 'TrendDrop';
@@ -33,25 +48,51 @@ const hasApiKey = () => {
   return false;
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // POST one transactional email to Brevo. Throws on transport or API failure;
-// callers wrap it in a fire-and-forget promise that only logs errors.
-const sendTransactionalEmail = async (payload) => {
-  const response = await fetch(BREVO_SMTP_URL, {
-    method: 'POST',
-    headers: {
-      'api-key': BREVO_API_KEY,
-      'Content-Type': 'application/json',
-      accept: 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(`Brevo API error ${response.status}: ${data.message || 'send failed'}`);
-    error.response = { body: data };
-    throw error;
+// callers either await it (operational alerts) or use the fire-and-forget
+// wrappers below. Transient failures are retried with bounded backoff, and a
+// timeout prevents a stuck provider socket from hanging a cron run forever.
+const sendTransactionalEmail = async (payload, { operation = 'transactional' } = {}) => {
+  let lastError;
+  for (let attempt = 0; attempt <= BREVO_MAX_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), BREVO_TIMEOUT_MS);
+    try {
+      const response = await fetch(BREVO_SMTP_URL, {
+        method: 'POST',
+        headers: {
+          'api-key': BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(`Brevo API error ${response.status}: ${data.message || 'send failed'}`);
+        error.response = { body: data };
+        error.retryable = response.status === 429 || response.status >= 500;
+        throw error;
+      }
+      increment('trenddrop_email_delivery_total', { operation, result: 'sent' });
+      return data;
+    } catch (error) {
+      lastError = error;
+      const retryable = error?.retryable
+        || error?.name === 'AbortError'
+        || (error instanceof TypeError && /fetch|network/i.test(error.message));
+      if (!retryable || attempt >= BREVO_MAX_RETRIES) break;
+      increment('trenddrop_email_retries_total', { operation });
+      await sleep(RETRY_BASE_MS * (2 ** attempt));
+    } finally {
+      clearTimeout(timeout);
+    }
   }
-  return data;
+  increment('trenddrop_email_delivery_total', { operation, result: 'failed' });
+  throw lastError;
 };
 
 // Send email verification. Fire-and-forget: returns immediately so
@@ -176,32 +217,107 @@ const sendPasswordResetEmail = (email, name, token) => {
  * the provider rejects the send so the caller can log the failed alert while
  * preserving the audit result.
  */
-const sendOperationalAlert = async ({ subject, text }) => {
-  if (!hasApiKey()) return { emailSent: false, skipped: true };
+const operationalAlertRecipients = () => [...new Set(
+  String(process.env.ALERT_EMAILS || process.env.ADMIN_EMAILS || SENDER_EMAIL)
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+)];
 
-  const recipients = [...new Set(
-    String(process.env.ALERT_EMAILS || process.env.ADMIN_EMAILS || SENDER_EMAIL)
-      .split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  )];
-  if (recipients.length === 0) {
-    console.warn('[email] No operational alert recipient configured; skipping alert.');
+const getOperationalAlertRecipientKey = () => crypto
+  .createHash('sha256')
+  .update(operationalAlertRecipients().join('\n'))
+  .digest('hex')
+  .slice(0, 16);
+
+// Secondary paging transport. A webhook keeps alerting alive when Brevo is
+// down or email is not configured. The payload is intentionally compatible
+// with Slack incoming webhooks and generic automation endpoints.
+const sendAlertWebhook = async ({ subject, text }) => {
+  if (!ALERT_WEBHOOK_URL) return { sent: false, skipped: true };
+  let lastError;
+  for (let attempt = 0; attempt <= ALERT_WEBHOOK_MAX_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ALERT_WEBHOOK_TIMEOUT_MS);
+    try {
+      const response = await fetch(ALERT_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'trenddrop',
+          subject,
+          text: `${subject}\n\n${text}`,
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const error = new Error(`Alert webhook error ${response.status}`);
+        error.retryable = response.status === 429 || response.status >= 500;
+        throw error;
+      }
+      increment('trenddrop_operational_alert_delivery_total', { result: 'webhook_sent' });
+      return { sent: true };
+    } catch (error) {
+      lastError = error;
+      const retryable = error?.retryable
+        || error?.name === 'AbortError'
+        || (error instanceof TypeError && /fetch|network/i.test(error.message));
+      if (!retryable || attempt >= ALERT_WEBHOOK_MAX_RETRIES) break;
+      increment('trenddrop_email_retries_total', { operation: 'alert_webhook' });
+      await sleep(RETRY_BASE_MS * (2 ** attempt));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  increment('trenddrop_operational_alert_delivery_total', { result: 'webhook_failed' });
+  console.error('[email] Alert webhook delivery failed:', lastError?.message || 'unknown error');
+  return { sent: false, error: lastError };
+};
+
+const sendOperationalAlert = async ({ subject, text }) => {
+  const safeSubject = String(subject || 'TrendDrop operational alert').slice(0, 180);
+  const recipients = operationalAlertRecipients();
+  const emailConfigured = hasApiKey() && recipients.length > 0;
+
+  if (!emailConfigured) {
+    const webhook = await sendAlertWebhook({ subject: safeSubject, text: text || safeSubject });
+    if (webhook.sent) {
+      console.log('[email] Operational alert delivered through webhook fallback:', safeSubject);
+      return { emailSent: false, webhookSent: true };
+    }
+    increment('trenddrop_operational_alert_delivery_total', { result: 'skipped' });
+    console.warn('[email] No operational alert delivery path configured; skipping alert.');
     return { emailSent: false, skipped: true };
   }
 
-  const safeSubject = String(subject || 'TrendDrop operational alert').slice(0, 180);
   const safeText = escapeHtml(text || safeSubject);
-  const data = await sendTransactionalEmail({
-    subject: safeSubject,
-    textContent: text || safeSubject,
-    htmlContent: `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#222;"><h2>${escapeHtml(safeSubject)}</h2><pre style="white-space:pre-wrap;font-family:inherit;">${safeText}</pre></div>`,
-    to: recipients.map((email) => ({ email })),
-    sender: { email: SENDER_EMAIL, name: SENDER_NAME },
-    replyTo: { email: SENDER_EMAIL, name: 'TrendDrop Operations' },
-  });
-  console.log('[email] Operational alert sent:', safeSubject);
-  return { emailSent: true, messageId: data.messageId };
+  try {
+    const data = await sendTransactionalEmail({
+      subject: safeSubject,
+      textContent: text || safeSubject,
+      htmlContent: `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#222;"><h2>${escapeHtml(safeSubject)}</h2><pre style="white-space:pre-wrap;font-family:inherit;">${safeText}</pre></div>`,
+      to: recipients.map((email) => ({ email })),
+      sender: { email: SENDER_EMAIL, name: SENDER_NAME },
+      replyTo: { email: SENDER_EMAIL, name: 'TrendDrop Operations' },
+    }, { operation: 'operational_alert' });
+    increment('trenddrop_operational_alert_delivery_total', { result: 'sent' });
+    console.log('[email] Operational alert sent:', safeSubject);
+    return { emailSent: true, messageId: data.messageId };
+  } catch (error) {
+    increment('trenddrop_operational_alert_delivery_total', { result: 'failed' });
+    const webhook = await sendAlertWebhook({ subject: safeSubject, text: text || safeSubject });
+    if (webhook.sent) {
+      console.log('[email] Operational alert delivered through webhook fallback:', safeSubject);
+      return { emailSent: false, webhookSent: true, emailError: error.message };
+    }
+    error.webhookError = webhook.error?.message || 'not configured';
+    throw error;
+  }
 };
 
-module.exports = { sendVerificationEmail, sendPasswordResetEmail, sendOperationalAlert };
+module.exports = {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendOperationalAlert,
+  getOperationalAlertRecipientKey,
+};

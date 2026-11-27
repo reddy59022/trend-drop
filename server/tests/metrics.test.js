@@ -11,6 +11,8 @@ describe('Prometheus-compatible operational metrics', () => {
     metrics.increment('trenddrop_webhook_retries_total', { event_type: 'charge.refunded' }, 2);
     metrics.increment('trenddrop_refunds_total', { source: 'payment_config', status: 'succeeded' });
     metrics.increment('trenddrop_payouts_total', { operation: 'seller_payout', status: 'failed' });
+    metrics.setGauge('trenddrop_orphan_notifications', 7, { source: 'cron' });
+    metrics.setGauge('trenddrop_orphan_notification_audit_last_success_timestamp', 1700000000, { source: 'cron' });
 
     const response = await request(app).get('/metrics');
 
@@ -22,6 +24,9 @@ describe('Prometheus-compatible operational metrics', () => {
     expect(response.text).toContain('trenddrop_webhook_retries_total{event_type="charge.refunded"} 2');
     expect(response.text).toContain('trenddrop_refunds_total{source="payment_config",status="succeeded"} 1');
     expect(response.text).toContain('trenddrop_payouts_total{operation="seller_payout",status="failed"} 1');
+    expect(response.text).toContain('# TYPE trenddrop_orphan_notifications gauge');
+    expect(response.text).toContain('trenddrop_orphan_notifications{source="cron"} 7');
+    expect(response.text).toContain('trenddrop_orphan_notification_audit_last_success_timestamp{source="cron"} 1700000000');
     expect(response.text).toMatch(/trenddrop_process_uptime_seconds\s+[0-9.]+/);
   });
 
