@@ -28,7 +28,7 @@ const Order = require('../models/Order');
 const Return = require('../models/Return');
 const Payout = require('../models/Payout');
 const User = require('../models/User');
-const { QA_TITLE_PATTERN, planQaCommerce } = require('../utils/qaCommerceCleanup');
+const { QA_TITLE_PATTERN, buildNotificationRemovalFilter, planQaCommerce } = require('../utils/qaCommerceCleanup');
 const { applyBalanceAdjustment } = require('../utils/balanceAdjustment');
 
 const ids = (rows) => rows.map((row) => row._id);
@@ -141,11 +141,10 @@ const main = async () => {
       { _id: row.userId },
       {
         $pull: {
-          notifications: {
-            _id: { $in: row.notificationIds },
-            type: { $in: ['dispute', 'sale'] },
-            transaction: { $in: ids(plan.qaTransactions) },
-          },
+          notifications: buildNotificationRemovalFilter(
+            row.notificationIds,
+            ids(plan.qaTransactions),
+          ),
         },
       },
     );

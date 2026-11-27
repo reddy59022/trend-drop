@@ -52,6 +52,13 @@ const holdsSellerCredit = (transaction) => {
 
 const NOTIFICATION_TYPES = new Set(['dispute', 'sale']);
 
+/** Filter for removing only the QA dispute/sale notifications selected above. */
+const buildNotificationRemovalFilter = (notificationIds, transactionIds) => ({
+  _id: { $in: notificationIds },
+  type: { $in: [...NOTIFICATION_TYPES] },
+  transaction: { $in: transactionIds },
+});
+
 /**
  * @param {{listings?: any[], transactions?: any[], orders?: any[], returns?: any[], payouts?: any[], users?: any[]}} data
  */
@@ -140,5 +147,6 @@ module.exports = {
   isQaCommerceListing,
   holdsSellerCredit,
   sellerSaleCredit,
+  buildNotificationRemovalFilter,
   planQaCommerce,
 };

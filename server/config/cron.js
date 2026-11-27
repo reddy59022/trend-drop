@@ -29,6 +29,8 @@ const { getTracker, mapTrackerStatus, isMockMode } = require('../services/easypo
 const { refundTransactionLabel } = require('../services/shippingPurchase');
 const { applyProviderRefundResult, recordProviderSettlement } = require('../utils/providerRefund');
 const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
+const { auditOrphanNotifications } = require('../utils/notificationAudit');
+const { increment } = require('../utils/metrics');
 
 // ──────────────────────────────────────────────
 // JOB 1: Auto-Expire Listings (Every 6 hours)
@@ -1090,6 +1092,32 @@ async function releaseHeldSettlements(now = Date.now()) {
 }
 
 // ──────────────────────────────────────────────
+// JOB 11: Read-only orphan-notification audit (daily at 5:00 AM)
+// ──────────────────────────────────────────────
+// Notifications live inside User documents, so deleting a transaction can
+// leave dangling references. This check never writes; it emits metrics and a
+// warning so the orphan count is visible operationally.
+async function auditNotificationIntegrity() {
+  try {
+    const report = await auditOrphanNotifications();
+    if (report.total > 0) {
+      increment('trenddrop_orphan_notifications_total', { source: 'cron', result: 'found' }, report.total);
+      console.warn(
+        `[CRON] Orphan notification audit: ${report.total} dangling notification(s) across ` +
+        `${report.affectedUsers} user(s); ${report.missingTransactionIds.length} missing transaction(s)`,
+      );
+    } else {
+      increment('trenddrop_orphan_notification_audits_total', { source: 'cron', result: 'clean' });
+    }
+    return report;
+  } catch (error) {
+    increment('trenddrop_orphan_notification_audits_total', { source: 'cron', result: 'failed' });
+    console.error('[CRON] Orphan notification audit failed:', error.message);
+    return null;
+  }
+}
+
+// ──────────────────────────────────────────────
 // Initialize all cron jobs
 // ──────────────────────────────────────────────
 function initCronJobs() {
@@ -1174,6 +1202,12 @@ function initCronJobs() {
     releaseHeldSettlements();
   });
   console.log('[CRON] Held settlement release scheduled (daily at 2:30 AM)');
+
+  // Job 11: Read-only orphan notification audit daily at 5:00 AM
+  cron.schedule('0 5 * * *', () => {
+    auditNotificationIntegrity();
+  });
+  console.log('[CRON] Orphan notification audit scheduled (daily at 5:00 AM)');
 }
 
 module.exports = {
@@ -1192,4 +1226,5 @@ module.exports = {
   closeAuctions,
   expireOffers,
   expireShopBoosts,
+  auditNotificationIntegrity,
 };

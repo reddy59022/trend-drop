@@ -15,12 +15,7 @@ if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
 
 const mongoose = require('mongoose');
 const connectDB = require('../config/db');
-const User = require('../models/User');
-const Transaction = require('../models/Transaction');
-const {
-  collectOrphanNotifications,
-  summarizeOrphanNotifications,
-} = require('../utils/notificationAudit');
+const { auditOrphanNotifications } = require('../utils/notificationAudit');
 
 const main = async () => {
   const json = process.argv.slice(2).includes('--json');
@@ -28,40 +23,11 @@ const main = async () => {
   await connectDB();
   const { host, name } = mongoose.connection;
 
-  // Do not add `$ne: null` here: on an array of subdocuments MongoDB treats a
-  // subdocument missing `transaction` as a null match, which excludes the
-  // whole user even though other notifications do reference transactions.
-  const users = await User.find({
-    'notifications.transaction': { $exists: true },
-  })
-    .select('_id notifications')
-    .lean();
-
-  const referencedIds = new Set();
-  let notificationCount = 0;
-  for (const user of users) {
-    for (const notification of user.notifications || []) {
-      notificationCount += 1;
-      if (notification.transaction) referencedIds.add(String(notification.transaction));
-    }
-  }
-
-  const existing = referencedIds.size > 0
-    ? await Transaction.find({ _id: { $in: [...referencedIds] } }).select('_id').lean()
-    : [];
-  const existingIds = existing.map((transaction) => transaction._id);
-
-  const rows = collectOrphanNotifications(users, existingIds);
-  const summary = summarizeOrphanNotifications(rows);
   const report = {
     readOnly: true,
     database: name,
     host,
-    usersScanned: users.length,
-    notificationsScanned: notificationCount,
-    referencedTransactions: referencedIds.size,
-    existingTransactions: existingIds.length,
-    ...summary,
+    ...(await auditOrphanNotifications()),
   };
 
   if (json) {

@@ -63,7 +63,49 @@ function summarizeOrphanNotifications(rows = []) {
   };
 }
 
+/**
+ * Execute the read-only audit. Models are injectable for database tests; in
+ * production the real Mongoose models are used.
+ */
+async function auditOrphanNotifications({ UserModel, TransactionModel } = {}) {
+  const User = UserModel || require('../models/User');
+  const Transaction = TransactionModel || require('../models/Transaction');
+
+  // Do not add `$ne: null`: with an array of subdocuments, a subdocument that
+  // lacks `transaction` counts as a null match and would exclude the entire
+  // user even though other notifications do reference transactions.
+  const users = await User.find({
+    'notifications.transaction': { $exists: true },
+  })
+    .select('_id notifications')
+    .lean();
+
+  const referencedIds = new Set();
+  let notificationCount = 0;
+  for (const user of users) {
+    for (const notification of user.notifications || []) {
+      notificationCount += 1;
+      if (notification.transaction) referencedIds.add(String(notification.transaction));
+    }
+  }
+
+  const existing = referencedIds.size > 0
+    ? await Transaction.find({ _id: { $in: [...referencedIds] } }).select('_id').lean()
+    : [];
+  const existingIds = existing.map((transaction) => transaction._id);
+
+  const rows = collectOrphanNotifications(users, existingIds);
+  return {
+    usersScanned: users.length,
+    notificationsScanned: notificationCount,
+    referencedTransactions: referencedIds.size,
+    existingTransactions: existingIds.length,
+    ...summarizeOrphanNotifications(rows),
+  };
+}
+
 module.exports = {
   collectOrphanNotifications,
   summarizeOrphanNotifications,
+  auditOrphanNotifications,
 };
