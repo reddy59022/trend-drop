@@ -60,7 +60,8 @@ services:
       # exercise test labels without replacing its live key.
       - key: EASYPOST_TEST_API_KEY
         sync: false
-      # HMAC secret configured on the EasyPost tracker webhook.
+      # Must exactly match the `webhook_secret` on the EasyPost Test webhook.
+      # Dashboard-managed; absent means the webhook fails closed.
       - key: EASYPOST_WEBHOOK_SECRET
         sync: false
       # Signed carrier tracking webhook (never use the development default in production).

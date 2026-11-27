@@ -53,6 +53,30 @@ purchased for a real order.
 }
 ```
 
+## One shipment state machine
+
+`server/services/shipmentTracking.js` is the single transition authority for
+outbound orders. The EasyPost tracker webhook, the signed carrier webhook, the
+polling job, mock delivery, and the sandbox driver all call
+`applyOutboundTrackingEvent`. Tests therefore exercise the same mapping and
+terminal-state rules as production.
+
+Carrier milestones are mapped to transaction lifecycle states as follows:
+
+| Carrier milestone | Lifecycle state |
+| --- | --- |
+| `picked_up` | `shipped` |
+| `in_transit` | `in_transit` |
+| `in_transit_local` | `in_transit` |
+| `out_for_delivery` | `out_for_delivery` |
+| `delivered` | `delivered` |
+| `returned` | `returned` |
+| `exception` | unchanged; recorded in history |
+
+Late or out-of-order scans are acknowledged but cannot move a terminal order
+backwards. A replay after `buyer_confirmed` or `completed` cannot undo receipt
+confirmation.
+
 ## Full shipment lifecycle in sandbox
 
 Authenticated buyers and sellers can advance a shipment through every outbound
@@ -88,9 +112,39 @@ Configure the EasyPost Test webhook to:
 POST https://<host>/api/shipping/easypost-webhook
 ```
 
-with `EASYPOST_WEBHOOK_SECRET`. In EasyPost Test mode, a test tracker emits one
-event in a supported state; production emits the full carrier progression. The
-webhook is HMAC-verified, idempotent, and forward-only.
+EasyPost does **not** generate the signing secret. You choose it when creating
+the webhook and must set the exact same value as `EASYPOST_WEBHOOK_SECRET` in
+the deployed environment. Create the Test webhook against the existing
+platform account (never create a seller account):
+
+```bash
+curl -X POST https://api.easypost.com/v2/webhooks \
+  -u "$EASYPOST_TEST_API_KEY:" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "webhook": {
+      "url": "https://<host>/api/shipping/easypost-webhook",
+      "webhook_secret": "<same value as EASYPOST_WEBHOOK_SECRET>"
+    }
+  }'
+```
+
+The endpoint accepts EasyPost's `X-Hmac-Signature` in the SDK wire format
+`hmac-sha256-hex=<digest>` and verifies the raw body. In
+EasyPost Test mode, a test tracker emits one event in a supported state;
+production emits the full carrier progression. The webhook is idempotent and
+forward-only.
+
+Verify a signed event locally without contacting EasyPost:
+
+```bash
+cd server
+NODE_ENV=test npx jest --runInBand --forceExit tests/easypostWebhook.test.js
+```
+
+That suite signs a `tracker.updated` payload with the same HMAC format EasyPost
+uses, walks `in_transit` → `available_for_pickup` → `out_for_delivery` →
+`delivered`, and proves late scans cannot undo buyer confirmation.
 
 ## Verification
 

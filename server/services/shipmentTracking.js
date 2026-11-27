@@ -18,6 +18,18 @@ const canonicalLifecycleState = (status) => {
   return status;
 };
 
+// Once one of these is reached, an outbound carrier event must not move the
+// order backwards. `buyer_confirmed`/`completed` are post-delivery states and
+// are deliberately included: a late replay of a delivery scan must not undo a
+// receipt confirmation.
+const TERMINAL_LIFECYCLE_STATES = new Set([
+  'delivered', 'buyer_confirmed', 'completed', 'returned', 'refunded',
+  'cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled',
+  'return_requested', 'return_accepted', 'return_rejected', 'return_in_transit',
+  'return_delivered', 'disputed', 'dispute_resolved',
+  'chargeback_open', 'chargeback_won', 'chargeback_lost',
+]);
+
 const eventTimeFor = (timestamp) => {
   if (!timestamp) return new Date();
   const parsed = new Date(timestamp);
@@ -48,8 +60,7 @@ const applyOutboundTrackingEvent = async (transaction, {
   const currentIndex = ORDERED_STATUSES.findIndex((item) => item.code === currentTracking);
   const eventIndex = ORDERED_STATUSES.findIndex((item) => item.code === status);
   const terminal = ['returned', 'delivered'].includes(status);
-  const alreadyTerminal = ['returned', 'delivered', 'cancelled', 'refunded', 'chargeback_lost']
-    .includes(transaction.status);
+  const alreadyTerminal = TERMINAL_LIFECYCLE_STATES.has(transaction.status);
 
   const advances = status !== 'exception'
     && status !== 'label_created'
@@ -57,16 +68,20 @@ const applyOutboundTrackingEvent = async (transaction, {
     && (
       terminal
         ? status === 'returned' || transaction.status !== 'delivered'
-        : (currentIndex === -1 || eventIndex >= currentIndex)
+        : (currentIndex === -1 || eventIndex > currentIndex)
     );
+  // Keep the audit trail for real progress, exceptions and the initial label
+  // event. A stale out-of-order scan after a terminal state is acknowledged
+  // but not appended, so the visible timeline cannot run backwards.
+  const recordEvent = advances || status === 'exception' || status === 'label_created';
 
   transaction.shipping = transaction.shipping || {};
   transaction.shipping.trackingHistory = transaction.shipping.trackingHistory || [];
-  const duplicate = transaction.shipping.trackingHistory.some((entry) => (
+  const duplicate = recordEvent && transaction.shipping.trackingHistory.some((entry) => (
     entry.status === status
     && new Date(entry.timestamp).getTime() === eventTime.getTime()
   ));
-  if (!duplicate) {
+  if (recordEvent && !duplicate) {
     transaction.shipping.trackingHistory.push({
       status,
       label: meta.label,
@@ -83,9 +98,12 @@ const applyOutboundTrackingEvent = async (transaction, {
       transaction.shipping.actualDelivery = eventTime;
     }
   }
+  const previousTrackingNumber = transaction.shipping.trackingNumber;
   if (trackingNumber) transaction.shipping.trackingNumber = trackingNumber;
 
-  await transaction.save();
+  if (recordEvent || (trackingNumber && trackingNumber !== previousTrackingNumber)) {
+    await transaction.save();
+  }
   return {
     advanced: advances,
     status,
@@ -98,4 +116,5 @@ module.exports = {
   applyOutboundTrackingEvent,
   canonicalLifecycleState,
   ORDERED_STATUSES,
+  TERMINAL_LIFECYCLE_STATES,
 };

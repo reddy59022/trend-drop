@@ -8,8 +8,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const Transaction = require('../models/Transaction');
-const { trackingStatuses } = require('../config/shipping');
 const { mapTrackerStatus } = require('../services/easypostService');
+const { applyOutboundTrackingEvent } = require('../services/shipmentTracking');
 
 const router = express.Router();
 
@@ -21,8 +21,13 @@ const safeEqual = (expected, provided) => {
 
 const verifySignature = (rawBody, secret, header) => {
   if (!header) return false;
-  const provided = String(header).trim().replace(/^sha256=/i, '');
-  const digest = crypto.createHmac('sha256', secret).update(rawBody).digest();
+  // EasyPost sends `hmac-sha256-hex=<hex>` (the format returned by its SDKs).
+  // Keep accepting the bare hex/base64 form used by older integrations.
+  const provided = String(header).trim()
+    .replace(/^hmac-sha256-hex=/i, '')
+    .replace(/^sha256=/i, '');
+  const normalizedSecret = String(secret).normalize('NFKD');
+  const digest = crypto.createHmac('sha256', normalizedSecret).update(rawBody).digest();
   return safeEqual(digest.toString('hex'), provided)
     || safeEqual(digest.toString('base64'), provided);
 };
@@ -75,55 +80,19 @@ router.post(
         return res.json({ received: true, matched: false });
       }
 
-      const newIndex = trackingStatuses.findIndex((s) => s.code === status);
-      const currentIndex = trackingStatuses.findIndex((s) => s.code === transaction.status);
-      const terminal = ['exception', 'returned'].includes(status);
-      // `exception` is recorded in history but is not a lifecycle enum value.
-      const advances = status !== 'exception' && status !== transaction.status && (
-        terminal
-          ? transaction.status !== 'delivered'
-          : (currentIndex === -1 || newIndex > currentIndex)
-      );
-
-      if (advances || status === 'exception') {
-        if (advances) transaction.status = status === 'in_transit_local' ? 'in_transit' : status;
-        const latest = Array.isArray(tracker.tracking_details)
-          ? tracker.tracking_details[tracker.tracking_details.length - 1]
-          : null;
-        if (latest) {
-          transaction.shipping = transaction.shipping || {};
-          transaction.shipping.trackingHistory = transaction.shipping.trackingHistory || [];
-          const eventTime = latest.datetime ? new Date(latest.datetime) : new Date();
-          const duplicate = transaction.shipping.trackingHistory.some((entry) => (
-            entry.status === status
-            && new Date(entry.timestamp).getTime() === eventTime.getTime()
-          ));
-          if (!duplicate) {
-            transaction.shipping.trackingHistory.push({
-              status,
-              label: trackingStatuses.find((s) => s.code === status)?.label || status,
-              description: latest.message || '',
-              timestamp: eventTime,
-              location: [latest.tracking_location?.city, latest.tracking_location?.state]
-                .filter(Boolean).join(', ') || null,
-            });
-            transaction.shipping.trackingHistory = transaction.shipping.trackingHistory.slice(-50);
-          }
-          if (status === 'delivered') transaction.shipping.actualDelivery = eventTime;
-        } else if (status === 'delivered') {
-          transaction.shipping = transaction.shipping || {};
-          transaction.shipping.actualDelivery = new Date();
-        }
-        await transaction.save();
-      }
-
-      return res.json({
-        received: true,
-        matched: true,
+      const latest = Array.isArray(tracker.tracking_details)
+        ? tracker.tracking_details[tracker.tracking_details.length - 1]
+        : null;
+      const result = await applyOutboundTrackingEvent(transaction, {
         status,
-        advanced: advances,
-        transactionId: String(transaction._id),
+        trackingNumber: tracker.tracking_code,
+        timestamp: latest?.datetime,
+        description: latest?.message,
+        location: [latest?.tracking_location?.city, latest?.tracking_location?.state]
+          .filter(Boolean).join(', ') || null,
       });
+
+      return res.json({ received: true, matched: true, ...result });
     } catch (error) {
       console.error('EasyPost webhook error:', error.message);
       // Non-2xx makes EasyPost retry; tracking is idempotent and safe to replay.

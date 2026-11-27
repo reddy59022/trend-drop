@@ -13,12 +13,13 @@ const SECRET = 'whsec_test_easypost';
 const RUN = `epw_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 const ids = { users: [], listings: [], txns: [] };
 
+// EasyPost's SDKs send `hmac-sha256-hex=<digest>`. Using the real wire format
+// here proves the route works with production Test webhooks, not just a
+// convenient bare digest.
 const signed = (payload) => {
   const raw = JSON.stringify(payload);
-  return {
-    raw,
-    signature: crypto.createHmac('sha256', SECRET).update(raw).digest('hex'),
-  };
+  const digest = crypto.createHmac('sha256', SECRET).update(raw).digest('hex');
+  return { raw, signature: `hmac-sha256-hex=${digest}` };
 };
 
 let transaction;
@@ -135,6 +136,85 @@ describe('EW. EasyPost tracker webhook', () => {
     expect(res.body.advanced).toBe(false);
     const saved = await Transaction.findById(transaction._id);
     expect(saved.status).toBe('delivered');
+  });
+
+  test('a signed Test tracker event walks the canonical carrier states', async () => {
+    const base = transaction.toObject();
+    delete base._id;
+    delete base.createdAt;
+    delete base.updatedAt;
+    delete base.__v;
+    const flow = await Transaction.create({
+      ...base,
+      status: 'paid',
+      shipping: {
+        trackingNumber: 'EZWHFLOW',
+        trackerId: 'trk_wh_flow',
+        carrier: 'USPS',
+        trackingHistory: [],
+      },
+    });
+    ids.txns.push(flow._id);
+
+    const events = [
+      ['in_transit', '2026-11-26T10:00:00Z', 'in_transit'],
+      ['available_for_pickup', '2026-11-26T11:00:00Z', 'in_transit'],
+      ['out_for_delivery', '2026-11-26T12:00:00Z', 'out_for_delivery'],
+      ['delivered', '2026-11-26T13:00:00Z', 'delivered'],
+    ];
+    for (const [trackerStatus, datetime, expectedLifecycle] of events) {
+      const body = {
+        description: 'tracker.updated',
+        result: {
+          id: 'trk_wh_flow',
+          tracking_code: 'EZWHFLOW',
+          status: trackerStatus,
+          tracking_details: [{
+            status: trackerStatus,
+            message: `Carrier scan: ${trackerStatus}`,
+            datetime,
+            tracking_location: { city: 'Austin', state: 'TX' },
+          }],
+        },
+      };
+      const { raw, signature } = signed(body);
+      const res = await postEvent({ signature, raw });
+      expect(res.status).toBe(200);
+      expect(res.body.matched).toBe(true);
+      expect(res.body.lifecycleStatus).toBe(expectedLifecycle);
+      expect(res.body.advanced).toBe(true);
+    }
+
+    const saved = await Transaction.findById(flow._id);
+    expect(saved.status).toBe('delivered');
+    expect(saved.shipping.actualDelivery).toBeTruthy();
+    expect(saved.shipping.trackingHistory.map((event) => event.status)).toEqual([
+      'in_transit', 'in_transit_local', 'out_for_delivery', 'delivered',
+    ]);
+  });
+
+  test('a late carrier replay cannot undo a buyer confirmation', async () => {
+    const confirmed = await Transaction.findById(transaction._id);
+    confirmed.status = 'buyer_confirmed';
+    confirmed.buyerConfirmed = { received: true, confirmedAt: new Date() };
+    await confirmed.save();
+
+    const body = {
+      description: 'tracker.updated',
+      result: {
+        id: 'trk_wh_123',
+        status: 'delivered',
+        tracking_details: [{
+          status: 'delivered', message: 'Late replay',
+          datetime: '2026-11-26T19:00:00Z',
+        }],
+      },
+    };
+    const { raw, signature } = signed(body);
+    const res = await postEvent({ signature, raw });
+    expect(res.status).toBe(200);
+    expect(res.body.advanced).toBe(false);
+    expect((await Transaction.findById(transaction._id)).status).toBe('buyer_confirmed');
   });
 
   test('fails closed in production when no webhook secret is configured', async () => {

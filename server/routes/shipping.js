@@ -653,42 +653,20 @@ router.post('/auto-track', async (req, res) => {
         }
       }
 
-      const newIndex = trackingStatuses.findIndex(s => s.code === newStatus);
-      const terminal = ['exception', 'returned'].includes(newStatus);
-      const currentIndex = trackingStatuses.findIndex(s => s.code === txn.status);
-      // `exception` is a tracking milestone, not a Transaction.status enum
-      // value. Keep the lifecycle state (and payout safety) unchanged while
-      // still recording the carrier exception in tracking history.
-      const advances = newStatus && newStatus !== 'exception' && newStatus !== txn.status && (
-        terminal
-          ? txn.status !== 'delivered'
-          : (currentIndex === -1 || newIndex > currentIndex)
-      );
-
-      if (advances) {
-        // `picked_up` and `in_transit_local` are tracking milestones; the
-        // Transaction enum uses `shipped` and `in_transit` for those states.
-        txn.status = newStatus === 'picked_up'
-          ? 'shipped'
-          : (newStatus === 'in_transit_local' ? 'in_transit' : newStatus);
-        if (newStatus === 'delivered') {
-          txn.shipping.actualDelivery = detail.timestamp || new Date();
-          txn.autoTracking.nextCheck = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        }
-        txn.shipping.trackingHistory = txn.shipping.trackingHistory || [];
-        txn.shipping.trackingHistory.push({
+      if (newStatus) {
+        const result = await applyOutboundTrackingEvent(txn, {
           status: newStatus,
-          label: trackingStatuses.find(s => s.code === newStatus)?.label || newStatus,
-          description: detail.description || trackingStatuses.find(s => s.code === newStatus)?.description || '',
-          timestamp: detail.timestamp || new Date(),
+          trackingNumber: txn.shipping?.trackingNumber,
+          timestamp: detail.timestamp,
+          description: detail.description,
           location: detail.location || (mock ? 'Auto-updated' : 'EasyPost'),
         });
-        txn.shipping.trackingHistory = txn.shipping.trackingHistory.slice(-50);
-        updated++;
+        if (result.advanced) updated++;
       }
 
       // Record the poll itself so operations can see liveness even when the
-      // carrier has no new event.
+      // carrier has no new event. The transition service owns the shipment
+      // state; this block only records polling telemetry.
       txn.autoTracking.lastChecked = new Date();
       txn.autoTracking.nextCheck = new Date(Date.now() + 24 * 60 * 60 * 1000);
       txn.autoTracking.attempts += 1;
@@ -766,14 +744,13 @@ router.post('/mock-deliver', auth, async (req, res) => {
     if (!['shipped', 'in_transit', 'out_for_delivery'].includes(txn.status)) {
       return res.status(400).json({ message: 'Only a shipped package can be delivered' });
     }
-    txn.shipping = txn.shipping || {};
-    txn.shipping.trackingHistory = txn.shipping.trackingHistory || [];
-    txn.shipping.trackingHistory.push(deliveredStep());
-    txn.shipping.trackingHistory = txn.shipping.trackingHistory.slice(-50);
-    txn.shipping.actualDelivery = eventTime;
-    txn.status = 'delivered';
-    await txn.save();
-    res.json({ message: 'Package marked delivered (test mode)', status: 'delivered', transactionId });
+    const result = await applyOutboundTrackingEvent(txn, {
+      status: 'delivered',
+      timestamp: eventTime,
+      description: 'Delivered by test carrier',
+      location: 'Test carrier network',
+    });
+    res.json({ message: 'Package marked delivered (test mode)', status: 'delivered', transactionId, ...result });
   } catch (error) {
     console.error('Mock delivery error:', error);
     res.status(500).json({ message: 'Error simulating delivery' });
@@ -849,15 +826,18 @@ router.post('/tracking-event', async (req, res) => {
       return res.status(400).json({ message: 'transactionId or returnId and status are required' });
     }
 
+    if (!trackingStatuses.some(s => s.code === status)) {
+      return res.status(400).json({ message: `Invalid tracking status: ${status}` });
+    }
     const statusOrder = trackingStatuses.filter(s => s.sortOrder >= 0).sort((a, b) => a.sortOrder - b.sortOrder);
     const eventIndex = statusOrder.findIndex(s => s.code === status);
-    if (eventIndex === -1) return res.status(400).json({ message: `Invalid tracking status: ${status}` });
 
     // Return labels use the same carrier status vocabulary as outbound orders.
     // Persist every missing intermediate step when a carrier sends a jump
     // event (for example, delivered without earlier webhook deliveries), so
     // the buyer and seller see a complete, ordered timeline.
     if (returnId) {
+      if (eventIndex === -1) return res.status(400).json({ message: `Invalid return tracking status: ${status}` });
       if (!isValidObjectId(returnId)) return res.status(400).json({ message: 'Invalid returnId' });
       const returnRequest = await Return.findById(returnId);
       if (!returnRequest) return res.status(404).json({ message: 'Return not found' });
@@ -913,20 +893,10 @@ router.post('/tracking-event', async (req, res) => {
     if (!isValidObjectId(transactionId)) return res.status(400).json({ message: 'Invalid transactionId' });
     const txn = await Transaction.findById(transactionId);
     if (!txn) return res.status(404).json({ message: 'Transaction not found' });
-    const currentTracking = txn.status === 'shipped' ? 'picked_up' : txn.status;
-    const currentIndex = statusOrder.findIndex(s => s.code === currentTracking);
-    txn.shipping.trackingHistory = txn.shipping.trackingHistory || [];
-    txn.shipping.trackingHistory.push({ status, label: trackingStatuses.find(s => s.code === status)?.label || status, description: description || trackingStatuses.find(s => s.code === status)?.description || '', timestamp: timestamp ? new Date(timestamp) : new Date(), location: location || null });
-    txn.shipping.trackingHistory = txn.shipping.trackingHistory.slice(-50);
-    if (currentIndex === -1 || eventIndex >= currentIndex) {
-      if (status === 'delivered') {
-        txn.status = 'delivered';
-        txn.shipping.actualDelivery = timestamp ? new Date(timestamp) : new Date();
-      } else if (txn.status !== 'delivered' && ['in_transit', 'in_transit_local', 'out_for_delivery'].includes(status)) txn.status = status;
-      if (trackingNumber) txn.shipping.trackingNumber = trackingNumber;
-    }
-    await txn.save();
-    res.json({ message: `Tracking event '${status}' recorded`, status, transactionId: txn._id });
+    const result = await applyOutboundTrackingEvent(txn, {
+      status, trackingNumber, timestamp, location, description,
+    });
+    res.json({ message: `Tracking event '${status}' recorded`, ...result });
   } catch (error) {
     console.error('Tracking event error:', error);
     res.status(500).json({ message: 'Error recording tracking event' });
