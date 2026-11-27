@@ -5,7 +5,6 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Payout = require('../models/Payout');
-const Order = require('../models/Order');
 const { isValidObjectId } = require('../utils/validators');
 const { findPaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
 const { releaseSellerEarnings, settlementAlreadyApplied, reverseEscrowHold, sellerSaleTotal } = require('../utils/balances');
@@ -454,38 +453,16 @@ router.post('/resolve-dispute', auth, async (req, res) => {
     transaction.escrow.resolvedBy = req.user._id;
     await transaction.save();
 
-    // Keep consolidated order state aligned with the underlying transaction.
-    // Otherwise a refunded escrow item can remain visible as an active order
-    // and a completed dispute can keep funds marked as held at order level.
-    const orders = await Order.find({ 'items.transaction': transaction._id });
-    for (const order of orders) {
-      if (resolution === 'release_to_buyer') {
-        order.items = (order.items || []).filter((item) => String(item.transaction) !== String(transaction._id));
-        (order.shipments || []).forEach((shipment) => {
-          shipment.items = (shipment.items || []).filter((id) => String(id) !== String(transaction._id));
-          if (shipment.items.length === 0) shipment.status = 'cancelled';
-        });
-        order.cancellation = {
-          cancelledBy: 'admin',
-          reason: 'Escrow dispute resolved in favor of buyer',
-          cancelledAt: new Date(),
-          refundAmount: Math.round(((order.cancellation?.refundAmount || 0) + refundAmount) * 100) / 100,
-          currency: transaction.currency || order.currency || 'USD',
-        };
-        if (order.items.length === 0) {
-          order.status = 'refunded';
-          if (order.payment) order.payment.status = 'refunded';
-        }
-      } else {
-        const transactionIds = (order.items || []).map((item) => item.transaction).filter(Boolean);
-        const remaining = await Transaction.countDocuments({ _id: { $in: transactionIds }, status: { $nin: ['completed'] } });
-        if (remaining === 0) {
-          order.status = 'completed';
-          if (order.payment) order.payment.status = 'captured';
-        }
-      }
-      await order.save();
-    }
+    // Keep consolidated order state aligned with the underlying transaction
+    // through the shared, idempotent sync. Otherwise a refunded escrow item can
+    // remain visible as an active order and a completed dispute can keep the
+    // order active forever.
+    const { syncOrderFromTransaction } = require('./orderLifecycle');
+    await syncOrderFromTransaction(
+      transaction,
+      resolution === 'release_to_buyer' ? 'refunded' : 'completed',
+      resolution === 'release_to_buyer' ? refundAmount : 0,
+    );
 
     res.json({
       message: `Escrow dispute resolved: ${resolution}`,

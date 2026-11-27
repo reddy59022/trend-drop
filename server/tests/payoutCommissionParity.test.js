@@ -15,6 +15,7 @@ const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
 const Payout = require('../models/Payout');
+const Order = require('../models/Order');
 const { autoProcessOrders } = require('../config/cron');
 
 const SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
@@ -77,6 +78,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await Transaction.deleteMany({ $or: [{ buyer: { $in: testUserIds } }, { seller: { $in: testUserIds } }] });
   await Payout.deleteMany({ seller: { $in: testUserIds } });
+  await Order.deleteMany({ 'items.listing': { $in: testListingIds } });
   await Listing.deleteMany({ _id: { $in: testListingIds } });
   await User.deleteMany({ _id: { $in: testUserIds } });
 });
@@ -126,6 +128,31 @@ describe('PC · Legacy confirm-received payout uses the 8% platform commission',
 
     expect((await Transaction.findById(txn._id)).status).toBe('buyer_confirmed');
     expect(await Payout.countDocuments({ transaction: txn._id })).toBe(0);
+  });
+
+  test('PC.0d cron auto-complete syncs the consolidated order to completed', async () => {
+    const txn = await mkPaidTxnWithoutPayout();
+    txn.status = 'buyer_confirmed';
+    txn.buyerConfirmed = { received: true, confirmedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) };
+    txn.shipping.actualDelivery = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    await txn.save();
+    await User.updateOne({ _id: seller._id }, {
+      $set: { createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'stats.totalSales': 5, 'balance.pending': 92 },
+    });
+    const order = await Order.create({
+      buyer: buyer._id,
+      sellers: [seller._id],
+      status: 'shipped',
+      items: [{ listing: txn.listing, transaction: txn._id, seller: seller._id, title: 'PC order sync', price: 100 }],
+      shipments: [{ seller: seller._id, items: [txn._id], status: 'shipped' }],
+      payment: { status: 'captured', totalHeld: 110 },
+      totals: { subtotal: 100, total: 110 },
+    });
+
+    await autoProcessOrders();
+
+    expect((await Transaction.findById(txn._id)).status).toBe('completed');
+    expect((await Order.findById(order._id)).status).toBe('completed');
   });
 
   test('PC.0b order auto-complete preserves the 8% platform rate when legacy fields are absent', async () => {

@@ -320,6 +320,12 @@ async function autoProcessOrders() {
           txn.status = 'completed';
           txn.completionProcessing = false;
           await txn.save();
+
+          // Keep the consolidated Order in sync: auto-completion is a terminal
+          // transaction state, so leaving the order confirmed/shipped forever
+          // is the same stale-order bug the refund paths had.
+          const { syncOrderFromTransaction } = require('../routes/orderLifecycle');
+          await syncOrderFromTransaction(txn, 'completed');
   
           // Create payout record if not exists
           try {
