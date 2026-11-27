@@ -1991,6 +1991,7 @@ router.post('/connect/onboard', auth, async (req, res) => {
       code: error.code || error.type || 'connect_onboarding_failed',
       param: error.param || error.raw?.param || null,
       stripeCode: error.raw?.code || null,
+      detail: typeof error.message === 'string' ? error.message.slice(0, 300) : null,
     });
   }
 });
