@@ -10,7 +10,6 @@
 // This helper records what each purchase path created and replays it in
 // reverse on failure. It is intentionally best-effort and never throws: the
 // route's original error must still be surfaced to the caller.
-const Transaction = require('../models/Transaction');
 const Listing = require('../models/Listing');
 const Payout = require('../models/Payout');
 const User = require('../models/User');
@@ -18,6 +17,7 @@ const Offer = require('../models/Offer');
 const Cart = require('../models/Cart');
 const { releaseAuthorization, issueRefund, retrievePaymentIntent } = require('../config/payments');
 const { refundShippingLabel } = require('../services/easypostService');
+const { deleteTransactionsWithNotifications } = require('./transactionNotifications');
 
 function createPurchaseRollback() {
   const state = {
@@ -119,12 +119,15 @@ function createPurchaseRollback() {
   };
 
   const run = async () => {
-    // 1. Transactions — the order must not exist if the purchase failed.
+    // 1. Transactions — remove their dependent notifications before deleting
+    //    the rows. If notification cleanup fails, keep the transactions rather
+    //    than creating orphaned notifications; the error is surfaced for
+    //    reconciliation.
     if (state.transactionIds.length) {
       try {
-        await Transaction.deleteMany({ _id: { $in: state.transactionIds } });
+        await deleteTransactionsWithNotifications(state.transactionIds);
       } catch (e) {
-        console.error('Purchase rollback: transaction cleanup failed:', e.message);
+        console.error('Purchase rollback: transaction/notification cleanup failed:', e.message);
       }
     }
 

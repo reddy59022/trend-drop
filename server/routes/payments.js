@@ -55,6 +55,7 @@ const {
   refundClosedTransactionLabel,
   refundLabelWithRetry,
 } = require('../services/shippingPurchase');
+const { deleteTransactionsWithNotifications } = require('../utils/transactionNotifications');
 
 // Flat per-sale boost fee: price × tier.feePercent / 100
 // Charged ONLY upon successful sale (never upfront)
@@ -1291,8 +1292,12 @@ router.post('/confirm-batch', auth, async (req, res) => {
     for (const payout of createdPayouts) {
       try { await Payout.findByIdAndDelete(payout._id); } catch (e) {}
     }
-    for (const txn of createdTransactions) {
-      try { await Transaction.findByIdAndDelete(txn._id); } catch (e) {}
+    if (createdTransactions.length) {
+      try {
+        await deleteTransactionsWithNotifications(createdTransactions.map((txn) => txn._id));
+      } catch (e) {
+        console.error('Batch transaction/notification cleanup failed:', e.message);
+      }
     }
     for (const change of inventoryChanges) {
       // Restore inventory ONLY when the decrement actually happened
@@ -1766,7 +1771,11 @@ router.post('/confirm', auth, async (req, res) => {
       }
     }
     if (createdTransaction) {
-      try { await Transaction.findByIdAndDelete(createdTransaction._id); } catch (e) {}
+      try {
+        await deleteTransactionsWithNotifications([createdTransaction._id]);
+      } catch (e) {
+        console.error('Transaction/notification cleanup failed:', e.message);
+      }
     }
 
     // CHECKOUT IDEMPOTENCY: a parallel double-confirm lost the (payment

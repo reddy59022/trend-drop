@@ -217,6 +217,62 @@ describe('ZD22 — single-item confirm compensates failures after capture', () =
   });
 });
 
+describe('ZD25 — transaction rollback removes dependent notifications first', () => {
+  test('single confirm failure after the notification write leaves no notification or transaction', async () => {
+    const seller = await makeUser('PI notif single seller', `pi_notif_single_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI notif single buyer', `pi_notif_single_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100, { quantity: 1 });
+    const pi = mockIntent(buyer.user._id, [listing._id.toString()], 'succeeded', 20000);
+
+    const originalUpdateOne = User.updateOne.bind(User);
+    const updateSpy = jest.spyOn(User, 'updateOne').mockImplementationOnce(async (...args) => {
+      await originalUpdateOne(...args);
+      throw new Error('post-notification failure');
+    });
+
+    let res;
+    try {
+      res = await request(app).post('/api/payments/confirm')
+        .set('Authorization', `Bearer ${buyer.token}`)
+        .send({ paymentIntentId: pi, listingId: listing._id.toString(), shippingAddress: { ...US } });
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    expect(res.status).toBe(500);
+    expect(await Transaction.countDocuments({ 'paymentBreakdown.paymentIntentId': pi })).toBe(0);
+    const after = await User.findById(seller.user._id).lean();
+    expect(after.notifications || []).toEqual([]);
+  });
+
+  test('confirm-batch failure after the notification write leaves no notification or transaction', async () => {
+    const seller = await makeUser('PI notif batch seller', `pi_notif_batch_seller_${Date.now()}@test.com`);
+    const buyer = await makeUser('PI notif batch buyer', `pi_notif_batch_buyer_${Date.now()}@test.com`);
+    const listing = await makeListing(seller.user, 100, { quantity: 1 });
+    const pi = mockIntent(buyer.user._id, [listing._id.toString()], 'requires_capture');
+
+    const originalUpdateOne = User.updateOne.bind(User);
+    const updateSpy = jest.spyOn(User, 'updateOne').mockImplementationOnce(async (...args) => {
+      await originalUpdateOne(...args);
+      throw new Error('post-notification failure');
+    });
+
+    let res;
+    try {
+      res = await request(app).post('/api/payments/confirm-batch')
+        .set('Authorization', `Bearer ${buyer.token}`)
+        .send({ paymentIntentId: pi, items: [{ listingId: listing._id.toString(), quantity: 1 }], shippingAddress: { ...US } });
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    expect(res.status).toBe(500);
+    expect(await Transaction.countDocuments({ 'paymentBreakdown.paymentIntentId': pi })).toBe(0);
+    const after = await User.findById(seller.user._id).lean();
+    expect(after.notifications || []).toEqual([]);
+  });
+});
+
 describe('ZD23 — confirm-batch rollback restores the FULL purchased quantity', () => {
   test('a failed batch with qty=3 puts every unit back', async () => {
     const seller = await makeUser('PI1', `pi1_${Date.now()}@test.com`);
