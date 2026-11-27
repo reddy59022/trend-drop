@@ -482,7 +482,9 @@ router.post('/checkout', auth, async (req, res) => {
         labelByListing.set(String(planned.listing._id), label);
         rollback.track.addLabel(label.shipmentId);
       } catch (labelError) {
-        console.error('Cart shipping label failed:', labelError.code || labelError.message);
+        // Keep the provider's message: logging only the code hid the actual
+        // EasyPost rejection reason during production checkout failures.
+        console.error('Cart shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
         for (const purchased of labelByListing.values()) {
           try { await refundShippingLabel(purchased.shipmentId); } catch (e) {}
         }

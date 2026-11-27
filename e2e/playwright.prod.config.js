@@ -7,7 +7,11 @@
  */
 const { defineConfig } = require('@playwright/test');
 
-const BASE_URL = process.env.E2E_PROD_BASE_URL || (process.env.IN_MEMORY_E2E === '1' ? 'http://localhost:5001' : 'https://trend-drop.onrender.com');
+const BASE_URL = process.env.E2E_BASE_URL || process.env.E2E_PROD_BASE_URL || (process.env.IN_MEMORY_E2E === '1' ? 'http://localhost:5001' : 'https://trend-drop.onrender.com');
+
+// Helpers create their own APIRequestContext, so the resolved origin must also
+// be exported through the environment the workers read.
+process.env.E2E_BASE_URL = BASE_URL;
 
 module.exports = defineConfig({
   testDir: './tests/prod',

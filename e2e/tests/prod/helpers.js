@@ -20,7 +20,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:5001';
+// Resolution order matters: an explicit override wins, then the prod-config
+// override, then the baseURL Playwright exports for the active project
+// (use.baseURL), and only then the in-memory default. Without the
+// PLAYWRIGHT_TEST_BASE_URL fallback the prod suite silently targeted
+// localhost:5001 and every request failed with ECONNREFUSED.
+const BASE_URL = process.env.E2E_BASE_URL
+  || process.env.E2E_PROD_BASE_URL
+  || process.env.PLAYWRIGHT_TEST_BASE_URL
+  || 'http://localhost:5001';
 const IS_PROD = BASE_URL.includes('onrender.com') || BASE_URL.includes('https://');
 
 const RUN_ID = process.env.E2E_RUN_ID || `e2e-${Date.now()}`;

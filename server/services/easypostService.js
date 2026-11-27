@@ -95,6 +95,17 @@ const sandboxSimulationAllowed = () => (
   isMockMode() || (isSandboxRequested() && sandboxAllowed() && Boolean(apiKey()))
 );
 
+// EasyPost key prefixes are public conventions (EZTK = Test, EZAK = Production).
+// Reporting only the class — never the key — makes a sandbox deployment that
+// was wired with a production key diagnosable from /api/shipping/provider.
+const apiKeyType = () => {
+  const key = apiKey();
+  if (!key) return 'missing';
+  if (key.startsWith('EZTK')) return 'test';
+  if (key.startsWith('EZAK')) return 'production';
+  return 'unknown';
+};
+
 const shippingProviderStatus = () => ({
   provider: 'easypost',
   mode: shippingMode(),
@@ -103,6 +114,7 @@ const shippingProviderStatus = () => ({
   // separate seller-payout rail; it never supplies carrier credentials.
   payoutRail: 'stripe_connect',
   configured: Boolean(apiKey()) || isMockMode(),
+  keyType: apiKeyType(),
   // Never expose the key or any account identifier to the client.
   webhookConfigured: Boolean(process.env.EASYPOST_WEBHOOK_SECRET),
 });

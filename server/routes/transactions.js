@@ -311,7 +311,7 @@ router.post('/guest', async (req, res) => {
         declaredValue: listing.price,
       });
     } catch (labelError) {
-      console.error('Guest shipping label failed:', labelError.code || labelError.message);
+      console.error('Guest shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
       if (labelError.shipmentId && !labelError.labelRefunded) {
         try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Guest incomplete label refund retry failed:', e.message); }
       }
@@ -561,7 +561,7 @@ router.post('/', auth, async (req, res) => {
           declaredValue: finalPrice,
         });
       } catch (labelError) {
-        console.error('Shipping label failed:', labelError.code || labelError.message);
+        console.error('Shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
         if (labelError.shipmentId && !labelError.labelRefunded) {
           try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Incomplete label refund retry failed:', e.message); }
         }
@@ -847,7 +847,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
         declaredValue: finalPrice,
       });
     } catch (labelError) {
-      console.error('Offer shipping label failed:', labelError.code || labelError.message);
+      console.error('Offer shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
       if (labelError.shipmentId && !labelError.labelRefunded) {
         try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Offer incomplete label refund retry failed:', e.message); }
       }
