@@ -55,7 +55,7 @@ const SellerDashboard = () => {
       const [dashRes, commRes] = await Promise.all([
         // Fallbacks must mirror the real server rate (COMMISSION_RATE = 0.08):
         // a wrong fallback advertises a fee the platform does not charge.
-        getPayoutDashboard().catch(() => ({ data: { commissionRate: 0.08, commissionPercent: 8, totalSales: 0, totalCommission: 0, totalEarnings: 0, pendingAmount: 0, payoutHistory: [], recentTransactions: [] } })),
+        getPayoutDashboard().catch(() => ({ data: { commissionRate: 0.08, commissionPercent: 8, totalSales: 0, totalCommission: 0, totalEarnings: 0, pendingBalance: 0, pendingAmount: 0, payoutHistory: [], recentTransactions: [] } })),
         getCommissionInfo().catch(() => ({ data: { commissionPercent: 8, sellerKeeps: '92%', comparedTo: {} } })),
       ]);
       setDashboard(dashRes.data);
@@ -233,7 +233,7 @@ const SellerDashboard = () => {
   const stats = [
     { label: 'Total Sales', value: formatPrice(dashboard.totalSales || 0, 'USD'), color: 'var(--td-primary)', icon: <FaDollarSign />, caption: 'Gross sales volume, before commission' },
     { label: 'Your Earnings', value: formatPrice(dashboard.totalEarnings || 0, 'USD'), color: 'var(--td-success)', icon: <FaChartLine />, caption: 'Already released to your balance' },
-    { label: 'Pending Payout', value: formatPrice(dashboard.pendingAmount || 0, 'USD'), color: 'var(--td-warning)', icon: <FaHistory />, caption: 'Owed to you, released after delivery' },
+    { label: 'Pending Payout', value: formatPrice(dashboard.pendingBalance ?? dashboard.pendingAmount ?? 0, 'USD'), color: 'var(--td-warning)', icon: <FaHistory />, caption: 'Owed to you, released after delivery' },
   ];
 
   const tabs = [

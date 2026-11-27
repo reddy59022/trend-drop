@@ -12,6 +12,9 @@ jest.mock('../config/payments', () => {
       capture: jest.fn(),
       cancel: jest.fn(),
     },
+    accounts: { create: jest.fn(), retrieve: jest.fn() },
+    accountLinks: { create: jest.fn() },
+    transfers: { create: jest.fn() },
   };
   return { ...actual, stripe: stripeMock, __stripeMock: stripeMock };
 });
@@ -48,8 +51,9 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  config.__stripeMock.paymentIntents.retrieve.mockReset();
-  config.__stripeMock.paymentIntents.confirm.mockReset();
+  for (const group of Object.values(config.__stripeMock)) {
+    for (const fn of Object.values(group)) fn.mockReset();
+  }
 });
 
 describe('live-stripe guardrails on /api/payments/test-confirm', () => {
@@ -132,5 +136,50 @@ describe('live-stripe guardrails on /api/payments/test-confirm', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('requires_capture');
     expect(config.__stripeMock.paymentIntents.confirm).not.toHaveBeenCalled();
+  });
+
+  test('connect status reports not connected before onboarding', async () => {
+    await User.updateOne({ _id: buyer.user._id }, { $set: { stripeAccountId: null } });
+    const res = await request(app).get('/api/payments/connect/status').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(res.body.connected).toBe(false);
+    expect(res.body.payoutsEnabled).toBe(false);
+  });
+
+  test('connect onboarding creates an Express account and returns a link', async () => {
+    await User.updateOne({ _id: buyer.user._id }, { $set: { stripeAccountId: null } });
+    config.__stripeMock.accounts.create.mockResolvedValueOnce({ id: 'acct_cov_onboard' });
+    config.__stripeMock.accountLinks.create.mockResolvedValueOnce({ url: 'https://connect.stripe.test/onboard' });
+
+    const res = await request(app).post('/api/payments/connect/onboard').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(res.body.url).toBe('https://connect.stripe.test/onboard');
+    expect(res.body.accountId).toBe('acct_cov_onboard');
+    expect((await User.findById(buyer.user._id)).stripeAccountId).toBe('acct_cov_onboard');
+  });
+
+  test('connect status reports enabled payouts for a connected account', async () => {
+    await User.updateOne({ _id: buyer.user._id }, { $set: { stripeAccountId: 'acct_cov_status' } });
+    config.__stripeMock.accounts.retrieve.mockResolvedValueOnce({
+      payouts_enabled: true,
+      details_submitted: true,
+      requirements: { currently_due: [] },
+    });
+    const res = await request(app).get('/api/payments/connect/status').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(res.body.connected).toBe(true);
+    expect(res.body.payoutsEnabled).toBe(true);
+    expect(res.body.detailsSubmitted).toBe(true);
+  });
+
+  test('connect endpoints fail cleanly when Stripe rejects the request', async () => {
+    await User.updateOne({ _id: buyer.user._id }, { $set: { stripeAccountId: 'acct_cov_error' } });
+    config.__stripeMock.accounts.retrieve.mockRejectedValueOnce(new Error('account invalid'));
+    const status = await request(app).get('/api/payments/connect/status').set(authHeader());
+    expect(status.status).toBe(502);
+
+    config.__stripeMock.accountLinks.create.mockRejectedValueOnce(new Error('link failed'));
+    const onboard = await request(app).post('/api/payments/connect/onboard').set(authHeader());
+    expect(onboard.status).toBe(502);
   });
 });

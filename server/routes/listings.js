@@ -593,7 +593,7 @@ router.put('/:id', auth, (req, res, next) => {
     const {
       title, description, price, originalPrice,
       category, brand, size, condition, color,
-      weight, weightUnit, shipsFrom,
+      weight, weightUnit, shipsFrom, currency,
       domesticShipping, internationalShipping, freeShipping, shippingCost,
       quantity, videoUrl, status, available,
       boostTier, boostDuration, removeBoost,
@@ -671,6 +671,18 @@ router.put('/:id', auth, (req, res, next) => {
       }
       updateData.price = numericPrice;
     }
+    if (currency !== undefined && currency !== null && currency !== '') {
+      // Currency switching is part of the listing edit contract. It used to be
+      // dropped from this route entirely, so a seller who changed USD -> EUR
+      // got a 200 response while the listing kept charging the old currency.
+      const { getAllCurrencyCodes } = require('../config/currencies');
+      const normalizedCurrency = String(currency).toUpperCase();
+      if (!getAllCurrencyCodes().includes(normalizedCurrency)) {
+        return res.status(400).json({ message: 'Unsupported currency code' });
+      }
+      updateData.currency = normalizedCurrency;
+    }
+
     if (originalPrice !== undefined && originalPrice !== null && originalPrice !== '') {
       // GA-1f: originalPrice below price produces negative discount math in
       // the client (1 - price / originalPrice < 0).

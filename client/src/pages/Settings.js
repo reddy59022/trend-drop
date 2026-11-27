@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { toast } from 'react-toastify';
@@ -24,7 +24,13 @@ function Settings() {
   const navigate = useNavigate();
   const confirmDialog = useConfirm();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('profile');
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    ['profile', 'shipping', 'preferences', 'social', 'store', 'payout', 'account'].includes(requestedTab) ? requestedTab : 'profile'
+  );
+  const [stripeConnect, setStripeConnect] = useState(null);
+  const [connectLoading, setConnectLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '', bio: '', location: '', closetName: '',
     country: 'US', phone: '', phoneCode: '+1', currency: 'USD', language: 'en',
@@ -44,6 +50,26 @@ function Settings() {
       });
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    api.get('/payments/connect/status')
+      .then((res) => setStripeConnect(res.data))
+      .catch(() => setStripeConnect(null));
+  }, [user]);
+
+  const handleConnectStripe = async () => {
+    setConnectLoading(true);
+    try {
+      const res = await api.post('/payments/connect/onboard');
+      if (res.data?.url) window.location.href = res.data.url;
+      else toast.error('Could not start payout onboarding');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Could not start payout onboarding');
+    } finally {
+      setConnectLoading(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -220,6 +246,20 @@ function Settings() {
                 <div className="flex-between"><span style={{ color: 'var(--td-text-secondary)' }}>Total Earned</span><strong>{formatPrice(user.balance.totalEarned, user.currency)}</strong></div>
               </div>
             )}
+            <div style={{ background: 'var(--td-surface-secondary)', padding: 16, borderRadius: 'var(--td-radius-sm)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="flex-between">
+                <strong>Stripe payout account</strong>
+                <span style={{ color: stripeConnect?.payoutsEnabled ? 'var(--td-success)' : 'var(--td-error)' }}>
+                  {stripeConnect?.payoutsEnabled ? 'Ready' : (stripeConnect?.detailsSubmitted ? 'Verification pending' : 'Not connected')}
+                </span>
+              </div>
+              <p style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>
+                Connect a Stripe account so TrendDrop can transfer your earnings to your bank. The payout method below is kept for your records.
+              </p>
+              <button type="button" className="btn btn-primary" onClick={handleConnectStripe} disabled={connectLoading || stripeConnect?.payoutsEnabled}>
+                {connectLoading ? 'Opening Stripe…' : (stripeConnect?.payoutsEnabled ? 'Payouts enabled' : 'Connect Stripe')}
+              </button>
+            </div>
             <div className="form-group"><label className="form-label">Payout Method</label><select name="payoutMethod.type" value={formData.payoutMethod.type} onChange={handleChange} className="form-input"><option value="">Select method</option><option value="paypal">PayPal</option><option value="bank">Bank Transfer</option></select></div>
             {formData.payoutMethod.type === 'paypal' && <div className="form-group"><label className="form-label">PayPal Email</label><input name="payoutMethod.paypalEmail" value={formData.payoutMethod.paypalEmail} onChange={handleChange} className="form-input" placeholder="you@paypal.com" /></div>}
             {formData.payoutMethod.type === 'bank' && <>

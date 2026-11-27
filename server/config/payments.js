@@ -530,23 +530,30 @@ const processSellerPayout = async (sellerId, amount, currency, payoutMethod) => 
     // passing those through made a real connected-account payout fail after
     // the seller's balance had already been reserved.
     const stripeMethod = payoutMethod === 'instant' ? 'instant' : 'standard';
-    const idempotencyKey = generateIdempotencyKey({ sellerId, amount, currency, payoutMethod: stripeMethod });
-    const payout = await stripe.payouts.create({
+    const idempotencyKey = generateIdempotencyKey({ sellerId, amount, currency, payoutMethod: stripeMethod, action: 'transfer' });
+    // Marketplace funds live on the platform account. A payouts.create call on
+    // the CONNECTED account paid from that account's own (usually empty)
+    // balance, so every real cash-out failed with insufficient funds even
+    // when the seller had earned money. Transfer the seller's funds from the
+    // platform into their connected account; Stripe then settles it to their
+    // bank/PayPal according to their payout schedule.
+    const transfer = await stripe.transfers.create({
       amount: Math.round(amount * 100),
       currency: currency.toLowerCase(),
-      method: stripeMethod,
-    }, {
-      stripeAccount: accountId,
-      idempotencyKey,
-    });
-    increment('trenddrop_payouts_total', { operation: 'provider_payout', status: payout.status || 'unknown' });
+      destination: accountId,
+      metadata: {
+        sellerId: String(sellerId),
+        payoutMethod: stripeMethod,
+      },
+    }, { idempotencyKey });
+    increment('trenddrop_payouts_total', { operation: 'provider_transfer', status: transfer.status || 'unknown' });
     return {
-      id: payout.id,
+      id: transfer.id,
       amount,
       currency,
-      status: payout.status,
+      status: 'paid',
       method: stripeMethod,
-      estimatedArrival: payout.arrival_date ? new Date(payout.arrival_date * 1000) : null,
+      estimatedArrival: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
     };
   }
   // Never pretend a seller was paid. The balance debit happens before this

@@ -182,7 +182,8 @@ test.describe('17 - Social features (production)', () => {
         text: 'PROD-E2E ' + RUN_ID + ' interested in your listing',
       },
     });
-    expect(r.status, JSON.stringify(r.data)).toBe(201);
+    // 201 for a new thread, 200 when appending to an existing listing thread.
+    expect([200, 201], JSON.stringify(r.data)).toContain(r.status);
     expect(r.data._id).toBeTruthy();
     state.messages = state.messages || {};
     state.messages.conv1 = r.data._id;

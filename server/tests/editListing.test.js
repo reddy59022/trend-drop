@@ -94,6 +94,7 @@ describe('Edit Listing - Full Field Update', () => {
           shippingCost: 9.99,
           quantity: 3,
           status: 'active',
+          currency: 'EUR',
           videoUrl: 'https://instagram.com/reel/updated',
         });
 
@@ -104,6 +105,18 @@ describe('Edit Listing - Full Field Update', () => {
       expect(res.body.listing.brand).toBe('Adidas');
       expect(res.body.listing.condition).toBe('New with tags');
       expect(res.body.listing.shipping.international).toBe(true);
+      expect(res.body.listing.currency).toBe('EUR');
+    });
+
+    it('v35.1b - rejects an unsupported currency instead of silently keeping the old one', async () => {
+      const res = await request(app)
+        .put(`/api/listings/${testListing._id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ currency: 'NOTACURRENCY' });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.message).toMatch(/currency/i);
+      expect((await Listing.findById(testListing._id)).currency).toBe('EUR');
     });
 
     it('v35.2 - should allow updating to draft status', async () => {

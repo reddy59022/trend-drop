@@ -245,10 +245,15 @@ router.get('/dashboard', auth, async (req, res) => {
     // paid out (tracked on the seller's balance by /api/payments/payout).
     const sellerDoc = await User.findById(sellerId).select('balance').lean();
     const userAvailable = num(sellerDoc?.balance?.available);
+    const userPending = num(sellerDoc?.balance?.pending);
     const userTotalPaidOut = num(sellerDoc?.balance?.totalPaidOut);
     const userTotalEarned = num(sellerDoc?.balance?.totalEarned);
     const totalEarned = round2(totalEarnings);
-    const pendingBalance = round2(pendingAmount);
+    // The seller's balance ledger is authoritative for "owed to you": it is
+    // what delivery releases and what the payout endpoint spends. Payout docs
+    // can legitimately drift (legacy/refunded rows, orphan sales), and showing
+    // their sum made the dashboard disagree with /api/users/me pending balance.
+    const pendingBalance = round2(userPending);
     const availableBalance = spendableBalance({
       userAvailable, userTotalPaidOut, userTotalEarned, lifetimeCompleted: totalEarnings,
     });

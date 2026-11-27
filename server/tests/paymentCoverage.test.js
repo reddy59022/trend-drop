@@ -1306,3 +1306,25 @@ describe('production payment safety gates', () => {
     }
   });
 });
+
+describe('Stripe Connect fails closed without a live Stripe client', () => {
+  let seller;
+  beforeAll(async () => {
+    seller = await makeUser('Cov Connect', `covconnect-${Date.now()}@t.test`);
+  });
+
+  test('status reports not connected before any Stripe account exists', async () => {
+    await User.updateOne({ _id: seller.user._id }, { $set: { stripeAccountId: null } });
+    const res = await request(app).get('/api/payments/connect/status').set('Authorization', `Bearer ${seller.token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.connected).toBe(false);
+  });
+
+  test('status and onboarding fail closed rather than inventing a payout account', async () => {
+    await User.updateOne({ _id: seller.user._id }, { $set: { stripeAccountId: 'acct_cov_no_stripe' } });
+    const status = await request(app).get('/api/payments/connect/status').set('Authorization', `Bearer ${seller.token}`);
+    expect(status.status).toBe(400);
+    const onboard = await request(app).post('/api/payments/connect/onboard').set('Authorization', `Bearer ${seller.token}`);
+    expect(onboard.status).toBe(400);
+  });
+});

@@ -22,7 +22,11 @@ import { setAuth, setThemeStore, setCartStore, setConfirm, resetTestState, reset
 
 import Settings from '../Settings';
 
-beforeEach(() => { resetTestState(); resetApiMock(api); setAuth(authUser()); setThemeStore(); setCartStore(); setConfirm(async () => true); });
+beforeEach(() => {
+  resetTestState(); resetApiMock(api);
+  setAuth(authUser()); setThemeStore(); setCartStore(); setConfirm(async () => true);
+  api.get.mockResolvedValue({ data: { connected: false, payoutsEnabled: false, detailsSubmitted: false } });
+});
 
 describe('Settings page', () => {
   const goAccount = () => {

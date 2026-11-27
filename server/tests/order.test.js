@@ -231,7 +231,8 @@ describe('Enterprise Order Model & API', () => {
     expect(res.status).toBe(200);
     expect(res.body.orders.length).toBe(1);
     expect(res.body.orders[0].role).toBe('seller');
-    expect(res.body.orders[0].allowedActions).toEqual(expect.arrayContaining(['ship', 'mark_dispatched']));
+    expect(res.body.orders[0].allowedActions).toEqual(expect.arrayContaining(['ship']));
+    expect(res.body.orders[0].allowedActions).not.toEqual(expect.arrayContaining(['mark_dispatched', 'add_tracking']));
   });
 
   test('ORD.8 - Seller POST /api/orders/:id/ship marks only their shipment shipped with tracking', async () => {

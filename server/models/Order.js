@@ -41,7 +41,6 @@ const orderItemSchema = new mongoose.Schema({
 // Client-driven allowed actions per role — "right buttons" for the UI.
 function getAllowedOrderActions(order, role, userId) {
   const actions = [];
-  const shippedStates = ['shipped', 'in_transit', 'delivered', 'confirmed'];
   const myShipments = (order.shipments || []).filter((s) =>
     s.seller && (s.seller._id ? s.seller._id.toString() : s.seller.toString()) === userId
   );
@@ -56,9 +55,11 @@ function getAllowedOrderActions(order, role, userId) {
       actions.push('cancel_within_window');
     }
   } else if (role === 'seller') {
-    actions.push('view_order', 'mark_dispatched');
+    // Only advertise actions that have a mounted endpoint. `mark_dispatched`
+    // and `add_tracking` were dead action names with no route behind them;
+    // shipping (with optional tracking) goes through POST /ship.
+    actions.push('view_order');
     if (myShipments.some((s) => s.status === 'pending' || s.status === 'ready')) actions.push('ship');
-    if (myShipments.some((s) => shippedStates.includes(s.status))) actions.push('add_tracking');
   }
   return [...new Set(actions)];
 }

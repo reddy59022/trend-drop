@@ -244,6 +244,16 @@ describe('Dashboard Accuracy & Revenue Protection', () => {
     expect(bal.totalCommissionPaid).toBe(round2(13.04 + 17.39));
   });
 
+  test('DA.7 pending balance comes from the balance ledger, not drifting payout docs', async () => {
+    // No payout docs, but the seller ledger says money is owed. The dashboard
+    // must show the ledger amount because that is what delivery releases and
+    // what the payout endpoint spends.
+    await User.updateOne({ _id: sellerId }, { $set: { 'balance.pending': 77.77 } });
+    const d = await getDashboard();
+    expect(d.pendingBalance).toBe(77.77);
+    expect(d.pendingAmount).toBe(0);
+  });
+
   test('DA.6 spendable balance is not double-counted with completed payouts', async () => {
     await Payout.create({
       seller: sellerId, transaction: oid(), listing: oid(),

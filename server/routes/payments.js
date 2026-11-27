@@ -1927,6 +1927,69 @@ router.post('/cancel-payment', auth, async (req, res) => {
   }
 });
 
+// GET /api/payments/connect/status - Stripe Connect readiness for the seller
+router.get('/connect/status', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('stripeAccountId').lean();
+    if (!user?.stripeAccountId) {
+      return res.json({ connected: false, payoutsEnabled: false, detailsSubmitted: false });
+    }
+    if (!stripe) {
+      return res.status(400).json({ message: 'Payouts are not configured' });
+    }
+    const account = await stripe.accounts.retrieve(user.stripeAccountId);
+    res.json({
+      connected: true,
+      payoutsEnabled: Boolean(account.payouts_enabled),
+      detailsSubmitted: Boolean(account.details_submitted),
+      requirementsDue: account.requirements?.currently_due || [],
+    });
+  } catch (error) {
+    console.error('Stripe Connect status error:', error.message);
+    res.status(502).json({ message: 'Could not load payout account status' });
+  }
+});
+
+// POST /api/payments/connect/onboard - Create/resume Stripe Connect onboarding
+// Sellers need a connected account before marketplace funds can be transferred
+// to them. There was previously no route that ever set stripeAccountId, so real
+// payouts could never be enabled for any seller.
+router.post('/connect/onboard', auth, async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(400).json({ message: 'Payouts are not configured' });
+    }
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    let accountId = user.stripeAccountId;
+    if (!accountId) {
+      const account = await stripe.accounts.create({
+        type: 'express',
+        email: user.email,
+        country: user.country || 'US',
+        capabilities: { transfers: { requested: true } },
+        metadata: { trenddropUserId: String(user._id) },
+      });
+      accountId = account.id;
+      user.stripeAccountId = accountId;
+      await user.save();
+    }
+
+    const base = (process.env.FRONTEND_URL || process.env.CLIENT_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const link = await stripe.accountLinks.create({
+      account: accountId,
+      type: 'account_onboarding',
+      refresh_url: `${base}/settings?tab=payout&stripe=refresh`,
+      return_url: `${base}/settings?tab=payout&stripe=return`,
+    });
+    res.json({ url: link.url, accountId });
+  } catch (error) {
+    console.error('Stripe Connect onboarding error:', error.message);
+    res.status(502).json({ message: 'Could not start payout onboarding' });
+  }
+});
+
 // POST /api/payments/payout - Process seller payout
 router.post('/payout', auth, async (req, res) => {
   try {

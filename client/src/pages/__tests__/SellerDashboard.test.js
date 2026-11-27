@@ -212,6 +212,15 @@ test('shows Total Sales, Your Earnings and Pending Payout without exposing Commi
     expect(screen.queryByText('$455.44')).not.toBeInTheDocument();
   });
 
+  test('uses the authoritative ledger pendingBalance when API also returns pendingAmount', async () => {
+    getPayoutDashboard.mockResolvedValue({
+      data: { ...dash(), pendingAmount: 4295.6, pendingBalance: 2251.3 },
+    });
+    renderPage(<SellerDashboard />);
+    expect(await screen.findByText('$2,251.30')).toBeInTheDocument();
+    expect(screen.queryByText('$4,295.60')).not.toBeInTheDocument();
+  });
+
   test('formats dashboard money values accurately', async () => {
     renderPage(<SellerDashboard />);
     // dash() = totalSales 5, totalEarnings 225, totalCommission 25, pendingAmount 40
