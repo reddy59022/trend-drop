@@ -1,5 +1,6 @@
 import React from 'react';
 import { FaGlobeAmericas, FaEnvelopeOpenText } from 'react-icons/fa';
+import { CONTACT_EMAIL, contactMailto } from '../utils/contact';
 
 // Enterprise-standard "not available in your area" screen (Feature 1).
 // Shown to users whose region is outside the supported markets (USA + Europe).
@@ -44,7 +45,8 @@ const UnsupportedRegion = () => (
       <div style={{ flex: 1 }}>
         <div style={{ fontWeight: 700, fontSize: 14 }}>Want to know when we launch near you?</div>
         <div style={{ fontSize: 13, color: 'var(--td-text-tertiary)' }}>
-          Our team is launching market-by-market. Check back soon or follow us for updates.
+          Our team is launching market-by-market. Check back soon, or email{' '}
+          <a href={contactMailto('TrendDrop availability in my country')}>{CONTACT_EMAIL}</a>.
         </div>
       </div>
     </div>

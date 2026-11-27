@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FaInstagram, FaTwitter, FaFacebook, FaPinterest, FaTiktok, FaYoutube, FaGlobeAmericas, FaCreditCard } from 'react-icons/fa';
+import { FaInstagram, FaTwitter, FaFacebook, FaPinterest, FaTiktok, FaYoutube, FaGlobeAmericas, FaCreditCard, FaEnvelope } from 'react-icons/fa';
 import api from '../services/api';
+import { CONTACT_EMAIL, contactMailto } from '../utils/contact';
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
@@ -95,7 +96,8 @@ const Footer = () => {
           <div className="footer-section">
             <h4>Support</h4>
             <Link to="/settings">Help Center</Link>
-            <Link to="/settings">Report a Problem</Link>
+            <a href={contactMailto('TrendDrop support request')}>Contact Support</a>
+            <a href={contactMailto('TrendDrop problem report')}>Report a Problem</a>
             <Link to="/legal/privacy">Privacy Notice</Link>
             <Link to="/legal/terms">Terms of Service</Link>
             <Link to="/legal/cookies">Cookie Notice</Link>
@@ -116,6 +118,13 @@ const Footer = () => {
                   <span style={{ opacity: 0.5 }}>|</span>
                 </>
               )}
+              <a
+                href={contactMailto()}
+                style={{ color: 'rgba(255,255,255,0.55)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <FaEnvelope aria-hidden="true" /> {CONTACT_EMAIL}
+              </a>
+              <span style={{ opacity: 0.5 }}>|</span>
               <span style={{ opacity: 0.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <FaCreditCard aria-hidden="true" /> Secure payments
               </span>

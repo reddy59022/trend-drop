@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { CONTACT_EMAIL, contactMailto } from '../utils/contact';
 
 const DOCUMENTS = [
   ['terms', 'Terms of Service'], ['privacy', 'Privacy Notice'], ['cookies', 'Cookie and Tracking Notice'],
@@ -14,7 +15,10 @@ export default function LegalCenter() {
       <div className="glass-card" style={{ padding: 24, display: 'grid', gap: 12 }}>
         {DOCUMENTS.map(([type, title]) => <Link key={type} to={`/legal/${type}`} className="btn btn-outline">{title}</Link>)}
       </div>
-      <p style={{ marginTop: 24, fontSize: 13, color: 'var(--td-text-tertiary)' }}>Need help or want to exercise a privacy right? Use in-app support or the legal contact shown in the Privacy Notice.</p>
+      <p style={{ marginTop: 24, fontSize: 13, color: 'var(--td-text-tertiary)' }}>
+        Need help or want to exercise a privacy right? Email{' '}
+        <a href={contactMailto('TrendDrop legal or privacy request')}>{CONTACT_EMAIL}</a>.
+      </p>
     </div>
   );
 }

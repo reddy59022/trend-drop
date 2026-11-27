@@ -18,6 +18,7 @@ const { findPaymentIntent, retrievePaymentIntent, issueRefund, releaseAuthorizat
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
 const { reconcileSettlements } = require('../utils/settlementAudit');
 const { disconnectUser } = require('../websocket');
+const { CONTACT_EMAIL } = require('../config/contact');
 const { getStateKey, getOrphanAlertState } = require('../utils/orphanNotificationAlerts');
 
 // All admin routes require auth + adminAuth
@@ -559,7 +560,7 @@ router.post('/auto-suspend', async (req, res) => {
       user.tokenVersion = (user.tokenVersion || 0) + 1;
       user.notifications.unshift({
         type: 'payout',
-        message: `Your account has been automatically suspended due to ${user.stats.strikes} strikes. Please contact support.`,
+        message: `Your account has been automatically suspended due to ${user.stats.strikes} strikes. Please contact ${CONTACT_EMAIL}.`,
       });
       await user.save();
       await Listing.updateMany(

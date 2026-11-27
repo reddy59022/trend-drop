@@ -95,6 +95,8 @@ describe('Email module (TD-1.3)', () => {
       expect(sent.to).toEqual([{ email: 'buyer@example.com', name: 'Buyer' }]);
       expect(sent.htmlContent).toContain('https://app.trenddrop.example/verify-email?token=tok-abc');
       expect(sent.htmlContent).toContain('Buyer');
+      expect(sent.htmlContent).toContain('connect.trenddrop@gmail.com');
+      expect(sent.replyTo).toEqual({ email: 'connect.trenddrop@gmail.com', name: 'TrendDrop Support' });
     });
 
     it('EM.3b escapes user-controlled names before embedding them in HTML', async () => {
@@ -115,6 +117,8 @@ describe('Email module (TD-1.3)', () => {
       expect(sent.to).toEqual([{ email: 'seller@example.com', name: 'Seller' }]);
       expect(sent.htmlContent).toContain('https://app.trenddrop.example/reset-password?token=reset-xyz');
       expect(sent.htmlContent).toContain('expires in 1 hour');
+      expect(sent.htmlContent).toContain('connect.trenddrop@gmail.com');
+      expect(sent.replyTo).toEqual({ email: 'connect.trenddrop@gmail.com', name: 'TrendDrop Support' });
     });
 
     it('EM.5 falls back to CLIENT_URL when FRONTEND_URL is absent', async () => {

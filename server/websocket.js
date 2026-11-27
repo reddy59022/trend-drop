@@ -9,6 +9,7 @@ const User = require('./models/User');
 const Auction = require('./models/Auction');
 const { getJwtSecret } = require('./config/security');
 const { isSuspendedRole } = require('./criticalRules');
+const { CONTACT_EMAIL } = require('./config/contact');
 
 let io = null;
 // A user can have multiple active sessions (for example web + mobile). Keep
@@ -72,7 +73,7 @@ function initializeWebSocket(server) {
         return next(new Error('Session expired'));
       }
       if (isSuspendedRole(user.role)) {
-        return next(new Error('Account suspended'));
+        return next(new Error(`Account suspended. Contact ${CONTACT_EMAIL}.`));
       }
 
       socket.user = user;

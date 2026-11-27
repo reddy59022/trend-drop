@@ -1,11 +1,13 @@
 // Legal policy registry. This is a product-enforcement layer, not legal advice.
 // Replace every ENTITY_* placeholder and obtain local counsel approval before
 // enabling a country in production.
+const { CONTACT_EMAIL } = require('./contact');
+
 const ENTITY = {
   name: process.env.LEGAL_ENTITY_NAME || '[LEGAL ENTITY NAME — COUNSEL MUST COMPLETE]',
   address: process.env.LEGAL_ENTITY_ADDRESS || '[REGISTERED BUSINESS ADDRESS]',
   jurisdiction: process.env.LEGAL_ENTITY_JURISDICTION || '[GOVERNING JURISDICTION]',
-  contact: process.env.LEGAL_CONTACT_EMAIL || 'legal@example.invalid',
+  contact: process.env.LEGAL_CONTACT_EMAIL || CONTACT_EMAIL,
 };
 
 const CURRENT_VERSIONS = {

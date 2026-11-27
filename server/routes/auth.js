@@ -13,6 +13,7 @@ const LegalAcceptance = require('../models/LegalAcceptance');
 const { isCountryPolicyPublished } = require('../config/legalRuntime');
 const { currencies } = require('../config/currencies');
 const { isSuspendedRole } = require('../criticalRules');
+const { CONTACT_EMAIL } = require('../config/contact');
 
 // Helper: Generate JWT + user response
 // Always signs with the SAME secret the auth middleware verifies with
@@ -325,7 +326,7 @@ async function handleVerification(token, res) {
     return res.status(400).json({ message: 'Invalid or expired verification token' });
   }
   if (isSuspendedRole(user.role)) {
-    return res.status(403).json({ message: 'Account suspended. Contact support.' });
+    return res.status(403).json({ message: `Account suspended. Contact ${CONTACT_EMAIL}.` });
   }
   user.emailVerified = true;
   user.verificationToken = null;
@@ -443,7 +444,7 @@ router.post('/login', async (req, res) => {
     // and websocket handshake also reject it, but issuing a usable-looking
     // session here made the suspension look ineffective to the client.
     if (isSuspendedRole(user.role)) {
-      return res.status(403).json({ message: 'Account suspended. Contact support.' });
+      return res.status(403).json({ message: `Account suspended. Contact ${CONTACT_EMAIL}.` });
     }
 
     const token = generateToken(user);
@@ -518,7 +519,7 @@ router.post('/google', async (req, res) => {
     }
 
     if (isSuspendedRole(user.role)) {
-      return res.status(403).json({ message: 'Account suspended. Contact support.' });
+      return res.status(403).json({ message: `Account suspended. Contact ${CONTACT_EMAIL}.` });
     }
     const token = generateToken(user);
     res.json(userResponse(user, token));
@@ -687,7 +688,7 @@ router.post('/apple', async (req, res) => {
     }
 
     if (isSuspendedRole(user.role)) {
-      return res.status(403).json({ message: 'Account suspended. Contact support.' });
+      return res.status(403).json({ message: `Account suspended. Contact ${CONTACT_EMAIL}.` });
     }
     const token = generateToken(user);
     res.json(userResponse(user, token));
@@ -749,7 +750,7 @@ router.post('/facebook', async (req, res) => {
     }
 
     if (isSuspendedRole(user.role)) {
-      return res.status(403).json({ message: 'Account suspended. Contact support.' });
+      return res.status(403).json({ message: `Account suspended. Contact ${CONTACT_EMAIL}.` });
     }
     const token = generateToken(user);
     res.json(userResponse(user, token));

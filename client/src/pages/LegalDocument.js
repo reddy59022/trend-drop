@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import api from '../services/api';
+import { CONTACT_EMAIL, contactMailto } from '../utils/contact';
 
 const LegalDocument = () => {
   const { type } = useParams();
@@ -39,7 +40,8 @@ const LegalDocument = () => {
       })}
       <div className="glass-card" style={{ padding: 16, marginTop: 32 }}>
         <strong>Important</strong>
-        <p style={{ marginBottom: 0 }}>This document is a platform baseline and does not remove mandatory rights in your country. Entity details and country supplements must be completed and reviewed before launch in each jurisdiction.</p>
+        <p>This document is a platform baseline and does not remove mandatory rights in your country. Entity details and country supplements must be completed and reviewed before launch in each jurisdiction.</p>
+        <p style={{ marginBottom: 0 }}>Questions about this document? Email <a href={contactMailto('TrendDrop legal question')}>{CONTACT_EMAIL}</a>.</p>
       </div>
     </article>
   );

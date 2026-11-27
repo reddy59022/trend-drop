@@ -98,7 +98,7 @@ describe('middleware auth branches', () => {
     expect(isSuspendedRole(user.role)).toBe(true);
     const res = await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body.message).toBe('Account suspended. Contact support.');
+    expect(res.body.message).toBe('Account suspended. Contact connect.trenddrop@gmail.com.');
   });
 
   test('suspended account cannot obtain a fresh token from login', async () => {

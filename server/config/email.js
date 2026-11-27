@@ -6,6 +6,7 @@
 // plus moderate ones (qs, tough-cookie, uuid@3).
 const crypto = require('crypto');
 const { increment } = require('../utils/metrics');
+const { CONTACT_EMAIL } = require('./contact');
 
 const retryLimit = (value) => {
   const parsed = Number(value);
@@ -35,6 +36,8 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character
   '"': '&quot;',
   "'": '&#39;',
 }[character]));
+
+const contactLink = `<a href="mailto:${CONTACT_EMAIL}" style="color:#FF4D6D;">${CONTACT_EMAIL}</a>`;
 
 const hasApiKey = () => {
   // The in-memory E2E harness sets placeholder credentials so production
@@ -137,6 +140,9 @@ const sendVerificationEmail = (email, name, token) => {
             <p style="font-size:12px; color:#aaa; text-align:center;">
               If you didn't create an account, you can safely ignore this email.
             </p>
+            <p style="font-size:12px; color:#aaa; text-align:center;">
+              Need help? Contact ${contactLink}.
+            </p>
           </div>
         </div>
       </body>
@@ -148,7 +154,7 @@ const sendVerificationEmail = (email, name, token) => {
       htmlContent,
       to: [{ email, name }],
       sender: { email: SENDER_EMAIL, name: SENDER_NAME },
-      replyTo: { email: SENDER_EMAIL, name: 'TrendDrop Support' },
+      replyTo: { email: CONTACT_EMAIL, name: 'TrendDrop Support' },
     });
     console.log('Verification email sent to:', email, 'messageId:', data.messageId);
     return { emailSent: true };
@@ -187,6 +193,7 @@ const sendPasswordResetEmail = (email, name, token) => {
                 Reset Password
               </a>
             </div>
+            <p style="font-size:13px; color:#888;">Need help? Contact ${contactLink}.</p>
           </div>
         </div>
       </body>
@@ -198,6 +205,7 @@ const sendPasswordResetEmail = (email, name, token) => {
       htmlContent,
       to: [{ email, name }],
       sender: { email: SENDER_EMAIL, name: SENDER_NAME },
+      replyTo: { email: CONTACT_EMAIL, name: 'TrendDrop Support' },
     });
     console.log('Password reset email sent to:', email);
     return { emailSent: true };
@@ -298,7 +306,7 @@ const sendOperationalAlert = async ({ subject, text }) => {
       htmlContent: `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#222;"><h2>${escapeHtml(safeSubject)}</h2><pre style="white-space:pre-wrap;font-family:inherit;">${safeText}</pre></div>`,
       to: recipients.map((email) => ({ email })),
       sender: { email: SENDER_EMAIL, name: SENDER_NAME },
-      replyTo: { email: SENDER_EMAIL, name: 'TrendDrop Operations' },
+      replyTo: { email: CONTACT_EMAIL, name: 'TrendDrop Operations' },
     }, { operation: 'operational_alert' });
     increment('trenddrop_operational_alert_delivery_total', { result: 'sent' });
     console.log('[email] Operational alert sent:', safeSubject);

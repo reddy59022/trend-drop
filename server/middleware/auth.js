@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { getJwtSecret } = require('../config/security');
 const { isSuspendedRole } = require('../criticalRules');
+const { CONTACT_EMAIL } = require('../config/contact');
 
 const auth = async (req, res, next) => {
   try {
@@ -28,7 +29,7 @@ const auth = async (req, res, next) => {
     // Suspended accounts are locked out immediately: a valid token must not
     // grant any further API access once an admin suspends the account.
     if (isSuspendedRole(user.role)) {
-      return res.status(403).json({ message: 'Account suspended. Contact support.' });
+      return res.status(403).json({ message: `Account suspended. Contact ${CONTACT_EMAIL}.` });
     }
 
     next();

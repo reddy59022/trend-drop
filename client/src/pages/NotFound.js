@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { FaHome, FaSearch } from 'react-icons/fa';
+import { CONTACT_EMAIL, contactMailto } from '../utils/contact';
 
 const NotFound = () => {
   return (
@@ -28,6 +29,9 @@ const NotFound = () => {
           <FaSearch /> Browse Listings
         </Link>
       </div>
+      <p style={{ marginTop: 24, fontSize: 14, color: 'var(--td-text-tertiary)' }}>
+        Still need help? Email <a href={contactMailto('TrendDrop broken link')}>{CONTACT_EMAIL}</a>.
+      </p>
     </div>
   );
 };
