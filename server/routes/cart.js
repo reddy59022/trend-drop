@@ -499,6 +499,12 @@ router.post('/checkout', auth, async (req, res) => {
           code: labelError.code || 'SHIPPING_LABEL_FAILED',
           message: 'Shipping label could not be created. Your payment was not captured.',
           retryable: labelError.retryable !== false,
+          // Sandbox acceptance testing only: surface the provider's reason so a
+          // misconfigured test key/account is diagnosable. Live deployments keep
+          // the generic message and never expose provider internals.
+          ...(['sandbox', 'test'].includes(String(process.env.EASYPOST_MODE || '').trim().toLowerCase()) && labelError.message
+            ? { detail: labelError.message, providerStatus: labelError.status || null }
+            : {}),
         });
       }
     }
