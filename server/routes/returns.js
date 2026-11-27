@@ -12,6 +12,7 @@ const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = re
 const { clawbackSellerEarnings, sellerSaleTotal, chargeSellerPostage } = require('../utils/balances');
 const { refundShippingLabel } = require('../services/easypostService');
 const restoreListingInventory = require('../utils/restoreListingInventory');
+const { applyProviderRefundResult, recordProviderSettlement } = require('../utils/providerRefund');
 
 // Reuse the listing image pipeline (Cloudinary in prod, deterministic mock in test).
 const { uploadListingImages } = (() => {
@@ -520,9 +521,18 @@ router.put('/:id/receive', auth, async (req, res) => {
         const { retrievePaymentIntent, issueRefund, releaseAuthorization } = require('../config/payments');
         const pi = await retrievePaymentIntent(paymentIntentId);
         if (pi.status === 'succeeded' && (responsibility !== 'buyer' || buyerRefund > 0)) {
-          await issueRefund(paymentIntentId, responsibility === 'buyer' ? buyerRefund : undefined);
+          const refund = await issueRefund(paymentIntentId, responsibility === 'buyer' ? buyerRefund : undefined);
+          // Stripe can accept the call and still reject the refund. Only a
+          // provider-accepted result may settle the return.
+          applyProviderRefundResult(returnRequest, refund, paymentIntentId);
+        } else if (pi.status === 'requires_capture') {
+          await releaseAuthorization(paymentIntentId);
+          recordProviderSettlement(returnRequest, 'authorization_released');
+        } else if (pi.status === 'refunded') {
+          recordProviderSettlement(returnRequest, 'already_refunded');
+        } else {
+          recordProviderSettlement(returnRequest, 'nothing_to_refund');
         }
-        else if (pi.status === 'requires_capture') { await releaseAuthorization(paymentIntentId); }
       } catch (stripeErr) {
         // No inventory, payout, or balance mutation has happened yet. Keep
         // the return retryable if the provider rejects the refund.
@@ -533,6 +543,10 @@ router.put('/:id/receive', auth, async (req, res) => {
         );
         return res.status(502).json({ message: 'Refund could not be processed. Please retry.' });
       }
+    } else {
+      // Legacy rows without a provider reference: nothing can be refunded at
+      // Stripe, and the response must say so instead of implying it was.
+      recordProviderSettlement(returnRequest, 'missing_payment_reference');
     }
 
     // Provider refund succeeded; now unwind local inventory and ledger exactly

@@ -5,7 +5,16 @@ const app = require('../server.js');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Transaction = require('../models/Transaction');
+const Return = require('../models/Return');
 const jwt = require('jsonwebtoken');
+
+// Keep the real (mock-provider) refund behavior by default, but let individual
+// tests drive Stripe's answer — a refund call can return status 'failed'.
+jest.mock('../config/payments', () => {
+  const actual = jest.requireActual('../config/payments');
+  return { ...actual, issueRefund: jest.fn(actual.issueRefund) };
+});
+const payments = require('../config/payments');
 
 const secret = process.env.JWT_SECRET || 'fallback_secret_change_me';
 
@@ -268,6 +277,69 @@ describe('Returns & Refund Management', () => {
     const listing = await Listing.findById(settled.body.listing._id || settled.body.listing);
     expect(listing.quantity).toBe(quantityBeforeReceive + 1);
     expect(listing.quantitySold || 0).toBe(quantitySoldBeforeReceive - 1);
+  });
+
+  test('RET.13 - received return records the real provider refund result', async () => {
+    const paymentIntentId = `pi_route_refund_${Date.now()}`;
+    global.__mockPaymentIntents = global.__mockPaymentIntents || {};
+    global.__mockPaymentIntents[paymentIntentId] = {
+      id: paymentIntentId, status: 'succeeded', amount: 5650,
+      metadata: { buyerId: String(buyerId) },
+    };
+    const listing = await Listing.create({
+      seller: sellerId, title: 'Provider refund route item', description: 'test',
+      price: 50, category: 'Women', condition: 'New with tags', images: ['img1.jpg'],
+      available: false, sold: true, status: 'active', quantity: 0, quantitySold: 1,
+    });
+    const txn = await Transaction.create({
+      buyer: buyerId, seller: sellerId, listing: listing._id, itemPrice: 50,
+      currency: 'USD', quantity: 1, status: 'completed',
+      paymentBreakdown: {
+        subtotal: 50, shippingCost: 0, buyerProtectionFee: 2.5, buyerProtectionPercent: 5,
+        totalPaid: 56.5, platformFee: 4, platformFeePercent: 10, sellerEarnings: 44,
+        paymentIntentId,
+      },
+      payout: { status: 'pending', transactionId: paymentIntentId },
+      shipping: { trackingNumber: 'TRK-RET-13' },
+    });
+
+    const created = await request(app)
+      .post('/api/returns')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ transactionId: txn._id, reason: 'Defective', images: ['https://example.com/photo.jpg'] });
+    expect(created.status).toBe(201);
+    await request(app)
+      .put(`/api/returns/${created.body._id}/approve`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    await request(app)
+      .put(`/api/returns/${created.body._id}/ship`)
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ trackingNumber: 'RET-RET-13' });
+
+    // Stripe accepted the call but rejected the refund: the return must stay
+    // retryable and no ledger mutation may happen.
+    payments.issueRefund.mockResolvedValueOnce({ id: 're_route_failed', status: 'failed', amount: 5650 });
+    const rejected = await request(app)
+      .put(`/api/returns/${created.body._id}/receive`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    expect(rejected.status).toBe(502);
+    const retryable = await Return.findById(created.body._id);
+    expect(retryable.status).toBe('shipped');
+    expect(retryable.providerRefunded).toBe(false);
+    expect(retryable.providerRefundId).toBe('');
+
+    payments.issueRefund.mockResolvedValueOnce({ id: 're_route_ok', status: 'succeeded', amount: 5650 });
+    const settled = await request(app)
+      .put(`/api/returns/${created.body._id}/receive`)
+      .set('Authorization', `Bearer ${sellerToken}`);
+    expect(settled.status).toBe(200);
+    const done = await Return.findById(created.body._id);
+    expect(done.status).toBe('refunded');
+    expect(done.providerRefunded).toBe(true);
+    expect(done.providerRefundId).toBe('re_route_ok');
+    expect(done.providerRefundStatus).toBe('succeeded');
+    expect(done.providerRefundAmount).toBe(5650);
+    expect(done.providerRefundedAt).toBeTruthy();
   });
 
   test('RET.11 - Seller can deny a return request', async () => {
