@@ -177,4 +177,40 @@ describe('QA notification integrity (database)', () => {
     expect(alert.text).toContain('1 notification(s)');
     expect(alert.text).toContain(missingTransactionId.toString());
   });
+
+  test('scheduled audit preserves its report and metric when alert delivery fails', async () => {
+    const missingTransactionId = oid();
+    await insertUser([
+      {
+        _id: oid(),
+        type: 'sale',
+        transaction: missingTransactionId,
+        message: 'missing transaction during alert failure',
+      },
+    ]);
+
+    reset();
+    sendOperationalAlert.mockClear();
+    sendOperationalAlert.mockRejectedValueOnce(new Error('brevo unavailable'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    let report;
+    let errorCalls;
+    try {
+      report = await auditNotificationIntegrity();
+    } finally {
+      errorCalls = errorSpy.mock.calls;
+      errorSpy.mockRestore();
+    }
+
+    expect(report).not.toBeNull();
+    expect(report.total).toBe(1);
+    expect(report.missingTransactionIds).toEqual([missingTransactionId.toString()]);
+    expect(render()).toMatch(/trenddrop_orphan_notifications_total\{[^}]*result="found"[^}]*source="cron"[^}]*\} 1/);
+    expect(sendOperationalAlert).toHaveBeenCalledTimes(1);
+    expect(errorCalls).toContainEqual([
+      '[CRON] Orphan audit alert delivery failed:',
+      'brevo unavailable',
+    ]);
+  });
 });
