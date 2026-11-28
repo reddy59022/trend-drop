@@ -2084,7 +2084,10 @@ html {
   top: calc(8px + var(--td-safe-area-top));
   left: calc(8px + var(--td-safe-area-left));
   z-index: 3000;
-  padding: 10px 16px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
   border-radius: var(--td-radius-md);
   background: var(--td-primary);
   color: #fff;
@@ -2105,4 +2108,50 @@ html {
    itself (its first heading is the target). */
 #main-content:focus {
   outline: none;
+}
+
+/* 8. TOUCH-TARGET COMPLETION (measured, not guessed).
+   The sweep measured the remaining controls below the 44px platform floor on
+   every mobile route: footer social buttons 38x38, footer links 32px tall,
+   the logo link 28-38px tall and the skip link 42px. Each is now at or above
+   the floor on touch devices without changing desktop density. */
+.social-icons a {
+  width: 44px;
+  height: 44px;
+}
+
+@media (pointer: coarse) {
+  .navbar-logo {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  .footer-section a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    margin-bottom: 2px;
+  }
+}
+
+/* 9. ACTIVE TAB AFFORDANCE.
+   The dock marked the current destination with colour alone. A soft tinted
+   pill makes the state readable for colour-blind users and at a glance, and
+   the 4px of extra height stops the labels from sitting on the dock edge. */
+@media (max-width: 768px) {
+  .mobile-tab-bar {
+    height: 68px;
+  }
+
+  .mobile-tab-item {
+    color: var(--td-text-secondary);
+    border-radius: 16px;
+    padding: 6px 4px 8px;
+    transition: color var(--td-transition-fast), background var(--td-transition-fast);
+  }
+
+  .mobile-tab-item.active:not(.mobile-tab-center) {
+    background: rgba(var(--td-primary-rgb), 0.14);
+  }
 }

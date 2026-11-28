@@ -539,11 +539,13 @@ const CreateAuction = () => {
         </div>
 
         {/* Submit */}
-        <div style={{ display: 'flex', gap: 'var(--td-space-md)', justifyContent: 'flex-end' }}>
-          <button type="button" className="btn btn-outline" onClick={() => navigate('/auctions')}>
+        {/* Wraps on 320px screens: Cancel used to shrink below its label and
+            hard-clip to "Cance", and the primary action stayed 180px wide. */}
+        <div style={{ display: 'flex', gap: 'var(--td-space-md)', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <button type="button" className="btn btn-outline" onClick={() => navigate('/auctions')} style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={loading} style={{ minWidth: 180 }}>
+          <button type="submit" className="btn btn-primary" disabled={loading} style={{ minWidth: 180, flex: '1 1 180px', maxWidth: '100%' }}>
             {loading ? (
               <>
                 <span className="spinner" style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid currentColor', borderRightColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginRight: 8 }}></span>

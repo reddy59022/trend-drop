@@ -158,8 +158,10 @@ const OfferSharing = () => {
                   alt={listing.title}
                   style={{ width: '100%', height: 80, objectFit: 'cover', borderRadius: 6, marginBottom: 6 }}
                 />
-                <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.2, height: 32, overflow: 'hidden' }}>
-                  {listing.title.substring(0, 30)}...
+                {/* Two-line clamp instead of a fixed 32px box: long titles were
+                    hard-cut mid-word on 320px screens and on iPad. */}
+                <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.3, minHeight: 30, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  {listing.title}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--td-primary)', marginTop: 4 }}>
                   {formatPrice(listing.price, listing.currency)}
