@@ -24,6 +24,14 @@ test.describe('31 · Seller cashout full (dashboard amounts + cashout scenarios)
     sellerToken = await api.login('alex');
     buyerToken = await api.login('jordan');
 
+    // This spec is self-sufficient: ensure a payout method exists even when it
+    // runs alone (payout posts require payoutMethod.type, not just an object).
+    const pm = await api.req('put', '/api/auth/profile', {
+      token: sellerToken,
+      body: { payoutMethod: { type: 'paypal', paypalEmail: 'alex.payouts@example.com' } },
+    });
+    expect(pm.status, JSON.stringify(pm.data)).toBe(200);
+
     // Create + purchase a listing so the seller has pending earnings
     const lr = await api.req('post', '/api/listings', {
       token: sellerToken,

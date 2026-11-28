@@ -29,9 +29,19 @@ test.describe('06 · Payouts (production)', () => {
     assertNumericBalances(r.data, 'alex.dashboard');
     // Regression: legacy payout docs previously produced null/NaN → serialized null
     expect(r.data.availableBalance).not.toBeNull();
-    // This run's batch earnings must be pending (when the batch checkout ran)
-    if (state.txns?.batch?.A) {
-      expect(r.data.pendingBalance).toBeGreaterThanOrEqual(41.4 + 61.6 - 0.01);
+    // This run's batch earnings must be pending. Derive the expected amount
+    // from the actual transaction breakdowns instead of a hard-coded total:
+    // postage/label cost varies with the seller origin, so the old constant
+    // was only valid for one seeded address.
+    if (state.txns?.batch?.A && state.txns?.batch?.B) {
+      let expected = 0;
+      for (const key of ['A', 'B']) {
+        const tr = await api.req('get', `/api/transactions/${state.txns.batch[key].id}`, { token: alexToken });
+        const t = tr.data.transaction || tr.data;
+        expected += t.paymentBreakdown?.sellerEarnings ?? t.sellerBreakdown?.sellerEarnings ?? 0;
+      }
+      expect(expected).toBeGreaterThan(0);
+      expect(r.data.pendingBalance).toBeGreaterThanOrEqual(expected - 0.01);
     }
   });
 

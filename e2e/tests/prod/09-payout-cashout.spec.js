@@ -18,23 +18,19 @@ test.describe('09 · Payout cashout flow (production)', () => {
   test.afterAll(async () => { await api.dispose(); });
 
   test('seller can configure/update their payout method', async () => {
-    const r = await api.req('put', '/api/users/me/payout-method', {
+    // Payout methods are persisted through the profile endpoint. The old
+    // /api/users/me/payout-method path never existed, so this setup silently
+    // 404'd and left every later cashout spec without a method.
+    const r = await api.req('put', '/api/auth/profile', {
       token: alexToken,
       body: {
-        type: 'stripe',
-        details: {
-          accountNumber: '000123456789',
-          routingNumber: '110000000',
-          accountHolderName: 'Alex Rivera',
+        payoutMethod: {
+          type: 'paypal',
+          paypalEmail: 'alex.payouts@example.com',
         },
       },
     });
-    // Either 200 (endpoint exists) or 404 (not implemented) — document which
-    if (r.status === 404) {
-      test.info().annotations.push({ type: 'info', description: 'PUT /api/users/me/payout-method not implemented — skipping payout method setup' });
-      return;
-    }
-    expect(r.status).toBe(200);
+    expect(r.status, JSON.stringify(r.data)).toBe(200);
   });
 
   test('payout method configuration is reflected in user profile', async () => {
