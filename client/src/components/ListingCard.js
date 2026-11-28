@@ -29,6 +29,14 @@ const ListingCard = React.memo(({ listing }) => {
   const discount = listing.originalPrice
     ? Math.round((1 - listing.price / listing.originalPrice) * 100)
     : 0;
+  // Listings expose `quantity` and a boolean `available`; there is no
+  // `available_quantity` field, so the quick-add button never rendered and
+  // cart quantity limits were unknown. Treat a listing without a quantity as
+  // the single-item case.
+  const quantityOnHand = Number(listing.quantity);
+  const availableQuantity = (listing.sold || listing.available === false)
+    ? 0
+    : (Number.isFinite(quantityOnHand) && quantityOnHand > 0 ? quantityOnHand : 1);
 
   const handleLike = async (e) => {
     e.preventDefault();
@@ -53,7 +61,7 @@ const ListingCard = React.memo(({ listing }) => {
       toast.error('Please login to add items to cart');
       return;
     }
-    if (listing.available_quantity <= 0) {
+    if (availableQuantity <= 0) {
       toast.error('This item is sold out');
       return;
     }
@@ -66,7 +74,7 @@ const ListingCard = React.memo(({ listing }) => {
         currency: listing.currency || 'USD',
         quantity: 1,
         thumbnail: listing.images?.[0] || '',
-        available: listing.available_quantity,
+        available: availableQuantity,
       });
       toast.success('Added to cart!');
     } catch (error) {
@@ -175,7 +183,7 @@ const ListingCard = React.memo(({ listing }) => {
         {listing.sold && <span className="sold-badge">SOLD</span>}
 
         {/* Quick add to cart */}
-        {!listing.sold && listing.available_quantity > 0 && (
+        {!listing.sold && availableQuantity > 0 && (
           <button
             className="quick-cart-btn"
             onClick={handleAddToCart}

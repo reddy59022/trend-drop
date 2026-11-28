@@ -293,6 +293,32 @@ describe('Wishlist Functionality', () => {
     });
   });
 
+  describe('Like endpoint with a pre-existing wishlist entry', () => {
+    test('5z Like succeeds and keeps a single wishlist row when already wishlisted', async () => {
+      const liker = await createUser('Pre-Wishlisted Liker', mkEmail('prewl'));
+      const testListing = await createListing(sellerId, { title: 'Already Wishlisted' });
+
+      const addRes = await request(app)
+        .post('/api/wishlist')
+        .set('Authorization', `Bearer ${liker.token}`)
+        .send({ listingId: testListing._id.toString() });
+      expect(addRes.status).toBe(200);
+
+      // Regression: the like route previously used a filtered upsert here and
+      // returned 500 (E11000) whenever the wishlist already contained the item.
+      const likeRes = await request(app)
+        .post(`/api/listings/${testListing._id}/like`)
+        .set('Authorization', `Bearer ${liker.token}`);
+      expect(likeRes.status).toBe(200);
+      expect(likeRes.body.liked).toBe(true);
+      expect(likeRes.body.likes).toContain(liker.user._id.toString());
+
+      const wishlist = await Wishlist.findOne({ user: liker.user._id });
+      const matches = wishlist.items.filter(i => i.listing.toString() === testListing._id.toString());
+      expect(matches).toHaveLength(1);
+    });
+  });
+
   describe('End-to-End Heart Icon Flow', () => {
     test('5a Complete add/check/remove cycle works correctly', async () => {
       const testListing = await createListing(sellerId, { title: 'E2E Test' });

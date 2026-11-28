@@ -16,6 +16,8 @@ const STATUS_GROUPS = [
 ];
 
 // Default status filters per type tab
+const ALL_STATUSES = STATUS_GROUPS.flatMap(group => group.statuses);
+
 const DEFAULT_STATUSES = {
   sold: ['paid', 'processing'],           // sold & ready to ship
   bought: ['paid', 'processing', 'shipped', 'in_transit'], // active orders
@@ -100,7 +102,12 @@ function Transactions() {
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
 
   const getStatusFilterString = useCallback(() => {
-    if (statusFilter && statusFilter.length > 0) return statusFilter.join(',');
+    // `[]` is the explicit "All Statuses" choice. It must send every known
+    // status: omitting the parameter makes the server re-apply the type's
+    // default filter, so delivered/refunded sales never appeared there.
+    if (statusFilter !== null) {
+      return (statusFilter.length ? statusFilter : ALL_STATUSES).join(',');
+    }
     const defaults = DEFAULT_STATUSES[filter];
     return defaults ? defaults.join(',') : '';
   }, [statusFilter, filter]);

@@ -2,7 +2,7 @@ import { defaultAvatar, formatPrice, formatPriceRaw, getConditionColor, normaliz
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment, FaBolt, FaExchangeAlt, FaClock } from 'react-icons/fa';
-import api, { checkInWishlist, addToWishlist, removeFromWishlist } from '../services/api';
+import api, { checkInWishlist } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { toast } from 'react-toastify';
@@ -33,6 +33,7 @@ const ListingDetail = () => {
   const [activePriceIndex, setActivePriceIndex] = useState(-1);
   const [selectedCountry, setSelectedCountry] = useState('US');
   const [shippingEstimate, setShippingEstimate] = useState(null);
+  const [summaryShipping, setSummaryShipping] = useState(null);
   const [showMobileSticky, setShowMobileSticky] = useState(false);
   const [counterModalOpen, setCounterModalOpen] = useState(false);
   const [counterAmount, setCounterAmount] = useState('');
@@ -43,6 +44,27 @@ const ListingDetail = () => {
     if (user) fetchBuyerOffer();
     // eslint-disable-next-line
   }, [id, user]);
+
+  // Keep the purchase-summary shipping line aligned with the server's
+  // weight- and threshold-aware calculation. The static listing shipping fee
+  // ignored free-shipping thresholds, so the detail page could quote $3.99
+  // while cart/checkout correctly charged $0.
+  useEffect(() => {
+    if (!listing) return undefined;
+    let cancelled = false;
+    const itemPrice = buyerOffer?.status === 'accepted'
+      ? (buyerOffer.counterAmount || buyerOffer.amount)
+      : listing.price;
+    api.post('/shipping/calculate', {
+      fromCountry: listing.shipsFrom || 'US',
+      toCountry: selectedCountry,
+      weightKg: listing.weight || 0.5,
+      itemPrice,
+    }).then((res) => {
+      if (!cancelled) setSummaryShipping(res.data);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [listing, selectedCountry, buyerOffer]);
 
   // Track scroll for mobile sticky bar
   useEffect(() => {
@@ -127,22 +149,15 @@ const ListingDetail = () => {
   const handleLike = async () => {
     if (!user) return toast.error('Please login');
     try {
-      if (liked) {
-        // Remove from wishlist
-        await removeFromWishlist(id);
-        setLiked(false);
-        toast.info('Removed from wishlist');
-      } else {
-        // Add to wishlist
-        await addToWishlist(id);
-        setLiked(true);
-        toast.success('Added to wishlist!');
-      }
-      // Also toggle the like on the listing for social features
+      // The like endpoint also maintains the wishlist entry and returns the
+      // authoritative state, so do not write the wishlist separately here.
       const res = await api.post(`/listings/${id}/like`);
+      setLiked(res.data.liked);
       setLikeCount(res.data.likes.length);
+      if (res.data.liked) toast.success('Added to wishlist!');
+      else toast.info('Removed from wishlist');
     } catch (error) {
-      console.error('Wishlist error:', error);
+      console.error('Like error:', error);
       toast.error('Failed to update wishlist');
     }
   };
@@ -299,7 +314,12 @@ const ListingDetail = () => {
     ? Math.round((1 - listing.price / listing.originalPrice) * 100)
     : 0;
   const displayPrice = getOfferPrice();
-  const shippingFee = listing.shipping?.freeShipping ? 0 : (listing.shipping?.shippingCost || 5.99);
+  const quotedShipping = summaryShipping && Number.isFinite(Number(summaryShipping.cost))
+    ? Number(summaryShipping.cost)
+    : null;
+  const shippingFee = quotedShipping !== null
+    ? quotedShipping
+    : (listing.shipping?.freeShipping ? 0 : (listing.shipping?.shippingCost || 5.99));
   const protectionFee = displayPrice * 0.05;
   const totalCost = displayPrice + shippingFee + protectionFee;
 

@@ -34,6 +34,15 @@ describe('ListingCard', () => {
     expect(screen.getByText('Cool Shirt')).toBeInTheDocument();
     expect(screen.getByText(/\$25/)).toBeInTheDocument();
   });
+  test('quick add is shown with the listing quantity and passes it to the cart', async () => {
+    renderPage(<ListingCard listing={{ ...listing(), quantity: 2 }} />);
+    fireEvent.click(screen.getByRole('button', { name: /Quick add Cool Shirt to cart/i }));
+    await waitFor(() => expect(globalThis.__tdCart.addToCart).toHaveBeenCalledWith(expect.objectContaining({ listingId: 'l1', available: 2 })));
+  });
+  test('quick add is hidden for a sold listing', () => {
+    renderPage(<ListingCard listing={{ ...listing(), quantity: 0, sold: true }} />);
+    expect(screen.queryByRole('button', { name: /Quick add/i })).not.toBeInTheDocument();
+  });
   test('guests are prompted to log in when liking', async () => {
     setAuth(null);
     renderPage(<ListingCard listing={listing()} />);

@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { isNative } from './services/native';
 import { deepLinkPath, isOAuthCallbackUrl, isAppPath } from './services/deepLinks';
@@ -97,6 +97,14 @@ const PageLoader = () => (
 const CurrencyScope = ({ children }) => {
   const { currency } = useTheme();
   return <React.Fragment key={currency}>{children}</React.Fragment>;
+};
+
+const ScrollToTop = () => {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
 };
 
 const NativeAppLifecycle = () => {
@@ -209,6 +217,7 @@ function App() {
   return (
     <ThemeProvider>
       <NativeAppLifecycle />
+      <ScrollToTop />
       <CartProvider>
         <SocketProvider>
           <div className="app">

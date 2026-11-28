@@ -1022,13 +1022,24 @@ router.post('/:id/like', auth, async (req, res) => {
         { $set: { likes: grown, likesCount: { $size: grown } } },
       ]);
 
-      // Wishlist: push the listing only when it is not already present.
-      // The 'items.listing != id' filter + upsert covers both the
-      // missing-wishlist and existing-wishlist cases atomically.
+      // Wishlist: ensure the document exists, then push only when absent.
+      // A filtered upsert cannot be used here: when the user already
+      // wishlisted this item the filter misses, so upsert tries to insert a
+      // second document for the same user and hits the unique index (500).
+      try {
+        await Wishlist.updateOne(
+          { user: userId },
+          { $setOnInsert: { user: userId, items: [] } },
+          { upsert: true }
+        );
+      } catch (error) {
+        // Concurrent first-like requests can both upsert; one wins and the
+        // other gets E11000, which is safe to ignore.
+        if (error.code !== 11000) throw error;
+      }
       await Wishlist.updateOne(
         { user: userId, 'items.listing': { $ne: listing._id } },
-        { $push: { items: { listing: listing._id, addedAt: new Date() } } },
-        { upsert: true }
+        { $push: { items: { listing: listing._id, addedAt: new Date() } } }
       );
 
       if (listing.seller.toString() !== userId.toString()) {

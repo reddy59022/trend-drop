@@ -35,6 +35,9 @@ beforeEach(() => { resetTestState(); resetApiMock(api); setAuth(authUser()); set
 
 const prime = (l = listing()) => {
   api.checkInWishlist.mockResolvedValue({ data: { inWishlist: false } });
+  // The summary fetches an authoritative shipping quote on load; individual
+  // tests override this when they assert a specific estimate.
+  api.post.mockResolvedValue({ data: { cost: 0 } });
   api.get.mockImplementation((url) => {
     if (String(url).startsWith('/listings/')) return Promise.resolve({ data: { listing: l } });
     if (String(url).startsWith('/comments/')) return Promise.resolve({ data: [] });
@@ -116,6 +119,6 @@ describe('ListingDetail page', () => {
     fireEvent.click(screen.getByRole('button', { name: /Get Estimate/i }));
 
     expect(await screen.findByText('Estimated Shipping')).toBeInTheDocument();
-    expect(screen.getByText('$7.50')).toBeInTheDocument();
+    expect(screen.getAllByText('$7.50').length).toBeGreaterThan(0);
   });
 });

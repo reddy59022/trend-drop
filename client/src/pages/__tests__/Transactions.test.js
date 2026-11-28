@@ -58,6 +58,21 @@ describe('Transactions page', () => {
     expect(await screen.findByText('1 / 3')).toBeInTheDocument();
     expect(screen.getByText('Next')).toBeInTheDocument();
   });
+  test('All Statuses sends every known status so delivered sales appear', async () => {
+    getTransactions.mockResolvedValue({ data: { transactions: [], pagination: emptyPagination } });
+    renderPage(<Transactions />);
+    await screen.findByText('No orders found');
+    fireEvent.click(screen.getByRole('button', { name: /Sold/ }));
+    await waitFor(() => expect(getTransactions).toHaveBeenCalledWith({ type: 'sold', page: 1, limit: 20, status: 'paid,processing' }));
+    await screen.findByText('No orders found');
+    fireEvent.click(screen.getByRole('button', { name: /2 Statuses/i }));
+    fireEvent.click(screen.getByText('✓ All Statuses'));
+    await waitFor(() => {
+      const last = getTransactions.mock.calls[getTransactions.mock.calls.length - 1][0];
+      expect(last.status).toContain('delivered');
+      expect(last.status).toContain('refunded');
+    });
+  });
   test('status filter dropdown allows selecting a status', async () => {
     getTransactions.mockResolvedValue({ data: { transactions: [], pagination: emptyPagination } });
     renderPage(<Transactions />);
