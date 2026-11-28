@@ -840,8 +840,8 @@ router.post('/confirm-batch', auth, async (req, res) => {
         message: 'Shipping label could not be created. Your payment was not captured.',
         retryable: labelError.retryable,
         // Sandbox acceptance testing only; live deployments stay generic.
-        ...(['sandbox', 'test'].includes(String(process.env.EASYPOST_MODE || '').trim().toLowerCase()) && labelError.message
-          ? { detail: labelError.message, providerStatus: labelError.status || null }
+        ...(['sandbox', 'test'].includes(String(process.env.EASYPOST_MODE || '').trim().toLowerCase())
+          ? { detail: labelError.message }
           : {}),
       });
     }
@@ -1558,8 +1558,8 @@ router.post('/confirm', auth, async (req, res) => {
         code: labelError.code,
         message: 'Shipping label could not be created. Your payment was not captured.',
         retryable: labelError.retryable,
-        ...(['sandbox', 'test'].includes(String(process.env.EASYPOST_MODE || '').trim().toLowerCase()) && labelError.message
-          ? { detail: labelError.message, providerStatus: labelError.status || null }
+        ...(['sandbox', 'test'].includes(String(process.env.EASYPOST_MODE || '').trim().toLowerCase())
+          ? { detail: labelError.message }
           : {}),
       });
     }
@@ -1774,10 +1774,9 @@ router.post('/confirm', auth, async (req, res) => {
       } catch (e) { console.error('Boost ledger rollback failed:', e.message); }
     }
     if (createdLabel) {
-      await refundLabelWithRetry(createdLabel.shipmentId, 2, {
-        transactionId: createdTransaction?._id || null,
-        reason: 'single_order_rollback',
-      });
+      // The transaction row is deleted later in this rollback, so the queue
+      // only needs the shipment id; no ledger row survives to sync flags to.
+      await refundLabelWithRetry(createdLabel.shipmentId, 2, { reason: 'single_order_rollback' });
     }
     if (createdTransaction) {
       try {

@@ -278,4 +278,55 @@ describe('label purchase safety', () => {
     expect(await Order.countDocuments({ buyer: buyer._id })).toBe(0);
     expect(await Transaction.countDocuments({ buyer: buyer._id })).toBe(0);
   });
+
+  test('LPS.8 cancel-payment releases only the buyer\'s own authorization', async () => {
+    const own = authorizedPaymentIntent('requires_capture');
+    global.__mockPaymentIntents[own].metadata.buyerId = String(buyer._id);
+    const released = await request(app)
+      .post('/api/payments/cancel-payment')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ paymentIntentId: own });
+    expect(released.status).toBe(200);
+    expect(released.body.released).not.toBe(false);
+    expect(global.__mockPaymentIntents[own].status).not.toBe('requires_capture');
+
+    const unknown = await request(app)
+      .post('/api/payments/cancel-payment')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ paymentIntentId: `pi_unknown_${Date.now()}` });
+    expect(unknown.status).toBe(200);
+    expect(unknown.body.released).toBe(false);
+
+    const foreign = authorizedPaymentIntent('requires_capture');
+    global.__mockPaymentIntents[foreign].metadata.buyerId = String(seller._id);
+    const rejected = await request(app)
+      .post('/api/payments/cancel-payment')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({ paymentIntentId: foreign });
+    expect(rejected.status).toBe(403);
+    expect(global.__mockPaymentIntents[foreign].status).toBe('requires_capture');
+  });
+
+  test('LPS.7 sandbox label failures expose the provider reason for diagnosis', async () => {
+    const previousMode = process.env.EASYPOST_MODE;
+    process.env.EASYPOST_MODE = 'sandbox';
+    try {
+      const listing = await mkListing();
+      createShippingLabel.mockRejectedValueOnce(Object.assign(
+        new Error('EasyPost request failed: Unable to verify address.'),
+        { code: 'SHIPPING_LABEL_FAILED', status: 422 },
+      ));
+      const pi = await createIntent([listing]);
+
+      const res = await confirmBatch(pi, [listing]);
+
+      expect(res.status).toBe(502);
+      expect(res.body.detail).toBe('EasyPost request failed: Unable to verify address.');
+      expect(await Order.countDocuments({ buyer: buyer._id })).toBe(0);
+      expect(global.__mockPaymentIntents[pi].status).not.toBe('succeeded');
+    } finally {
+      if (previousMode === undefined) delete process.env.EASYPOST_MODE;
+      else process.env.EASYPOST_MODE = previousMode;
+    }
+  });
 });
