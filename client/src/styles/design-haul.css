@@ -2155,3 +2155,14 @@ html {
     background: rgba(var(--td-primary-rgb), 0.14);
   }
 }
+
+/* 10. SHORT PHONES (320x568 class, and landscape).
+   The hero forced 92svh, so on a 568px-tall screen its secondary CTA ended
+   17px underneath the floating dock on first paint. Letting it size to its
+   content and reserving the dock's height keeps both actions tappable. */
+@media (max-width: 768px) and (max-height: 720px) {
+  .hero {
+    min-height: 0;
+    padding-bottom: calc(96px + var(--td-safe-area-bottom));
+  }
+}
