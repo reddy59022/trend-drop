@@ -2166,3 +2166,28 @@ html {
     padding-bottom: calc(96px + var(--td-safe-area-bottom));
   }
 }
+
+/* Below ~720px of viewport height the hero copy alone is taller than the
+   first screen, so both CTAs could not clear the floating dock. Keep the two
+   primary actions and the headline; drop the non-interactive trust chips and
+   tighten the rhythm so nothing important starts life under the dock. */
+@media (max-width: 768px) and (max-height: 720px) {
+  .hero {
+    padding-top: 24px !important;
+  }
+
+  .hero-content h1 {
+    font-size: clamp(28px, 8.6vw, 36px) !important;
+    line-height: 1.06;
+  }
+
+  .hero-content p {
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 14px;
+  }
+
+  .hero-features {
+    display: none;
+  }
+}
