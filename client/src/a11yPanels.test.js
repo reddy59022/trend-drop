@@ -175,6 +175,16 @@ describe('admin write actions confirm and announce their outcome', () => {
     expect(src).toContain(successText);
   });
 
+  test('report actions confirm before writing', () => {
+    expect(src).toContain("title: resolving ? 'Resolve this report?' : 'Dismiss this report?'");
+    expect(src).toContain("confirmLabel: resolving ? 'Resolve' : 'Dismiss'");
+  });
+
+  test('a cancelled role change puts the select back to the real role', () => {
+    // A controlled select does not repaint on cancel: no state changed.
+    expect(src).toContain('selectEl.value = previousRole');
+  });
+
   test('report resolution and refunds announce success, and failures are announced too', () => {
     expect(src).toContain("'Report resolved'");
     expect(src).toContain("'Refund issued'");

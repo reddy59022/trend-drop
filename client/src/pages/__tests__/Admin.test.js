@@ -205,6 +205,35 @@ describe('Admin write actions: confirmation and announcement', () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
+  test('cancelling a role change restores the select to the real role', async () => {
+    const confirm = jest.fn(async () => false);
+    setConfirm(confirm);
+    getAdminUsers.mockResolvedValue({ data: { users: [userRow], totalPages: 1 } });
+    await openUsers();
+
+    const select = screen.getByRole('combobox', { name: /Role for Test Seller/ });
+    expect(select.value).toBe('user');
+    fireEvent.change(select, { target: { value: 'admin' } });
+
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    // The controlled select keeps the picked option unless it is put back: no
+    // state changed on cancel, so React has nothing to re-render from.
+    await waitFor(() => expect(select.value).toBe('user'));
+  });
+
+  test('a failed role change also restores the select', async () => {
+    setConfirm(async () => true);
+    getAdminUsers.mockResolvedValue({ data: { users: [userRow], totalPages: 1 } });
+    updateUserRole.mockRejectedValue({ response: { data: { message: 'Not allowed' } } });
+    await openUsers();
+
+    const select = screen.getByRole('combobox', { name: /Role for Test Seller/ });
+    fireEvent.change(select, { target: { value: 'moderator' } });
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Not allowed'));
+    expect(select.value).toBe('user');
+  });
+
   test('suspending a user asks for confirmation and announces it', async () => {
     const confirm = jest.fn(async () => true);
     setConfirm(confirm);
@@ -230,17 +259,51 @@ describe('Admin write actions: confirmation and announcement', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Cannot suspend an admin'));
   });
 
-  test('resolving a report announces the outcome', async () => {
-    getAdminReports.mockResolvedValue({ data: { reports: [{
-      _id: 'r1', reporter: { name: 'Reporter' }, listing: { title: 'Reported Item' }, reason: 'scam', status: 'pending',
-    }], totalPages: 1 } });
-    updateAdminReportStatus.mockResolvedValue({ data: {} });
+  const openReports = async () => {
     renderPage(<Admin />);
     fireEvent.click(await screen.findByRole('tab', { name: /Reports/ }));
-    fireEvent.click(await screen.findByRole('button', { name: /Resolve/ }));
+    await screen.findByText('Reported Item');
+  };
 
+  beforeEach(() => {
+    getAdminReports.mockResolvedValue({ data: { reports: [{
+      _id: 'r1', reporter: { name: 'Reporter' }, listing: { title: 'Reported Item' }, reason: 'Spam', status: 'pending',
+    }], totalPages: 1 } });
+  });
+
+  test('resolving a report asks for confirmation, then announces it', async () => {
+    const confirm = jest.fn(async () => true);
+    setConfirm(confirm);
+    updateAdminReportStatus.mockResolvedValue({ data: {} });
+    await openReports();
+    fireEvent.click(screen.getByRole('button', { name: /Resolve/ }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Resolve this report?', confirmLabel: 'Resolve' })));
     await waitFor(() => expect(updateAdminReportStatus).toHaveBeenCalledWith('r1', 'resolved'));
     expect(toast.success).toHaveBeenCalledWith('Report resolved');
+  });
+
+  test('dismissing a report uses its own confirmation', async () => {
+    const confirm = jest.fn(async () => true);
+    setConfirm(confirm);
+    updateAdminReportStatus.mockResolvedValue({ data: {} });
+    await openReports();
+    fireEvent.click(screen.getByRole('button', { name: /Dismiss/ }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Dismiss this report?', confirmLabel: 'Dismiss', danger: true })));
+    await waitFor(() => expect(updateAdminReportStatus).toHaveBeenCalledWith('r1', 'dismissed'));
+    expect(toast.success).toHaveBeenCalledWith('Report dismissed');
+  });
+
+  test('cancelling the report confirmation makes no API call', async () => {
+    const confirm = jest.fn(async () => false);
+    setConfirm(confirm);
+    await openReports();
+    fireEvent.click(screen.getByRole('button', { name: /Resolve/ }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(updateAdminReportStatus).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   test('a forced refund asks for confirmation, then announces success', async () => {

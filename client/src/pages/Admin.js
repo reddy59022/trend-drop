@@ -81,19 +81,27 @@ const Admin = () => {
     }
   };
 
-  const handleRoleChange = async (userId, role, name) => {
+  const handleRoleChange = async (userId, role, name, previousRole, selectEl) => {
     const ok = await confirmDialog({
       title: 'Change user role?',
       message: `${name || 'This user'} will become ${role}. This changes what they can see and do.`,
       confirmLabel: 'Change role',
       danger: role === 'admin',
     });
-    if (!ok) return;
+    // A controlled <select> only repaints when React re-renders, and cancelling
+    // changes no state — so put the user's real role back explicitly, both when
+    // the dialog is dismissed and when the write fails.
+    const restoreRole = () => { if (selectEl) selectEl.value = previousRole; };
+    if (!ok) {
+      restoreRole();
+      return;
+    }
     try {
       await updateUserRole(userId, role);
       toast.success(`Role updated to ${role}`);
       fetchData();
     } catch (error) {
+      restoreRole();
       toast.error(error.response?.data?.message || 'Could not update the role');
     }
   };
@@ -149,9 +157,19 @@ const Admin = () => {
   };
 
   const handleResolveReport = async (reportId, status) => {
+    const resolving = status === 'resolved';
+    const ok = await confirmDialog({
+      title: resolving ? 'Resolve this report?' : 'Dismiss this report?',
+      message: resolving
+        ? 'The report will be marked resolved. The listing stays live.'
+        : 'The report will be dismissed. The listing stays live.',
+      confirmLabel: resolving ? 'Resolve' : 'Dismiss',
+      danger: !resolving,
+    });
+    if (!ok) return;
     try {
       await updateAdminReportStatus(reportId, status);
-      toast.success(status === 'resolved' ? 'Report resolved' : 'Report dismissed');
+      toast.success(resolving ? 'Report resolved' : 'Report dismissed');
       fetchData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not update the report');
@@ -428,7 +446,7 @@ const Admin = () => {
                                 <select
                                   aria-label={`Role for ${u.name || u.email || 'user'}`}
                                   value={u.role}
-                                  onChange={e => handleRoleChange(u._id, e.target.value, u.name || u.email)}
+                                  onChange={e => handleRoleChange(u._id, e.target.value, u.name || u.email, u.role, e.target)}
                                   className="input"
                                   style={{ width: 110, fontSize: 12, padding: '4px 8px' }}
                                 >
