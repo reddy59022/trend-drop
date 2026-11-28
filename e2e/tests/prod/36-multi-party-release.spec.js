@@ -14,7 +14,7 @@
  *   • cancellation of one seller's leg without touching the other
  */
 const { test } = require('@playwright/test');
-const { makeApi, RUN_ID, expect } = require('./helpers');
+const { makeApi, RUN_ID, expect, IS_PROD } = require('./helpers');
 
 const fs = require('fs');
 const os = require('os');
@@ -70,7 +70,11 @@ async function createListing(api, token, sellerName, title, price) {
   return (r.data.listing || r.data)._id;
 }
 
-test.describe('36 · Multi-party release validation (production)', () => {
+// This spec depends on the seeded production population (seller1..6 /
+// buyer1..6). The in-memory server seeds a different, smaller account set, so
+// running it there can only fail at login. It remains part of the production
+// suite (`npm run test:e2e:prod`).
+(IS_PROD ? test.describe : test.describe.skip)('36 · Multi-party release validation (production)', () => {
   let api;
   const T = {};
   const L = {};
