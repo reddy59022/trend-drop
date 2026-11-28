@@ -33,7 +33,7 @@ describe('expanding order and return rows keep nested controls valid', () => {
 });
 
 describe('dashboard tables are navigable and announced', () => {
-  const tableFiles = ['pages/Admin.js', 'pages/SellerBadges.js'];
+  const tableFiles = ['pages/Admin.js', 'pages/SellerBadges.js', 'pages/LegalAdmin.js'];
 
   test.each(tableFiles)('%s gives every header cell a column scope', (file) => {
     const src = read(file);
@@ -54,6 +54,14 @@ describe('dashboard tables are navigable and announced', () => {
   test('the tier table is a focusable scroll region (mobile CSS makes it the scroller)', () => {
     const src = read('pages/SellerBadges.js');
     expect(src).toMatch(/<table tabIndex=\{0\}[^>]*>\s*\n\s*<caption className="sr-only">Seller badge tier requirements<\/caption>/);
+  });
+
+  test.each(tableFiles)('%s gives every table the tab stop its mobile scroll needs', (file) => {
+    const src = read(file);
+    const tables = (src.match(/<table\b/g) || []).length;
+    const focusable = (src.match(/<table tabIndex=\{0\}/g) || []).length;
+    expect(tables).toBeGreaterThan(0);
+    expect(focusable).toBe(tables);
   });
 });
 
@@ -84,6 +92,33 @@ describe('form-only dashboards label every field', () => {
     expect(src).toContain('role="alert"');
     expect(src).toMatch(/role="status" aria-live="polite"/);
     expect(src.match(/role="status"/g).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('legal admin names its pack fields and associates the attestation', () => {
+    const src = read('pages/LegalAdmin.js');
+    for (const label of [
+      'aria-label="Country ISO code"',
+      'aria-label="Policy pack version"',
+      'aria-label="Governing law"',
+      'aria-label="Change summary"',
+      'aria-label="Mandatory rights summary"',
+      'aria-label="Dispute resolution and local procedure"',
+    ]) {
+      expect(src).toContain(label);
+    }
+    expect(src).toContain('htmlFor="legal-attestation"');
+    expect(src).toContain('id="legal-attestation"');
+  });
+
+  test('the legal consent dialog manages focus like a modal', () => {
+    const src = read('components/LegalConsentGate.js');
+    // Focus moves into the dialog, Tab is trapped, and focus is handed to the
+    // main landmark (the gate opens on load, so there is no opener element).
+    expect(src).toContain('titleRef.current?.focus()');
+    expect(src).toContain("document.addEventListener('keydown', onKeyDown)");
+    expect(src).toMatch(/event\.key !== 'Tab'/);
+    expect(src).toContain("document.querySelector('main')");
+    expect(src).toContain('aria-describedby="legal-consent-desc"');
   });
 
   test('the transactions page-size select is labelled', () => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getLegalConsentStatus, acceptLegalDocuments } from '../services/api';
@@ -13,6 +13,10 @@ export default function LegalConsentGate() {
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const dialogRef = useRef(null);
+  const titleRef = useRef(null);
+  const restoreFocusRef = useRef(null);
+  const open = Boolean(status?.needsReconsent);
 
   useEffect(() => {
     if (!user || PUBLIC_PATHS.some((path) => location.pathname.startsWith(path))) {
@@ -26,7 +30,49 @@ export default function LegalConsentGate() {
     return () => { active = false; };
   }, [user, location.pathname]);
 
-  if (!status?.needsReconsent) return null;
+  // An aria-modal dialog that leaves focus on <body> lets keyboard users Tab
+  // into the page it is covering. Move focus to the title on open, keep Tab
+  // inside the dialog, and hand focus back to whatever opened it on close.
+  useEffect(() => {
+    if (!open) return undefined;
+    restoreFocusRef.current = document.activeElement;
+    titleRef.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+      const nodes = dialogRef.current.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (nodes.length === 0) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      const opener = restoreFocusRef.current;
+      // The gate opens on page load, so the "opener" is usually <body>. Sending
+      // focus back there would restart the tab order at the top of the page;
+      // fall back to the main landmark, which is a tabindex=-1 stop.
+      if (opener && opener !== document.body && opener.isConnected && typeof opener.focus === 'function') {
+        opener.focus();
+      } else {
+        const main = document.querySelector('main');
+        if (main) {
+          if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
+          main.focus({ preventScroll: true });
+        }
+      }
+    };
+  }, [open]);
+
+  if (!open) return null;
   const versions = status.versions || {};
 
   const accept = async () => {
@@ -46,10 +92,10 @@ export default function LegalConsentGate() {
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="legal-consent-title" style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,.72)', display: 'grid', placeItems: 'center', padding: 20 }}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="legal-consent-title" aria-describedby="legal-consent-desc" style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,.72)', display: 'grid', placeItems: 'center', padding: 20 }}>
       <div className="glass-card" style={{ maxWidth: 560, padding: 28, background: 'var(--td-surface)' }}>
-        <h2 id="legal-consent-title">Review updated legal terms</h2>
-        <p>To continue using protected marketplace features, review and accept the current documents for your country.</p>
+        <h2 id="legal-consent-title" ref={titleRef} tabIndex={-1} style={{ outline: 'none' }}>Review updated legal terms</h2>
+        <p id="legal-consent-desc">To continue using protected marketplace features, review and accept the current documents for your country.</p>
         <p><Link to="/legal/terms" target="_blank" rel="noreferrer">Terms of Service</Link> · <Link to="/legal/privacy" target="_blank" rel="noreferrer">Privacy Notice</Link></p>
         <label style={{ display: 'block', margin: '16px 0' }}><input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> I accept the current Terms of Service and Privacy Notice.</label>
         <label style={{ display: 'block', marginBottom: 18 }}><input type="checkbox" checked={ageConfirmed} onChange={(e) => setAgeConfirmed(e.target.checked)} /> I confirm I meet the applicable minimum age requirement.</label>

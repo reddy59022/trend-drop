@@ -64,3 +64,45 @@ test('closes the dialog after a successful acceptance', async () => {
     ageConfirmed: true,
   });
 });
+
+test('moves focus into the dialog and keeps Tab inside it', async () => {
+  acceptLegalDocuments.mockResolvedValue({ data: { ok: true } });
+  renderGate();
+
+  await screen.findByRole('dialog');
+  const title = screen.getByRole('heading', { name: /review updated legal terms/i });
+  expect(document.activeElement).toBe(title);
+
+  // Enable the submit button so it is part of the trap, then Tab from it.
+  const checkboxes = screen.getAllByRole('checkbox');
+  await userEvent.click(checkboxes[0]);
+  await userEvent.click(checkboxes[1]);
+  const submit = screen.getByRole('button', { name: /accept and continue/i });
+  submit.focus();
+  await userEvent.tab();
+  expect(document.activeElement).toBe(screen.getByRole('link', { name: /terms of service/i }));
+
+  // Shift+Tab from the first stop wraps to the last.
+  await userEvent.tab({ shift: true });
+  expect(document.activeElement).toBe(submit);
+});
+
+test('hands focus to the main landmark when the dialog closes', async () => {
+  acceptLegalDocuments.mockResolvedValue({ data: { ok: true } });
+  render(
+    <MemoryRouter initialEntries={['/home']}>
+      <main>
+        <LegalConsentGate />
+      </main>
+    </MemoryRouter>
+  );
+
+  await screen.findByRole('dialog');
+  const checkboxes = screen.getAllByRole('checkbox');
+  await userEvent.click(checkboxes[0]);
+  await userEvent.click(checkboxes[1]);
+  await userEvent.click(screen.getByRole('button', { name: /accept and continue/i }));
+
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(document.activeElement.tagName).toBe('MAIN');
+});

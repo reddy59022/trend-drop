@@ -66,13 +66,13 @@ export default function LegalAdmin() {
       <form className="glass-card" onSubmit={create} style={{ padding: 20, display: 'grid', gap: 10, marginBottom: 24 }}>
         <h2>Create draft policy pack</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 10 }}>
-          <input className="form-input" placeholder="Country ISO (US)" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
-          <input className="form-input" placeholder="Version (US-2026.1)" value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} />
-          <input className="form-input" placeholder="Governing law" value={form.governingLaw} onChange={(e) => setForm({ ...form, governingLaw: e.target.value })} />
+          <input className="form-input" aria-label="Country ISO code" placeholder="Country ISO (US)" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+          <input className="form-input" aria-label="Policy pack version" placeholder="Version (US-2026.1)" value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} />
+          <input className="form-input" aria-label="Governing law" placeholder="Governing law" value={form.governingLaw} onChange={(e) => setForm({ ...form, governingLaw: e.target.value })} />
         </div>
-        <input className="form-input" placeholder="Change summary" value={form.changeSummary} onChange={(e) => setForm({ ...form, changeSummary: e.target.value })} />
-        <textarea className="form-input" placeholder="Mandatory rights summary" value={form.mandatoryRightsSummary} onChange={(e) => setForm({ ...form, mandatoryRightsSummary: e.target.value })} rows={2} />
-        <input className="form-input" placeholder="Dispute resolution / local procedure" value={form.disputeResolution} onChange={(e) => setForm({ ...form, disputeResolution: e.target.value })} />
+        <input className="form-input" aria-label="Change summary" placeholder="Change summary" value={form.changeSummary} onChange={(e) => setForm({ ...form, changeSummary: e.target.value })} />
+        <textarea className="form-input" aria-label="Mandatory rights summary" placeholder="Mandatory rights summary" value={form.mandatoryRightsSummary} onChange={(e) => setForm({ ...form, mandatoryRightsSummary: e.target.value })} rows={2} />
+        <input className="form-input" aria-label="Dispute resolution and local procedure" placeholder="Dispute resolution / local procedure" value={form.disputeResolution} onChange={(e) => setForm({ ...form, disputeResolution: e.target.value })} />
         <textarea className="form-input" value={form.documents} onChange={(e) => setForm({ ...form, documents: e.target.value })} rows={8} aria-label="Policy documents JSON" />
         <button className="btn btn-primary" type="submit">Create draft</button>
       </form>
@@ -90,15 +90,16 @@ export default function LegalAdmin() {
       )}
 
       <div className="glass-card" style={{ padding: 16, marginBottom: 20 }}>
-        <label style={{ display: 'block', fontSize: 13, marginBottom: 6 }}>Counsel attestation used for language sign-offs</label>
-        <textarea className="form-input" value={attestation} onChange={(e) => setAttestation(e.target.value)} rows={3} />
+        <label htmlFor="legal-attestation" style={{ display: 'block', fontSize: 13, marginBottom: 6 }}>Counsel attestation used for language sign-offs</label>
+        <textarea id="legal-attestation" className="form-input" value={attestation} onChange={(e) => setAttestation(e.target.value)} rows={3} />
       </div>
 
       <div className="glass-card" style={{ overflowX: 'auto' }}>
         <h2 style={{ padding: 20, margin: 0 }}>Policy-pack history</h2>
         {loading ? <div className="skeleton" style={{ height: 160, margin: 20 }} /> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead><tr><th style={{ padding: 10, textAlign: 'left' }}>Country</th><th style={{ padding: 10, textAlign: 'left' }}>Version</th><th style={{ padding: 10, textAlign: 'left' }}>Status</th><th style={{ padding: 10, textAlign: 'left' }}>Actions</th></tr></thead>
+          <table tabIndex={0} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <caption className="sr-only">Policy pack history</caption>
+            <thead><tr><th scope="col" style={{ padding: 10, textAlign: 'left' }}>Country</th><th scope="col" style={{ padding: 10, textAlign: 'left' }}>Version</th><th scope="col" style={{ padding: 10, textAlign: 'left' }}>Status</th><th scope="col" style={{ padding: 10, textAlign: 'left' }}>Actions</th></tr></thead>
             <tbody>{packs.map((pack) => (
               <tr key={pack._id} style={{ borderTop: '1px solid var(--td-border-light)' }}>
                 <td style={{ padding: 10 }}>{pack.country}</td><td style={{ padding: 10 }}>{pack.version}</td><td style={{ padding: 10 }}><span className="badge badge-info">{pack.status}</span><div style={{ fontSize: 11, marginTop: 4 }}>{(pack.requiredLanguages || []).map((language) => <span key={language} style={{ marginRight: 4 }}>{language}{(pack.signoffs || []).some((signoff) => signoff.language === language) ? ' ✓' : ' ·'}</span>)}</div></td>

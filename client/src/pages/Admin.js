@@ -333,7 +333,7 @@ const Admin = () => {
             <div className="skeleton" style={{ height: 200, borderRadius: 'var(--td-radius-lg)' }} />
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <table tabIndex={0} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <caption className="sr-only">Admin users</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
@@ -404,7 +404,7 @@ const Admin = () => {
             <div className="skeleton" style={{ height: 200, borderRadius: 'var(--td-radius-lg)' }} />
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <table tabIndex={0} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <caption className="sr-only">Admin listings</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
@@ -449,7 +449,7 @@ const Admin = () => {
             <div className="skeleton" style={{ height: 200, borderRadius: 'var(--td-radius-lg)' }} />
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <table tabIndex={0} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <caption className="sr-only">Admin listing reports</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
@@ -497,7 +497,7 @@ const Admin = () => {
             <div className="skeleton" style={{ height: 200, borderRadius: 'var(--td-radius-lg)' }} />
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <table tabIndex={0} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <caption className="sr-only">Admin payout requests</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
@@ -542,7 +542,7 @@ const Admin = () => {
             <div className="skeleton" style={{ height: 200, borderRadius: 'var(--td-radius-lg)' }} />
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <table tabIndex={0} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <caption className="sr-only">Admin subscriptions</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
@@ -588,7 +588,7 @@ const Admin = () => {
             <div className="skeleton" style={{ height: 200, borderRadius: 'var(--td-radius-lg)' }} />
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <table tabIndex={0} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <caption className="sr-only">Admin transactions</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
