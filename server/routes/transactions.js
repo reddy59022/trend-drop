@@ -7,10 +7,10 @@ const Offer = require('../models/Offer');
 const Order = require('../models/Order');
 const { auth } = require('../middleware/auth');
 const { isValidObjectId } = require('../utils/validators');
+const { refundLabelOrQueue } = require('../services/labelRefunds');
 const { calculatePaymentBreakdown, authorizePaymentIntent, findPaymentIntent, verifyIntentBinding, verifyIntentAmount, releaseAuthorization, issueRefund } = require('../config/payments');
 const {
   createShippingLabel,
-  refundShippingLabel,
   shippingLabelPayload,
 } = require('../services/easypostService');
 const { boostConfig } = require('../config/boost');
@@ -313,7 +313,7 @@ router.post('/guest', async (req, res) => {
     } catch (labelError) {
       console.error('Guest shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
       if (labelError.shipmentId && !labelError.labelRefunded) {
-        try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Guest incomplete label refund retry failed:', e.message); }
+        await refundLabelOrQueue(labelError.shipmentId, { reason: 'guest_incomplete_label' });
       }
       try {
         if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
@@ -335,9 +335,7 @@ router.post('/guest', async (req, res) => {
       });
     } catch (fundingError) {
       console.error('Guest postage funding failed:', fundingError.code || fundingError.message);
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try { await refundShippingLabel(label.shipmentId); break; } catch (e) { console.error('Guest label refund failed:', e.message); }
-      }
+      await refundLabelOrQueue(label.shipmentId, { reason: 'guest_funding_gate' });
       try {
         if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
         else await releaseAuthorization(gate.pi.id);
@@ -563,7 +561,7 @@ router.post('/', auth, async (req, res) => {
       } catch (labelError) {
         console.error('Shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
         if (labelError.shipmentId && !labelError.labelRefunded) {
-          try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Incomplete label refund retry failed:', e.message); }
+          await refundLabelOrQueue(labelError.shipmentId, { reason: 'purchase_incomplete_label' });
         }
         try {
           if (gate.pi.status === 'succeeded') await issueRefund(gate.pi.id);
@@ -849,7 +847,7 @@ router.post('/offer/:offerId', auth, async (req, res) => {
     } catch (labelError) {
       console.error('Offer shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
       if (labelError.shipmentId && !labelError.labelRefunded) {
-        try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Offer incomplete label refund retry failed:', e.message); }
+        await refundLabelOrQueue(labelError.shipmentId, { reason: 'offer_incomplete_label' });
       }
       try {
         if (offerGate.pi.status === 'succeeded') await issueRefund(offerGate.pi.id);

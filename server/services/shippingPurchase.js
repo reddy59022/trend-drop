@@ -7,6 +7,7 @@
  * so the caller can release or refund the buyer's payment.
  */
 const { createShippingLabel, refundShippingLabel } = require('./easypostService');
+const { refundLabelOrQueue } = require('./labelRefunds');
 
 const normalizeBuyerAddress = (address, fallbackName) => ({
   ...(address || {}),
@@ -27,22 +28,12 @@ const sellerParcelAddress = (seller, fallbackCountry) => (
     : { fullName: seller?.name, country: fallbackCountry }
 );
 
-const refundPurchasedLabels = async (labels = []) => {
+const refundPurchasedLabels = async (labels = [], reason = 'purchase_failed') => {
+  // Refunds are attempted twice, then durably queued for the retry cron — an
+  // unrecovered postage purchase is a direct platform loss and must never be
+  // left to a log line alone (no Transaction row exists yet to carry the flag).
   for (const label of labels) {
-    let lastError;
-    // Two immediate attempts cover a transient provider/network failure. The
-    // caller also retries the attached list, because unrecovered postage is a
-    // direct platform loss.
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const result = await refundShippingLabel(label.shipmentId);
-        lastError = result?.refunded === false ? new Error(result.status || 'refund rejected') : null;
-        if (!lastError) break;
-      } catch (refundError) {
-        lastError = refundError;
-      }
-    }
-    if (lastError) console.error('Label refund rollback failed:', lastError.message);
+    await refundLabelOrQueue(label.shipmentId, { reason });
   }
 };
 
@@ -63,25 +54,30 @@ const purchaseBatchLabels = async ({ plans, buyerAddress, buyerName, paymentInte
       purchased.push(label);
     } catch (labelError) {
       labelError.purchasedLabels = purchased;
-      await refundPurchasedLabels(purchased);
+      await refundPurchasedLabels(purchased, 'batch_label_failed');
       throw labelError;
+    }
+  }
+  // INVARIANT: an order may never be created from a label the carrier did not
+  // actually issue. A provider response missing the shipment id or tracking
+  // number is unusable, so refund every purchased label before failing.
+  for (const plan of plans) {
+    const label = plan.label;
+    if (!label?.shipmentId || !label?.trackingNumber) {
+      await refundPurchasedLabels(purchased, 'incomplete_label');
+      const error = new Error('EasyPost did not return a usable shipping label; no order was created.');
+      error.code = 'SHIPPING_LABEL_INCOMPLETE';
+      error.status = 502;
+      error.retryable = false;
+      throw error;
     }
   }
   return purchased;
 };
 
-const refundLabelWithRetry = async (shipmentId, attempts = 2) => {
-  if (!shipmentId) return false;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      const result = await refundShippingLabel(shipmentId);
-      if (result?.refunded !== false) return true;
-    } catch (e) {
-      console.error('Shipping label refund failed:', e.message);
-    }
-  }
-  return false;
-};
+const refundLabelWithRetry = async (shipmentId, attempts = 2, meta = {}) => (
+  refundLabelOrQueue(shipmentId, { ...meta, attempts })
+);
 
 /**
  * Compensate every label a failed batch/label purchase left behind, including
@@ -89,10 +85,10 @@ const refundLabelWithRetry = async (shipmentId, attempts = 2) => {
  */
 const compensateFailedLabels = async (labelError) => {
   for (const label of labelError?.purchasedLabels || []) {
-    await refundLabelWithRetry(label.shipmentId);
+    await refundLabelWithRetry(label.shipmentId, 2, { reason: 'purchase_failed' });
   }
   if (labelError?.shipmentId && !labelError.labelRefunded) {
-    await refundLabelWithRetry(labelError.shipmentId);
+    await refundLabelWithRetry(labelError.shipmentId, 2, { reason: 'purchase_failed' });
   }
 };
 
@@ -175,20 +171,33 @@ const refundTransactionLabel = async (transaction, { markVoided = true } = {}) =
   }
 };
 
-const purchaseSingleLabel = ({
+const purchaseSingleLabel = async ({
   sellerAddress,
   buyerAddress,
   buyerName,
   weightKg,
   reference,
   declaredValue,
-}) => createShippingLabel({
-  fromAddress: sellerAddress,
-  toAddress: normalizeBuyerAddress(buyerAddress, buyerName),
-  weightKg,
-  reference,
-  declaredValue,
-});
+}) => {
+  const label = await createShippingLabel({
+    fromAddress: sellerAddress,
+    toAddress: normalizeBuyerAddress(buyerAddress, buyerName),
+    weightKg,
+    reference,
+    declaredValue,
+  });
+  // Same invariant as the batch path: no Transaction/order from a usable-looking
+  // response that has no shipment id or tracking number.
+  if (!label?.shipmentId || !label?.trackingNumber) {
+    await refundLabelOrQueue(label?.shipmentId, { reason: 'incomplete_single_label' });
+    const error = new Error('EasyPost did not return a usable shipping label; no order was created.');
+    error.code = 'SHIPPING_LABEL_INCOMPLETE';
+    error.status = 502;
+    error.retryable = false;
+    throw error;
+  }
+  return label;
+};
 
 module.exports = {
   TERMINAL_STATUSES,

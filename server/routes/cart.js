@@ -10,10 +10,10 @@ const Payout = require('../models/Payout');
 const { calculatePaymentBreakdown, releaseAuthorization, issueRefund } = require('../config/payments');
 const {
   createShippingLabel,
-  refundShippingLabel,
   shippingLabelPayload,
 } = require('../services/easypostService');
 const { isValidObjectId } = require('../utils/validators');
+const { refundLabelOrQueue } = require('../services/labelRefunds');
 const { createPurchaseRollback } = require('../utils/purchaseRollback');
 const { saleNotification } = require('../utils/saleNotification');
 const { requirePostageFunded } = require('../utils/postageFunding');
@@ -486,10 +486,10 @@ router.post('/checkout', auth, async (req, res) => {
         // EasyPost rejection reason during production checkout failures.
         console.error('Cart shipping label failed:', labelError.code || 'unknown', labelError.status || '', labelError.message);
         for (const purchased of labelByListing.values()) {
-          try { await refundShippingLabel(purchased.shipmentId); } catch (e) {}
+          await refundLabelOrQueue(purchased.shipmentId, { reason: 'cart_label_failed' });
         }
         if (labelError.shipmentId && !labelError.labelRefunded) {
-          try { await refundShippingLabel(labelError.shipmentId); } catch (e) { console.error('Cart incomplete label refund retry failed:', e.message); }
+          await refundLabelOrQueue(labelError.shipmentId, { reason: 'cart_incomplete_label' });
         }
         try {
           if (pi.status === 'succeeded') await issueRefund(pi.id);

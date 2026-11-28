@@ -28,6 +28,7 @@ const { trackingStatuses, simulateTrackingUpdate } = require('./shipping');
 const { getTracker, mapTrackerStatus, isMockMode } = require('../services/easypostService');
 const { refundTransactionLabel } = require('../services/shippingPurchase');
 const { syncOutboundTracking } = require('../services/outboundTrackingSync');
+const { retryQueuedLabelRefunds } = require('../services/labelRefunds');
 const { applyProviderRefundResult, recordProviderSettlement } = require('../utils/providerRefund');
 const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
 const { auditOrphanNotifications } = require('../utils/notificationAudit');
@@ -921,6 +922,11 @@ async function autoProcessReturns() {
 // A cancellation must not wait on EasyPost. Labels whose refund request
 // failed are retried here until the platform recovers its postage.
 async function retryPendingLabelRefunds(limit = 50) {
+  // Orphan postage (labels bought before any Transaction row existed) lives in
+  // the durable LabelRefund queue; transaction-attached labels use the ledger
+  // flags below. Both are retried on every run.
+  const queued = await retryQueuedLabelRefunds(limit);
+
   const pending = await Transaction.find({
     'shipping.labelRefundPending': true,
     'shipping.shipmentId': { $nin: ['', null] },
@@ -933,7 +939,7 @@ async function retryPendingLabelRefunds(limit = 50) {
       if (result.refunded) recovered++;
     }
   }
-  return recovered;
+  return recovered + queued.recovered;
 }
 
 async function cleanExpiredTokens() {

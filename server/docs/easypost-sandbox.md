@@ -135,6 +135,25 @@ EasyPost Test mode, a test tracker emits one event in a supported state;
 production emits the full carrier progression. The webhook is idempotent and
 forward-only.
 
+### Purchase and cancellation invariants
+
+Postage is platform-owned and bought **before** the buyer is captured:
+
+1. `create-intent` only authorizes the card (`capture_method: manual`).
+2. `confirm-batch` / single confirm buy every EasyPost label first. A label
+   failure returns 502 with **no Order row, no Transaction row**, and releases
+   (or refunds, if already captured) the buyer's payment.
+3. A provider response without a `shipmentId` and `trackingNumber` is rejected
+   as `SHIPPING_LABEL_INCOMPLETE`; any label already bought is refunded.
+4. Only after every label exists is the payment captured and the ledger/order
+   written.
+5. Cancelling before shipment refunds the buyer and immediately requests the
+   carrier label refund; if EasyPost is unreachable the shipment is marked
+   `labelRefundPending` and retried by cron.
+6. Labels bought before any Transaction row exists (failed batch, funding gate,
+   capture failure) are refunded through the durable `LabelRefund` queue, also
+   retried by cron until EasyPost refunds or rejects the postage.
+
 ### Daily reconciliation (webhook safety net)
 
 Webhooks are best-effort, so the server also polls every active label once a

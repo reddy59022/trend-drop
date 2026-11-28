@@ -43,7 +43,6 @@ const { requirePostageFunded, postageFundingFailure } = require('../utils/postag
 const { reverseTrackedBoostEntries } = require('../utils/boostLedger');
 const { releasePromoUse } = require('../utils/promoUsage');
 const {
-  refundShippingLabel,
   shippingLabelPayload,
   ShippingProviderError,
 } = require('../services/easypostService');
@@ -1283,7 +1282,9 @@ router.post('/confirm-batch', auth, async (req, res) => {
       } catch (e) { console.error('Promo usage rollback failed:', e.message); }
     }
     for (const label of purchasedLabels) {
-      try { await refundShippingLabel(label.shipmentId); } catch (e) { console.error('Label refund rollback failed:', e.message); }
+      // Durable refund: if EasyPost is unreachable the shipment id is queued
+      // and retried by cron, so a failed purchase cannot leak platform postage.
+      await refundLabelWithRetry(label.shipmentId, 2, { reason: 'confirm_batch_rollback' });
     }
     if (captured && req.body.paymentIntentId) {
       try { await issueRefund(req.body.paymentIntentId); } catch (e) { console.error('Refund rollback failed:', e.message); }
@@ -1773,9 +1774,10 @@ router.post('/confirm', auth, async (req, res) => {
       } catch (e) { console.error('Boost ledger rollback failed:', e.message); }
     }
     if (createdLabel) {
-      try { await refundShippingLabel(createdLabel.shipmentId); } catch (e) {
-        console.error('Label refund rollback failed:', e.message);
-      }
+      await refundLabelWithRetry(createdLabel.shipmentId, 2, {
+        transactionId: createdTransaction?._id || null,
+        reason: 'single_order_rollback',
+      });
     }
     if (createdTransaction) {
       try {

@@ -10,7 +10,7 @@ const { orderStates, isValidTransition } = require('../config/orderLifecycle');
 const { isValidObjectId } = require('../utils/validators');
 const { reverseBoostFeeOwed, markPayoutRefunded, syncOrderFromTransaction } = require('./orderLifecycle');
 const { clawbackSellerEarnings, sellerSaleTotal, chargeSellerPostage } = require('../utils/balances');
-const { refundShippingLabel } = require('../services/easypostService');
+const { refundLabelOrQueue } = require('../services/labelRefunds');
 const restoreListingInventory = require('../utils/restoreListingInventory');
 const { applyProviderRefundResult, recordProviderSettlement } = require('../utils/providerRefund');
 
@@ -346,9 +346,9 @@ router.put('/:id/approve', auth, async (req, res) => {
     // reverting the claim; otherwise a retry buys a second label at platform
     // expense.
     if (generatedLabel && !labelSaved && generatedLabel.shipmentId) {
-      try { await refundShippingLabel(generatedLabel.shipmentId); } catch (refundErr) {
-        console.error('Orphaned return label refund failed:', refundErr.message);
-      }
+      // Durable queue: a failed immediate refund is retried by cron instead of
+      // becoming silent platform postage loss on a return that never persisted.
+      await refundLabelOrQueue(generatedLabel.shipmentId, { reason: 'orphaned_return_label' });
     }
     // A claimed approval whose label was never recorded must be retryable; do
     // not leave the return stuck in approved without postage.
