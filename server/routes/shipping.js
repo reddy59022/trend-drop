@@ -2,13 +2,16 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const Payout = require('../models/Payout');
-const { carriers, calculateShipping, trackingStatuses, simulateTrackingUpdate } = require('../config/shipping');
+const { carriers, calculateShipping, surcharges, trackingStatuses, simulateTrackingUpdate } = require('../config/shipping');
 const { currencies, convertPrice, formatPrice } = require('../config/currencies');
 const { countries, getCountry } = require('../config/countries');
 const Transaction = require('../models/Transaction');
 const Return = require('../models/Return');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
+const { calculatePaymentBreakdown } = require('../config/payments');
+const { calculateBoostFee } = require('../config/boost');
+const { allocatePostage, round2 } = require('../utils/postageFunding');
 const { isValidObjectId } = require('../utils/validators');
 const {
   createShippingLabel,
@@ -279,6 +282,149 @@ router.post('/calculate-breakdown', (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error calculating breakdown' });
+  }
+});
+
+// POST /api/shipping/seller-estimate - Seller's own, destination-aware earnings preview.
+//
+// The listing page used to subtract a hardcoded 8% from the listing price and
+// call the result "You'll Earn". That omitted seller-funded postage entirely,
+// so a listing could promise $44.16 on a sale that actually credited $42.08.
+// This endpoint is the single server-side estimate for that card. It uses the
+// same commission and shipping functions as checkout, supports quantity (the
+// combined parcel weight changes both the buyer charge and the label), and
+// seeds the label estimate from this listing's latest real carrier label when
+// one exists. Before a label is bought, a carrier quote is only an estimate;
+// the response is explicitly marked as such.
+router.post('/seller-estimate', auth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!isValidObjectId(body.listingId)) {
+      return res.status(400).json({ message: 'A valid listingId is required' });
+    }
+
+    const rawCountry = typeof body.toCountry === 'string' ? body.toCountry.trim().toUpperCase() : '';
+    if (!rawCountry || !getCountry(rawCountry)) {
+      return res.status(400).json({ message: 'toCountry must be a supported country code' });
+    }
+
+    const quantity = body.quantity === undefined ? 1 : Number(body.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+      return res.status(400).json({ message: 'quantity must be an integer between 1 and 100' });
+    }
+
+    const listing = await Listing.findById(body.listingId).lean();
+    if (!listing) return res.status(404).json({ message: 'Listing not found' });
+    if (String(listing.seller) !== String(req.user._id)) {
+      return res.status(403).json({ message: 'Only the seller can estimate earnings for this listing' });
+    }
+
+    const unitPrice = Number(listing.price);
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+      return res.status(422).json({ message: 'Listing price cannot be estimated' });
+    }
+
+    const sellerCountry = String(listing.shipsFrom || 'US').toUpperCase();
+    const unitWeight = Math.max(0.01, Number(listing.weight) || 0.5);
+    const combinedWeight = Math.round(unitWeight * quantity * 1000) / 1000;
+    const itemSubtotal = round2(unitPrice * quantity);
+    const freeShipping = Boolean(listing.shipping?.freeShipping);
+
+    // Checkout prices one unit and combines the parcel weight, so the preview
+    // does exactly the same thing. Platform commission comes from the seller
+    // country's configured schedule (not a client-side constant).
+    const checkout = calculatePaymentBreakdown(
+      unitPrice,
+      sellerCountry,
+      rawCountry,
+      combinedWeight,
+      1,
+      { freeShipping },
+    );
+    const platformFee = round2(checkout.seller.platformFee * quantity);
+    const boostTier = listing.boost?.active ? (listing.boost.tier || 'standard') : '';
+    const boostFee = boostTier
+      ? round2(calculateBoostFee(unitPrice, boostTier).fee * quantity)
+      : 0;
+    const sellerEarningsBeforePostage = round2(itemSubtotal - platformFee - boostFee);
+
+    // calculateShipping() returns 0 when the buyer qualifies for a
+    // free-shipping threshold. A carrier label still costs money in that case,
+    // so estimate the carrier side from the rate table without the threshold
+    // and add the configured insurance percentage ourselves.
+    const carrierEstimate = (weight, insuredValue) => round2(
+      calculateShipping(sellerCountry, rawCountry, weight, 0).cost
+        + Math.max(0, Number(insuredValue) || 0) * surcharges.insuranceRate
+    );
+    const combinedCarrierQuote = carrierEstimate(combinedWeight, itemSubtotal);
+    const singleCarrierQuote = carrierEstimate(unitWeight, unitPrice);
+
+    // A real label for this listing and destination is the best estimate. For
+    // extra quantity, add only the carrier's incremental weight/value quote to
+    // that real base instead of pretending postage scales linearly.
+    const priorLabel = await Transaction.findOne({
+      listing: listing._id,
+      quantity: 1,
+      'shipping.labelCost': { $gt: 0 },
+      'shipping.labelRefunded': { $ne: true },
+      'shipping.voided': { $ne: true },
+      'shipping.weight': unitWeight,
+      'shippingAddress.country': new RegExp(`^${rawCountry}$`, 'i'),
+      status: {
+        $nin: [
+          'cancelled', 'cancelled_by_buyer', 'cancelled_by_seller', 'auto_cancelled',
+          'refunded', 'returned', 'chargeback_lost',
+        ],
+      },
+    })
+      .sort({ 'shipping.labelCreatedDate': -1, createdAt: -1 })
+      .select('shipping.labelCost')
+      .lean();
+
+    const listedShippingRate = Math.max(0, Number(listing.shipping?.shippingCost) || 0);
+    const historyLabelCost = Number(priorLabel?.shipping?.labelCost) || 0;
+    const estimatedLabelCost = historyLabelCost > 0
+      ? round2(historyLabelCost + Math.max(0, combinedCarrierQuote - singleCarrierQuote))
+      : round2(Math.max(listedShippingRate, combinedCarrierQuote));
+    const labelCostSource = historyLabelCost > 0
+      ? (quantity === 1 ? 'listing_label_history' : 'listing_label_history_weight_scaled')
+      : 'carrier_rate_estimate';
+
+    const postage = allocatePostage({
+      labelCost: estimatedLabelCost,
+      buyerShipping: checkout.buyer.shippingCost,
+      sellerEarnings: sellerEarningsBeforePostage,
+    });
+
+    res.json({
+      listingId: listing._id,
+      quantity,
+      fromCountry: sellerCountry,
+      toCountry: rawCountry,
+      currency: listing.currency || 'USD',
+      estimated: true,
+      seller: {
+        unitPrice,
+        itemSubtotal,
+        platformFee,
+        platformFeePercent: checkout.seller.platformFeePercent,
+        boostFee,
+        boostTier,
+        sellerEarningsBeforePostage,
+        shippingPayout: 0,
+        sellerPostageSubsidy: postage.sellerSubsidy,
+        sellerEarnings: postage.sellerEarningsAfterPostage,
+      },
+      postage: {
+        ...postage,
+        source: labelCostSource,
+        estimated: true,
+        fundable: postage.shortfall === 0,
+      },
+    });
+  } catch (error) {
+    console.error('Seller earnings estimate failed:', error);
+    res.status(500).json({ message: 'Could not estimate seller earnings' });
   }
 });
 

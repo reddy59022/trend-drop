@@ -34,10 +34,17 @@ const ListingDetail = () => {
   const [selectedCountry, setSelectedCountry] = useState('US');
   const [shippingEstimate, setShippingEstimate] = useState(null);
   const [summaryShipping, setSummaryShipping] = useState(null);
+  const [sellerEstimate, setSellerEstimate] = useState(null);
+  const [sellerEstimateLoading, setSellerEstimateLoading] = useState(false);
+  const [sellerQuantity, setSellerQuantity] = useState(1);
   const [showMobileSticky, setShowMobileSticky] = useState(false);
   const [counterModalOpen, setCounterModalOpen] = useState(false);
   const [counterAmount, setCounterAmount] = useState('');
   const [chatModalOpen, setChatModalOpen] = useState(false);
+
+  const isOwner = Boolean(
+    user && listing && (user.id || user._id) === listing.seller?._id
+  );
 
   useEffect(() => {
     fetchListing();
@@ -65,6 +72,32 @@ const ListingDetail = () => {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [listing, selectedCountry, buyerOffer]);
+
+  // Seller earnings are a server calculation, not a client-side percentage.
+  // It must include the postage the seller funds when the carrier label costs
+  // more than the buyer's shipping charge, and it must change with destination
+  // and quantity (combined weight changes the label).
+  useEffect(() => {
+    if (!listing || !isOwner) {
+      setSellerEstimate(null);
+      setSellerEstimateLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setSellerEstimateLoading(true);
+    api.post('/shipping/seller-estimate', {
+      listingId: listing._id,
+      toCountry: selectedCountry,
+      quantity: sellerQuantity,
+    }).then((res) => {
+      if (!cancelled) setSellerEstimate(res.data);
+    }).catch(() => {
+      if (!cancelled) setSellerEstimate(null);
+    }).finally(() => {
+      if (!cancelled) setSellerEstimateLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [listing, isOwner, selectedCountry, sellerQuantity]);
 
   // Track scroll for mobile sticky bar
   useEffect(() => {
@@ -309,7 +342,6 @@ const ListingDetail = () => {
 
   if (!listing) return null;
 
-  const isOwner = user && (user.id || user._id) === listing.seller?._id;
   const discount = listing.originalPrice
     ? Math.round((1 - listing.price / listing.originalPrice) * 100)
     : 0;
@@ -484,6 +516,7 @@ const ListingDetail = () => {
                 <label className="form-label">To</label>
                 <select 
                   className="form-input" 
+                  aria-label="Destination country"
                   value={selectedCountry}
                   onChange={(e) => { setSelectedCountry(e.target.value); setShippingEstimate(null); }}
                 >
@@ -548,20 +581,49 @@ const ListingDetail = () => {
 
           {/* Seller earnings */}
           {isOwner && (() => {
+            // Fallback values keep the card useful while the estimate loads (or
+            // if it is temporarily unavailable). The authoritative platform
+            // fee, boost, postage and net all come from the server estimate;
+            // nothing here invents a postage number.
+            const estimate = sellerEstimate?.seller;
+            const estimatePostage = sellerEstimate?.postage;
             const boostFeePct = listing.boost?.active ? { standard: 10, premium: 15, elite: 20 }[listing.boost.tier] || 10 : 0;
-            const boostFee = listing.boost?.active ? Math.round(listing.price * (boostFeePct / 100) * 100) / 100 : 0;
-            const platformFee = Math.round(listing.price * 0.08 * 100) / 100;
-            const youEarn = Math.round((listing.price - platformFee - boostFee) * 100) / 100;
+            const fallbackBoostFee = listing.boost?.active ? Math.round(listing.price * (boostFeePct / 100) * 100) / 100 : 0;
+            const platformFee = estimate?.platformFee ?? Math.round(listing.price * 0.08 * 100) / 100;
+            const platformFeePercent = estimate?.platformFeePercent ?? 8;
+            const boostFee = estimate?.boostFee ?? fallbackBoostFee;
+            const itemSubtotal = estimate?.itemSubtotal ?? listing.price;
+            const postageSubsidy = estimate?.sellerPostageSubsidy ?? 0;
+            const youEarn = estimate?.sellerEarnings
+              ?? Math.round((listing.price - platformFee - boostFee) * 100) / 100;
+            const maxEstimateQty = Math.max(1, Math.min(Number(listing.quantity ?? listing.available_quantity) || 1, 10));
+            const qty = sellerEstimate?.quantity || sellerQuantity;
             return (
             <div className="glass-card" style={{ padding: 'var(--td-space-md)', margin: 'var(--td-space-md) 0', borderLeft: '3px solid var(--td-success)' }}>
               <h4 style={{ marginBottom: 12, color: 'var(--td-success)' }}>Your Earnings</h4>
               <div style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {maxEstimateQty > 1 && (
+                  <div className="flex-between" style={{ alignItems: 'center', marginBottom: 2 }}>
+                    <span style={{ color: 'var(--td-text-secondary)' }}>Estimate for</span>
+                    <select
+                      className="form-input"
+                      aria-label="Earnings estimate quantity"
+                      value={sellerQuantity}
+                      onChange={(e) => setSellerQuantity(Number(e.target.value))}
+                      style={{ width: 96, padding: '4px 8px' }}
+                    >
+                      {Array.from({ length: maxEstimateQty }, (_, i) => i + 1).map((n) => (
+                        <option key={n} value={n}>{n} item{n === 1 ? '' : 's'}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="flex-between">
-                  <span>Listing Price</span>
-                  <span>{formatPrice(listing.price, listing.currency || 'USD')}</span>
+                  <span>{qty > 1 ? `Items (${qty} × ${formatPrice(listing.price, listing.currency || 'USD')})` : 'Listing Price'}</span>
+                  <span>{formatPrice(itemSubtotal, listing.currency || 'USD')}</span>
                 </div>
                 <div className="flex-between" style={{ color: 'var(--td-error)' }}>
-                  <span>Platform Fee (8%)</span>
+                  <span>Platform Fee ({platformFeePercent}%)</span>
                   <span>-{formatPrice(platformFee, listing.currency || 'USD')}</span>
                 </div>
                 {boostFee > 0 && (
@@ -570,11 +632,32 @@ const ListingDetail = () => {
                     <span>-{formatPrice(boostFee, listing.currency || 'USD')}</span>
                   </div>
                 )}
+                <div className="flex-between" style={{ color: postageSubsidy > 0 ? 'var(--td-error)' : 'var(--td-text-secondary)' }}>
+                  <span>Postage (seller-paid)</span>
+                  <span>
+                    {sellerEstimateLoading && !estimate
+                      ? 'Calculating…'
+                      : (postageSubsidy > 0
+                        ? `-${formatPrice(postageSubsidy, listing.currency || 'USD')}`
+                        : formatPrice(0, listing.currency || 'USD'))}
+                  </span>
+                </div>
+                {estimatePostage && postageSubsidy > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', marginTop: -2 }}>
+                    Carrier label {formatPrice(estimatePostage.labelCost, listing.currency || 'USD')}
+                    {' '}less buyer shipping {formatPrice(estimatePostage.buyerShipping, listing.currency || 'USD')}
+                  </div>
+                )}
                 <div style={{ borderTop: '1px solid var(--td-border)', paddingTop: 6, marginTop: 4 }}>
                   <div className="flex-between" style={{ color: 'var(--td-success)', fontWeight: 700 }}>
                     <span>You'll Earn</span>
                     <span style={{ fontSize: 18 }}>{formatPrice(youEarn, listing.currency || 'USD')}</span>
                   </div>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', marginTop: 4, lineHeight: 1.45 }}>
+                  {estimate
+                    ? `Estimated for ${qty} item${qty === 1 ? '' : 's'} shipping to ${selectedCountry}. Final postage uses the carrier label rate at sale.`
+                    : 'Final postage is deducted at the carrier label rate when the sale ships.'}
                 </div>
               </div>
             </div>

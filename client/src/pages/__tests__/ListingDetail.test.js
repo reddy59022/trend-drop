@@ -121,4 +121,83 @@ describe('ListingDetail page', () => {
     expect(await screen.findByText('Estimated Shipping')).toBeInTheDocument();
     expect(screen.getAllByText('$7.50').length).toBeGreaterThan(0);
   });
+
+  test('owner earnings show the server postage deduction and reconciled net', async () => {
+    setAuth(authUser({ _id: 'seller1', id: 'seller1' }));
+    prime(listing({
+      price: 48,
+      quantity: 2,
+      weight: 0.5,
+      shipping: { freeShipping: false, shippingCost: 7.24 },
+    }));
+    api.post.mockImplementation((url) => {
+      if (url === '/shipping/seller-estimate') {
+        return Promise.resolve({
+          data: {
+            listingId: 'listing123', quantity: 1, currency: 'USD',
+            seller: {
+              itemSubtotal: 48, platformFee: 3.84, platformFeePercent: 8,
+              boostFee: 0, sellerEarningsBeforePostage: 44.16,
+              sellerPostageSubsidy: 2.08, sellerEarnings: 42.08,
+            },
+            postage: { labelCost: 7.03, buyerShipping: 4.95, sellerSubsidy: 2.08, estimated: true },
+          },
+        });
+      }
+      return Promise.resolve({ data: { cost: 4.95 } });
+    });
+
+    renderPageWithRoute(<ListingDetail />, { route: '/listing/listing123', path: '/listing/:id' });
+    await screen.findByText('Vintage Denim Jacket');
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/shipping/seller-estimate',
+      { listingId: 'listing123', toCountry: 'US', quantity: 1 },
+    ));
+    expect(await screen.findByText('Postage (seller-paid)')).toBeInTheDocument();
+    expect(screen.getByText('-$3.84')).toBeInTheDocument();
+    expect(screen.getByText('-$2.08')).toBeInTheDocument();
+    expect(screen.getByText('$42.08')).toBeInTheDocument();
+    expect(screen.getByText(/Carrier label \$7\.03/)).toBeInTheDocument();
+  });
+
+  test('owner earnings re-estimate by quantity and destination', async () => {
+    setAuth(authUser({ _id: 'seller1', id: 'seller1' }));
+    prime(listing({ price: 48, quantity: 5, weight: 0.5 }));
+    const sellerCalls = [];
+    api.post.mockImplementation((url, body) => {
+      if (url === '/shipping/seller-estimate') {
+        sellerCalls.push(body);
+        return Promise.resolve({
+          data: {
+            listingId: 'listing123', quantity: body.quantity, currency: 'USD',
+            seller: {
+              itemSubtotal: 48 * body.quantity, platformFee: 3.84 * body.quantity,
+              platformFeePercent: 8, boostFee: 0,
+              sellerEarningsBeforePostage: 44.16 * body.quantity,
+              sellerPostageSubsidy: 2, sellerEarnings: 42 * body.quantity,
+            },
+            postage: { labelCost: 7.03, buyerShipping: 4.95, sellerSubsidy: 2, estimated: true },
+          },
+        });
+      }
+      return Promise.resolve({ data: { cost: 4.95 } });
+    });
+
+    renderPageWithRoute(<ListingDetail />, { route: '/listing/listing123', path: '/listing/:id' });
+    await screen.findByText('Vintage Denim Jacket');
+    await waitFor(() => expect(sellerCalls).toContainEqual(
+      { listingId: 'listing123', toCountry: 'US', quantity: 1 },
+    ));
+
+    fireEvent.change(screen.getByLabelText('Earnings estimate quantity'), { target: { value: '2' } });
+    await waitFor(() => expect(sellerCalls).toContainEqual(
+      { listingId: 'listing123', toCountry: 'US', quantity: 2 },
+    ));
+
+    fireEvent.change(screen.getByLabelText('Destination country'), { target: { value: 'CA' } });
+    await waitFor(() => expect(sellerCalls).toContainEqual(
+      { listingId: 'listing123', toCountry: 'CA', quantity: 2 },
+    ));
+  });
 });
