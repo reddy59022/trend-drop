@@ -705,13 +705,37 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
 
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
 textarea:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--td-primary);
+  outline: 2px solid var(--td-focus-ring);
   outline-offset: 3px;
   border-radius: 12px;
 }
 
-.btn-primary:focus-visible, .btn-gold:focus-visible, .mobile-tab-center:focus-visible {
-  outline-color: var(--td-accent);
+/* A filled brand control cannot host the ring outside itself: the ring would
+   land on an unknown backdrop. Drawn inside the fill, ink clears every stop
+   of the brand gradient (3.4:1 on #6C3BFF, 4.7:1 on #8B5CFF, 7.5:1 on the
+   #FF6BC1 end) and of the gold gradient; white only cleared the violet end
+   (2.6:1 on the pink stop). */
+.btn-primary:focus-visible, .mobile-tab-center:focus-visible, .btn-gold:focus-visible {
+  outline-color: var(--td-focus-ring-on-fill);
+  outline-offset: -6px;
+}
+
+/* The footer is a dark band in both themes, so the theme ring (ink in light)
+   would disappear there: measured 1.02:1 before this. */
+footer a:focus-visible, footer button:focus-visible, footer [tabindex]:focus-visible,
+.footer a:focus-visible, .footer button:focus-visible {
+  outline-color: var(--td-focus-ring-on-brand);
+}
+
+/* The dock floats on glass and its active item sits on a dark pill, so one
+   ring colour cannot clear 3:1 on both: white measured 1.13:1 on the white
+   bar and the theme ring measured 1.02:1 on the active pill. A two-tone
+   indicator (theme ring over a white halo) always shows one band against
+   whatever is behind it. */
+.mobile-tab-bar a:focus-visible, .mobile-tab-bar button:focus-visible,
+.mobile-tab-bar [tabindex]:focus-visible {
+  outline-color: var(--td-focus-ring);
+  box-shadow: 0 0 0 3px var(--td-focus-ring-on-brand);
 }
 
 /* Reveal-on-load rhythm for content sections */
@@ -2100,7 +2124,10 @@ html {
 
 .skip-to-content:focus-visible {
   transform: translateY(0);
-  outline: 2px solid #fff;
+  /* The link itself is violet; its ring sits on the page behind it, so it
+     takes the theme ring rather than a white outline that measured 1.11:1 on
+     the light shell. */
+  outline: 2px solid var(--td-focus-ring);
   outline-offset: 2px;
 }
 

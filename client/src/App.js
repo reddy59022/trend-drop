@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef } from 'react';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { isNative } from './services/native';
 import { deepLinkPath, isOAuthCallbackUrl, isAppPath } from './services/deepLinks';
@@ -11,6 +11,7 @@ import Footer from './components/Footer';
 import MobileTabBar from './components/MobileTabBar';
 import ErrorBoundary from './components/ErrorBoundary';
 import LegalConsentGate from './components/LegalConsentGate';
+import RouteAnnouncer from './components/RouteAnnouncer';
 import ProtectedRoute from './components/ProtectedRoute';
 import { checkRegionStatus } from './services/marketAccess';
 
@@ -99,60 +100,9 @@ const CurrencyScope = ({ children }) => {
   return <React.Fragment key={currency}>{children}</React.Fragment>;
 };
 
-const ScrollToTop = () => {
-  const { pathname } = useLocation();
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
-  return null;
-};
-
-// Web standard: every SPA view needs its own document title. Without this the
-// browser tab, Android recents card and iOS share sheet all read "TrendDrop"
-// for a listing, a checkout and a 404 alike, and screen readers announce the
-// same title after every navigation.
-const ROUTE_TITLES = [
-  ['/listing/', 'Listing'],
-  ['/sell', 'Sell an item'],
-  ['/search', 'Shop'],
-  ['/feed', 'Your feed'],
-  ['/cart', 'Your bag'],
-  ['/orders/', 'Order details'],
-  ['/transactions', 'Orders'],
-  ['/offers', 'Offers'],
-  ['/messages', 'Messages'],
-  ['/notifications', 'Notifications'],
-  ['/wishlist', 'Wishlist'],
-  ['/profile/', 'Profile'],
-  ['/settings', 'Settings'],
-  ['/login', 'Sign in'],
-  ['/register', 'Create account'],
-  ['/forgot-password', 'Reset password'],
-  ['/reset-password', 'Choose a new password'],
-  ['/seller-dashboard', 'Seller dashboard'],
-  ['/seller/analytics', 'Seller analytics'],
-  ['/seller/onboarding', 'Become a seller'],
-  ['/auctions', 'Auctions'],
-  ['/returns', 'Returns'],
-  ['/help', 'Help centre'],
-  ['/legal', 'Legal'],
-  ['/unavailable', 'Not available in your region'],
-];
-
-const RouteTitle = () => {
-  const { pathname } = useLocation();
-  useEffect(() => {
-    let title = 'TrendDrop — Buy & Sell Fashion';
-    if (pathname === '/') title = 'TrendDrop — Wear the Extraordinary';
-    else {
-      const match = ROUTE_TITLES.find(([prefix]) => pathname.startsWith(prefix));
-      if (match) title = `${match[1]} · TrendDrop`;
-      else title = 'Page not found · TrendDrop';
-    }
-    document.title = title;
-  }, [pathname]);
-  return null;
-};
+// Route changes are handled by RouteAnnouncer (components/RouteAnnouncer):
+// scroll reset, document title from utils/routeTitles, focus on #main-content
+// and a polite announcement — the four things a full page load does for free.
 
 const NativeAppLifecycle = () => {
   useEffect(() => {
@@ -264,8 +214,7 @@ function App() {
   return (
     <ThemeProvider>
       <NativeAppLifecycle />
-      <ScrollToTop />
-      <RouteTitle />
+      <RouteAnnouncer />
       <CartProvider>
         <SocketProvider>
           <div className="app">

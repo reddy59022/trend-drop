@@ -34,6 +34,18 @@
   --td-tone-neutral-fg: #374151;
   --td-tone-neutral-bg: #F3F4F6;
 
+  /* Focus indicator (WCAG 2.4.11 / 1.4.11). The ring has to read against
+     whatever is behind it, and the brand violet only cleared 3:1 on white.
+     Measured values: ink #0B0B1A is 18.4:1 on white and 17.6:1 on #F7F5FE;
+     snow #F5F3FF is 17.1:1 on #08081A. Filled brand controls paint the ring
+     inside their own fill instead (see design-haul.css). */
+  --td-focus-ring: #0B0B1A;
+  --td-focus-ring-on-brand: #FFFFFF;
+  /* Ink clears 3:1 on every stop of the brand (#6C3BFF 3.4:1, #8B5CFF 4.7:1,
+     #FF6BC1 7.5:1) and gold gradients; white does not clear the pink stop
+     (2.6:1), so filled gradient controls take ink. */
+  --td-focus-ring-on-fill: #0B0B1A;
+
   /* Brand — Royal Violet signature */
   --td-primary: #6C3BFF;
   --td-primary-dark: #4A23C9;
@@ -63,6 +75,7 @@
 
   /* Surfaces — Pearl light */
   --td-surface: #FFFFFF;
+  --td-focus-ring: #0B0B1A;
   --td-surface-secondary: #F7F5FE;
   --td-surface-tertiary: #EDE9FA;
   --td-surface-hover: #F1EEFC;
@@ -219,6 +232,7 @@
     --td-tone-neutral-bg: #29293E;
 
     --td-surface: #08081A;
+  --td-focus-ring: #F5F3FF;
     --td-surface-secondary: #14142B;
     --td-surface-tertiary: #1E1E3F;
     --td-surface-hover: #24244A;
@@ -269,6 +283,7 @@
   --td-tone-neutral-bg: #29293E;
 
   --td-surface: #08081A;
+  --td-focus-ring: #F5F3FF;
   --td-surface-secondary: #14142B;
   --td-surface-tertiary: #1E1E3F;
   --td-surface-hover: #24244A;
@@ -312,6 +327,7 @@
   --td-tone-neutral-fg: #374151;
   --td-tone-neutral-bg: #F3F4F6;
   --td-surface: #FFFFFF;
+  --td-focus-ring: #0B0B1A;
   --td-surface-secondary: #F7F5FE;
   --td-surface-tertiary: #EDE9FA;
   --td-surface-hover: #F1EEFC;
@@ -472,7 +488,7 @@ ul, ol {
 
 /* ---- Focus ---- */
 :focus-visible {
-  outline: 2px solid var(--td-primary);
+  outline: 2px solid var(--td-focus-ring);
   outline-offset: 2px;
   border-radius: var(--td-radius-xs);
 }
