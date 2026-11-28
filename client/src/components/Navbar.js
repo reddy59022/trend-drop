@@ -108,6 +108,44 @@ const Navbar = () => {
   const isFirstRender = useRef(true);
   const dropdownRef = useRef(null);
   const prefsRef = useRef(null);
+  const navRef = useRef(null);
+
+  // Publish the navbar's real rendered height as --td-navbar-h.
+  // The shell's top padding used to be hard-coded (142px on phones, 132px on
+  // tablets) while the navbar itself grows by the device safe-area inset and
+  // wraps the search field to a second row. On a notched iPhone the page title
+  // ended up underneath the navbar. Measuring is the only value that stays
+  // correct across iPhone SE → iPad, portrait/landscape, and large text.
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return undefined;
+    const apply = () => {
+      // ceil, never round: sub-pixel layout must not leave the page 1-2px
+      // short and let the navbar's bottom border sit on the first heading.
+      const height = Math.ceil(el.getBoundingClientRect().height);
+      if (height > 0) {
+        document.documentElement.style.setProperty('--td-navbar-h', `${height}px`);
+      }
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    window.addEventListener('orientationchange', apply);
+
+    let observer = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(apply);
+      // border-box is required: the navbar grows by its safe-area padding
+      // without its content box changing, and the default content-box
+      // observation never fires for a padding-only change.
+      observer.observe(el, { box: 'border-box' });
+    }
+
+    return () => {
+      window.removeEventListener('resize', apply);
+      window.removeEventListener('orientationchange', apply);
+      if (observer) observer.disconnect();
+    };
+  }, []);
 
   // Track scroll for glass effect
   useEffect(() => {
@@ -245,7 +283,7 @@ const Navbar = () => {
   };
 
   return (
-    <nav className={`navbar ${scrolled ? 'scrolled' : ''}`}>
+    <nav className={`navbar ${scrolled ? 'scrolled' : ''}`} ref={navRef}>
       <div className="navbar-container">
         {/* Logo */}
         <Link to="/" className="navbar-logo" onClick={closeAllMenus}>
@@ -281,10 +319,11 @@ const Navbar = () => {
           
           {/* Search Suggestions */}
           {showSuggestions && searchSuggestions.length > 0 && (
-            <div className="search-suggestions">
+            <div className="search-suggestions" aria-label="Search suggestions">
               {searchSuggestions.map((item) => (
-                <div
+                <button
                   key={item._id}
+                  type="button"
                   className="search-suggestion-item"
                   onClick={() => {
                     navigate(`/listing/${item._id}`);
@@ -306,7 +345,7 @@ const Navbar = () => {
                       {item.price}
                     </span>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}

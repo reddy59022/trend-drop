@@ -44,7 +44,8 @@ body {
     user-select: none;
   }
   .nav-icon-link { min-width: 44px; min-height: 44px; }
-  .like-btn, .quick-cart-btn { width: 42px; height: 42px; }
+  /* 44px, not 42px: both platform standards require the full floor. */
+  .like-btn, .quick-cart-btn { width: 44px; height: 44px; }
 
   /* Platform touch-target floor: iOS HIG 44pt, Material 48dp — 44px is the
      shared bar. Icon buttons and chips rendered at 30-38px, under both
@@ -1947,4 +1948,161 @@ textarea:focus-visible, [tabindex]:focus-visible {
   .progress-bar {
     max-width: none;
   }
+}
+
+/* =====================================================
+   PLATFORM CONFORMANCE — iOS / Android / Web standards
+   -----------------------------------------------------
+   Added by the whole-site UI/UX audit. Lives in the last
+   visual layer so it wins over the legacy breakpoints in
+   responsive.css (2/6) and append-to-app.css (3/6), which
+   hard-coded the app-shell offset per breakpoint.
+   ===================================================== */
+
+/* 1. APP-SHELL OFFSET IS MEASURED, NOT GUESSED.
+   The navbar is fixed and grows with the safe-area inset (and wraps the
+   search field to a second row on phones). The page shell used to reserve a
+   fixed 142px / 132px, so on notched iPhones (inset 47px) page titles slid
+   underneath the navbar. Navbar.js publishes its real height as
+   --td-navbar-h via ResizeObserver; this is the single consumer. */
+.main-content {
+  padding-top: var(--td-navbar-h, var(--td-nav-height)) !important;
+}
+
+html {
+  scroll-padding-top: calc(var(--td-navbar-h, var(--td-nav-height)) + 16px);
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding-top: var(--td-navbar-h, 128px) !important;
+  }
+
+  /* The slide-down menu is positioned from the same measured value, so it
+     hangs exactly below the navbar instead of 9-15px away from it. */
+  .navbar-menu {
+    top: var(--td-navbar-h, 128px) !important;
+  }
+
+  /* Header controls were 30-40px — below both the iOS 44pt and Android 48dp
+     touch-target floors. The preferences trigger sits in the top-right thumb
+     arc, so misses there are constant. */
+  .navbar .nav-icon-link,
+  .navbar .menu-toggle,
+  .navbar .global-btn,
+  .navbar .prefs-trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* 2. TOASTS ABOVE THE FLOATING DOCK.
+   Bottom-anchored toasts (the global ToastContainer default) rendered behind
+   the floating mobile tab bar, so "Added to cart" / error messages were
+   half-hidden on every phone. Lift and inset them to the dock's edge. */
+@media (max-width: 768px) {
+  .Toastify__toast-container--bottom-right,
+  .Toastify__toast-container--bottom-left,
+  .Toastify__toast-container--bottom-center {
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
+    padding: 0 !important;
+    bottom: calc(88px + var(--td-safe-area-bottom)) !important;
+  }
+
+  .Toastify__toast {
+    margin-bottom: 8px !important;
+    border-radius: var(--td-radius-lg) !important;
+  }
+}
+
+/* 3. NON-LATIN / RTL TOASTS keep the same edges as LTR. */
+[dir="rtl"] .Toastify__toast-container--bottom-right,
+[dir="rtl"] .Toastify__toast-container--bottom-left {
+  text-align: right;
+}
+
+/* 4. CART ROW REFLOW (320-560px).
+   Image + title + 44px stepper + price + remove cannot sit on one line on a
+   phone; previously the steppers were shrunk to 28px to make it fit, which
+   broke the touch-target standard in the most conversion-critical screen.
+   Keep full-size controls and move them under the item instead. */
+@media (max-width: 560px) {
+  .cart-item-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .cart-item-row .cart-item-info {
+    flex: 1 1 calc(100% - 88px);
+  }
+
+  .cart-item-row .cart-item-qty { order: 3; }
+  .cart-item-row .cart-item-price { order: 4; margin-left: auto; }
+  .cart-item-row .cart-item-remove { order: 5; }
+}
+
+/* 5. EMPTY STATES ON PHONES.
+   64px+ vertical padding on a 120px icon produced a ~900px dashed panel for
+   one line of copy — it pushed the real navigation below the fold. */
+@media (max-width: 480px) {
+  .empty-state {
+    padding: 40px 16px;
+    gap: 12px;
+  }
+
+  .empty-state-icon {
+    width: 84px;
+    height: 84px;
+    font-size: 38px;
+  }
+}
+
+/* 6. SEARCH SUGGESTIONS ARE BUTTONS.
+   They were clickable <div>s, unreachable by keyboard and invisible to screen
+   readers as actions. Now real buttons — reset the UA button box so the row
+   looks identical. */
+.search-suggestions .search-suggestion-item {
+  width: calc(100% - 8px);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--td-border-light);
+}
+
+.search-suggestions .search-suggestion-item:hover,
+.search-suggestions .search-suggestion-item:focus-visible {
+  background: var(--td-surface-hover);
+}
+
+/* 7. SKIP LINK (web/keyboard). Off-canvas until focused. */
+.skip-to-content {
+  position: fixed;
+  top: calc(8px + var(--td-safe-area-top));
+  left: calc(8px + var(--td-safe-area-left));
+  z-index: 3000;
+  padding: 10px 16px;
+  border-radius: var(--td-radius-md);
+  background: var(--td-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: var(--td-shadow-lg);
+  transform: translateY(-200%);
+  transition: transform var(--td-transition-fast);
+}
+
+.skip-to-content:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* The shell receives focus from the skip link; no visible ring on the region
+   itself (its first heading is the target). */
+#main-content:focus {
+  outline: none;
 }

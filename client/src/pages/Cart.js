@@ -435,21 +435,21 @@ const Cart = () => {
                       <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>{formatPrice(item.price, item.currency)} each</div>
                     </div>
                     <div className="cart-item-qty" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <button className="btn btn-icon btn-ghost" onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
+                      <button className="btn btn-icon btn-ghost cart-qty-btn" onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
                         aria-label={`Decrease quantity of ${item.title || 'item'}`}
                         disabled={item.quantity <= 1}
-                        style={{ width: 28, height: 28, opacity: item.quantity <= 1 ? 0.4 : 1 }}><FaMinus size={10} /></button>
-                      <span style={{ fontWeight: 700, minWidth: 24, textAlign: 'center', fontSize: 14 }}>{item.quantity}</span>
-                      <button className="btn btn-icon btn-ghost" onClick={() => {
+                        style={{ width: 44, height: 44, opacity: item.quantity <= 1 ? 0.4 : 1 }}><FaMinus size={12} /></button>
+                      <span style={{ fontWeight: 700, minWidth: 24, textAlign: 'center', fontSize: 15 }}>{item.quantity}</span>
+                      <button className="btn btn-icon btn-ghost cart-qty-btn" onClick={() => {
                         if (item.quantity < (item.available || Infinity)) updateQuantity(item.listingId, item.quantity + 1);
                         else toast.error(`Only ${item.available} available`);
-                      }} aria-label={`Increase quantity of ${item.title || 'item'}`} style={{ width: 28, height: 28 }}><FaPlus size={10} /></button>
+                      }} aria-label={`Increase quantity of ${item.title || 'item'}`} style={{ width: 44, height: 44 }}><FaPlus size={12} /></button>
                     </div>
                     <div className="cart-item-price" style={{ textAlign: 'right', minWidth: 70 }}>
                       <div style={{ fontWeight: 700, color: 'var(--td-primary)', fontSize: 14 }}>{formatPrice(item.price * item.quantity, item.currency)}</div>
                     </div>
                     <button className="btn btn-icon btn-ghost cart-item-remove" onClick={() => removeFromCart(item.listingId)}
-                      style={{ color: 'var(--td-error)', width: 32, height: 32 }} title="Remove" aria-label={`Remove ${item.title || 'item'} from cart`}><FaTrash size={12} /></button>
+                      style={{ color: 'var(--td-error)', width: 44, height: 44 }} title="Remove" aria-label={`Remove ${item.title || 'item'} from cart`}><FaTrash size={13} /></button>
                   </div>
                 ))}
               </div>

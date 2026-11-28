@@ -107,6 +107,53 @@ const ScrollToTop = () => {
   return null;
 };
 
+// Web standard: every SPA view needs its own document title. Without this the
+// browser tab, Android recents card and iOS share sheet all read "TrendDrop"
+// for a listing, a checkout and a 404 alike, and screen readers announce the
+// same title after every navigation.
+const ROUTE_TITLES = [
+  ['/listing/', 'Listing'],
+  ['/sell', 'Sell an item'],
+  ['/search', 'Shop'],
+  ['/feed', 'Your feed'],
+  ['/cart', 'Your bag'],
+  ['/orders/', 'Order details'],
+  ['/transactions', 'Orders'],
+  ['/offers', 'Offers'],
+  ['/messages', 'Messages'],
+  ['/notifications', 'Notifications'],
+  ['/wishlist', 'Wishlist'],
+  ['/profile/', 'Profile'],
+  ['/settings', 'Settings'],
+  ['/login', 'Sign in'],
+  ['/register', 'Create account'],
+  ['/forgot-password', 'Reset password'],
+  ['/reset-password', 'Choose a new password'],
+  ['/seller-dashboard', 'Seller dashboard'],
+  ['/seller/analytics', 'Seller analytics'],
+  ['/seller/onboarding', 'Become a seller'],
+  ['/auctions', 'Auctions'],
+  ['/returns', 'Returns'],
+  ['/help', 'Help centre'],
+  ['/legal', 'Legal'],
+  ['/unavailable', 'Not available in your region'],
+];
+
+const RouteTitle = () => {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    let title = 'TrendDrop — Buy & Sell Fashion';
+    if (pathname === '/') title = 'TrendDrop — Wear the Extraordinary';
+    else {
+      const match = ROUTE_TITLES.find(([prefix]) => pathname.startsWith(prefix));
+      if (match) title = `${match[1]} · TrendDrop`;
+      else title = 'Page not found · TrendDrop';
+    }
+    document.title = title;
+  }, [pathname]);
+  return null;
+};
+
 const NativeAppLifecycle = () => {
   useEffect(() => {
     const handleUrl = (url) => {
@@ -218,13 +265,16 @@ function App() {
     <ThemeProvider>
       <NativeAppLifecycle />
       <ScrollToTop />
+      <RouteTitle />
       <CartProvider>
         <SocketProvider>
           <div className="app">
           <ErrorBoundary>
+          {/* Keyboard/screen-reader users can jump the 60+ link navbar. */}
+          <a href="#main-content" className="skip-to-content">Skip to content</a>
           <Navbar />
           <LegalConsentGate />
-          <main className="main-content">
+          <main id="main-content" tabIndex={-1} className="main-content">
             <CurrencyScope>
             <Suspense fallback={<PageLoader />}>
               <Routes>

@@ -78,7 +78,7 @@ const Feed = () => {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <FaFilter size={14} color="var(--td-text-tertiary)" />
+          <FaFilter size={14} color="var(--td-text-tertiary)" aria-hidden="true" />
           <select
             className="form-input"
             value={sort}

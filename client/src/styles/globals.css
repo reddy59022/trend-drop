@@ -406,6 +406,9 @@ ul, ol {
 .app {
   min-height: 100vh;
   min-height: -webkit-fill-available;
+  /* Dynamic viewport unit: with 100vh alone the iOS/Android URL bar covering
+     the bottom 60-100px clipped the end of short pages. */
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
