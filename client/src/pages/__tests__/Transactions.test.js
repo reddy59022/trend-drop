@@ -162,6 +162,48 @@ describe('Sold tab — seller earnings breakdown', () => {
     expect(round2(itemPrice + platformFee + boostFee)).toBe(earnings);
   });
 
+  test('shows seller-paid postage so a cross-trade sale reconciles', async () => {
+    // Production report: $48 item − $3.84 fee − $2.08 postage = $42.08.
+    const postageSale = {
+      ...boostedSellerSale,
+      paymentBreakdown: {
+        subtotal: 48, shippingCost: 4.95, buyerProtectionFee: 2.4, buyerProtectionPercent: 5,
+        tax: 0, totalPaid: 55.35, platformFee: 3.84, platformFeePercent: 8,
+        shippingPayout: 0, labelCost: 7.03, sellerPostageSubsidy: 2.08,
+        sellerEarnings: 42.08, boostFee: 0, boostTier: '',
+      },
+      sellerBreakdown: {
+        currency: 'USD', itemPrice: 48, platformFee: 3.84, platformFeePercent: 8,
+        boostFee: 0, boostTier: '', boostTierLabel: '', shippingPayout: 0,
+        sellerPostageSubsidy: 2.08, shippingIncludedInEarnings: false,
+        sellerEarnings: 42.08, expectedEarnings: 42.08, residual: 0, reconciled: true,
+      },
+    };
+    await renderSoldTab(postageSale);
+
+    expect(screen.getByText('Postage (seller-paid)')).toBeInTheDocument();
+    expect(amountFor('Postage (seller-paid)')).toBe(-2.08);
+    const rows = amountFor('Item Price') + amountFor('Platform Fee (8%)') + amountFor('Postage (seller-paid)');
+    expect(round2(rows)).toBe(42.08);
+    expect(amountFor('Your Earnings')).toBe(42.08);
+  });
+
+  test('legacy payload derives seller-paid postage instead of an unexplained adjustment', async () => {
+    const postageSale = {
+      ...boostedSellerSale,
+      paymentBreakdown: {
+        subtotal: 48, platformFee: 3.84, platformFeePercent: 8, shippingPayout: 0,
+        sellerPostageSubsidy: 2.08, sellerEarnings: 42.08, boostFee: 0,
+      },
+    };
+    delete postageSale.sellerBreakdown;
+    await renderSoldTab(postageSale);
+
+    expect(screen.getByText('Postage (seller-paid)')).toBeInTheDocument();
+    expect(screen.queryByText('Adjustments & fees')).not.toBeInTheDocument();
+    expect(round2(amountFor('Item Price') + amountFor('Platform Fee (8%)') + amountFor('Postage (seller-paid)'))).toBe(42.08);
+  });
+
   test('keeps shipping out of the earnings total and labels it as such', async () => {
     await renderSoldTab(boostedSellerSale);
     expect(screen.getByText('Shipping label payout')).toBeInTheDocument();

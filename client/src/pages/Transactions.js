@@ -54,10 +54,13 @@ const deriveSellerBreakdown = (breakdown = {}, currency = 'USD') => {
   const boostFee = round2(breakdown.boostFee);
   const boostTier = String(breakdown.boostTier || '');
   const shippingPayout = round2(breakdown.shippingPayout);
+  // Carrier postage the buyer's shipping payment did not cover. It is funded
+  // from seller earnings, so it must be a visible deduction.
+  const sellerPostageSubsidy = round2(breakdown.sellerPostageSubsidy);
   const sellerEarnings = round2(breakdown.sellerEarnings);
 
   // Two legitimate ledger shapes (see server/utils/transactionView.js).
-  const shippingExcluded = round2(itemPrice - platformFee - boostFee);
+  const shippingExcluded = round2(itemPrice - platformFee - boostFee - sellerPostageSubsidy);
   const shippingIncluded = round2(shippingExcluded + shippingPayout);
   const matchesExcluded = Math.abs(shippingExcluded - sellerEarnings) <= 0.01;
   const matchesIncluded = Math.abs(shippingIncluded - sellerEarnings) <= 0.01;
@@ -74,6 +77,7 @@ const deriveSellerBreakdown = (breakdown = {}, currency = 'USD') => {
     boostTier,
     boostTierLabel: boostFee > 0 ? tierLabelFromKey(boostTier) : '',
     shippingPayout,
+    sellerPostageSubsidy,
     shippingIncludedInEarnings,
     sellerEarnings,
     expectedEarnings,
@@ -388,6 +392,11 @@ function Transactions() {
                               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--td-error)' }}>
                                 <span>{sellerView.boostTierLabel ? `Boost Fee (${sellerView.boostTierLabel})` : 'Boost Fee'}</span>
                                 <span>-{formatPrice(sellerView.boostFee, txn.currency)}</span>
+                              </div>
+                            )}
+                            {sellerView.sellerPostageSubsidy > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--td-error)' }} title="Carrier postage not covered by the buyer's shipping payment; it is deducted from your earnings.">
+                                <span>Postage (seller-paid)</span><span>-{formatPrice(sellerView.sellerPostageSubsidy, txn.currency)}</span>
                               </div>
                             )}
                             {sellerView.shippingIncludedInEarnings && sellerView.shippingPayout > 0 && (

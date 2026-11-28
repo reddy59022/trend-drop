@@ -500,6 +500,22 @@ describe('utils/transactionView contracts', () => {
     expect(out[1].paymentBreakdown.boostFee).toBeUndefined();
   });
 
+  test('SB.20 seller-paid postage is exposed and the earnings column reconciles', () => {
+    const bd = buildSellerBreakdown({
+      currency: 'USD',
+      paymentBreakdown: {
+        subtotal: 48, platformFee: 3.84, platformFeePercent: 8, shippingPayout: 0,
+        labelCost: 7.03, sellerPostageSubsidy: 2.08, sellerEarnings: 42.08,
+        boostFee: 0,
+      },
+    });
+    expect(bd.sellerPostageSubsidy).toBe(2.08);
+    expect(bd.sellerEarnings).toBe(42.08);
+    expect(round2(bd.itemPrice - bd.platformFee - bd.boostFee - bd.sellerPostageSubsidy)).toBe(bd.sellerEarnings);
+    expect(bd.reconciled).toBe(true);
+    expect(bd.residual).toBe(0);
+  });
+
   test('SB.19 the 8% platform percent is reported from data (labels are never hardcoded)', () => {
     const bd = buildSellerBreakdown({ currency: 'USD', paymentBreakdown: { ...REPORTED_SALE } });
     expect(bd.platformFeePercent).toBe(8);
