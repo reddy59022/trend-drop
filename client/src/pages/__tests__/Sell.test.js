@@ -41,7 +41,9 @@ describe('Sell page', () => {
     prime();
     renderPage(<Sell />);
     expect(screen.getByText('List an Item')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Photos' })).toBeInTheDocument();
+    // The heading announces its position in the flow, so screen-reader users
+    // know where they are after the step changes.
+    expect(screen.getByRole('heading', { name: 'Step 1 of 5: Photos' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('https://youtube.com/watch?v=... or Instagram/Facebook reel URL')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Next: Add Details/ })).toBeDisabled();
   });

@@ -117,7 +117,7 @@ const StripeCheckoutForm = ({ amount, currency, totalAmount, onSuccess, onError,
       </div>
 
       {cardError && (
-        <div style={{
+        <div role="alert" style={{
           background: 'rgba(255, 77, 109, 0.08)',
           color: 'var(--td-error)',
           padding: '10px 14px',

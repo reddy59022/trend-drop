@@ -26,6 +26,13 @@ const Cart = () => {
   // URL can be exercised end to end without anyone guessing credentials.
   const [stripeTestMode, setStripeTestMode] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  // Checkout replaces the summary in place. Move focus to the shipping
+  // heading so keyboard and screen-reader users are not left on a button
+  // that has just been unmounted underneath them.
+  const shippingHeadingRef = useRef(null);
+  useEffect(() => {
+    if (showForm) shippingHeadingRef.current?.focus();
+  }, [showForm]);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [shippingInfo, setShippingInfo] = useState({
     fullName: '', street1: '', city: '', state: '', postalCode: '', country: 'US', phone: ''
@@ -441,7 +448,13 @@ const Cart = () => {
                         aria-label={`Decrease quantity of ${item.title || 'item'}`}
                         disabled={item.quantity <= 1}
                         style={{ width: 44, height: 44, opacity: item.quantity <= 1 ? 0.4 : 1 }}><FaMinus size={12} /></button>
-                      <span style={{ fontWeight: 700, minWidth: 24, textAlign: 'center', fontSize: 15 }}>{item.quantity}</span>
+                      {/* Announced as text content ("Quantity 2"), not an
+                          aria-label: a label would be static while the
+                          number changes, so the live region would read the
+                          same thing on every press. */}
+                      <output aria-live="polite" aria-atomic="true" style={{ fontWeight: 700, minWidth: 24, textAlign: 'center', fontSize: 15 }}>
+                        <span className="sr-only">Quantity </span>{item.quantity}
+                      </output>
                       <button className="btn btn-icon btn-ghost cart-qty-btn" onClick={() => {
                         if (item.quantity < (item.available || Infinity)) updateQuantity(item.listingId, item.quantity + 1);
                         else toast.error(`Only ${item.available} available`);
@@ -467,7 +480,7 @@ const Cart = () => {
               <div style={{ marginBottom: 'var(--td-space-md)' }}>
                 {!appliedPromo ? (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <input className="form-input" placeholder="Promo code" value={promoCode}
+                    <input className="form-input" name="promoCode" placeholder="Promo code" aria-label="Promo code" autoComplete="off" value={promoCode}
                       onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoError(''); }}
                       style={{ flex: 1, fontSize: 13 }} />
                     <button className="btn btn-outline btn-sm" disabled={!promoCode || promoLoading}
@@ -498,7 +511,7 @@ const Cart = () => {
                       style={{ color: '#fff', width: 24, height: 24 }}><FaTrash size={10} /></button>
                   </div>
                 )}
-                {promoError && <div style={{ fontSize: 12, color: 'var(--td-error)', marginTop: 4 }}>{promoError}</div>}
+                {promoError && <div role="alert" style={{ fontSize: 12, color: 'var(--td-error)', marginTop: 4 }}>{promoError}</div>}
               </div>
             )}
 
@@ -553,7 +566,7 @@ const Cart = () => {
                 <div style={{ borderTop: '1px solid var(--td-border)', margin: '4px 0', paddingTop: 12 }}>
                   <div className="flex-between">
                     <span style={{ fontWeight: 700, fontSize: 16 }}>Total</span>
-                    <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(authoritativeDisplayTotal, serverTotalAmount != null ? 'USD' : (currency || 'USD'))}</span>
+                    <span aria-live="polite" style={{ fontWeight: 800, fontSize: 22, color: 'var(--td-primary)' }}>{formatPrice(authoritativeDisplayTotal, serverTotalAmount != null ? 'USD' : (currency || 'USD'))}</span>
                   </div>
                 </div>
               </div>
@@ -584,21 +597,21 @@ const Cart = () => {
                     (declines: <code>4000 0000 0000 0002</code>).
                   </div>
                 )}
-                <h4 style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Shipping Details</h4>
+                <h4 ref={shippingHeadingRef} tabIndex={-1} id="shipping-details" style={{ fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Shipping Details</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--td-space-md)' }}>
-                  <input type="text" className="form-input" placeholder="Full Name *" value={shippingInfo.fullName}
+                  <input id="ship-fullName" name="fullName" type="text" className="form-input" placeholder="Full Name *" aria-label="Full name" autoComplete="name" value={shippingInfo.fullName}
                     onChange={e => setShippingInfo({...shippingInfo, fullName: e.target.value})} required />
-                  <input type="text" className="form-input" placeholder="Street Address *" value={shippingInfo.street1}
+                  <input id="ship-street1" name="street1" type="text" className="form-input" placeholder="Street Address *" aria-label="Street address" autoComplete="address-line1" value={shippingInfo.street1}
                     onChange={e => setShippingInfo({...shippingInfo, street1: e.target.value})} required />
-                  <input type="text" className="form-input" placeholder="City *" value={shippingInfo.city}
+                  <input id="ship-city" name="city" type="text" className="form-input" placeholder="City *" aria-label="City" autoComplete="address-level2" value={shippingInfo.city}
                     onChange={e => setShippingInfo({...shippingInfo, city: e.target.value})} required />
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <input type="text" className="form-input" placeholder="State *" value={shippingInfo.state}
+                    <input id="ship-state" name="state" type="text" className="form-input" placeholder="State *" aria-label="State or region" autoComplete="address-level1" value={shippingInfo.state}
                       onChange={e => setShippingInfo({...shippingInfo, state: e.target.value})} required />
-                    <input type="text" className="form-input" placeholder="ZIP Code *" value={shippingInfo.postalCode}
+                    <input id="ship-postalCode" name="postalCode" type="text" className="form-input" placeholder="ZIP Code *" aria-label="ZIP or postal code" autoComplete="postal-code" value={shippingInfo.postalCode}
                       onChange={e => setShippingInfo({...shippingInfo, postalCode: e.target.value})} required />
                   </div>
-                  <select className="form-input" value={shippingInfo.country}
+                  <select id="ship-country" name="country" className="form-input" aria-label="Country" autoComplete="country" value={shippingInfo.country}
                     onChange={e => setShippingInfo({...shippingInfo, country: e.target.value})} required>
                     <option value="US">United States</option>
                     <option value="CA">Canada</option>
@@ -612,7 +625,7 @@ const Cart = () => {
                     <option value="SG">Singapore</option>
                     <option value="BR">Brazil</option>
                   </select>
-                  <input type="text" className="form-input" placeholder="Phone" value={shippingInfo.phone}
+                  <input id="ship-phone" name="phone" type="tel" className="form-input" placeholder="Phone" aria-label="Phone number" autoComplete="tel" value={shippingInfo.phone}
                     onChange={e => setShippingInfo({...shippingInfo, phone: e.target.value})} />
                 </div>
 

@@ -32,7 +32,15 @@ const Messages = () => {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const stateRef = useRef(null);
+  // Focus targets: opening a thread moves focus to its heading and going back
+  // returns it to the list heading, so neither transition drops focus on body.
+  const threadHeadingRef = useRef(null);
+  const listHeadingRef = useRef(null);
   stateRef.current = { activeThread, threadListings };
+
+  useEffect(() => {
+    if (activeThread) threadHeadingRef.current?.focus();
+  }, [activeThread]);
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
@@ -128,6 +136,11 @@ const Messages = () => {
     openThread(conv);
   };
 
+  const closeThread = () => {
+    setActiveThread(null);
+    setTimeout(() => listHeadingRef.current?.focus(), 60);
+  };
+
   const filtered = conversations.filter(c =>
     c.otherUser?.name?.toLowerCase().includes(search.toLowerCase()) ||
     c.listing?.title?.toLowerCase().includes(search.toLowerCase()) ||
@@ -152,13 +165,13 @@ const Messages = () => {
       <div className="page-container" style={{ maxWidth: 700, margin: '0 auto', padding: '0 16px' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <button onClick={() => setActiveThread(null)} aria-label="Back to conversations" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: 'var(--td-text)' }}>
+          <button type="button" onClick={closeThread} aria-label="Back to conversations" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: 'var(--td-text)' }}>
             <FaArrowLeft />
           </button>
           <img src={other.avatar || defaultAvatar} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--td-border)' }} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 15 }}>{threadTitle}</div>
-            <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}><FaStore size={10} /> {threadMessages.length} message{threadMessages.length === 1 ? '' : 's'} · {threadListings.length} item{threadListings.length === 1 ? '' : 's'}</div>
+            <h2 ref={threadHeadingRef} tabIndex={-1} style={{ fontWeight: 600, fontSize: 15, margin: 0 }}>{threadTitle}</h2>
+            <div style={{ fontSize: 12, color: 'var(--td-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}><FaStore size={10} /> {threadMessages.length} message{threadMessages.length === 1 ? '' : 's'} · {threadListings.length} item{threadListings.length === 1 ? '' : 's'}</div>
           </div>
         </div>
 
@@ -175,7 +188,7 @@ const Messages = () => {
                   : <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--td-surface-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaImage size={11} style={{ color: 'var(--td-text-tertiary)' }} /></div>}
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>{l.title}</div>
-                  <div style={{ fontSize: 11, color: 'var(--td-text-tertiary)' }}>{formatPrice(l.price, l.currency || 'USD')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--td-text-secondary)' }}>{formatPrice(l.price, l.currency || 'USD')}</div>
                 </div>
               </div>
             ))}
@@ -193,14 +206,14 @@ const Messages = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                     <FaTag size={12} style={{ color: cfg.color }} />
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--td-text)' }}>Offer: {formatPrice(o.counterAmount || o.amount, o.currency || 'USD')}</span>
-                    {o.listing?.title && <span style={{ fontSize: 11, color: 'var(--td-text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120 }}>· {o.listing.title}</span>}
+                    {o.listing?.title && <span style={{ fontSize: 11, color: 'var(--td-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120 }}>· {o.listing.title}</span>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {expired && <span style={{ fontSize: 11, color: cfg.color, display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> {cfg.label}</span>}
+                    {expired && <span style={{ fontSize: 11, color: 'var(--td-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} aria-hidden="true" /> {cfg.label}</span>}
                     {!expired && o.status === 'pending' && o.expiresAt && (
-                      <span style={{ fontSize: 11, color: cfg.color, display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} /> {timeAgo(o.expiresAt)}</span>
+                      <span style={{ fontSize: 11, color: 'var(--td-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}><FaClock size={10} aria-hidden="true" /> {timeAgo(o.expiresAt)}</span>
                     )}
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--td-radius-full)', color: cfg.color, background: 'var(--td-surface)' }}>{cfg.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--td-radius-full)', color: 'var(--td-text)', background: cfg.bg }}>{cfg.label}</span>
                   </div>
                 </div>
               );
@@ -209,9 +222,10 @@ const Messages = () => {
         )}
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px', background: 'var(--td-surface-secondary)', borderRadius: 'var(--td-radius-md)', border: '1px solid var(--td-border)', minHeight: 300, maxHeight: '50vh', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        <div role="log" aria-live="polite" aria-relevant="additions" aria-label={`Conversation with ${threadTitle}`} tabIndex={0}
+          style={{ flex: 1, overflowY: 'auto', padding: '16px', background: 'var(--td-surface-secondary)', borderRadius: 'var(--td-radius-md)', border: '1px solid var(--td-border)', minHeight: 300, maxHeight: '50vh', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
           {convLoading ? (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}><FaSpinner className="spinner" /></div>
+            <div role="status" style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}><FaSpinner className="spinner" aria-hidden="true" /><span className="sr-only">Loading conversation</span></div>
           ) : threadMessages.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--td-text-tertiary)' }}>
               <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}><FaComment aria-hidden="true" /></div>
@@ -228,10 +242,10 @@ const Messages = () => {
                   <div key={msg._id || i} style={{ display: 'flex', justifyContent: isOwn ? 'flex-end' : 'flex-start', alignItems: isOwn ? 'flex-end' : 'flex-start', gap: 8, marginBottom: isLast ? 8 : 2 }}>
                     {!isOwn && showAvatar && <img src={other.avatar || defaultAvatar} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />}
                     {!isOwn && !showAvatar && <div style={{ width: 28, flexShrink: 0 }} />}
-                    <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : '#fff', color: isOwn ? '#fff' : 'var(--td-text)', boxShadow: isOwn ? '0 4px 12px rgba(108,59,255,0.3)' : 'var(--td-shadow-sm)' }}>
+                    <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isOwn ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : 'var(--td-surface)', color: isOwn ? '#fff' : 'var(--td-text)', border: isOwn ? 'none' : '1px solid var(--td-border)', boxShadow: isOwn ? '0 4px 12px rgba(108,59,255,0.3)' : 'var(--td-shadow-sm)' }}>
                       {msg.listing && <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}><FaTag size={9} /> Re: {msg.listing.title}</div>}
                       <div style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.text}</div>
-                      <div style={{ fontSize: 11, marginTop: 4, opacity: isOwn ? 0.8 : 0.5, textAlign: isOwn ? 'right' : 'left' }}>
+                      <div style={{ fontSize: 11, marginTop: 4, color: isOwn ? '#fff' : 'var(--td-text-secondary)', textAlign: isOwn ? 'right' : 'left' }}>
                         {timeAgo(msg.createdAt)}
                         {isOwn && msg.read && <span style={{ marginLeft: 4, fontSize: 11 }}>✓✓</span>}
                       </div>
@@ -248,8 +262,8 @@ const Messages = () => {
 
         {/* Input */}
         <form onSubmit={handleSend} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input ref={inputRef} type="text" placeholder="Type a message..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} maxLength={2000} autoComplete="off" style={{ flex: 1, padding: '12px 18px', borderRadius: '24px', border: '1px solid var(--td-border)', fontSize: 14, background: 'var(--td-surface)', outline: 'none' }} />
-          <button type="submit" disabled={sending || !newMessage.trim()} style={{ flexShrink: 0, width: 46, height: 46, borderRadius: '50%', border: 'none', background: newMessage.trim() ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : 'var(--td-surface-tertiary)', color: newMessage.trim() ? '#fff' : 'var(--td-text-tertiary)', cursor: newMessage.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: newMessage.trim() ? '0 4px 12px rgba(108,59,255,0.35)' : 'none' }}>
+          <input ref={inputRef} type="text" name="message" aria-label={`Message ${threadTitle}`} placeholder="Type a message..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} maxLength={2000} autoComplete="off" style={{ flex: 1, padding: '12px 18px', borderRadius: '24px', border: '1px solid var(--td-border)', fontSize: 14, background: 'var(--td-surface)', outline: 'none' }} />
+          <button type="submit" aria-label={sending ? 'Sending message' : 'Send message'} aria-busy={sending} disabled={sending || !newMessage.trim()} style={{ flexShrink: 0, width: 46, height: 46, borderRadius: '50%', border: 'none', background: newMessage.trim() ? 'linear-gradient(135deg, var(--td-primary), var(--td-primary-dark))' : 'var(--td-surface-tertiary)', color: newMessage.trim() ? '#fff' : 'var(--td-text-tertiary)', cursor: newMessage.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: newMessage.trim() ? '0 4px 12px rgba(108,59,255,0.35)' : 'none' }}>
             {sending ? <FaSpinner className="spinner-sm" /> : <FaPaperPlane size={16} />}
           </button>
         </form>
@@ -260,12 +274,12 @@ const Messages = () => {
   // Conversation list view
   return (
     <div className="page-container" style={{ maxWidth: 700, margin: '0 auto' }}>
-      <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}><FaEnvelope /> Messages {conversations.length > 0 && <span style={{ fontSize: 16, color: 'var(--td-text-tertiary)', fontWeight: 400 }}>({conversations.length})</span>}</h1>
+      <h1 ref={listHeadingRef} tabIndex={-1} className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}><FaEnvelope aria-hidden="true" /> Messages {conversations.length > 0 && <span style={{ fontSize: 16, color: 'var(--td-text-tertiary)', fontWeight: 400 }}>({conversations.length})</span>}</h1>
 
       {conversations.length > 3 && (
         <div style={{ position: 'relative', marginBottom: 'var(--td-space-lg)' }}>
           <FaSearch style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
-          <input className="form-input" placeholder="Search conversations..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 36 }} />
+          <input className="form-input" name="conversationSearch" aria-label="Search conversations" placeholder="Search conversations..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 36 }} />
         </div>
       )}
 
@@ -278,36 +292,41 @@ const Messages = () => {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', borderRadius: 'var(--td-radius-lg)', overflow: 'hidden', border: '1px solid var(--td-border)', background: 'var(--td-surface)' }}>
           {filtered.map((conv, i) => (
-            <div key={conv.otherUser?._id || `c-${i}`}
+            <button key={conv.otherUser?._id || `c-${i}`}
+              type="button"
+              aria-label={`${conv.otherUser?.name || 'Unknown'}${conv.unreadCount > 0 ? `, ${conv.unreadCount} unread` : ''}${conv.listing?.title ? `, about ${conv.listing.title}` : ''}`}
               style={{
-                display: 'flex', gap: 12, padding: '14px 16px', alignItems: 'center',
-                cursor: 'pointer', borderBottom: i < filtered.length - 1 ? '1px solid var(--td-border-light)' : 'none',
+                display: 'flex', gap: 12, padding: '14px 16px', alignItems: 'center', width: '100%',
+                textAlign: 'left', font: 'inherit', color: 'inherit',
+                cursor: 'pointer', border: 'none', borderBottom: i < filtered.length - 1 ? '1px solid var(--td-border-light)' : 'none',
                 background: conv.unreadCount > 0 ? 'rgba(108, 59, 255, 0.05)' : 'transparent',
                 transition: 'background 0.2s',
               }}
               onClick={() => handleSelectConversation(conv)}
               onMouseEnter={(e) => e.currentTarget.style.background = 'var(--td-surface-hover)'}
               onMouseLeave={(e) => e.currentTarget.style.background = conv.unreadCount > 0 ? 'rgba(108, 59, 255, 0.05)' : 'transparent'}
+              onFocus={(e) => e.currentTarget.style.background = 'var(--td-surface-hover)'}
+              onBlur={(e) => e.currentTarget.style.background = conv.unreadCount > 0 ? 'rgba(108, 59, 255, 0.05)' : 'transparent'}
             >
               <img src={conv.otherUser?.avatar || defaultAvatar} alt="" style={{ width: 48, height: 48, borderRadius: 'var(--td-radius-full)', objectFit: 'cover', flexShrink: 0, border: '2px solid var(--td-border)' }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontWeight: conv.unreadCount > 0 ? 700 : 500, fontSize: 15 }}>{conv.otherUser?.name || 'Unknown'}</span>
-                  <span style={{ fontSize: 12, color: 'var(--td-text-tertiary)' }}>{conv.lastMessage ? timeAgo(conv.updatedAt) : ''}</span>
+                  <span style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}>{conv.lastMessage ? timeAgo(conv.updatedAt) : ''}</span>
                 </div>
                 {conv.listing && (
-                  <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', marginBottom: 2 }}>
+                  <div style={{ fontSize: 12, color: 'var(--td-text-secondary)', marginBottom: 2 }}>
                     Re: {conv.listing.title}{conv.listingCount > 1 ? ` +${conv.listingCount - 1} more item${conv.listingCount - 1 === 1 ? '' : 's'}` : ''}
                   </div>
                 )}
-                <div style={{ fontSize: 13, color: conv.unreadCount > 0 ? 'var(--td-text)' : 'var(--td-text-tertiary)', fontWeight: conv.unreadCount > 0 ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ fontSize: 13, color: conv.unreadCount > 0 ? 'var(--td-text)' : 'var(--td-text-secondary)', fontWeight: conv.unreadCount > 0 ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {conv.lastMessage?.text || 'No messages yet'}
                 </div>
               </div>
               {conv.unreadCount > 0 && (
-                <span className="badge badge-primary">{conv.unreadCount}</span>
+                <span className="badge badge-primary" aria-hidden="true">{conv.unreadCount}</span>
               )}
-            </div>
+            </button>
           ))}
         </div>
       )}

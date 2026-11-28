@@ -58,6 +58,15 @@ const Sell = () => {
   const [videoUrl, setVideoUrl] = useState('');
   const [videoPreview, setVideoPreview] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Steps swap the panel in place. Move focus to the new step heading so
+  // keyboard and screen-reader users land in the content they just opened
+  // (skipped on first render so arriving at /sell does not jump the page).
+  const stepHeadingRef = useRef(null);
+  const firstStepRender = useRef(true);
+  useEffect(() => {
+    if (firstStepRender.current) { firstStepRender.current = false; return; }
+    stepHeadingRef.current?.focus();
+  }, [currentStep]);
   
   // Boost selection state - default to 'premium' (middle tier)
   const [selectedBoostTier, setSelectedBoostTier] = useState('premium');
@@ -230,16 +239,20 @@ const Sell = () => {
           const isActive = i === currentStep;
           const isComplete = i < currentStep;
           return (
-            <button key={step.id} onClick={() => setCurrentStep(i)}
+            <button key={step.id} type="button" onClick={() => setCurrentStep(i)}
+              aria-current={isActive ? 'step' : undefined}
+              aria-label={`Step ${i + 1} of ${steps.length}: ${step.label}${isComplete ? ' (completed)' : ''}`}
               style={{
                 flex: 1, padding: '12px 8px', borderRadius: 'var(--td-radius-sm)', border: `2px solid ${isActive ? 'var(--td-primary)' : isComplete ? 'var(--td-success)' : 'var(--td-border)'}`,
                 background: isActive ? 'rgba(108, 59, 255, 0.07)' : isComplete ? 'rgba(0, 200, 83, 0.06)' : 'var(--td-surface)',
-                color: isActive ? 'var(--td-primary)' : isComplete ? 'var(--td-success)' : 'var(--td-text-tertiary)',
+                // Secondary, not tertiary: #9494B8 on white is 2.9:1 and these
+                // labels are 12px, so they must stay readable.
+                color: isActive ? 'var(--td-primary)' : isComplete ? 'var(--td-success)' : 'var(--td-text-secondary)',
                 cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                 fontSize: 12, fontWeight: isActive ? 700 : 500, transition: 'all 0.2s',
               }}>
-              {isComplete ? <FaCheckCircle size={16} /> : <StepIcon size={16} />}
-              {step.label}
+              <span aria-hidden="true">{isComplete ? <FaCheckCircle size={16} /> : <StepIcon size={16} />}</span>
+              <span aria-hidden="true">{step.label}</span>
             </button>
           );
         })}
@@ -249,7 +262,9 @@ const Sell = () => {
         {/* Step 0: Photos */}
         {currentStep === 0 && (
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Photos</h2>
+            <h2 ref={stepHeadingRef} tabIndex={-1} className="sell-step-heading" style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+              <span className="sr-only">Step {currentStep + 1} of {steps.length}: </span>Photos
+            </h2>
             <p className="form-hint">Add up to 10 photos. First photo is your cover image.</p>
             <div className="image-upload-area">
               <div className="image-previews">
@@ -280,6 +295,8 @@ const Sell = () => {
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   type="url"
+                  name="videoUrl"
+                  aria-label="Product video URL"
                   value={videoUrl}
                   onChange={(e) => {
                     const url = e.target.value;
@@ -362,16 +379,18 @@ const Sell = () => {
         {/* Step 1: Details */}
         {currentStep === 1 && (
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Item Details</h2>
+            <h2 ref={stepHeadingRef} tabIndex={-1} className="sell-step-heading" style={{ fontSize: 18, fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>
+              <span className="sr-only">Step {currentStep + 1} of {steps.length}: </span>Item Details
+            </h2>
             <div className="form-grid">
-              <div className="form-group full-width"><label className="form-label">Title *</label><input type="text" name="title" value={formData.title} onChange={handleChange} placeholder="e.g. Nike Air Max 90" required className="form-input" /></div>
-              <div className="form-group full-width"><label className="form-label">Description *</label><textarea name="description" value={formData.description} onChange={handleChange} placeholder="Describe your item..." required rows={4} className="form-input" /></div>
-              <div className="form-group"><label className="form-label">Category *</label><select name="category" value={formData.category} onChange={handleChange} className="form-input"><option>Women</option><option>Men</option><option>Kids</option><option>Electronics</option><option>Home</option><option>Beauty</option><option>Accessories</option></select></div>
-              <div className="form-group"><label className="form-label">Brand</label><input type="text" name="brand" value={formData.brand} onChange={handleChange} placeholder="e.g. Nike" className="form-input" /></div>
-              <div className="form-group"><label className="form-label">Size</label><input type="text" name="size" value={formData.size} onChange={handleChange} placeholder="e.g. M, 10" className="form-input" /></div>
-              <div className="form-group"><label className="form-label">Condition *</label><select name="condition" value={formData.condition} onChange={handleChange} className="form-input"><option>New with tags</option><option>New without tags</option><option>Good</option><option>Fair</option><option>Poor</option></select></div>
-              <div className="form-group"><label className="form-label">Color</label><input type="text" name="color" value={formData.color} onChange={handleChange} placeholder="e.g. Black" className="form-input" /></div>
-              <div className="form-group"><label className="form-label">Quantity</label><input type="number" name="quantity" value={formData.quantity} onChange={handleChange} min="1" max="999" className="form-input" /></div>
+              <div className="form-group full-width"><label className="form-label" htmlFor="list-title">Title *</label><input id="list-title" type="text" name="title" value={formData.title} onChange={handleChange} placeholder="e.g. Nike Air Max 90" required className="form-input" /></div>
+              <div className="form-group full-width"><label className="form-label" htmlFor="list-description">Description *</label><textarea id="list-description" name="description" value={formData.description} onChange={handleChange} placeholder="Describe your item..." required rows={4} className="form-input" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="list-category">Category *</label><select id="list-category" name="category" value={formData.category} onChange={handleChange} className="form-input"><option>Women</option><option>Men</option><option>Kids</option><option>Electronics</option><option>Home</option><option>Beauty</option><option>Accessories</option></select></div>
+              <div className="form-group"><label className="form-label" htmlFor="list-brand">Brand</label><input id="list-brand" type="text" name="brand" value={formData.brand} onChange={handleChange} placeholder="e.g. Nike" className="form-input" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="list-size">Size</label><input id="list-size" type="text" name="size" value={formData.size} onChange={handleChange} placeholder="e.g. M, 10" className="form-input" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="list-condition">Condition *</label><select id="list-condition" name="condition" value={formData.condition} onChange={handleChange} className="form-input"><option>New with tags</option><option>New without tags</option><option>Good</option><option>Fair</option><option>Poor</option></select></div>
+              <div className="form-group"><label className="form-label" htmlFor="list-color">Color</label><input id="list-color" type="text" name="color" value={formData.color} onChange={handleChange} placeholder="e.g. Black" className="form-input" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="list-quantity">Quantity</label><input id="list-quantity" type="number" name="quantity" value={formData.quantity} onChange={handleChange} min="1" max="999" className="form-input" /></div>
             </div>
             <div style={{ display: 'flex', gap: 12, marginTop: 'var(--td-space-md)' }}>
               <button type="button" className="btn btn-outline" onClick={() => setCurrentStep(0)}>← Back</button>
@@ -383,17 +402,20 @@ const Sell = () => {
         {/* Step 2: Shipping */}
         {currentStep === 2 && (
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Shipping</h2>
+            <h2 ref={stepHeadingRef} tabIndex={-1} className="sell-step-heading" style={{ fontSize: 18, fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>
+              <span className="sr-only">Step {currentStep + 1} of {steps.length}: </span>Shipping
+            </h2>
             <div className="form-grid">
-              <div className="form-group"><label className="form-label">Ships From</label><select name="shipsFrom" value={formData.shipsFrom} onChange={handleChange} className="form-input">{countries.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
-              <div className="form-group"><label className="form-label">Weight</label><div style={{ display: 'flex', gap: 8 }}><input type="number" name="weight" value={formData.weight} onChange={handleChange} min="0.1" step="0.1" className="form-input" style={{ flex: 1 }} /><select name="weightUnit" value={formData.weightUnit} onChange={handleChange} className="form-input" style={{ width: 80 }}><option value="kg">kg</option><option value="lb">lb</option><option value="oz">oz</option></select></div></div>
+              <div className="form-group"><label className="form-label" htmlFor="list-shipsFrom">Ships From</label><select id="list-shipsFrom" name="shipsFrom" value={formData.shipsFrom} onChange={handleChange} className="form-input">{countries.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
+              <div className="form-group"><label className="form-label" htmlFor="list-weight">Weight</label><div style={{ display: 'flex', gap: 8 }}><input id="list-weight" type="number" name="weight" value={formData.weight} onChange={handleChange} min="0.1" step="0.1" className="form-input" style={{ flex: 1 }} /><select name="weightUnit" aria-label="Weight unit" value={formData.weightUnit} onChange={handleChange} className="form-input" style={{ width: 80 }}><option value="kg">kg</option><option value="lb">lb</option><option value="oz">oz</option></select></div></div>
               <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="domesticShipping" checked={formData.domesticShipping} onChange={e => setFormData(prev => ({ ...prev, domesticShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> Domestic</label></div>
               <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="internationalShipping" checked={formData.internationalShipping && intlShippingAllowed} disabled={!intlShippingAllowed} onChange={e => setFormData(prev => ({ ...prev, internationalShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> International</label>
                 {!intlShippingAllowed && <p className="form-hint" style={{ color: 'var(--td-text-tertiary)' }}>International shipping is currently unavailable.</p>}</div>
                <div className="form-group"><label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" name="freeShipping" checked={formData.freeShipping} onChange={e => setFormData(prev => ({ ...prev, freeShipping: e.target.checked }))} style={{ accentColor: 'var(--td-primary)' }} /> Free Shipping</label></div>
                <div className="form-group full-width">
-                 <label className="form-label">Shipping Fee ({currency || 'USD'})</label>
+                 <label className="form-label" htmlFor="list-shippingCost">Shipping Fee ({currency || 'USD'})</label>
                  <input
+                   id="list-shippingCost"
                    type="number"
                    name="shippingCost"
                    value={formData.shippingCost}
@@ -421,10 +443,12 @@ const Sell = () => {
         {/* Step 3: Pricing */}
         {currentStep === 3 && (
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>Pricing</h2>
+            <h2 ref={stepHeadingRef} tabIndex={-1} className="sell-step-heading" style={{ fontSize: 18, fontWeight: 700, marginBottom: 'var(--td-space-md)' }}>
+              <span className="sr-only">Step {currentStep + 1} of {steps.length}: </span>Pricing
+            </h2>
             <div className="form-grid">
-              <div className="form-group"><label className="form-label">Listing Price * ({currency || 'USD'})</label><input type="number" name="price" value={formData.price} onChange={handleChange} placeholder="0.00" min="0" step="0.01" required className="form-input" />{formData.price > 0 && <p className="form-hint">You'll earn ~{formatPrice(formData.price * 0.92, currency || 'USD')} after 8% fee</p>}</div>
-              <div className="form-group"><label className="form-label">Original Price</label><input type="number" name="originalPrice" value={formData.originalPrice} onChange={handleChange} placeholder="0.00" min="0" step="0.01" className="form-input" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="list-price">Listing Price * ({currency || 'USD'})</label><input id="list-price" type="number" name="price" value={formData.price} onChange={handleChange} placeholder="0.00" min="0" step="0.01" required className="form-input" />{formData.price > 0 && <p className="form-hint">You'll earn ~{formatPrice(formData.price * 0.92, currency || 'USD')} after 8% fee</p>}</div>
+              <div className="form-group"><label className="form-label" htmlFor="list-originalPrice">Original Price</label><input id="list-originalPrice" type="number" name="originalPrice" value={formData.originalPrice} onChange={handleChange} placeholder="0.00" min="0" step="0.01" className="form-input" /></div>
             </div>
 
             {/* Feature 4 — Auto Respond (enterprise auto-offer). Only the
@@ -454,8 +478,9 @@ const Sell = () => {
               {autoRespondEnabled && (
                 <div className="form-grid" style={{ marginTop: 12 }}>
                   <div className="form-group">
-                    <label className="form-label">Least price you'll accept * ({currency || 'USD'})</label>
+                    <label className="form-label" htmlFor="list-autoRespondMinPrice">Least price you'll accept * ({currency || 'USD'})</label>
                     <input
+                      id="list-autoRespondMinPrice"
                       type="number"
                       value={autoRespondMinPrice}
                       onChange={(e) => setAutoRespondMinPrice(e.target.value)}
@@ -490,8 +515,9 @@ const Sell = () => {
         {/* Step 4: Boost Options */}
         {currentStep === 4 && (
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <FaRocket style={{ color: 'var(--td-primary)' }} /> Boost Your Listing
+            <h2 ref={stepHeadingRef} tabIndex={-1} className="sell-step-heading" style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="sr-only">Step {currentStep + 1} of {steps.length}: </span>
+              <FaRocket aria-hidden="true" style={{ color: 'var(--td-primary)' }} /> Boost Your Listing
             </h2>
             <p className="form-hint" style={{ marginBottom: 'var(--td-space-md)' }}>
               Increase visibility and sell faster. Boost fee is deducted from your earnings when the item sells.
@@ -527,7 +553,7 @@ const Sell = () => {
                 <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 'var(--td-space-sm)', color: 'var(--td-text-secondary)' }}>
                   Select Boost Tier
                 </h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 'var(--td-space-md)' }}>
+                <div role="radiogroup" aria-label="Boost tier" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 'var(--td-space-md)' }}>
                   {Object.entries(BOOST_TIERS).map(([key, tier]) => {
                     const TierIcon = tier.icon;
                     const isSelected = selectedBoostTier === key;
@@ -537,7 +563,24 @@ const Sell = () => {
                     return (
                       <div
                         key={key}
+                        role="radio"
+                        aria-checked={isSelected}
+                        aria-label={`${tier.name}, ${tier.feePercent} percent fee`}
+                        tabIndex={isSelected ? 0 : -1}
                         onClick={() => setSelectedBoostTier(key)}
+                        onKeyDown={(e) => {
+                          const keys = Object.keys(BOOST_TIERS);
+                          const at = keys.indexOf(key);
+                          const move = (nextKey) => {
+                            e.preventDefault();
+                            setSelectedBoostTier(nextKey);
+                            // Follow selection with focus, as the radio pattern expects.
+                            setTimeout(() => document.querySelector('[role="radio"][aria-checked="true"]')?.focus(), 0);
+                          };
+                          if (e.key === ' ' || e.key === 'Enter') move(key);
+                          else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') move(keys[(at + 1) % keys.length]);
+                          else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') move(keys[(at - 1 + keys.length) % keys.length]);
+                        }}
                         style={{
                           padding: 'var(--td-space-md)',
                           borderRadius: 'var(--td-radius-sm)',
@@ -609,8 +652,9 @@ const Sell = () => {
 
                 {/* Duration Selection */}
                 <div style={{ marginBottom: 'var(--td-space-md)' }}>
-                  <label className="form-label" style={{ fontSize: 14, fontWeight: 600 }}>Boost Duration</label>
+                  <label className="form-label" htmlFor="list-boostDuration" style={{ fontSize: 14, fontWeight: 600 }}>Boost Duration</label>
                   <select 
+                    id="list-boostDuration"
                     value={boostDuration}
                     onChange={(e) => setBoostDuration(Number(e.target.value))}
                     className="form-input"
