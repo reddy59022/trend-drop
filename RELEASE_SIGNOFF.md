@@ -108,7 +108,7 @@ No application, schema, payment, label, or authorization defect was found during
 
 1. **EasyPost sandbox flake:** one S28.3 domestic purchase returned 502 from the provider; the rerun passed 5/5. The failure path is fail-closed: authorization released, no Order, buyer not charged, and the label refund queue retries any purchased postage. Production labels should be monitored for provider 5xx.
 2. **API rate limit:** production enforces **1000 requests / 15 min / IP**. The full 288-test suite is executed in two windows (core 280, then multi-party 8) because a single window cannot carry both runs plus setup.
-3. **UI/browser:** validation is API-level end-to-end against the deployed app. Interactive browser QA (visual layout, responsive breakpoints) was not part of this run.
+3. **UI/browser:** this run was API-level end-to-end. A later interactive browser pass is documented in `qa/BROWSER_QA_REPORT.md`; it found and fixed five UI/API defects (see the addendum below).
 4. **External history:** EasyPost shipments remain immutable (no delete API); Stripe retains immutable test charges/refunds/intents. All test customers are deleted, all captured charges refunded, and authorizations canceled.
 
 ---
@@ -121,3 +121,17 @@ No application, schema, payment, label, or authorization defect was found during
 - **Operations:** production health 200, Mongo health 200, EasyPost configured, both primary logins 200, marketplace starts empty except accounts.
 
 **Release recommendation: APPROVED for continued testing/release use.**
+
+---
+
+## 7. Browser QA addendum (2026-11-28)
+
+A full browser pass covered browse, search, listing detail, like/wishlist, cart, a real Stripe test-card checkout, orders, transactions, messaging, selling, seller dashboard, payouts, offers, notifications and settings/auth. Five defects were found and fixed:
+
+1. Like returned 500 when the item was already wishlisted (idempotent wishlist write).
+2. Listing-page shipping disagreed with cart/checkout (now uses the server quote).
+3. Quick add to cart never rendered (`available_quantity` did not exist; now derives from `quantity`/`available`/`sold`).
+4. “All Statuses” re-applied the default status filter (now sends every known status).
+5. Detail routes inherited the previous scroll position (router-aware scroll reset).
+
+Affected tests pass (server wishlist 19/19; client listing 7/7, transactions 12/12, listing card 5/5), the client production build succeeds, and CI on `89ac5a6` is green including 291 in-memory Playwright tests. Production deployment of the fixes is still pending in the Render dashboard; see the QA report for evidence and remaining limitations.
