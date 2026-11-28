@@ -271,8 +271,10 @@ function Transactions() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--td-text-secondary)' }}>
-          <span>Show:</span>
+          <label htmlFor="txn-page-size">Show:</label>
           <select
+            id="txn-page-size"
+            aria-label="Transactions per page"
             value={limit}
             onChange={(e) => handleLimitChange(Number(e.target.value))}
             style={{
@@ -332,9 +334,11 @@ function Transactions() {
 
             return (
               <div key={txn._id} className="glass-card" style={{ overflow: 'hidden', animation: 'fadeInUp 0.3s ease-out' }}>
-                <div role="button" tabIndex={0} aria-expanded={isExpanded}
+                {/* Click target for pointer users only: the keyboard/AT path is
+                    the chevron button below. A role="button" wrapper here
+                    nested the listing link and made the row invalid. */}
+                <div
                   onClick={() => setExpandedId(isExpanded ? null : txn._id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(isExpanded ? null : txn._id); } }}
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 'var(--td-space-md)', cursor: 'pointer' }}>
                   <img src={txn.listing?.images?.[0] || ''} alt="" style={{ width: 64, height: 64, borderRadius: 'var(--td-radius-sm)', objectFit: 'cover' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -354,13 +358,22 @@ function Transactions() {
                     <span className="badge" style={{ background: `${statusColor}15`, color: statusColor, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {getStatusIcon(txn.status)} {getStatusLabel(txn.status)}
                     </span>
-                    {isExpanded ? <FaChevronUp size={12} color="var(--td-text-tertiary)" /> : <FaChevronDown size={12} color="var(--td-text-tertiary)" />}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : txn._id); }}
+                      aria-expanded={isExpanded}
+                      aria-controls={`txn-detail-${txn._id}`}
+                      aria-label={`${isExpanded ? 'Hide' : 'Show'} payment breakdown for ${txn.listing?.title || 'this order'}`}
+                      style={{ background: 'none', border: 'none', padding: 6, cursor: 'pointer', color: 'var(--td-text-secondary)', display: 'inline-flex', alignItems: 'center' }}
+                    >
+                      {isExpanded ? <FaChevronUp size={14} aria-hidden="true" /> : <FaChevronDown size={14} aria-hidden="true" />}
+                    </button>
                   </div>
                 </div>
 
                 {/* Expanded Detail */}
                 {isExpanded && (
-                  <div style={{ padding: '0 var(--td-space-md) var(--td-space-md)', borderTop: '1px solid var(--td-border-light)', animation: 'fadeIn 0.2s ease-out' }}>
+                  <div id={`txn-detail-${txn._id}`} style={{ padding: '0 var(--td-space-md) var(--td-space-md)', borderTop: '1px solid var(--td-border-light)', animation: 'fadeIn 0.2s ease-out' }}>
                     {/* Tracking */}
                     {txn.shipping?.trackingNumber && (
                       <div style={{ background: 'var(--td-surface-secondary)', padding: 12, borderRadius: 'var(--td-radius-sm)', marginTop: 12, marginBottom: 12, fontSize: 13 }}>

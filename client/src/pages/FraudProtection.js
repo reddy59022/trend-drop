@@ -98,7 +98,7 @@ const FraudProtection = () => {
       </p>
 
       {error && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--td-error)', padding: '10px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16 }}>
+        <div role="alert" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--td-error)', padding: '10px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16 }}>
           {error}
         </div>
       )}
@@ -139,6 +139,7 @@ const FraudProtection = () => {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <input
             className="form-input"
+            aria-label="Listing ID"
             style={{ flex: 1, minWidth: 180 }}
             placeholder="Listing ID"
             value={form.listingId}
@@ -146,6 +147,7 @@ const FraudProtection = () => {
           />
           <input
             className="form-input"
+            aria-label="Transaction amount in USD"
             style={{ width: 140 }}
             type="number"
             min={0}
@@ -159,7 +161,7 @@ const FraudProtection = () => {
         </div>
 
         {result && riskColors && (
-          <div style={{ marginTop: 16, borderRadius: 12, padding: 16, background: riskColors.bg, border: `1px solid ${riskColors.color}22` }}>
+          <div role="status" aria-live="polite" style={{ marginTop: 16, borderRadius: 12, padding: 16, background: riskColors.bg, border: `1px solid ${riskColors.color}22` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
               <div>
                 <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--td-text-tertiary)' }}>Risk Level</div>
@@ -211,6 +213,7 @@ const FraudProtection = () => {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <input
             className="form-input"
+            aria-label="Transaction ID"
             style={{ flex: 1, minWidth: 180 }}
             placeholder="Transaction ID"
             value={flagForm.transactionId}
@@ -218,6 +221,7 @@ const FraudProtection = () => {
           />
           <select
             className="form-input"
+            aria-label="Why this transaction is being flagged"
             style={{ width: 180 }}
             value={flagForm.reason}
             onChange={(e) => setFlagForm({ ...flagForm, reason: e.target.value })}
@@ -231,6 +235,7 @@ const FraudProtection = () => {
         </div>
         <textarea
           className="form-input"
+          aria-label="Additional notes for the fraud team"
           style={{ marginTop: 12, minHeight: 70 }}
           placeholder="Additional notes (optional)"
           value={flagForm.notes}
@@ -241,7 +246,7 @@ const FraudProtection = () => {
         </button>
 
         {flagResult && (
-          <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: 'rgba(34,197,94,0.1)', color: 'var(--td-success)', fontSize: 13 }}>
+          <div role="status" style={{ marginTop: 12, padding: 12, borderRadius: 10, background: 'rgba(34,197,94,0.1)', color: 'var(--td-success)', fontSize: 13 }}>
             ✓ Transaction flagged for review. The fraud team has been notified.
           </div>
         )}

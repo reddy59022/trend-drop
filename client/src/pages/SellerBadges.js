@@ -218,14 +218,18 @@ const SellerBadges = () => {
       <div className="glass-card" style={{ padding: 'var(--td-space-lg)', marginBottom: 24 }}>
         <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Tier Requirements</h3>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          {/* On phones responsive.css makes the table itself the horizontal
+              scroller, so it carries the tab stop: a scroll container a
+              keyboard user cannot focus is unreachable content. */}
+          <table tabIndex={0} style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <caption className="sr-only">Seller badge tier requirements</caption>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--td-border-light)', textAlign: 'left' }}>
-                <th style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Tier</th>
-                <th style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Sales</th>
-                <th style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Rating</th>
-                <th style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Return Rate</th>
-                <th style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Benefits</th>
+                <th scope="col" style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Tier</th>
+                <th scope="col" style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Sales</th>
+                <th scope="col" style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Rating</th>
+                <th scope="col" style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Return Rate</th>
+                <th scope="col" style={{ padding: 8, fontSize: 12, textTransform: 'uppercase', color: 'var(--td-text-tertiary)' }}>Benefits</th>
               </tr>
             </thead>
             <tbody>

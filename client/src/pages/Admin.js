@@ -320,6 +320,7 @@ const Admin = () => {
           <div style={{ display: 'flex', gap: 12, marginBottom: 'var(--td-space-md)' }}>
             <input
               type="text"
+              aria-label="Search users by name or email"
               placeholder="Search users by name or email..."
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
@@ -333,13 +334,14 @@ const Admin = () => {
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <caption className="sr-only">Admin users</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Name</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Email</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Role</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Strikes</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Name</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Email</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Role</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Strikes</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -361,6 +363,7 @@ const Admin = () => {
                             {user.role === 'admin' && u.role !== 'admin' && (
                               <>
                                 <select
+                                  aria-label={`Role for ${u.name || u.email || 'user'}`}
                                   value={u.role}
                                   onChange={e => handleRoleChange(u._id, e.target.value)}
                                   className="input"
@@ -402,13 +405,14 @@ const Admin = () => {
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <caption className="sr-only">Admin listings</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Title</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Seller</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Price</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Title</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Seller</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Price</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Status</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -446,13 +450,14 @@ const Admin = () => {
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <caption className="sr-only">Admin listing reports</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Reporter</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Listing</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Reason</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Reporter</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Listing</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Reason</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Status</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -493,12 +498,13 @@ const Admin = () => {
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <caption className="sr-only">Admin payout requests</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Seller</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Country</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Requested</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Actions</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left' }}>Seller</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left' }}>Country</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left' }}>Requested</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -537,13 +543,14 @@ const Admin = () => {
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <caption className="sr-only">Admin subscriptions</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Seller</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Item value</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Premium</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Reason</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Seller</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Item value</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Premium</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Reason</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -582,14 +589,15 @@ const Admin = () => {
           ) : (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <caption className="sr-only">Admin transactions</caption>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--td-border)' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Buyer</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Seller</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Item</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Amount</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Status</th>
-                    {user.role === 'admin' && <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>}
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Buyer</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Seller</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Item</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Amount</th>
+                    <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Status</th>
+                    {user.role === 'admin' && <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>

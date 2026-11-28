@@ -274,13 +274,12 @@ const ReturnsCenter = () => {
 
             return (
               <div key={r._id} className="glass-card" style={{ padding: 'var(--td-space-md) var(--td-space-lg)', animation: 'fadeInUp 0.3s ease-out' }}>
+                {/* Pointer shortcut only. The header also holds the listing
+                    link and the approve/deny/ship buttons, so wrapping it in
+                    role="button" made every one of them a nested control. */}
                 <div
-                  role={hasDetail ? 'button' : undefined}
-                  tabIndex={hasDetail ? 0 : undefined}
                   onClick={() => hasDetail && setExpandedId(expanded ? null : r._id)}
-                  onKeyDown={(e) => { if (hasDetail && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setExpandedId(expanded ? null : r._id); } }}
                   style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', cursor: hasDetail ? 'pointer' : 'default' }}
-                  aria-expanded={expanded}
                 >
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', flex: 1, minWidth: 200 }}>
                     {r.listing?.images?.[0] && (
@@ -301,7 +300,18 @@ const ReturnsCenter = () => {
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 12, color: 'var(--td-text-tertiary)', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
                       Reason: {r.reason}
-                      {hasDetail && (expanded ? <FaChevronUp size={11} /> : <FaChevronDown size={11} />)}
+                      {hasDetail && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setExpandedId(expanded ? null : r._id); }}
+                          aria-expanded={expanded}
+                          aria-controls={`return-detail-${r._id}`}
+                          aria-label={`${expanded ? 'Hide' : 'Show'} details for the return of ${r.listing?.title || 'this item'}`}
+                          style={{ background: 'none', border: 'none', padding: 6, cursor: 'pointer', color: 'var(--td-text-secondary)', display: 'inline-flex', alignItems: 'center' }}
+                        >
+                          {expanded ? <FaChevronUp size={12} aria-hidden="true" /> : <FaChevronDown size={12} aria-hidden="true" />}
+                        </button>
+                      )}
                     </div>
                     {(canApprove || canDeny || canShip || canReceive) && (
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -341,7 +351,7 @@ const ReturnsCenter = () => {
 
                 {/* Expanded detail panel — openable/clickable for every status */}
                 {expanded && (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--td-border, rgba(0,0,0,0.08))', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div id={`return-detail-${r._id}`} style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--td-border, rgba(0,0,0,0.08))', display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {/* Return label — BUYER ONLY (server strips it for sellers) */}
                     {buyerSide && r.returnLabel && (
                       <div style={{ padding: 12, background: 'var(--td-info-light, rgba(33,150,243,0.08))', borderRadius: 'var(--td-radius-sm)' }}>
