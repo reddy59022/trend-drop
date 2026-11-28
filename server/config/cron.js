@@ -27,6 +27,7 @@ const { retrievePaymentIntent, findPaymentIntent, issueRefund, releaseAuthorizat
 const { trackingStatuses, simulateTrackingUpdate } = require('./shipping');
 const { getTracker, mapTrackerStatus, isMockMode } = require('../services/easypostService');
 const { refundTransactionLabel } = require('../services/shippingPurchase');
+const { syncOutboundTracking } = require('../services/outboundTrackingSync');
 const { applyProviderRefundResult, recordProviderSettlement } = require('../utils/providerRefund');
 const { reverseBoostFeeOwed, markPayoutRefunded } = require('../routes/orderLifecycle');
 const { auditOrphanNotifications } = require('../utils/notificationAudit');
@@ -1520,6 +1521,19 @@ function initCronJobs() {
     auditNotificationIntegrity();
   });
   console.log('[CRON] Orphan notification audit scheduled (daily at 5:00 AM)');
+
+  // Job 12: Reconcile outbound carrier tracking daily at 1:15 AM. The EasyPost
+  // webhook is the fast path; this is the guarantee that every active order is
+  // re-checked even when an event is missed, rejected or never delivered.
+  cron.schedule('15 1 * * *', async () => {
+    try {
+      const summary = await syncOutboundTracking();
+      console.log('[CRON] Outbound tracking reconciliation:', JSON.stringify(summary));
+    } catch (error) {
+      console.error('[CRON] Outbound tracking reconciliation failed:', error.message);
+    }
+  });
+  console.log('[CRON] Outbound tracking reconciliation scheduled (daily at 1:15 AM)');
 }
 
 module.exports = {

@@ -135,6 +135,19 @@ EasyPost Test mode, a test tracker emits one event in a supported state;
 production emits the full carrier progression. The webhook is idempotent and
 forward-only.
 
+### Daily reconciliation (webhook safety net)
+
+Webhooks are best-effort, so the server also polls every active label once a
+day (`config/cron.js`, 01:15 server time, via
+`services/outboundTrackingSync.js`). It covers transactions in
+`shipped`, `in_transit` and `out_for_delivery` that have a `shipping.trackerId`,
+fetches the tracker from EasyPost and applies the same forward-only rules as
+the webhook. It never advances a shipment from a timer, never regresses a
+state, uses the carrier scan's own timestamp/location, skips `pre_transit` and
+unknown statuses, and isolates a failing tracker so the rest of the batch
+still runs. The job is idempotent, so overlapping runs are safe. Set
+`EASYPOST_TEST_API_KEY` (sandbox) or `EASYPOST_API_KEY` (live) for it to work.
+
 Verify a signed event locally without contacting EasyPost:
 
 ```bash
