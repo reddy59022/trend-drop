@@ -843,6 +843,16 @@ ul, ol {
   color: var(--td-text-tertiary);
 }
 
+/* The consent checkboxes are wrapped in their sentence, so the label is the
+   clickable target. Give the row 24px of height and a 18px box so the target
+   clears WCAG 2.5.8 (AA) instead of landing a 13px input on the user. */
+.legal-check { min-height: 24px; padding-block: 2px; cursor: pointer; }
+.legal-check input[type="checkbox"] { width: 18px; height: 18px; vertical-align: -3px; }
+
+/* Auth footer links are standalone actions, not inline text links: give them
+   a 24px target so they clear WCAG 2.5.8 (AA) on touch and pointer. */
+.auth-footer a { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 0; }
+
 .form-error {
   font-size: var(--td-text-sm);
   color: var(--td-error);

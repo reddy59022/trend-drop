@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { FaFilter, FaTimes, FaSlidersH, FaSave, FaTag, FaSearch } from 'react-icons/fa';
 import api, { getSearchBrands, getSearchColors, getSearchSizes, saveSearchFilter } from '../services/api';
 import ListingCard from '../components/ListingCard';
@@ -8,6 +8,7 @@ import { toast } from 'react-toastify';
 
 const Search = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState(null);
@@ -25,6 +26,8 @@ const Search = () => {
   });
 
   const [brandSuggestions, setBrandSuggestions] = useState([]);
+  // Categories that actually have stock, used to recover from an empty result.
+  const [popularCategories, setPopularCategories] = useState([]);
   const [colorSuggestions, setColorSuggestions] = useState([]);
   const [sizeSuggestions, setSizeSuggestions] = useState([]);
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
@@ -35,6 +38,19 @@ const Search = () => {
   const query = searchParams.get('q') || '';
 
   useEffect(() => { fetchListings(); }, [query, filters, page]); // eslint-disable-line
+
+  // Category counts come from the same public aggregate the landing page uses,
+  // so an empty search can point at browsable shelves instead of guessing.
+  useEffect(() => {
+    let active = true;
+    api.get('/listings/marketplace-stats')
+      .then((res) => {
+        if (!active) return;
+        setPopularCategories((res.data?.categories || []).filter((c) => c.count > 0).slice(0, 4));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   // Load autocomplete suggestions
   useEffect(() => {
@@ -112,6 +128,9 @@ const Search = () => {
           {query ? <span>Results for <strong>"{query}"</strong></span> : 'Browse All'}
           {pagination?.total > 0 && <span className="result-count"> · {pagination.total} items</span>}
         </h1>
+        <p className="sr-only search-status" role="status">
+          {loading ? 'Loading results' : `${pagination?.total ?? listings.length} items found`}
+        </p>
         <div className="search-controls">
           <select value={filters.sort} aria-label="Sort results" onChange={(e) => handleFilterChange('sort', e.target.value)} className="form-input" style={{ width: 'auto', padding: '8px 32px 8px 12px' }}>
             <option value="newest">Newest</option>
@@ -163,6 +182,7 @@ const Search = () => {
               <input
                 type="text"
                 placeholder="Search brands..."
+                aria-label="Brand"
                 value={filters.brand}
                 onChange={(e) => handleFilterChange('brand', e.target.value)}
                 onFocus={() => setShowBrandDropdown(true)}
@@ -184,22 +204,32 @@ const Search = () => {
                     .filter(b => b.brand?.toLowerCase().includes(filters.brand.toLowerCase()))
                     .slice(0, 10)
                     .map((b, i) => (
-                      <div
+                      <button
                         key={i}
+                        type="button"
                         onClick={() => {
                           handleFilterChange('brand', b.brand);
                           setShowBrandDropdown(false);
                         }}
+                        aria-label={`Filter by ${b.brand}`}
                         style={{
+                          display: 'block',
+                          width: '100%',
+                          minHeight: 32,
+                          textAlign: 'left',
                           padding: '8px 12px',
                           cursor: 'pointer',
+                          background: 'none',
+                          border: 'none',
                           borderBottom: i < 9 ? '1px solid var(--td-border-light)' : 'none',
+                          color: 'inherit',
+                          font: 'inherit',
                         }}
                         className="hover-bg"
                       >
                         <FaTag size={11} style={{ marginRight: 6, color: 'var(--td-text-tertiary)' }} />
                         {b.brand}
-                      </div>
+                      </button>
                     ))}
                 </div>
               )}
@@ -225,6 +255,7 @@ const Search = () => {
                 <input
                   type="text"
                   placeholder="Enter color..."
+                  aria-label="Color"
                   value={filters.color || ''}
                   onChange={(e) => handleFilterChange('color', e.target.value)}
                   className="form-input"
@@ -270,10 +301,10 @@ const Search = () => {
           <div className="filter-group">
             <h4>Price Range</h4>
             <div className="price-range">
-              <input type="number" placeholder="Min" value={filters.minPrice}
+              <input type="number" placeholder="Min" aria-label="Minimum price" value={filters.minPrice}
                 onChange={(e) => handleFilterChange('minPrice', e.target.value)} className="form-input" style={{ flex: 1 }} />
               <span style={{ color: 'var(--td-text-tertiary)' }}>—</span>
-              <input type="number" placeholder="Max" value={filters.maxPrice}
+              <input type="number" placeholder="Max" aria-label="Maximum price" value={filters.maxPrice}
                 onChange={(e) => handleFilterChange('maxPrice', e.target.value)} className="form-input" style={{ flex: 1 }} />
             </div>
           </div>
@@ -292,7 +323,7 @@ const Search = () => {
         </div>
 
         {/* Results */}
-        <div className="search-results">
+        <div className="search-results" aria-busy={loading}>
           {loading ? (
             <div className="listings-grid">
               {[...Array(8)].map((_, i) => (
@@ -306,8 +337,27 @@ const Search = () => {
             <div className="empty-state" style={{ animation: 'fadeInUp 0.4s ease-out' }}>
               <div className="empty-state-icon"><FaSearch aria-hidden="true" /></div>
               <h2>No items found</h2>
-              <p>Try different filters or search terms</p>
-              <button className="btn btn-primary" onClick={clearFilters}>Clear Filters</button>
+              <p>{query ? <>Nothing matches <strong>“{query}”</strong> right now.</> : 'No listings match these filters yet.'}</p>
+              {activeFilters.length > 0 && (
+                <button className="btn btn-primary" onClick={clearFilters}>Clear Filters</button>
+              )}
+              {popularCategories.length > 0 && (
+                <>
+                  <h3 style={{ marginTop: 'var(--td-space-lg)', fontSize: 15 }}>Try one of these instead</h3>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 10 }}>
+                    {popularCategories.map(cat => (
+                      <button key={cat.name} type="button" className="btn btn-sm btn-outline"
+                        onClick={() => { clearFilters(); handleFilterChange('category', cat.name); navigate(`/search?category=${encodeURIComponent(cat.name)}`); }}>
+                        {cat.name} <span className="result-count">· {cat.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 'var(--td-space-md)' }}
+                onClick={() => { clearFilters(); navigate('/search'); }}>
+                Browse all listings
+              </button>
             </div>
           ) : (
             <>

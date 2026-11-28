@@ -87,6 +87,7 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
               type="text"
               className="comment-input"
               placeholder="Add a comment..."
+              aria-label="Add a comment"
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
               maxLength={500}

@@ -172,7 +172,7 @@ const Login = () => {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <Link to="/forgot-password" style={{ fontSize: 13, color: 'var(--td-primary)', fontWeight: 600 }}>
+            <Link to="/forgot-password" style={{ fontSize: 13, color: 'var(--td-primary)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', minHeight: 24 }}>
               Forgot password?
             </Link>
           </div>

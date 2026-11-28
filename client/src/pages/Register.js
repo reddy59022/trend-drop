@@ -139,35 +139,35 @@ const Register = () => {
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">Full Name</label>
+            <label className="form-label" htmlFor="reg-name">Full Name</label>
             <div style={{ position: 'relative' }}>
               <FaUser style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
-              <input type="text" className="form-input" placeholder="Your name" value={formData.name}
+              <input id="reg-name" type="text" className="form-input" placeholder="Your name" value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                style={{ paddingLeft: 36 }} required />
+                autoComplete="name" style={{ paddingLeft: 36 }} required />
             </div>
           </div>
 
           <div className="form-group">
-            <label className="form-label">Email</label>
+            <label className="form-label" htmlFor="reg-email">Email</label>
             <div style={{ position: 'relative' }}>
               <FaEnvelope style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
-              <input type="email" className="form-input" placeholder="you@example.com" value={formData.email}
+              <input id="reg-email" type="email" className="form-input" placeholder="you@example.com" value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                style={{ paddingLeft: 36 }} required />
+                autoComplete="email" style={{ paddingLeft: 36 }} required />
             </div>
           </div>
 
           <div className="form-group">
-            <label className="form-label">Password</label>
+            <label className="form-label" htmlFor="reg-password">Password</label>
             <div style={{ position: 'relative' }}>
               <FaLock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
-              <input type={showPassword ? 'text' : 'password'} className="form-input" placeholder="Min 8 characters"
+              <input id="reg-password" type={showPassword ? 'text' : 'password'} className="form-input" placeholder="Min 8 characters"
                 value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                style={{ paddingLeft: 36, paddingRight: 36 }} required minLength={8} />
+                autoComplete="new-password" style={{ paddingLeft: 36, paddingRight: 40 }} required minLength={8} />
               <button type="button" onClick={() => setShowPassword(!showPassword)}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
-                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', background: 'none', border: 'none' }}>
+                style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', background: 'none', border: 'none', minWidth: 32, minHeight: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {showPassword ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
               </button>
             </div>
@@ -189,33 +189,36 @@ const Register = () => {
           </div>
 
           <div className="form-group">
-            <label className="form-label">Confirm Password</label>
+            <label className="form-label" htmlFor="reg-confirm">Confirm Password</label>
             <div style={{ position: 'relative' }}>
               <FaCheck style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)' }} />
-              <input type={showConfirmPassword ? 'text' : 'password'} className="form-input" placeholder="Repeat your password"
+              <input id="reg-confirm" type={showConfirmPassword ? 'text' : 'password'} className="form-input" placeholder="Repeat your password"
                 value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                style={{ paddingLeft: 36, paddingRight: 36 }} required />
+                autoComplete="new-password"
+                aria-invalid={Boolean(formData.confirmPassword && formData.password !== formData.confirmPassword)}
+                aria-describedby={formData.confirmPassword && formData.password !== formData.confirmPassword ? 'reg-confirm-error' : undefined}
+                style={{ paddingLeft: 36, paddingRight: 40 }} required />
               <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', background: 'none', border: 'none' }}>
+                style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', color: 'var(--td-text-tertiary)', background: 'none', border: 'none', minWidth: 32, minHeight: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {showConfirmPassword ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
               </button>
             </div>
             {formData.confirmPassword && formData.password !== formData.confirmPassword && (
-              <span className="form-error">Passwords do not match</span>
+              <span id="reg-confirm-error" className="form-error" role="alert">Passwords do not match</span>
             )}
           </div>
 
           <div className="form-group" style={{ marginTop: 16 }}>
-            <label className="form-label">Country</label>
-            <select className="form-input" value={country} onChange={(e) => setCountry(e.target.value)}>
+            <label className="form-label" htmlFor="reg-country">Country</label>
+            <select id="reg-country" className="form-input" value={country} onChange={(e) => setCountry(e.target.value)} autoComplete="country">
               {countries.map((item) => <option key={item.code} value={item.code}>{item.flag} {item.name}</option>)}
             </select>
           </div>
           <div className="glass-card" style={{ padding: 14, margin: '16px 0', fontSize: 13 }}>
-            <label style={{ display: 'block', marginBottom: 10 }}><input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />{' '}I agree to the <Link to="/legal/terms" target="_blank" rel="noreferrer">Terms of Service</Link> (version {legalVersions.terms || 'loading'})</label>
-            <label style={{ display: 'block', marginBottom: 10 }}><input type="checkbox" checked={acceptedPrivacy} onChange={(e) => setAcceptedPrivacy(e.target.checked)} />{' '}I acknowledge the <Link to="/legal/privacy" target="_blank" rel="noreferrer">Privacy Notice</Link> (version {legalVersions.privacy || 'loading'})</label>
-            <label style={{ display: 'block' }}><input type="checkbox" checked={ageConfirmed} onChange={(e) => setAgeConfirmed(e.target.checked)} />{' '}I confirm I meet the minimum age requirement for this service in my country.</label>
+            <label className="legal-check" style={{ display: 'block', marginBottom: 10 }}><input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />{' '}I agree to the <Link to="/legal/terms" target="_blank" rel="noreferrer">Terms of Service</Link> (version {legalVersions.terms || 'loading'})</label>
+            <label className="legal-check" style={{ display: 'block', marginBottom: 10 }}><input type="checkbox" checked={acceptedPrivacy} onChange={(e) => setAcceptedPrivacy(e.target.checked)} />{' '}I acknowledge the <Link to="/legal/privacy" target="_blank" rel="noreferrer">Privacy Notice</Link> (version {legalVersions.privacy || 'loading'})</label>
+            <label className="legal-check" style={{ display: 'block' }}><input type="checkbox" checked={ageConfirmed} onChange={(e) => setAgeConfirmed(e.target.checked)} />{' '}I confirm I meet the minimum age requirement for this service in my country.</label>
           </div>
 
           <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading}>

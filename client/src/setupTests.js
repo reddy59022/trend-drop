@@ -40,6 +40,16 @@ afterEach(async () => {
   cleanup();
 });
 
+// React Router 7 imports its server-runtime module, which allocates a
+// TextEncoder at module scope. jsdom 16 (shipped with react-scripts 5) has no
+// TextEncoder, so importing the router in a test threw before any test ran.
+if (typeof global.TextEncoder === 'undefined') {
+  // eslint-disable-next-line global-require
+  const { TextEncoder, TextDecoder } = require('util');
+  global.TextEncoder = TextEncoder;
+  global.TextDecoder = TextDecoder;
+}
+
 // jsdom lacks matchMedia (used by ThemeContext when mounted for real).
 if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = (query) => ({

@@ -53,12 +53,21 @@ app.set('trust proxy', 1);
 // A marketplace SPA makes multiple API calls per page view (feed, listings,
 // notifications, search), so a 100/15min cap would throttle legitimate users.
 // 1000/15min still blocks scripted abuse while allowing normal browsing.
+// Clients back off from a 429 only if told how long to wait. Express-rate-limit
+// sends RateLimit-Reset in its standard headers, but Retry-After is the header
+// HTTP clients and CDNs actually honour, so set it explicitly.
+const withRetryAfter = (message) => (req, res, next, options) => {
+  res.set('Retry-After', String(Math.ceil(options.windowMs / 1000)));
+  res.status(options.statusCode).json(message);
+};
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
   message: { message: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  handler: withRetryAfter({ message: 'Too many requests, please try again later.' }),
 });
 
 // Stricter rate limit for auth endpoints (login/register)
@@ -68,6 +77,7 @@ const authLimiter = rateLimit({
   message: { message: 'Too many auth attempts, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  handler: withRetryAfter({ message: 'Too many auth attempts, please try again later.' }),
 });
 
 // Apply rate limiters (disabled in test mode)

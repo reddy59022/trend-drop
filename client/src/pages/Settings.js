@@ -181,59 +181,85 @@ function Settings() {
                 </div>
               </label>
             </div>
-            <div className="form-group"><label className="form-label">Full Name</label><input name="name" value={formData.name} onChange={handleChange} className="form-input" placeholder="Your name" /></div>
-            <div className="form-group"><label className="form-label">Closet Name</label><input name="closetName" value={formData.closetName} onChange={handleChange} className="form-input" placeholder="e.g. Vintage Vault" /></div>
-            <div className="form-group"><label className="form-label">Bio</label><textarea name="bio" value={formData.bio} onChange={handleChange} className="form-input" placeholder="Tell the world about your style..." rows={3} /></div>
-            <div className="form-group"><label className="form-label">Location</label><input name="location" value={formData.location} onChange={handleChange} className="form-input" placeholder="City, Country" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-name">Full Name</label>
+            <input id="set-name" name="name" value={formData.name} onChange={handleChange} className="form-input" placeholder="Your name" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-closetName">Closet Name</label>
+            <input id="set-closetName" name="closetName" value={formData.closetName} onChange={handleChange} className="form-input" placeholder="e.g. Vintage Vault" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-bio">Bio</label>
+            <textarea id="set-bio" name="bio" value={formData.bio} onChange={handleChange} className="form-input" placeholder="Tell the world about your style..." rows={3} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-location">Location</label>
+            <input id="set-location" name="location" value={formData.location} onChange={handleChange} className="form-input" placeholder="City, Country" /></div>
           </div>
         )}
 
         {activeTab === 'shipping' && (
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', display: 'flex', flexDirection: 'column', gap: 'var(--td-space-md)' }}>
-            <div className="form-group"><label className="form-label">Full Name</label><input name="shippingAddress.fullName" value={formData.shippingAddress.fullName} onChange={handleChange} className="form-input" placeholder="Recipient name" /></div>
-            <div className="form-group"><label className="form-label">Street Address</label><input name="shippingAddress.street1" value={formData.shippingAddress.street1} onChange={handleChange} className="form-input" placeholder="Street address" /></div>
-            <div className="form-group"><label className="form-label">Apt/Suite (Optional)</label><input name="shippingAddress.street2" value={formData.shippingAddress.street2} onChange={handleChange} className="form-input" placeholder="Apt, Suite, etc." /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-shippingAddress-fullName">Full Name</label>
+            <input id="set-shippingAddress-fullName" name="shippingAddress.fullName" value={formData.shippingAddress.fullName} onChange={handleChange} className="form-input" placeholder="Recipient name" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-shippingAddress-street1">Street Address</label>
+            <input id="set-shippingAddress-street1" name="shippingAddress.street1" value={formData.shippingAddress.street1} onChange={handleChange} className="form-input" placeholder="Street address" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-shippingAddress-street2">Apt/Suite (Optional)</label>
+            <input id="set-shippingAddress-street2" name="shippingAddress.street2" value={formData.shippingAddress.street2} onChange={handleChange} className="form-input" placeholder="Apt, Suite, etc." /></div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="form-group"><label className="form-label">City</label><input name="shippingAddress.city" value={formData.shippingAddress.city} onChange={handleChange} className="form-input" placeholder="City" /></div>
-              <div className="form-group"><label className="form-label">State</label><input name="shippingAddress.state" value={formData.shippingAddress.state} onChange={handleChange} className="form-input" placeholder="State/Province" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="set-shippingAddress-city">City</label>
+            <input id="set-shippingAddress-city" name="shippingAddress.city" value={formData.shippingAddress.city} onChange={handleChange} className="form-input" placeholder="City" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="set-shippingAddress-state">State</label>
+            <input id="set-shippingAddress-state" name="shippingAddress.state" value={formData.shippingAddress.state} onChange={handleChange} className="form-input" placeholder="State/Province" /></div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="form-group"><label className="form-label">ZIP Code</label><input name="shippingAddress.postalCode" value={formData.shippingAddress.postalCode} onChange={handleChange} className="form-input" placeholder="ZIP" /></div>
-              <div className="form-group"><label className="form-label">Country</label><select name="shippingAddress.country" value={formData.shippingAddress.country} onChange={handleChange} className="form-input">{countries.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
+              <div className="form-group"><label className="form-label" htmlFor="set-shippingAddress-postalCode">ZIP Code</label>
+            <input id="set-shippingAddress-postalCode" name="shippingAddress.postalCode" value={formData.shippingAddress.postalCode} onChange={handleChange} className="form-input" placeholder="ZIP" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="set-shippingAddress-country">Country</label>
+            <select id="set-shippingAddress-country" name="shippingAddress.country" value={formData.shippingAddress.country} onChange={handleChange} className="form-input">{countries.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
             </div>
-            <div className="form-group"><label className="form-label">Phone</label><input name="shippingAddress.phone" value={formData.shippingAddress.phone} onChange={handleChange} className="form-input" placeholder="Delivery phone" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-shippingAddress-phone">Phone</label>
+            <input id="set-shippingAddress-phone" name="shippingAddress.phone" value={formData.shippingAddress.phone} onChange={handleChange} className="form-input" placeholder="Delivery phone" /></div>
           </div>
         )}
 
         {activeTab === 'preferences' && (
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', display: 'flex', flexDirection: 'column', gap: 'var(--td-space-md)' }}>
-            <div className="form-group"><label className="form-label">Country</label><select name="country" value={formData.country} onChange={handleChange} className="form-input">{countries.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
-            <div className="form-group"><label className="form-label">Phone</label><div style={{ display: 'flex', gap: 8 }}><input value={formData.phoneCode} readOnly className="form-input" style={{ width: 80 }} /><input name="phone" value={formData.phone} onChange={handleChange} className="form-input" placeholder={selectedCountry?.phoneFormat || 'Phone'} style={{ flex: 1 }} /></div></div>
-            <div className="form-group"><label className="form-label">Currency</label><select name="currency" value={formData.currency} onChange={handleChange} className="form-input">{currenciesList.map(c => <option key={c} value={c}>{c}</option>)}</select><p className="form-hint">All prices will be displayed in {formData.currency}</p></div>
-            <div className="form-group"><label className="form-label">Language</label><select name="language" value={formData.language} onChange={handleChange} className="form-input">{languages.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}</select></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-country">Country</label>
+            <select id="set-country" name="country" value={formData.country} onChange={handleChange} className="form-input">{countries.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-phone">Phone</label><div style={{ display: 'flex', gap: 8 }}><input value={formData.phoneCode} readOnly aria-label="Country calling code" className="form-input" style={{ width: 80 }} /><input id="set-phone" name="phone" value={formData.phone} onChange={handleChange} className="form-input" placeholder={selectedCountry?.phoneFormat || 'Phone'} style={{ flex: 1 }} /></div></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-currency">Currency</label>
+            <select id="set-currency" name="currency" value={formData.currency} onChange={handleChange} className="form-input">{currenciesList.map(c => <option key={c} value={c}>{c}</option>)}</select><p className="form-hint">All prices will be displayed in {formData.currency}</p></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-language">Language</label>
+            <select id="set-language" name="language" value={formData.language} onChange={handleChange} className="form-input">{languages.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}</select></div>
           </div>
         )}
 
         {activeTab === 'social' && (
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', display: 'flex', flexDirection: 'column', gap: 'var(--td-space-md)' }}>
             <p style={{ fontSize: 13, color: 'var(--td-text-tertiary)', marginBottom: 8 }}>Connect your social media accounts to your profile.</p>
-            <div className="form-group"><label className="form-label"><FaInstagram /> Instagram</label><input name="socialLinks.instagram" value={formData.socialLinks?.instagram || ''} onChange={handleChange} className="form-input" placeholder="username (without @)" /></div>
-            <div className="form-group"><label className="form-label"><FaTiktok /> TikTok</label><input name="socialLinks.tiktok" value={formData.socialLinks?.tiktok || ''} onChange={handleChange} className="form-input" placeholder="username" /></div>
-            <div className="form-group"><label className="form-label"><FaPinterest /> Pinterest</label><input name="socialLinks.pinterest" value={formData.socialLinks?.pinterest || ''} onChange={handleChange} className="form-input" placeholder="username" /></div>
-            <div className="form-group"><label className="form-label"><FaYoutube /> YouTube</label><input name="socialLinks.youtube" value={formData.socialLinks?.youtube || ''} onChange={handleChange} className="form-input" placeholder="channel handle" /></div>
-            <div className="form-group"><label className="form-label"><FaTwitter /> Twitter</label><input name="socialLinks.twitter" value={formData.socialLinks?.twitter || ''} onChange={handleChange} className="form-input" placeholder="username" /></div>
-            <div className="form-group"><label className="form-label"><FaFacebook /> Facebook</label><input name="socialLinks.facebook" value={formData.socialLinks?.facebook || ''} onChange={handleChange} className="form-input" placeholder="page or profile name" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-socialLinks-instagram"><FaInstagram /> Instagram</label>
+            <input id="set-socialLinks-instagram" name="socialLinks.instagram" value={formData.socialLinks?.instagram || ''} onChange={handleChange} className="form-input" placeholder="username (without @)" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-socialLinks-tiktok"><FaTiktok /> TikTok</label>
+            <input id="set-socialLinks-tiktok" name="socialLinks.tiktok" value={formData.socialLinks?.tiktok || ''} onChange={handleChange} className="form-input" placeholder="username" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-socialLinks-pinterest"><FaPinterest /> Pinterest</label>
+            <input id="set-socialLinks-pinterest" name="socialLinks.pinterest" value={formData.socialLinks?.pinterest || ''} onChange={handleChange} className="form-input" placeholder="username" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-socialLinks-youtube"><FaYoutube /> YouTube</label>
+            <input id="set-socialLinks-youtube" name="socialLinks.youtube" value={formData.socialLinks?.youtube || ''} onChange={handleChange} className="form-input" placeholder="channel handle" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-socialLinks-twitter"><FaTwitter /> Twitter</label>
+            <input id="set-socialLinks-twitter" name="socialLinks.twitter" value={formData.socialLinks?.twitter || ''} onChange={handleChange} className="form-input" placeholder="username" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-socialLinks-facebook"><FaFacebook /> Facebook</label>
+            <input id="set-socialLinks-facebook" name="socialLinks.facebook" value={formData.socialLinks?.facebook || ''} onChange={handleChange} className="form-input" placeholder="page or profile name" /></div>
           </div>
         )}
 
         {activeTab === 'store' && (
           <div className="glass-card" style={{ padding: 'var(--td-space-lg)', display: 'flex', flexDirection: 'column', gap: 'var(--td-space-md)' }}>
             <p style={{ fontSize: 13, color: 'var(--td-text-tertiary)', marginBottom: 8 }}>Customize your storefront appearance.</p>
-            <div className="form-group"><label className="form-label">Store Tagline</label><input name="store.tagline" value={formData.store?.tagline || ''} onChange={handleChange} className="form-input" placeholder="A short description of your store" maxLength={200} /></div>
-            <div className="form-group"><label className="form-label">Custom Color Theme</label><input name="store.colorTheme" value={formData.store?.colorTheme || ''} onChange={handleChange} className="form-input" placeholder="e.g. #4CAF50" /></div>
-            <div className="form-group"><label className="form-label">Banner Image URL</label><input name="store.banner" value={formData.store?.banner || ''} onChange={handleChange} className="form-input" placeholder="https://..." /></div>
-            <div className="form-group"><label className="form-label">Store Logo URL</label><input name="store.logo" value={formData.store?.logo || ''} onChange={handleChange} className="form-input" placeholder="https://..." /></div>
-            <div className="form-group"><label className="form-label">Return Policy</label><textarea name="store.returnPolicy" value={formData.store?.returnPolicy || ''} onChange={handleChange} className="form-input" placeholder="Describe your return policy..." rows={3} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-store-tagline">Store Tagline</label>
+            <input id="set-store-tagline" name="store.tagline" value={formData.store?.tagline || ''} onChange={handleChange} className="form-input" placeholder="A short description of your store" maxLength={200} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-store-colorTheme">Custom Color Theme</label>
+            <input id="set-store-colorTheme" name="store.colorTheme" value={formData.store?.colorTheme || ''} onChange={handleChange} className="form-input" placeholder="e.g. #4CAF50" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-store-banner">Banner Image URL</label>
+            <input id="set-store-banner" name="store.banner" value={formData.store?.banner || ''} onChange={handleChange} className="form-input" placeholder="https://..." /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-store-logo">Store Logo URL</label>
+            <input id="set-store-logo" name="store.logo" value={formData.store?.logo || ''} onChange={handleChange} className="form-input" placeholder="https://..." /></div>
+            <div className="form-group"><label className="form-label" htmlFor="set-store-returnPolicy">Return Policy</label>
+            <textarea id="set-store-returnPolicy" name="store.returnPolicy" value={formData.store?.returnPolicy || ''} onChange={handleChange} className="form-input" placeholder="Describe your return policy..." rows={3} /></div>
           </div>
         )}
 
@@ -262,13 +288,19 @@ function Settings() {
                 {connectLoading ? 'Opening Stripe…' : (stripeConnect?.payoutsEnabled ? (stripeConnect?.mock ? 'Test payouts enabled' : 'Payouts enabled') : 'Connect Stripe')}
               </button>
             </div>
-            <div className="form-group"><label className="form-label">Payout Method</label><select name="payoutMethod.type" value={formData.payoutMethod.type} onChange={handleChange} className="form-input"><option value="">Select method</option><option value="paypal">PayPal</option><option value="bank">Bank Transfer</option></select></div>
-            {formData.payoutMethod.type === 'paypal' && <div className="form-group"><label className="form-label">PayPal Email</label><input name="payoutMethod.paypalEmail" value={formData.payoutMethod.paypalEmail} onChange={handleChange} className="form-input" placeholder="you@paypal.com" /></div>}
+            <div className="form-group"><label className="form-label" htmlFor="set-payoutMethod-type">Payout Method</label>
+            <select id="set-payoutMethod-type" name="payoutMethod.type" value={formData.payoutMethod.type} onChange={handleChange} className="form-input"><option value="">Select method</option><option value="paypal">PayPal</option><option value="bank">Bank Transfer</option></select></div>
+            {formData.payoutMethod.type === 'paypal' && <div className="form-group"><label className="form-label" htmlFor="set-payoutMethod-paypalEmail">PayPal Email</label>
+            <input id="set-payoutMethod-paypalEmail" name="payoutMethod.paypalEmail" value={formData.payoutMethod.paypalEmail} onChange={handleChange} className="form-input" placeholder="you@paypal.com" /></div>}
             {formData.payoutMethod.type === 'bank' && <>
-              <div className="form-group"><label className="form-label">Bank Name</label><input name="payoutMethod.bankName" value={formData.payoutMethod.bankName} onChange={handleChange} className="form-input" placeholder="Bank name" /></div>
-              <div className="form-group"><label className="form-label">Account Holder</label><input name="payoutMethod.accountHolder" value={formData.payoutMethod.accountHolder} onChange={handleChange} className="form-input" placeholder="Account holder name" /></div>
-              <div className="form-group"><label className="form-label">Account Number</label><input name="payoutMethod.accountNumber" value={formData.payoutMethod.accountNumber} onChange={handleChange} className="form-input" placeholder="Account number" /></div>
-              <div className="form-group"><label className="form-label">Routing/SWIFT Code</label><input name="payoutMethod.routingNumber" value={formData.payoutMethod.routingNumber} onChange={handleChange} className="form-input" placeholder="Routing number" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="set-payoutMethod-bankName">Bank Name</label>
+            <input id="set-payoutMethod-bankName" name="payoutMethod.bankName" value={formData.payoutMethod.bankName} onChange={handleChange} className="form-input" placeholder="Bank name" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="set-payoutMethod-accountHolder">Account Holder</label>
+            <input id="set-payoutMethod-accountHolder" name="payoutMethod.accountHolder" value={formData.payoutMethod.accountHolder} onChange={handleChange} className="form-input" placeholder="Account holder name" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="set-payoutMethod-accountNumber">Account Number</label>
+            <input id="set-payoutMethod-accountNumber" name="payoutMethod.accountNumber" value={formData.payoutMethod.accountNumber} onChange={handleChange} className="form-input" placeholder="Account number" /></div>
+              <div className="form-group"><label className="form-label" htmlFor="set-payoutMethod-routingNumber">Routing/SWIFT Code</label>
+            <input id="set-payoutMethod-routingNumber" name="payoutMethod.routingNumber" value={formData.payoutMethod.routingNumber} onChange={handleChange} className="form-input" placeholder="Routing number" /></div>
             </>}
           </div>
         )}
