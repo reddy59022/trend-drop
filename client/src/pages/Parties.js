@@ -152,7 +152,8 @@ const Parties = () => {
           {parties.map((party, i) => (
             <div key={party._id} className="glass-card" style={{ overflow: 'hidden', animation: `fadeInUp 0.3s ease-out ${i * 0.05}s both` }}>
               <div style={{ 
-                background: 'linear-gradient(135deg, var(--td-primary), #ff6b8a)',
+                // White text on the old #ff6b8a end was 2.72:1 (fails WCAG AA).
+                background: 'linear-gradient(135deg, var(--td-primary), #C2185B)',
                 padding: 'var(--td-space-md)',
                 color: '#fff',
               }}>

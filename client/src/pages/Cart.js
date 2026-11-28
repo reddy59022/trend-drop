@@ -405,7 +405,9 @@ const Cart = () => {
                 animation: `fadeInUp 0.3s ease-out ${pkgIndex * 0.1}s both`
               }}>
                 <div style={{ 
-                  background: 'linear-gradient(135deg, var(--td-primary), #ff6b8a)',
+                  // Rose end darkened from #ff6b8a: white header text sat at
+                  // 2.72:1 there, below the 4.5:1 WCAG AA floor. #C2185B = 5.87:1.
+                  background: 'linear-gradient(135deg, var(--td-primary), #C2185B)',
                   padding: '10px 16px',
                   display: 'flex',
                   justifyContent: 'space-between',
