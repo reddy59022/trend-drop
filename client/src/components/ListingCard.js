@@ -7,7 +7,7 @@ import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
 import { toast } from 'react-toastify';
 import { parseVideoUrl } from '../utils/videoEmbed';
-import { defaultAvatar, defaultListingImage, getConditionColor, formatPrice } from '../utils/helpers';
+import { defaultAvatar, defaultListingImage, getConditionTone, formatPrice } from '../utils/helpers';
 
 const ListingCard = React.memo(({ listing }) => {
   const { user } = useAuth();
@@ -84,7 +84,7 @@ const ListingCard = React.memo(({ listing }) => {
     }
   };
 
-  const conditionColor = getConditionColor(listing.condition);
+  const conditionTone = getConditionTone(listing.condition);
 
   const hasNoImages = !listing.images || listing.images.length === 0;
   
@@ -221,10 +221,12 @@ const ListingCard = React.memo(({ listing }) => {
 
         <div className="listing-card-meta">
           <span
-            className="listing-condition"
+            className={`listing-condition td-tone-${conditionTone}`}
             style={{
-              background: `${conditionColor}15`,
-              color: conditionColor,
+              // Theme tokens: #10b981 on its own 8% tint was 2.34:1, and the
+              // inline pastel disappeared entirely on dark cards.
+              background: 'var(--td-tone-bg)',
+              color: 'var(--td-tone-fg)',
             }}
           >
             {listing.condition}

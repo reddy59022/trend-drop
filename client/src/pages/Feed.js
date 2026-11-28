@@ -81,6 +81,7 @@ const Feed = () => {
           <FaFilter size={14} color="var(--td-text-tertiary)" aria-hidden="true" />
           <select
             className="form-input"
+            aria-label="Sort listings"
             value={sort}
             onChange={(e) => setSort(e.target.value)}
             style={{ width: 'auto', minWidth: 180, padding: '8px 32px 8px 12px' }}

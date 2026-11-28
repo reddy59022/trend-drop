@@ -36,6 +36,8 @@ const Messages = () => {
   // returns it to the list heading, so neither transition drops focus on body.
   const threadHeadingRef = useRef(null);
   const listHeadingRef = useRef(null);
+  const railRef = useRef(null);
+  const [railIndex, setRailIndex] = useState(0);
   stateRef.current = { activeThread, threadListings };
 
   useEffect(() => {
@@ -141,6 +143,17 @@ const Messages = () => {
     setTimeout(() => listHeadingRef.current?.focus(), 60);
   };
 
+  // The thread's listing rail is one tab stop with roving focus (arrow keys
+  // move inside it), so a thread discussing 20 items no longer costs 20 tabs
+  // before the message box.
+  const moveRailFocus = (nextIndex) => {
+    const items = railRef.current?.querySelectorAll('[data-rail-item]');
+    if (!items || items.length === 0) return;
+    const clamped = Math.max(0, Math.min(items.length - 1, nextIndex));
+    setRailIndex(clamped);
+    items[clamped]?.focus();
+  };
+
   const filtered = conversations.filter(c =>
     c.otherUser?.name?.toLowerCase().includes(search.toLowerCase()) ||
     c.listing?.title?.toLowerCase().includes(search.toLowerCase()) ||
@@ -177,21 +190,32 @@ const Messages = () => {
 
         {/* Items discussed in this thread */}
         {threadListings.length > 0 && (
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '4px 0 12px', marginBottom: 8 }}>
-            {threadListings.map((l) => (
-              <div key={l._id || l.id} role="button" tabIndex={0} aria-label={`Open listing ${l.title}`}
-                onClick={() => navigate(`/listing/${l._id || l.id}`)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/listing/${l._id || l.id}`); } }}
-                style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px 6px 6px', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-full)', border: '1px solid var(--td-border)', cursor: 'pointer' }}>
-                {l.images?.[0]
-                  ? <img src={l.images[0]} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
-                  : <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--td-surface-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaImage size={11} style={{ color: 'var(--td-text-tertiary)' }} /></div>}
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>{l.title}</div>
-                  <div style={{ fontSize: 11, color: 'var(--td-text-secondary)' }}>{formatPrice(l.price, l.currency || 'USD')}</div>
+          <div ref={railRef} role="group" aria-label={`Listings in this conversation (${threadListings.length})`}
+            style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '4px 0 12px', marginBottom: 8 }}>
+            {threadListings.map((l, i) => {
+              const railStop = Math.min(railIndex, threadListings.length - 1);
+              const openListing = () => navigate(`/listing/${l._id || l.id}`);
+              return (
+                <div key={l._id || l.id} data-rail-item="true" role="button" tabIndex={i === railStop ? 0 : -1}
+                  aria-label={`Open listing ${l.title}, ${formatPrice(l.price, l.currency || 'USD')}`}
+                  onClick={openListing}
+                  onFocus={() => setRailIndex(i)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openListing(); return; }
+                    const target = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: threadListings.length - 1 }[e.key];
+                    if (target !== undefined) { e.preventDefault(); moveRailFocus(target); }
+                  }}
+                  style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px 6px 6px', background: 'var(--td-surface)', borderRadius: 'var(--td-radius-full)', border: '1px solid var(--td-border)', cursor: 'pointer' }}>
+                  {l.images?.[0]
+                    ? <img src={l.images[0]} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
+                    : <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--td-surface-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaImage size={11} aria-hidden="true" style={{ color: 'var(--td-text-tertiary)' }} /></div>}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>{l.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--td-text-secondary)' }}>{formatPrice(l.price, l.currency || 'USD')}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -309,20 +333,21 @@ const Messages = () => {
               onBlur={(e) => e.currentTarget.style.background = conv.unreadCount > 0 ? 'rgba(108, 59, 255, 0.05)' : 'transparent'}
             >
               <img src={conv.otherUser?.avatar || defaultAvatar} alt="" style={{ width: 48, height: 48, borderRadius: 'var(--td-radius-full)', objectFit: 'cover', flexShrink: 0, border: '2px solid var(--td-border)' }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {/* Phrasing content only: a <button> must not contain divs. */}
+              <span style={{ display: 'block', flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontWeight: conv.unreadCount > 0 ? 700 : 500, fontSize: 15 }}>{conv.otherUser?.name || 'Unknown'}</span>
                   <span style={{ fontSize: 12, color: 'var(--td-text-secondary)' }}>{conv.lastMessage ? timeAgo(conv.updatedAt) : ''}</span>
-                </div>
+                </span>
                 {conv.listing && (
-                  <div style={{ fontSize: 12, color: 'var(--td-text-secondary)', marginBottom: 2 }}>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--td-text-secondary)', marginBottom: 2 }}>
                     Re: {conv.listing.title}{conv.listingCount > 1 ? ` +${conv.listingCount - 1} more item${conv.listingCount - 1 === 1 ? '' : 's'}` : ''}
-                  </div>
+                  </span>
                 )}
-                <div style={{ fontSize: 13, color: conv.unreadCount > 0 ? 'var(--td-text)' : 'var(--td-text-secondary)', fontWeight: conv.unreadCount > 0 ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <span style={{ display: 'block', fontSize: 13, color: conv.unreadCount > 0 ? 'var(--td-text)' : 'var(--td-text-secondary)', fontWeight: conv.unreadCount > 0 ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {conv.lastMessage?.text || 'No messages yet'}
-                </div>
-              </div>
+                </span>
+              </span>
               {conv.unreadCount > 0 && (
                 <span className="badge badge-primary" aria-hidden="true">{conv.unreadCount}</span>
               )}

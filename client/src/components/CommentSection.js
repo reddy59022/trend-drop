@@ -95,6 +95,8 @@ const CommentSection = ({ listingId, comments, onCommentsUpdate }) => {
             <button
               type="submit"
               className="btn btn-primary btn-icon"
+              aria-label={submitting ? 'Posting comment' : 'Post comment'}
+              aria-busy={submitting}
               disabled={submitting || !newComment.trim()}
               style={{ flexShrink: 0 }}
               data-testid="comment-submit"

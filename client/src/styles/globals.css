@@ -79,12 +79,14 @@
   --td-warning-light: rgba(255, 176, 32, 0.10);
   --td-primary-rgb: 108, 59, 255;
   --td-error-rgb: 255, 77, 109;
-  --td-text-tertiary-rgb: 148, 148, 184;
+  --td-text-tertiary-rgb: 98, 98, 138;
 
   /* Text */
   --td-text: #0D0D24;
   --td-text-secondary: #4A4A70;
-  --td-text-tertiary: #9494B8;
+  /* #9494B8 sat at 2.9:1 on white, so every timestamp and hint using it
+     failed AA. #62628A is 5.77:1 on white and 4.84:1 on #EDE9FA. */
+  --td-text-tertiary: #62628A;
   --td-text-inverse: #FFFFFF;
   --td-text-link: #6C3BFF;
 
@@ -225,8 +227,10 @@
 
     --td-text: #EDEBFF;
     --td-text-secondary: #A5A3D0;
-    --td-text-tertiary: #6E6C99;
-    --td-text-tertiary-rgb: 110, 108, 153;
+    /* Dark tertiary was 4.1:1 on the #08081A surface; #8C8AB8 is 6.05:1
+       there and 5.6:1 on #14142B, still dimmer than --td-text-secondary. */
+    --td-text-tertiary: #8C8AB8;
+    --td-text-tertiary-rgb: 140, 138, 184;
     --td-text-inverse: #08081A;
 
     --td-border: #24244A;
@@ -272,8 +276,8 @@
   --td-bg-secondary: #14142B;
   --td-text: #EDEBFF;
   --td-text-secondary: #A5A3D0;
-  --td-text-tertiary: #6E6C99;
-    --td-text-tertiary-rgb: 110, 108, 153;
+  --td-text-tertiary: #8C8AB8;
+  --td-text-tertiary-rgb: 140, 138, 184;
   --td-text-inverse: #08081A;
   --td-border: #24244A;
   --td-border-light: #14142B;
@@ -315,7 +319,9 @@
   --td-bg-secondary: #F7F5FE;
   --td-text: #0D0D24;
   --td-text-secondary: #4A4A70;
-  --td-text-tertiary: #9494B8;
+  /* #9494B8 sat at 2.9:1 on white, so every timestamp and hint using it
+     failed AA. #62628A is 5.77:1 on white and 4.84:1 on #EDE9FA. */
+  --td-text-tertiary: #62628A;
   --td-text-inverse: #FFFFFF;
   --td-border: #E3DEF6;
   --td-border-light: #F1EEFC;

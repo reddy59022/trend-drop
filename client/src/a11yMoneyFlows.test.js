@@ -50,6 +50,27 @@ describe('money-flow accessibility contract', () => {
     });
   });
 
+  describe('messages thread rail', () => {
+    const src = read('pages/Messages.js');
+    const rowStart = src.indexOf('<button key={conv');
+    const rowMarkup = src.slice(rowStart, src.indexOf('</button>', rowStart));
+
+    test('the listing rail is one tab stop with roving focus', () => {
+      expect(src).toMatch(/data-rail-item="true"/);
+      expect(src).toMatch(/tabIndex=\{i === railStop \? 0 : -1\}/);
+      expect(src).toMatch(/ArrowRight/);
+      expect(src).toMatch(/role="group" aria-label=/);
+      expect(src).toMatch(/moveRailFocus/);
+    });
+
+    test('conversation rows keep phrasing-only content inside the button', () => {
+      expect(rowStart).toBeGreaterThan(-1);
+      expect(rowMarkup.length).toBeGreaterThan(100);
+      expect(rowMarkup).not.toContain('<div');
+      expect(rowMarkup).toContain("display: 'block', flex: 1");
+    });
+  });
+
   describe('cart and checkout', () => {
     const src = read('pages/Cart.js');
 

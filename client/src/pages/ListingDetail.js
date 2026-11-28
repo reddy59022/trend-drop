@@ -1,4 +1,4 @@
-import { defaultAvatar, formatPrice, formatPriceRaw, getConditionColor, normalizeComment, displayDate } from "../utils/helpers";
+import { defaultAvatar, formatPrice, formatPriceRaw, getConditionTone, normalizeComment, displayDate } from "../utils/helpers";
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaHeart, FaShareAlt, FaArrowLeft, FaShieldAlt, FaCheckCircle, FaChartLine, FaShippingFast, FaStore, FaRulerCombined, FaPalette, FaTag, FaEdit, FaComment, FaBolt, FaExchangeAlt, FaClock } from 'react-icons/fa';
@@ -487,10 +487,10 @@ const ListingDetail = () => {
             <p>
               <strong>Condition:</strong>{' '}
               <span 
-                className="badge"
+                className={`badge td-tone-${getConditionTone(listing.condition)}`}
                 style={{ 
-                  background: `${getConditionColor(listing.condition)}15`,
-                  color: getConditionColor(listing.condition),
+                  background: 'var(--td-tone-bg)',
+                  color: 'var(--td-tone-fg)',
                 }}
               >
                 {listing.condition}
@@ -505,8 +505,10 @@ const ListingDetail = () => {
             <h3><FaShippingFast /> Calculate Shipping</h3>
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label">From</label>
+                <label className="form-label" htmlFor="shipping-from">From</label>
                 <input 
+                  id="shipping-from"
+                  name="shippingFrom"
                   className="form-input" 
                   value={listing.shipsFrom || 'US'} 
                   disabled 

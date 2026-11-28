@@ -384,6 +384,16 @@ export const getStatusLabel = (status) => {
 };
 
 // Condition badge color
+// Semantic tone for the condition chip. The chip renders with the theme's
+// --td-tone-* values, so an inline pastel cannot vanish on a dark card.
+export const getConditionTone = (condition) => {
+  const tones = {
+    'New with tags': 'success', 'New without tags': 'success',
+    'Good': 'info', 'Fair': 'warning', 'Poor': 'danger',
+  };
+  return tones[condition] || 'neutral';
+};
+
 export const getConditionColor = (condition) => {
   const colors = {
     'New with tags': '#10b981', 'New without tags': '#34d399',
