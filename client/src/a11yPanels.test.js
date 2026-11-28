@@ -128,3 +128,58 @@ describe('form-only dashboards label every field', () => {
     expect(src).toContain('aria-label="Transactions per page"');
   });
 });
+
+describe('admin tabs expose the current section to AT', () => {
+  const src = read('pages/Admin.js');
+
+  test('the strip is a tablist whose selected tab is the only tab stop', () => {
+    expect(src).toContain('role="tablist" aria-label="Admin sections"');
+    expect(src).toContain('role="tab"');
+    expect(src).toContain('aria-selected={selected}');
+    expect(src).toContain('tabIndex={selected ? 0 : -1}');
+    expect(src).toContain('aria-controls="admin-panel"');
+    expect(src).toMatch(/event\.key === 'ArrowRight'/);
+    expect(src).toMatch(/event\.key === 'Home'/);
+  });
+
+  test('the panel is labelled by the active tab', () => {
+    expect(src).toContain('role="tabpanel" id="admin-panel"');
+    expect(src).toContain('aria-labelledby={`admin-tab-${activeTab}`}');
+  });
+});
+
+describe('the shared confirm dialog is a named, focus-managed modal', () => {
+  const src = read('context/ConfirmContext.js');
+
+  test('it is named and described, and focus starts on the safe action', () => {
+    expect(src).toContain('aria-labelledby="td-confirm-title"');
+    expect(src).toContain("aria-describedby={state.message ? 'td-confirm-message' : undefined}");
+    expect(src).toContain('cancelRef.current?.focus()');
+  });
+
+  test('Escape cancels, Tab is trapped and focus returns to the opener', () => {
+    expect(src).toMatch(/event\.key === 'Escape'/);
+    expect(src).toMatch(/event\.key !== 'Tab'/);
+    expect(src).toContain('restoreFocusRef.current');
+  });
+});
+
+describe('admin write actions confirm and announce their outcome', () => {
+  const src = stripComments(read('pages/Admin.js'));
+
+  test.each([
+    ['role change', "title: 'Change user role?'", 'Role updated to'],
+    ['suspend', "title: 'Suspend this user?'", 'suspended'],
+  ])('%s asks before writing and reports back', (_name, confirmTitle, successText) => {
+    expect(src).toContain(confirmTitle);
+    expect(src).toContain(successText);
+  });
+
+  test('report resolution and refunds announce success, and failures are announced too', () => {
+    expect(src).toContain("'Report resolved'");
+    expect(src).toContain("'Refund issued'");
+    expect(src).toContain("title: 'Force refund?'");
+    // These handlers used to fail silently into console.error.
+    expect(src).not.toMatch(/handleResolveReport[\s\S]{0,400}console\.error/);
+  });
+});

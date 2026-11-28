@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
@@ -39,6 +39,7 @@ const Admin = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const tabRefs = useRef({});
 
   useEffect(() => {
     if (!user || (user.role !== 'admin' && user.role !== 'moderator')) {
@@ -80,30 +81,53 @@ const Admin = () => {
     }
   };
 
-  const handleRoleChange = async (userId, role) => {
+  const handleRoleChange = async (userId, role, name) => {
+    const ok = await confirmDialog({
+      title: 'Change user role?',
+      message: `${name || 'This user'} will become ${role}. This changes what they can see and do.`,
+      confirmLabel: 'Change role',
+      danger: role === 'admin',
+    });
+    if (!ok) return;
     try {
       await updateUserRole(userId, role);
+      toast.success(`Role updated to ${role}`);
       fetchData();
     } catch (error) {
-      console.error(error);
+      toast.error(error.response?.data?.message || 'Could not update the role');
     }
   };
 
-  const handleSuspend = async (userId) => {
+  const handleSuspend = async (userId, name) => {
+    const ok = await confirmDialog({
+      title: 'Suspend this user?',
+      message: `${name || 'This user'} will lose access immediately. Transactions and payouts are unaffected.`,
+      confirmLabel: 'Suspend',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await suspendUser(userId);
+      toast.success(`${name || 'User'} suspended`);
       fetchData();
     } catch (error) {
-      console.error(error);
+      toast.error(error.response?.data?.message || 'Could not suspend the user');
     }
   };
 
-  const handleUnsuspend = async (userId) => {
+  const handleUnsuspend = async (userId, name) => {
+    const ok = await confirmDialog({
+      title: 'Restore this user?',
+      message: `${name || 'This user'} will regain access with their previous role.`,
+      confirmLabel: 'Restore access',
+    });
+    if (!ok) return;
     try {
       await unsuspendUser(userId);
+      toast.success(`${name || 'User'} restored`);
       fetchData();
     } catch (error) {
-      console.error(error);
+      toast.error(error.response?.data?.message || 'Could not restore the user');
     }
   };
 
@@ -117,18 +141,20 @@ const Admin = () => {
     if (!ok) return;
     try {
       await deleteAdminListing(listingId);
+      toast.success('Listing deleted');
       fetchData();
     } catch (error) {
-      console.error(error);
+      toast.error(error.response?.data?.message || 'Could not delete the listing');
     }
   };
 
   const handleResolveReport = async (reportId, status) => {
     try {
       await updateAdminReportStatus(reportId, status);
+      toast.success(status === 'resolved' ? 'Report resolved' : 'Report dismissed');
       fetchData();
     } catch (error) {
-      console.error(error);
+      toast.error(error.response?.data?.message || 'Could not update the report');
     }
   };
 
@@ -142,9 +168,10 @@ const Admin = () => {
     if (!ok) return;
     try {
       await adminRefundTransaction(transactionId);
+      toast.success('Refund issued');
       fetchData();
     } catch (error) {
-      console.error(error);
+      toast.error(error.response?.data?.message || 'Could not issue the refund');
     }
   };
 
@@ -174,7 +201,7 @@ const Admin = () => {
       toast.success(res.data.message);
       fetchData();
     } catch (error) {
-      console.error(error);
+      toast.error(error.response?.data?.message || 'Could not auto-suspend users');
     }
   };
 
@@ -207,6 +234,28 @@ const Admin = () => {
     { id: 'insurance', label: 'Insurance', icon: <FaShieldAlt /> },
   ];
 
+  const visibleTabs = tabs.filter(tab => !['verifications', 'insurance'].includes(tab.id) || user?.role === 'admin');
+
+  const selectTab = (id) => {
+    setActiveTab(id);
+    setPage(1);
+  };
+
+  // Standard tabs pattern: one tab stop for the strip, arrows/Home/End move
+  // between sections instead of forcing seven Tabs before the page content.
+  const handleTabKeyDown = (event, index) => {
+    let nextIndex = null;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % visibleTabs.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + visibleTabs.length) % visibleTabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = visibleTabs.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextTab = visibleTabs[nextIndex];
+    selectTab(nextTab.id);
+    tabRefs.current[nextTab.id]?.focus();
+  };
+
   if (!user || (user.role !== 'admin' && user.role !== 'moderator')) return null;
 
   return (
@@ -216,24 +265,38 @@ const Admin = () => {
       </h1>
 
       {/* Tab Navigation */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 'var(--td-space-lg)', overflowX: 'auto', paddingBottom: 8 }}>
-        {tabs.filter(tab => !['verifications', 'insurance'].includes(tab.id) || user.role === 'admin').map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => { setActiveTab(tab.id); setPage(1); }}
-            className={`btn ${activeTab === tab.id ? 'btn-primary' : 'btn-outline'}`}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
-          >
-            {tab.icon} {tab.label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 'var(--td-space-lg)', flexWrap: 'wrap' }}>
+        <div role="tablist" aria-label="Admin sections" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, flex: 1 }}>
+          {visibleTabs.map((tab, index) => {
+            const selected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                ref={(el) => { tabRefs.current[tab.id] = el; }}
+                type="button"
+                role="tab"
+                id={`admin-tab-${tab.id}`}
+                aria-selected={selected}
+                aria-controls="admin-panel"
+                tabIndex={selected ? 0 : -1}
+                onClick={() => selectTab(tab.id)}
+                onKeyDown={(event) => handleTabKeyDown(event, index)}
+                className={`btn ${selected ? 'btn-primary' : 'btn-outline'}`}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+              >
+                {tab.icon} {tab.label}
+              </button>
+            );
+          })}
+        </div>
         {user.role === 'admin' && (
-          <button onClick={handleAutoSuspend} className="btn btn-outline" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--td-error)' }}>
-            <FaBan /> Auto-Suspend
+          <button type="button" onClick={handleAutoSuspend} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--td-error)', marginBottom: 8 }}>
+            <FaBan aria-hidden="true" /> Auto-Suspend
           </button>
         )}
       </div>
 
+      <div role="tabpanel" id="admin-panel" aria-labelledby={`admin-tab-${activeTab}`}>
       {/* Dashboard Tab */}
       {activeTab === 'dashboard' && (
         <div>
@@ -365,7 +428,7 @@ const Admin = () => {
                                 <select
                                   aria-label={`Role for ${u.name || u.email || 'user'}`}
                                   value={u.role}
-                                  onChange={e => handleRoleChange(u._id, e.target.value)}
+                                  onChange={e => handleRoleChange(u._id, e.target.value, u.name || u.email)}
                                   className="input"
                                   style={{ width: 110, fontSize: 12, padding: '4px 8px' }}
                                 >
@@ -375,11 +438,11 @@ const Admin = () => {
                                   <option value="admin">admin</option>
                                 </select>
                                 {u.role !== 'suspended' ? (
-                                  <button onClick={() => handleSuspend(u._id)} aria-label={`Suspend ${u.name || u.email || 'user'}`} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none' }}>
+                                  <button type="button" onClick={() => handleSuspend(u._id, u.name || u.email)} aria-label={`Suspend ${u.name || u.email || 'user'}`} className="btn btn-sm" style={{ background: 'rgba(255,23,68,0.1)', color: 'var(--td-error)', border: 'none' }}>
                                     <FaBan size={12} />
                                   </button>
                                 ) : (
-                                  <button onClick={() => handleUnsuspend(u._id)} aria-label={`Unsuspend ${u.name || u.email || 'user'}`} className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none' }}>
+                                  <button type="button" onClick={() => handleUnsuspend(u._id, u.name || u.email)} aria-label={`Unsuspend ${u.name || u.email || 'user'}`} className="btn btn-sm" style={{ background: 'rgba(0,200,83,0.1)', color: 'var(--td-success)', border: 'none' }}>
                                     <FaCheck size={12} />
                                   </button>
                                 )}
@@ -631,6 +694,7 @@ const Admin = () => {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 };

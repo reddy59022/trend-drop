@@ -26,6 +26,7 @@ import {
   getInsuranceClaims, reviewInsuranceClaim,
 } from '../../services/api';
 import { setAuth, setThemeStore, setCartStore, setConfirm, resetTestState, resetApiMock, renderPage, authUser } from '../../test-utils';
+import { toast } from 'react-toastify';
 
 import Admin from '../Admin';
 
@@ -68,7 +69,7 @@ describe('Admin page', () => {
       userId: { _id: 'seller-1', name: 'Pending Seller', email: 'seller@test.com', country: 'US' },
     }] } });
     renderPage(<Admin />);
-    fireEvent.click(await screen.findByRole('button', { name: /Verifications/ }));
+    fireEvent.click(await screen.findByRole('tab', { name: /Verifications/ }));
     expect(await screen.findByText('Pending Seller')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Approve/ }));
     await waitFor(() => expect(reviewSellerBadge).toHaveBeenCalledWith('seller-1', { decision: 'approve' }));
@@ -81,7 +82,7 @@ describe('Admin page', () => {
       claim: { reason: 'Lost shipment' },
     }] } });
     renderPage(<Admin />);
-    fireEvent.click(await screen.findByRole('button', { name: /Insurance/ }));
+    fireEvent.click(await screen.findByRole('tab', { name: /Insurance/ }));
     expect(await screen.findByText('Ins Seller')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Approve/ }));
     await waitFor(() => expect(reviewInsuranceClaim).toHaveBeenCalledWith(policyId, { status: 'approved' }));
@@ -91,17 +92,42 @@ describe('Admin page', () => {
     renderPage(<Admin />);
     await screen.findByText('Admin Panel');
     ['Dashboard', 'Users', 'Listings', 'Reports', 'Transactions'].forEach((label) =>
-      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument());
+      expect(screen.getByRole('tab', { name: new RegExp(label) })).toBeInTheDocument());
+  });
+  test('marks the current tab with aria-selected and one tab stop', async () => {
+    renderPage(<Admin />);
+    const dashboard = await screen.findByRole('tab', { name: /Dashboard/ });
+    expect(dashboard).toHaveAttribute('aria-selected', 'true');
+    expect(dashboard).toHaveAttribute('tabindex', '0');
+    expect(dashboard).toHaveAttribute('aria-controls', 'admin-panel');
+    const users = screen.getByRole('tab', { name: /Users/ });
+    expect(users).toHaveAttribute('aria-selected', 'false');
+    expect(users).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByRole('tablist', { name: /admin sections/i })).toBeInTheDocument();
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'admin-tab-dashboard');
+  });
+  test('arrow keys move between tabs without extra Tab stops', async () => {
+    renderPage(<Admin />);
+    const dashboard = await screen.findByRole('tab', { name: /Dashboard/ });
+    dashboard.focus();
+    fireEvent.keyDown(dashboard, { key: 'ArrowRight' });
+    const users = screen.getByRole('tab', { name: /Users/ });
+    await waitFor(() => expect(users).toHaveAttribute('aria-selected', 'true'));
+    expect(document.activeElement).toBe(users);
+    fireEvent.keyDown(users, { key: 'End' });
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Insurance/ })).toHaveAttribute('aria-selected', 'true'));
+    fireEvent.keyDown(screen.getByRole('tab', { name: /Insurance/ }), { key: 'Home' });
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Dashboard/ })).toHaveAttribute('aria-selected', 'true'));
   });
   test('switching to the Users tab fetches users with the search box', async () => {
     renderPage(<Admin />);
-    fireEvent.click(await screen.findByRole('button', { name: /Users/ }));
+    fireEvent.click(await screen.findByRole('tab', { name: /Users/ }));
     await waitFor(() => expect(getAdminUsers).toHaveBeenCalledWith(expect.objectContaining({ page: 1 })));
     expect(screen.getByPlaceholderText('Search users by name or email...')).toBeInTheDocument();
   });
   test('searching users passes the search term', async () => {
     renderPage(<Admin />);
-    fireEvent.click(await screen.findByRole('button', { name: /Users/ }));
+    fireEvent.click(await screen.findByRole('tab', { name: /Users/ }));
     fireEvent.change(await screen.findByPlaceholderText('Search users by name or email...'), { target: { value: 'alice' } });
     fireEvent.click(screen.getByRole('button', { name: /Search/i }));
     await waitFor(() => expect(getAdminUsers).toHaveBeenCalledWith(expect.objectContaining({ search: 'alice' })));
@@ -137,5 +163,100 @@ describe('Admin page', () => {
     getAdminDashboard.mockRejectedValue(new Error('boom'));
     renderPage(<Admin />);
     expect(screen.getByText('Admin Panel')).toBeInTheDocument();
+  });
+});
+
+describe('Admin write actions: confirmation and announcement', () => {
+  const userRow = {
+    _id: 'u2', name: 'Test Seller', email: 'seller@test.com', role: 'user', stats: { strikes: 1 },
+  };
+
+  const openUsers = async () => {
+    renderPage(<Admin />);
+    fireEvent.click(await screen.findByRole('tab', { name: /Users/ }));
+    expect(await screen.findByText('Test Seller')).toBeInTheDocument();
+  };
+
+  test('a role change asks for confirmation, then announces the new role', async () => {
+    const confirm = jest.fn(async () => true);
+    setConfirm(confirm);
+    getAdminUsers.mockResolvedValue({ data: { users: [userRow], totalPages: 1 } });
+    updateUserRole.mockResolvedValue({ data: {} });
+    await openUsers();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /Role for Test Seller/ }), { target: { value: 'moderator' } });
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Change user role?' })));
+    expect(confirm.mock.calls[0][0].message).toMatch(/Test Seller will become moderator/);
+    await waitFor(() => expect(updateUserRole).toHaveBeenCalledWith('u2', 'moderator'));
+    expect(toast.success).toHaveBeenCalledWith('Role updated to moderator');
+  });
+
+  test('cancelling the role confirmation makes no API call', async () => {
+    const confirm = jest.fn(async () => false);
+    setConfirm(confirm);
+    getAdminUsers.mockResolvedValue({ data: { users: [userRow], totalPages: 1 } });
+    await openUsers();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /Role for Test Seller/ }), { target: { value: 'admin' } });
+
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(updateUserRole).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  test('suspending a user asks for confirmation and announces it', async () => {
+    const confirm = jest.fn(async () => true);
+    setConfirm(confirm);
+    getAdminUsers.mockResolvedValue({ data: { users: [userRow], totalPages: 1 } });
+    suspendUser.mockResolvedValue({ data: {} });
+    await openUsers();
+
+    fireEvent.click(screen.getByRole('button', { name: /Suspend Test Seller/ }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Suspend this user?', danger: true })));
+    await waitFor(() => expect(suspendUser).toHaveBeenCalledWith('u2'));
+    expect(toast.success).toHaveBeenCalledWith('Test Seller suspended');
+  });
+
+  test('a failed suspension is announced instead of only logged', async () => {
+    setConfirm(async () => true);
+    getAdminUsers.mockResolvedValue({ data: { users: [userRow], totalPages: 1 } });
+    suspendUser.mockRejectedValue({ response: { data: { message: 'Cannot suspend an admin' } } });
+    await openUsers();
+
+    fireEvent.click(screen.getByRole('button', { name: /Suspend Test Seller/ }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Cannot suspend an admin'));
+  });
+
+  test('resolving a report announces the outcome', async () => {
+    getAdminReports.mockResolvedValue({ data: { reports: [{
+      _id: 'r1', reporter: { name: 'Reporter' }, listing: { title: 'Reported Item' }, reason: 'scam', status: 'pending',
+    }], totalPages: 1 } });
+    updateAdminReportStatus.mockResolvedValue({ data: {} });
+    renderPage(<Admin />);
+    fireEvent.click(await screen.findByRole('tab', { name: /Reports/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Resolve/ }));
+
+    await waitFor(() => expect(updateAdminReportStatus).toHaveBeenCalledWith('r1', 'resolved'));
+    expect(toast.success).toHaveBeenCalledWith('Report resolved');
+  });
+
+  test('a forced refund asks for confirmation, then announces success', async () => {
+    const confirm = jest.fn(async () => true);
+    setConfirm(confirm);
+    getAdminTransactions.mockResolvedValue({ data: { transactions: [{
+      _id: 't1', buyer: { name: 'Buyer' }, seller: { name: 'Seller' }, listing: { title: 'Item' },
+      paymentBreakdown: { totalPaid: 25 }, currency: 'USD', status: 'completed',
+    }], totalPages: 1 } });
+    adminRefundTransaction.mockResolvedValue({ data: {} });
+    renderPage(<Admin />);
+    fireEvent.click(await screen.findByRole('tab', { name: /Transactions/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Force Refund/ }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Force refund?', danger: true })));
+    await waitFor(() => expect(adminRefundTransaction).toHaveBeenCalledWith('t1'));
+    expect(toast.success).toHaveBeenCalledWith('Refund issued');
   });
 });
