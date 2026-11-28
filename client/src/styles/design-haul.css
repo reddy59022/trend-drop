@@ -2191,3 +2191,49 @@ html {
     display: none;
   }
 }
+
+/* 11. THEME-AWARE STATUS CHIPS (order status + notification tiles).
+   These were inline light-only pastels (#fffbeb on #f59e0b, ~1.9:1) that
+   turned into glaring blocks on dark cards. Colour now resolves through
+   --td-tone-* tokens declared per theme in globals.css: the tone modifier
+   only names a semantic tone, so the same markup is AA in both themes. */
+.td-tone-warning { --td-tone-fg: var(--td-tone-warning-fg); --td-tone-bg: var(--td-tone-warning-bg); }
+.td-tone-info { --td-tone-fg: var(--td-tone-info-fg); --td-tone-bg: var(--td-tone-info-bg); }
+.td-tone-success { --td-tone-fg: var(--td-tone-success-fg); --td-tone-bg: var(--td-tone-success-bg); }
+.td-tone-violet { --td-tone-fg: var(--td-tone-violet-fg); --td-tone-bg: var(--td-tone-violet-bg); }
+.td-tone-danger { --td-tone-fg: var(--td-tone-danger-fg); --td-tone-bg: var(--td-tone-danger-bg); }
+.td-tone-accent { --td-tone-fg: var(--td-tone-accent-fg); --td-tone-bg: var(--td-tone-accent-bg); }
+.td-tone-cyan { --td-tone-fg: var(--td-tone-cyan-fg); --td-tone-bg: var(--td-tone-cyan-bg); }
+.td-tone-neutral { --td-tone-fg: var(--td-tone-neutral-fg); --td-tone-bg: var(--td-tone-neutral-bg); }
+
+.td-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--td-tone-fg, var(--td-text));
+  background: var(--td-tone-bg, var(--td-surface-tertiary));
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.td-status-chip svg {
+  flex-shrink: 0;
+}
+
+.td-notif-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--td-text-lg);
+  border-radius: var(--td-radius-full);
+  color: var(--td-tone-fg, var(--td-text-secondary));
+  background: var(--td-tone-bg, var(--td-surface-tertiary));
+}

@@ -12,34 +12,33 @@ import {
 
 const StatusBadge = ({ status }) => {
   const statusConfig = {
-    'pending': { color: '#f59e0b', bg: '#fffbeb', icon: FaClock, label: 'Pending' },
-    'paid': { color: '#3b82f6', bg: '#eff6ff', icon: FaFileInvoiceDollar, label: 'Paid' },
-    'confirmed': { color: '#059669', bg: '#ecfdf5', icon: FaCheckCircle, label: 'Confirmed' },
-    'partially_shipped': { color: '#8b5cf6', bg: '#f5f3ff', icon: FaTruck, label: 'Partially Shipped' },
-    'shipped': { color: '#8b5cf6', bg: '#f5f3ff', icon: FaTruck, label: 'Shipped' },
-    'in_transit': { color: '#8b5cf6', bg: '#f5f3ff', icon: FaTruck, label: 'In Transit' },
-    'out_for_delivery': { color: '#f59e0b', bg: '#fffbeb', icon: FaTruck, label: 'Out for Delivery' },
-    'delivered': { color: '#10b981', bg: '#ecfdf5', icon: FaCheckCircle, label: 'Delivered' },
-    'completed': { color: '#059669', bg: '#ecfdf5', icon: FaCheckCircle, label: 'Completed' },
-    'buyer_confirmed': { color: '#059669', bg: '#ecfdf5', icon: FaCheckCircle, label: 'Confirmed' },
-    'cancelled': { color: '#ef4444', bg: '#fef2f2', icon: FaTimesCircle, label: 'Cancelled' },
-    'cancelled_by_buyer': { color: '#ef4444', bg: '#fef2f2', icon: FaTimesCircle, label: 'Cancelled' },
-    'cancelled_by_seller': { color: '#ef4444', bg: '#fef2f2', icon: FaTimesCircle, label: 'Cancelled by Seller' },
-    'refunded': { color: '#f59e0b', bg: '#fffbeb', icon: FaUndo, label: 'Refunded' },
-    'return_requested': { color: '#f59e0b', bg: '#fffbeb', icon: FaUndo, label: 'Return Requested' },
-    'return_accepted': { color: '#8b5cf6', bg: '#f5f3ff', icon: FaUndo, label: 'Return Accepted' },
-    'return_in_transit': { color: '#8b5cf6', bg: '#f5f3ff', icon: FaTruck, label: 'Return In Transit' },
-    'return_delivered': { color: '#10b981', bg: '#ecfdf5', icon: FaCheckCircle, label: 'Return Received' },
-    'chargeback_open': { color: '#ef4444', bg: '#fef2f2', icon: FaExclamationTriangle, label: 'Dispute' },
-    'chargeback_won': { color: '#10b981', bg: '#ecfdf5', icon: FaCheckCircle, label: 'Dispute Won' },
-    'chargeback_lost': { color: '#ef4444', bg: '#fef2f2', icon: FaTimesCircle, label: 'Dispute Lost' },
+    'pending': { tone: 'warning', icon: FaClock, label: 'Pending' },
+    'paid': { tone: 'info', icon: FaFileInvoiceDollar, label: 'Paid' },
+    'confirmed': { tone: 'success', icon: FaCheckCircle, label: 'Confirmed' },
+    'partially_shipped': { tone: 'violet', icon: FaTruck, label: 'Partially Shipped' },
+    'shipped': { tone: 'violet', icon: FaTruck, label: 'Shipped' },
+    'in_transit': { tone: 'violet', icon: FaTruck, label: 'In Transit' },
+    'out_for_delivery': { tone: 'warning', icon: FaTruck, label: 'Out for Delivery' },
+    'delivered': { tone: 'success', icon: FaCheckCircle, label: 'Delivered' },
+    'completed': { tone: 'success', icon: FaCheckCircle, label: 'Completed' },
+    'buyer_confirmed': { tone: 'success', icon: FaCheckCircle, label: 'Confirmed' },
+    'cancelled': { tone: 'danger', icon: FaTimesCircle, label: 'Cancelled' },
+    'cancelled_by_buyer': { tone: 'danger', icon: FaTimesCircle, label: 'Cancelled' },
+    'cancelled_by_seller': { tone: 'danger', icon: FaTimesCircle, label: 'Cancelled by Seller' },
+    'refunded': { tone: 'warning', icon: FaUndo, label: 'Refunded' },
+    'return_requested': { tone: 'warning', icon: FaUndo, label: 'Return Requested' },
+    'return_accepted': { tone: 'violet', icon: FaUndo, label: 'Return Accepted' },
+    'return_in_transit': { tone: 'violet', icon: FaTruck, label: 'Return In Transit' },
+    'return_delivered': { tone: 'success', icon: FaCheckCircle, label: 'Return Received' },
+    'chargeback_open': { tone: 'danger', icon: FaExclamationTriangle, label: 'Dispute' },
+    'chargeback_won': { tone: 'success', icon: FaCheckCircle, label: 'Dispute Won' },
+    'chargeback_lost': { tone: 'danger', icon: FaTimesCircle, label: 'Dispute Lost' },
   };
-  const config = statusConfig[status] || { color: '#6b7280', bg: '#f3f4f6', icon: FaClock, label: status };
+  const config = statusConfig[status] || { tone: 'neutral', icon: FaClock, label: status };
   const Icon = config.icon;
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 20, 
-      fontSize: 13, fontWeight: 600, color: config.color, background: config.bg }}>
-      <Icon size={12} /> {config.label}
+    <span className={`td-status-chip td-tone-${config.tone}`}>
+      <Icon size={12} aria-hidden="true" /> {config.label}
     </span>
   );
 };

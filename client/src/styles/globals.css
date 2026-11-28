@@ -14,6 +14,26 @@
 
 /* ---- CSS Custom Properties (Light Mode Default) ---- */
 :root {
+  /* Semantic chip tones (status chips / notification tiles).
+     Light values are AA text on their own tint; see the dark blocks for
+     the re-tinted variants that sit on dark cards. */
+  --td-tone-warning-fg: #92400E;
+  --td-tone-warning-bg: #FEF3C7;
+  --td-tone-info-fg: #1D4ED8;
+  --td-tone-info-bg: #DBEAFE;
+  --td-tone-success-fg: #065F46;
+  --td-tone-success-bg: #D1FAE5;
+  --td-tone-violet-fg: #5B21B6;
+  --td-tone-violet-bg: #EDE9FE;
+  --td-tone-danger-fg: #B91C1C;
+  --td-tone-danger-bg: #FEE2E2;
+  --td-tone-accent-fg: #9D174D;
+  --td-tone-accent-bg: #FCE7F3;
+  --td-tone-cyan-fg: #0E7490;
+  --td-tone-cyan-bg: #CFFAFE;
+  --td-tone-neutral-fg: #374151;
+  --td-tone-neutral-bg: #F3F4F6;
+
   /* Brand — Royal Violet signature */
   --td-primary: #6C3BFF;
   --td-primary-dark: #4A23C9;
@@ -176,6 +196,26 @@
 /* ---- Dark Mode (Obsidian) ---- */
 @media (prefers-color-scheme: dark) {
   :root {
+    /* Deep card tone + bright glyph. Opaque (not an rgba tint) because
+       order/notification cards sit on brand gradients: a translucent chip
+       would change contrast with whatever gradient runs behind it. */
+    --td-tone-warning-fg: #FCD34D;
+    --td-tone-warning-bg: #392F2A;
+    --td-tone-info-fg: #93C5FD;
+    --td-tone-info-bg: #202B4C;
+    --td-tone-success-fg: #6EE7B7;
+    --td-tone-success-bg: #132E39;
+    --td-tone-violet-fg: #C4B5FD;
+    --td-tone-violet-bg: #2C2254;
+    --td-tone-danger-fg: #FCA5A5;
+    --td-tone-danger-bg: #382336;
+    --td-tone-accent-fg: #F9A8D4;
+    --td-tone-accent-bg: #3C2544;
+    --td-tone-cyan-fg: #67E8F9;
+    --td-tone-cyan-bg: #16334A;
+    --td-tone-neutral-fg: #CFCDEA;
+    --td-tone-neutral-bg: #29293E;
+
     --td-surface: #08081A;
     --td-surface-secondary: #14142B;
     --td-surface-tertiary: #1E1E3F;
@@ -207,6 +247,23 @@
 
 /* Force dark mode class */
 [data-theme="dark"] {
+  --td-tone-warning-fg: #FCD34D;
+  --td-tone-warning-bg: #392F2A;
+  --td-tone-info-fg: #93C5FD;
+  --td-tone-info-bg: #202B4C;
+  --td-tone-success-fg: #6EE7B7;
+  --td-tone-success-bg: #132E39;
+  --td-tone-violet-fg: #C4B5FD;
+  --td-tone-violet-bg: #2C2254;
+  --td-tone-danger-fg: #FCA5A5;
+  --td-tone-danger-bg: #382336;
+  --td-tone-accent-fg: #F9A8D4;
+  --td-tone-accent-bg: #3C2544;
+  --td-tone-cyan-fg: #67E8F9;
+  --td-tone-cyan-bg: #16334A;
+  --td-tone-neutral-fg: #CFCDEA;
+  --td-tone-neutral-bg: #29293E;
+
   --td-surface: #08081A;
   --td-surface-secondary: #14142B;
   --td-surface-tertiary: #1E1E3F;
@@ -232,6 +289,24 @@
 }
 
 [data-theme="light"] {
+  /* Re-declared so a dark OS theme cannot leak dark tone values into an
+     explicitly light app. */
+  --td-tone-warning-fg: #92400E;
+  --td-tone-warning-bg: #FEF3C7;
+  --td-tone-info-fg: #1D4ED8;
+  --td-tone-info-bg: #DBEAFE;
+  --td-tone-success-fg: #065F46;
+  --td-tone-success-bg: #D1FAE5;
+  --td-tone-violet-fg: #5B21B6;
+  --td-tone-violet-bg: #EDE9FE;
+  --td-tone-danger-fg: #B91C1C;
+  --td-tone-danger-bg: #FEE2E2;
+  --td-tone-accent-fg: #9D174D;
+  --td-tone-accent-bg: #FCE7F3;
+  --td-tone-cyan-fg: #0E7490;
+  --td-tone-cyan-bg: #CFFAFE;
+  --td-tone-neutral-fg: #374151;
+  --td-tone-neutral-bg: #F3F4F6;
   --td-surface: #FFFFFF;
   --td-surface-secondary: #F7F5FE;
   --td-surface-tertiary: #EDE9FA;

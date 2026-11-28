@@ -50,9 +50,12 @@ const Notifications = () => {
     }
   };
 
-  const getIconColor = (type) => {
-    const colors = { like: '#FF4D6D', comment: '#3D9BFF', follow: '#00D4FF', offer: '#FFB86B', sale: '#10D98E', share: '#6C3BFF', purchase: '#10D98E', shipping: '#3D9BFF', review: '#FFD700', priceDrop: '#FF4D6D', restock: '#10D98E' };
-    return colors[type] || '#8E8EA0';
+  // Semantic tone per notification type. The tint and glyph colour come from
+  // the theme (globals.css --td-tone-*), so the same tile reads correctly on
+  // dark cards instead of glowing with light-only neon pastels.
+  const getIconTone = (type) => {
+    const tones = { like: 'accent', comment: 'info', follow: 'cyan', offer: 'warning', sale: 'success', share: 'violet', purchase: 'success', shipping: 'info', review: 'warning', priceDrop: 'accent', restock: 'success' };
+    return tones[type] || 'neutral';
   };
 
   const getNotificationLink = (notification) => {
@@ -114,7 +117,7 @@ const Notifications = () => {
             <Link key={notification._id} to={getNotificationLink(notification)}
               className={`notification-item ${!notification.read ? 'unread' : ''}`}
               style={{ animationDelay: `${i * 0.03}s`, animation: 'fadeInUp 0.3s ease-out both' }}>
-              <div className="notification-icon" style={{ background: `${getIconColor(notification.type)}15`, color: getIconColor(notification.type) }}>
+              <div className={`td-notif-icon td-tone-${getIconTone(notification.type)}`}>
                 {getIcon(notification.type)}
               </div>
               <div className="notification-content">
